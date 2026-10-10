@@ -1,0 +1,23 @@
+flowchart TD
+    Q["Query + filters<br/>profile, scope, window, as-of, kind"] --> S["Classify the query<br/>adaptive channel weights"]
+    S --> P1["Semantic"]
+    S --> P2["BM25 keyword"]
+    S --> P3["Temporal"]
+    S --> P4["Spreading activation"]
+    S --> P5["Hopfield"]
+    S -.->|"pictures on"| P6["Picture channel"]
+    P1 --> F["Weighted RRF fusion"]
+    P2 --> F
+    P3 --> F
+    P4 --> F
+    P5 --> F
+    P6 --> F
+    F --> B["Entity-graph and cross-channel boosts"]
+    B --> E["Evidence floor<br/>keep only results with real evidence"]
+    E --> R["Cross-encoder rerank (optional)"]
+    R --> K["Ranking mode<br/>off unless SLM_RANKING is set"]
+    K --> A{"Answer check<br/>Laya, Jev or off"}
+    A -->|"answers the question"| OK["Results + scores + answer fields"]
+    A -->|"does not answer"| AB["Abstain: nearest results still returned,<br/>marked as not an answer"]
+    classDef gate fill:#FFF4E0,stroke:#C27A00,color:#1F2340
+    class E,A gate

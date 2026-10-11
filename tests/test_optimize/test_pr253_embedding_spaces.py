@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from superlocalmemory.core.config import SLMConfig
-from superlocalmemory.core.embedding_recipe import task_model
+from superlocalmemory.core.embedding_recipe import LEGACY_TASK_SUFFIX
 from superlocalmemory.optimize.cache.manager import _LazySemanticEmbedder
 from superlocalmemory.optimize.cache.semantic import VCacheSemantic
 from superlocalmemory.optimize.config.schema import OptimizeConfig
@@ -71,7 +71,7 @@ def test_exact_review_same_width_recipe_collision_never_returns_paris_for_german
             cache = VCacheSemantic(db, policy, embedder=_LazySemanticEmbedder(),
                                    embedding_dimension=768)
         config.embedding = replace(
-            config.embedding, model_name=task_model(config.embedding.model_name))
+            config.embedding, model_name=config.embedding.model_name + LEGACY_TASK_SUFFIX)
         assert cache.lookup(request("What is the capital of Germany?"), "fixture", None) is None
         assert "@retrieval-v1" in cache._embedder._service.model_name
     finally:
@@ -107,7 +107,7 @@ def test_restart_and_rollback_keep_response_boundaries_and_centroids_in_their_sp
     question = "What is the capital of France?"
     try:
         old_id = train(cache, db, question, "Paris")
-        config.embedding = replace(legacy, model_name=task_model(legacy.model_name))
+        config.embedding = replace(legacy, model_name=legacy.model_name + LEGACY_TASK_SUFFIX)
         new_id = train(cache, db, question, "new-space-response")
         assert new_id != old_id
         assert cache._centroid_store.count("fixture") == 1
@@ -138,7 +138,7 @@ def test_activation_invalidation_releases_loaded_lazy_provider(tmp_path, monkeyp
         invalidate_embedding_space()
         assert embedder._service is None
         config.embedding = replace(
-            config.embedding, model_name=task_model(config.embedding.model_name))
+            config.embedding, model_name=config.embedding.model_name + LEGACY_TASK_SUFFIX)
         embedder("Germany")
         assert "@retrieval-v1" in embedder._service.model_name
     finally:

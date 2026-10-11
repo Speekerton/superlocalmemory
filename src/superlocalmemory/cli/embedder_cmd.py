@@ -285,7 +285,7 @@ def register_embedder_parser(sub: Any) -> None:
     s.add_argument(
         "--task-prefixes",
         action="store_true",
-        help="Nomic retrieval-v1: task prompts and opaque-token normalization (staged swap)",
+        help="Nomic retrieval-v2: task prompts with preserved identifiers (staged swap)",
     )
     s.add_argument("--dimension", type=int, default=0, help="the model's vector size")
     s.add_argument(

@@ -138,11 +138,16 @@ def restore_atomically(root: Path, point_id: str) -> None:
 def recover_safety_copy(root: Path, safety_id: str) -> dict:
     """Put a safety copy back with the service stopped (the CLI path)."""
     from superlocalmemory.server.backup_bundle import create_point, verify_point
+    from superlocalmemory.storage._durable_json import write_json_atomic
 
     verify_point(root, safety_id)
     with writer_lease(root, wait_s=0.0):
-        before = create_point(root)["id"]
+        # The point taken first must never prune the copy it is about to restore.
+        before = create_point(root, keep=frozenset({safety_id}))["id"]
         restore_atomically(root, safety_id)
+        write_json_atomic(Path(root) / OUTCOME_NAME, {
+            "state": "recovered", "id": safety_id, "safety_id": before,
+            "message": "The safety copy was put back. Start the service with `slm serve start`."})
     return {"restored": safety_id, "safety_id": before}
 
 

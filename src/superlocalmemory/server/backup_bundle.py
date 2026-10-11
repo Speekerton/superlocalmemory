@@ -99,13 +99,14 @@ def _files(point):
     return files
 
 
-def create_point(root: Path) -> dict:
+def create_point(root: Path, keep: frozenset[str] = frozenset()) -> dict:
+    """Take a verified recovery point; retention never removes the ids in ``keep``."""
     from superlocalmemory.server.config_file import _file_lock
     with _file_lock(Path(root) / "recovery-sets"):
-        return _create_point(Path(root))
+        return _create_point(Path(root), keep)
 
 
-def _create_point(root: Path) -> dict:
+def _create_point(root: Path, keep: frozenset[str] = frozenset()) -> dict:
     root = Path(root)
     coordinator = BackupCoordinator(MANAGED_DATABASES, root, root / "backups")
     native = coordinator.create_backup_set()
@@ -137,7 +138,7 @@ def _create_point(root: Path) -> dict:
     write_json_atomic(point / "recovery.json", manifest)
     verify_point(root, native.set_id)
     from superlocalmemory.server.recovery_inventory import prune
-    prune(root)
+    prune(root, keep)
     return manifest
 
 

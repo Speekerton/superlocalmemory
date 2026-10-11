@@ -26,16 +26,30 @@ def points(root: Path) -> list[dict]:
     return sorted(found, key=lambda record: record["created"], reverse=True)
 
 
-def prune(root: Path) -> None:
+def pinned(root: Path) -> set[str]:
+    """Recovery points retention must not remove right now.
+
+    While a restore runs: its target and its safety copy. After a restore
+    failed: its safety copy, the one point that can repair it, until a later
+    restore or ``slm backup restore-safety-copy`` replaces the outcome
+    (PR 251 re-review N2).
+    """
+    pending = read_json(root / "backup-recovery-outcome.json") or {}
+    state = pending.get("state")
+    if state in IN_PROGRESS:
+        found = {pending.get("id"), pending.get("safety_id")}
+    elif state == "failed":
+        found = {pending.get("safety_id")}
+    else:
+        found = set()
+    return {str(point) for point in found if point}
+
+
+def prune(root: Path, keep: frozenset[str] = frozenset()) -> None:
     from superlocalmemory.server.backup_bundle import _point_dir
 
     maximum = max(1, int(read_config(root / "backup_config.json").get("max_backups", 10)))
-    pending = read_json(root / "backup-recovery-outcome.json") or {}
-    protected = (
-        {pending.get("id"), pending.get("safety_id")}
-        if pending.get("state") in IN_PROGRESS
-        else set()
-    )
+    protected = pinned(root) | set(keep)
     for record in points(root)[maximum:]:
         if record["id"] not in protected:
             shutil.rmtree(_point_dir(root, record["id"]))

@@ -13,6 +13,7 @@ Endpoints:
   POST /api/adapters/disable — disable an adapter
   POST /api/adapters/start   — start a running adapter
   POST /api/adapters/stop    — stop a running adapter
+  POST /api/adapters/configure — choose the file or folder an importer reads
 """
 
 from __future__ import annotations
@@ -33,19 +34,27 @@ class AdapterSetup(AdapterAction):
 
 @router.post("/api/adapters/configure")
 async def configure_adapter_api(body: AdapterSetup, request: Request):
-    from pathlib import Path
+    """Point an importer at a file or folder inside an import folder.
 
+    Installation-wide MANAGE: the importer reads local files as the daemon's
+    user and turns them into memories, so a workspace administrator (possibly
+    on another computer) must not choose what it reads. The path must resolve
+    inside ``<data root>/imports`` or a folder the owner approved on this
+    computer (``ingestion.import_roots``).
+    """
     from fastapi import HTTPException
 
-    from superlocalmemory.ingestion.adapter_manager import _load_config, _save_config
-    from superlocalmemory.server.rbac_enforce import require_manage
+    from superlocalmemory.ingestion import import_roots
+    from superlocalmemory.ingestion.adapter_manager import _load_config, _save_config, _slm_home
+    from superlocalmemory.server import rbac_enforce
 
-    require_manage(request)
+    rbac_enforce.require_global_manage(request)
     if body.name not in ("gmail", "calendar", "transcript"):
         raise HTTPException(422, "Choose a supported adapter.")
-    path = Path(body.path).expanduser()
-    if not path.is_absolute() or not path.exists():
-        raise HTTPException(422, "Choose an existing absolute folder or file path.")
+    try:
+        path = import_roots.admit(body.path, _slm_home())
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
     if body.name == "transcript" and not path.is_dir():
         raise HTTPException(422, "Transcripts need a folder.")
     if body.name != "transcript" and not path.is_file():

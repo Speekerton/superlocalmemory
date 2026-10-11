@@ -63,7 +63,7 @@ class TranscriptAdapter(BaseAdapter):
                     if event.is_directory:
                         return
                     path = Path(event.src_path)
-                    if path.suffix.lower() in _WATCH_EXTENSIONS:
+                    if self._adapter._admissible(path):
                         self._adapter._pending_files.append(path)
 
             self._observer = Observer()
@@ -74,9 +74,7 @@ class TranscriptAdapter(BaseAdapter):
             logger.warning("watchdog not installed — polling mode only")
 
         # Also scan for existing files on first run
-        for path in self._watch_dir.iterdir():
-            if path.suffix.lower() in _WATCH_EXTENSIONS and path.is_file():
-                self._pending_files.append(path)
+        self._scan_existing()
 
         super().run()
 
@@ -84,6 +82,21 @@ class TranscriptAdapter(BaseAdapter):
         if self._observer:
             self._observer.stop()
             self._observer.join()
+
+    def _admissible(self, path: Path) -> bool:
+        """A transcript file directly in the folder; never a link out of it."""
+        if path.is_symlink() or path.suffix.lower() not in _WATCH_EXTENSIONS:
+            return False
+        try:
+            inside = path.resolve(strict=True).parent == self._watch_dir.resolve()
+        except OSError:
+            return False
+        return inside and path.is_file() and not path.name.startswith(".")
+
+    def _scan_existing(self) -> None:
+        for path in sorted(self._watch_dir.iterdir()):
+            if self._admissible(path):
+                self._pending_files.append(path)
 
     def fetch_items(self) -> list[IngestItem]:
         """Return pending transcript files as IngestItems."""

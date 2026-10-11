@@ -295,6 +295,31 @@ def handle_adapters_cli(args: list[str]) -> None:
                 print(f"  PID={a['pid']}", end="")
             print()
 
+    elif action in ("allow-folder", "folders"):
+        _import_folders_cli(action, name)
+
     else:
         print(f"  Unknown action: {action}")
         print("  Usage: slm adapters <list|enable|disable|start|stop|status> [name]")
+        print("         slm adapters allow-folder <path> | folders")
+
+
+def _import_folders_cli(action: str, path: str) -> None:
+    """The owner's own list of folders the dashboard may point importers at."""
+    from superlocalmemory.ingestion import import_roots
+
+    home = _slm_home()
+    if action == "allow-folder":
+        if not path:
+            print("  Usage: slm adapters allow-folder <path>")
+            return
+        try:
+            real = import_roots.approve(path, home)
+        except (OSError, ValueError) as exc:
+            print(f"  Not approved: {exc}")
+            return
+        print(f"  Approved as an import folder: {real}")
+        return
+    print("  Import folders (the dashboard can choose files only inside these):")
+    for root in (import_roots.default_root(home), *import_roots.approved(home)):
+        print(f"    {root}")

@@ -212,7 +212,7 @@
     var box = document.createElement('div');
     box.className = 'card'; box.setAttribute('role', 'region');
     var field = document.createElement('input');
-    field.setAttribute('aria-label', label); field.placeholder = 'Absolute path to ' + label.toLowerCase();
+    field.setAttribute('aria-label', label); field.placeholder = 'Path to the ' + label.toLowerCase() + ' inside an import folder';
     var save = document.createElement('button'); save.textContent = 'Save setup'; save.className = 'ng-btn';
     var close = document.createElement('button'); close.textContent = 'Cancel'; close.className = 'ng-btn';
     var status = document.createElement('p'); status.setAttribute('role', 'status');

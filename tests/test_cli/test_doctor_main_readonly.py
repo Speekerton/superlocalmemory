@@ -20,7 +20,8 @@ def test_main_doctor_never_launches_daemon(tmp_path, free_port, quick, use_json,
 
         attempts = []
         def audit(event, args):
-            if event == 'subprocess.Popen' and 'superlocalmemory.server.unified_daemon' in str(args[1]):
+            if (event == 'subprocess.Popen'
+                    and 'superlocalmemory.server.unified_daemon' in str(args[1])):
                 attempts.append(True)
                 raise RuntimeError('diagnostics must not launch the daemon')
             if event == 'socket.connect' and args[1][1] in (8765, 8767):

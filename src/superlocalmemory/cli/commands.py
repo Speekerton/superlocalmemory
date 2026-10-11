@@ -3605,20 +3605,11 @@ def cmd_doctor(args: Namespace) -> None:
     # 11b. Images & documents: a read-only line, "off" until someone turns it on.
     try:
         from superlocalmemory.runtimes import media_feature_status
-        from superlocalmemory.cli.daemon import daemon_request
         from superlocalmemory.runtimes.features import media_requested
 
         _mf = media_feature_status()
-        _live = {}
-        if daemon_check.descriptor is not None:
-            # The daemon check already proved ownership. Do not repeat health
-            # or spend the startup wait budget on this optional feature check.
-            _features = daemon_request(
-                "GET", "/api/v3/features", timeout_seconds=0.5,
-                expected_descriptor=daemon_check.descriptor, verify_health=False,
-                start_wait_seconds=0,
-            )
-            _live = (_features or {}).get("media") or {}
+        # Captured under the same deadline as daemon health; no second IO wait.
+        _live = daemon_check.media_status
         if not _mf["enabled"]:
             _check("Images & documents", "PASS",
                    "requested by the installer, starts with the daemon" if media_requested() else "off")

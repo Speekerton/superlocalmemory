@@ -9,21 +9,27 @@ from unittest.mock import MagicMock
 import psutil
 import pytest
 
-from superlocalmemory.cli import commands, daemon
+from superlocalmemory.cli import commands, daemon, doctor_daemon
 from superlocalmemory.infra.daemon_identity import build_descriptor, write_descriptor
 
 
 @pytest.fixture
 def probes(monkeypatch):
     health = MagicMock(return_value=None)
-    monkeypatch.setattr(daemon, "_fetch_health", health)
+    request = MagicMock(return_value={})
+    def fetch(record, path, timeout):
+        assert 0 < timeout <= doctor_daemon.HEALTH_TIMEOUT
+        return health(record.port, timeout=timeout) if path == "/health" else request(record)
+
+    monkeypatch.setattr(doctor_daemon, "_fetch_json", fetch)
+    # Unit tests inspect the worker's checks; socket/CLI tests exercise its deadline.
+    monkeypatch.setattr(doctor_daemon, "check_daemon", doctor_daemon._inspect_daemon)
     # Any old readiness helper would wait or probe more than once.
     def forbidden(*a, **k):
         raise AssertionError("doctor must not start or wait for the daemon")
 
     for name in ("ensure_daemon", "is_daemon_running", "_verified_legacy_health"):
         monkeypatch.setattr(daemon, name, forbidden)
-    request = MagicMock(return_value={})
     monkeypatch.setattr(daemon, "daemon_request", request)
     monkeypatch.setattr("superlocalmemory.cli.features_cmd.daemon_request", request)
     monkeypatch.setattr("superlocalmemory.core.component_healer.heal_missing",
@@ -58,10 +64,10 @@ def test_live_healthy_daemon_passes_one_short_probe(probes, capsys, free_port):
     write_descriptor(record)
     probes[0].return_value = record.public_health_fields()
     assert report(capsys, quick=True)["status"] == "PASS"
-    probes[0].assert_called_once_with(free_port, timeout=0.5)
-    if probes[1].called:
-        assert probes[1].call_args.kwargs["verify_health"] is False
-        assert probes[1].call_args.kwargs["expected_descriptor"] == record
+    probes[0].assert_called_once()
+    assert probes[0].call_args.args == (free_port,)
+    assert 0 < probes[0].call_args.kwargs["timeout"] <= 0.5
+    probes[1].assert_called_once_with(record)
 
 
 def test_dead_record_fails_with_restart(probes, capsys, free_port, monkeypatch):

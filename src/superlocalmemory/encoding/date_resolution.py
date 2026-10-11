@@ -22,8 +22,11 @@ from superlocalmemory.encoding.typed_values import has_relative_time, looks_like
 _ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 _RELATIVE_DAYS: dict[str, int] = {
-    "yesterday": -1, "today": 0, "tomorrow": 1,
-    "the day before": -2, "the other day": -2,
+    "yesterday": -1,
+    "today": 0,
+    "tomorrow": 1,
+    "the day before": -2,
+    "the other day": -2,
     "day before yesterday": -2,
 }
 
@@ -69,19 +72,17 @@ def _resolve_relative_expression(raw: str, reference_date: str | None) -> str | 
 
 
 def try_parse_date(raw: str | None, reference_date: str | None = None) -> str | None:
-    """Resolve a date string to ``YYYY-MM-DD``, or None. Never raises.
-
-    Uses dateutil for structured dates and dateparser (optional) for complex
-    relative expressions. A string that is not date-shaped returns None
-    before any parser sees it.
-    """
+    """Resolve a supported calendar value, preserving month precision. Never raises."""
     if not raw:
         return None
-    if _ISO_RE.match(raw.strip()):
-        return raw.strip()
+    direct = _direct_calendar(raw)
+    if direct is not None:
+        return direct
     if not looks_like_calendar_date(raw):
         return None
 
+    if has_relative_time(raw) and not reference_date:
+        return None
     if has_relative_time(raw):
         # Relative first: a fuzzy parser drops the words, so "next Tuesday"
         # came back as today and "in 2 weeks" as the 2nd of this month.
@@ -91,12 +92,15 @@ def try_parse_date(raw: str | None, reference_date: str | None = None) -> str | 
 
     try:
         from dateutil import parser as du_parser
-        return du_parser.parse(raw, fuzzy=True).date().isoformat()
+
+        default = du_parser.parse(reference_date) if reference_date else datetime(2000, 1, 1)
+        return du_parser.parse(raw, fuzzy=True, default=default).date().isoformat()
     except Exception:
         pass
 
     try:
         import dateparser
+
         settings: dict[str, Any] = {"PREFER_DATES_FROM": "past"}
         if reference_date:
             ref = dateparser.parse(reference_date)
@@ -116,7 +120,7 @@ def try_parse_date(raw: str | None, reference_date: str | None = None) -> str | 
 _DATE_FIELDS = ("referenced_date", "interval_start", "interval_end")
 
 
-def keep_supported_dates(facts: list, source_text: str) -> list:
+def keep_supported_dates(facts: list, source_text: str, reference_date: str | None = None) -> list:
     """Model-written facts with every date field the source does not support cleared.
 
     A model asked to resolve "yesterday" also answers with dates nobody
@@ -132,11 +136,51 @@ def keep_supported_dates(facts: list, source_text: str) -> list:
     kept = []
     for fact in facts:
         cleared = {
-            name: None for name in _DATE_FIELDS
-            if getattr(fact, name, None) and not date_is_supported(getattr(fact, name), source_text)
+            name: None
+            for name in _DATE_FIELDS
+            if getattr(fact, name, None)
+            and not date_is_supported(getattr(fact, name), source_text, reference_date)
         }
         kept.append(replace(fact, **cleared) if cleared else fact)
     return kept
 
 
 __all__ = ["keep_supported_dates", "try_parse_date"]
+
+
+def month_fields(text: str) -> dict:
+    """A month/year denotes a range, not an invented day inside that month."""
+    import calendar
+
+    from superlocalmemory.encoding.typed_values import _MONTH
+
+    found = re.search(rf"\b({_MONTH})\s+((?:19|20)\d{{2}})\b", text, re.I)
+    if not found:
+        return {}
+    if re.search(r"\d{1,2}(?:st|nd|rd|th)?\s+$", text[: found.start()], re.I):
+        return {}
+    from dateutil.parser import parse
+
+    date = parse(found.group(0), default=datetime(2000, 1, 1))
+    month = date.strftime("%Y-%m")
+    last = calendar.monthrange(date.year, date.month)[1]
+    return {
+        "referenced_date": month,
+        "interval_start": month + "-01T00:00:00",
+        "interval_end": f"{month}-{last:02d}T23:59:59",
+    }
+
+
+def _direct_calendar(raw: str) -> str | None:
+    if _ISO_RE.match(raw.strip()):
+        return raw.strip()
+    monthly = month_fields(raw)
+    if monthly and re.fullmatch(r"[A-Za-z.]+\s+\d{4}", raw.strip()):
+        return monthly["referenced_date"]
+    if re.fullmatch(r"\d{4}-\d{2}", raw.strip()):
+        try:
+            datetime.fromisoformat(raw.strip() + "-01")
+            return raw.strip()
+        except ValueError:
+            return None
+    return None

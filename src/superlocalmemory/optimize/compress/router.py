@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -303,7 +304,7 @@ class CompressRouter:
         if _detect_language(text) is not None:
             return text, tokens_before, tokens_before, "none"  # code → passthrough
 
-        # Layer 1 — lossless whitespace normalization (always-on, safe)
+        # Layer 1 — blank-line normalization of prose (code passes through)
         normalized = self._normalize_whitespace(text)
         tokens_after_l1 = _token_estimate(normalized)
 
@@ -333,12 +334,12 @@ class CompressRouter:
                         return compressed, tokens_before, tokens_after_l2, "llmlingua2_prose"
                     # CCR store FAILED → no recoverable id. Returning the lossy form
                     # now would destroy the original irreversibly. Refuse it and fall
-                    # through to lossless Layer 1 (data-safety over compression ratio).
+                    # through to Layer 1 (data-safety over compression ratio).
                     logger.warning(
                         "[%s] CCR store failed — refusing irreversible lossy "
-                        "compression, falling back to lossless Layer 1", request_id,
+                        "compression, falling back to Layer 1", request_id,
                     )
-                # No reduction (or store-failed) — fall through to lossless Layer 1.
+                # No reduction (or store-failed) — fall through to Layer 1.
 
         # S-01 fix: compare character length, not word count.
         # _token_estimate() is word-count — whitespace normalization saves characters/bytes
@@ -351,16 +352,26 @@ class CompressRouter:
 
     @staticmethod
     def _normalize_whitespace(text: str) -> str:
-        """Layer 1 safe: collapse runs of 3+ blank lines to a single blank line.
+        """Layer 1: collapse runs of 3+ newlines to one blank line — in prose only.
 
-        v3.6.12 (normalize-1): no longer rstrips trailing spaces per line — that
-        is LOSSY for Markdown hard breaks (two trailing spaces) and padded string
-        literals, which broke the 'lossless/safe' guarantee that callers (incl.
-        slm_compress mode=normalize) rely on. Only collapsing excess blank lines
-        remains, which is semantically safe.
+        Not lossless, and no longer called that (audit BRN-04): it changes
+        bytes. It is safe only where a blank-line run carries no meaning, which
+        is NOT true inside source code (a triple-quoted string literal holding
+        three newlines changed value, and the code's own assert failed), inside
+        a fenced or indented Markdown code block (blank lines there are
+        rendered), or in any text that looks like code. So:
+
+        * text ``_looks_like_code`` flags is returned byte-for-byte;
+        * fenced code blocks (``` or ~~~) inside prose pass through untouched;
+        * only the prose between them is collapsed.
+
+        Callers that must be able to restore the input keep the original
+        bytes themselves (``slm_compress`` stores it in CCR whenever the output
+        differs).
         """
-        import re
-        return re.sub(r"\n{3,}", "\n\n", text)
+        if _looks_like_code(text):
+            return text
+        return _collapse_outside_fences(text)
 
     # ── Lazy loaders ─────────────────────────────────────────────────────
 
@@ -556,6 +567,44 @@ def _msg_has_tool_result(msg: dict) -> bool:
             if "tool_use_id" in block:
                 return True
     return False
+
+
+#: Lines that mark text as code even when ``_detect_language`` finds too few
+#: signal lines: string-literal delimiters whose contents are whitespace-exact.
+_CODE_MARKERS = ('"""', "'''", "```")
+
+
+def _looks_like_code(text: str) -> bool:
+    """Whether blank-line normalization could change this text's meaning.
+
+    True for anything ``_detect_language`` recognises, for text containing
+    triple-quoted string delimiters or an unclosed fence outside Markdown
+    fences, and
+    for text with indented-code lines (4 spaces or a tab) — a Markdown
+    indented code block renders its blank lines.
+    """
+    if _detect_language(text) is not None:
+        return True
+    prose = _FENCE_RE.sub("", text)
+    if any(marker in prose for marker in _CODE_MARKERS):
+        return True
+    return any(line.startswith(("    ", "\t")) and line.strip()
+               for line in prose.split("\n"))
+
+
+_FENCE_RE = re.compile(r"^(```|~~~)[^\n]*\n.*?^\1[ \t]*$", re.S | re.M)
+
+
+def _collapse_outside_fences(text: str) -> str:
+    """Collapse 3+ newlines between fenced blocks; fences stay byte-exact."""
+    out: list[str] = []
+    pos = 0
+    for match in _FENCE_RE.finditer(text):
+        out.append(re.sub(r"\n{3,}", "\n\n", text[pos:match.start()]))
+        out.append(match.group(0))
+        pos = match.end()
+    out.append(re.sub(r"\n{3,}", "\n\n", text[pos:]))
+    return "".join(out)
 
 
 def _detect_language(text: str) -> str | None:

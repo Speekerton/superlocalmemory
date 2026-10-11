@@ -293,17 +293,19 @@ def test_report_feedback_still_records_for_a_visible_memory(world, view) -> None
 
 @pytest.mark.parametrize("view", VIEWS)
 def test_report_outcome_drops_the_ids_a_remote_app_may_not_act_on(world, monkeypatch, view) -> None:
-    from superlocalmemory.learning import outcomes
+    from superlocalmemory.learning import outcome_events
     from superlocalmemory.mcp.tools_v28 import register_v28_tools
 
     engine, ids = world
     seen: list[list[str]] = []
 
-    def record(self, **kw):
-        seen.append(list(kw["fact_ids"]))
-        return SimpleNamespace(outcome_id="o1")
+    def record(report, **kw):
+        seen.append(list(report.fact_ids))
+        return SimpleNamespace(outcome_id="o1", reward=1.0, created=True,
+                               attributed=False)
 
-    monkeypatch.setattr(outcomes.OutcomeTracker, "record_outcome", record)
+    # The canonical writer every surface shares is the seam (audit BRN-05).
+    monkeypatch.setattr(outcome_events, "write_outcome", record)
     server = _Server()
     register_v28_tools(server, lambda: engine)
     key, media = True, view == "remote_media"
@@ -319,13 +321,15 @@ def test_report_outcome_drops_the_ids_a_remote_app_may_not_act_on(world, monkeyp
 
 
 def test_report_outcome_for_a_local_caller_keeps_every_id(world, monkeypatch) -> None:
-    from superlocalmemory.learning import outcomes
+    from superlocalmemory.learning import outcome_events
     from superlocalmemory.mcp.tools_v28 import register_v28_tools
 
     engine, ids = world
     seen: list[list[str]] = []
-    monkeypatch.setattr(outcomes.OutcomeTracker, "record_outcome",
-                        lambda self, **kw: seen.append(list(kw["fact_ids"])) or SimpleNamespace(outcome_id="o1"))
+    monkeypatch.setattr(
+        outcome_events, "write_outcome",
+        lambda report, **kw: seen.append(list(report.fact_ids)) or SimpleNamespace(
+            outcome_id="o1", reward=1.0, created=True, attributed=False))
     server = _Server()
     register_v28_tools(server, lambda: engine)
     wanted = [ids["zebra folder note"], "feedfacefeedface"]

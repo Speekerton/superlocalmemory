@@ -44,43 +44,62 @@ def pick_mode_b_model(
     Installed models that fit this machine's memory come first, ranked by
     SLM's extraction test. The catalogue is a recommendation, never a
     restriction: any installed model, or any name at all, can still be typed.
-    Non-interactive runs take the top recommendation silently.
+    Non-interactive runs keep an installed choice and disclose the recommendation.
     """
     recs = model_catalog.recommend_local_llms(ram_gb or None, installed or [])
     default_model = model_catalog.best_local_llm(ram_gb or None, installed or [])
     installed_ids = {rec.model_id for rec in recs if rec.installed}
 
-    chosen = default_model
     if interactive:
-        print()
-        print("  Local models (best first):")
-        recommended_id = next(
-            (rec.model_id for rec in recs if rec.installed and rec.fits), None,
+        chosen = _interactive_model(recs, default_model, installed_ids, prompt)
+    elif config.llm.model.removesuffix(":latest") in installed_ids:
+        chosen = config.llm.model
+        print(
+            f"  Keeping configured local model {chosen}; recommended installed: {default_model}. "
+            "Choose a different model explicitly in interactive setup."
         )
-        for n, rec in enumerate(recs, 1):
-            tags = []
-            if rec.installed:
-                tags.append("installed")
-            if rec.model_id == recommended_id:
-                tags.append("recommended")
-            suffix = f" ({', '.join(tags)})" if tags else ""
-            print(f"  [{n}] {rec.model_id} — {rec.reason}{suffix}")
-        choice = prompt(
-            f"  Select a model: number, name, or Enter for {default_model}: ", "",
-        ).strip()
-        if choice:
-            if choice.isdigit() and 1 <= int(choice) <= len(recs):
-                chosen = recs[int(choice) - 1].model_id
-            else:
-                chosen = choice
-        if chosen.removesuffix(":latest") not in installed_ids:
-            print(f"  Pull it first: ollama pull {chosen}")
+    else:
+        chosen = default_model
+        print(f"  Selected local extraction model: {chosen}")
 
     config.llm = dataclasses.replace(config.llm, provider="ollama", model=chosen)
 
 
+def _interactive_model(recs, default_model, installed_ids, prompt):
+    chosen = default_model
+    print()
+    print("  Local models (best first):")
+    recommended_id = next(
+        (rec.model_id for rec in recs if rec.installed and rec.fits),
+        None,
+    )
+    for n, rec in enumerate(recs, 1):
+        tags = []
+        if rec.installed:
+            tags.append("installed")
+        if rec.model_id == recommended_id:
+            tags.append("recommended")
+        suffix = f" ({', '.join(tags)})" if tags else ""
+        print(f"  [{n}] {rec.model_id} — {rec.reason}{suffix}")
+    choice = prompt(
+        f"  Select a model: number, name, or Enter for {default_model}: ",
+        "",
+    ).strip()
+    if choice:
+        if choice.isdigit() and 1 <= int(choice) <= len(recs):
+            chosen = recs[int(choice) - 1].model_id
+        else:
+            chosen = choice
+    if chosen.removesuffix(":latest") not in installed_ids:
+        print(f"  Pull it first: ollama pull {chosen}")
+    return chosen
+
+
 def pick_mode_c_model(
-    *, provider_name: str, default_model: str, prompt: PromptFn,
+    *,
+    provider_name: str,
+    default_model: str,
+    prompt: PromptFn,
 ) -> str:
     """Offer the model for a Mode C preset instead of silently taking it.
 
@@ -94,7 +113,8 @@ def pick_mode_c_model(
         for i, entry in enumerate(model_catalog.HOSTED_LLMS, 1):
             print(f"  [{i}] {entry.id} — {entry.label} — {entry.price} — {entry.advice}")
         choice = prompt(
-            f"  Select a model: number, id, or Enter for {default_model}: ", "",
+            f"  Select a model: number, id, or Enter for {default_model}: ",
+            "",
         ).strip()
         if not choice:
             return default_model

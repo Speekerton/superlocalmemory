@@ -24,10 +24,10 @@ if TYPE_CHECKING:
     from superlocalmemory.storage.database import DatabaseManager
 
 from superlocalmemory.core.receipt_guard import keeps_own_fact
+from superlocalmemory.encoding.entity_validity import valid_names
 from superlocalmemory.storage.erasure_fence import is_erasing
 from superlocalmemory.storage.models import (
     AtomicFact,
-    FactType,
     MemoryRecord,
 )
 
@@ -312,77 +312,11 @@ def enrich_fact(
     entity_resolver: Any,
     temporal_parser: Any,
 ) -> AtomicFact:
-    """Enrich fact with embeddings, entities, temporal, emotional data."""
-    from superlocalmemory.encoding.emotional import emotional_importance_boost, tag_emotion
-    from superlocalmemory.encoding.signal_inference import infer_signal
-
-    # v3.8.4 D: if the fact already carries a sync-embedded vector (warm-guard
-    # path in store_fast), reuse it — avoids a redundant embed call in the
-    # materializer and keeps the vector consistent with the one indexed in the
-    # vector store at write time.
-    if fact.embedding is not None:
-        embedding = fact.embedding
-        fisher_mean = fact.fisher_mean
-        fisher_variance = fact.fisher_variance
-        # fisher_params are computed in the warm-guard path too, but guard
-        # against the edge case where they weren't (e.g. compute_fisher_params
-        # raised after embed succeeded).
-        if (fisher_mean is None or fisher_variance is None) and embedder and embedding:
-            fisher_mean, fisher_variance = embedder.compute_fisher_params(embedding)
-    else:
-        embedding = embedder.embed(fact.content) if embedder else None
-        fisher_mean, fisher_variance = (None, None)
-        if embedder and embedding:
-            fisher_mean, fisher_variance = embedder.compute_fisher_params(embedding)
-
-    canonical = {}
-    if entity_resolver and fact.entities:
-        canonical = entity_resolver.resolve(fact.entities, profile_id)
-
-    temporal = {}
-    if temporal_parser:
-        temporal = temporal_parser.extract_dates_from_text(fact.content)
-
-    emotion = tag_emotion(fact.content)
-    signal = infer_signal(fact.content)
-
-    # Strategy A: initialize Langevin position near origin (ACTIVE zone).
-    # New facts start as ACTIVE; dynamics will evolve them based on access patterns.
-    langevin_pos = _init_langevin_position(dim=8)
-
-    return AtomicFact(
-        fact_id=fact.fact_id, memory_id=record.memory_id,
-        profile_id=profile_id, content=fact.content,
-        fact_type=fact.fact_type, entities=fact.entities,
-        canonical_entities=list(canonical.values()),
-        observation_date=fact.observation_date or record.session_date,
-        referenced_date=fact.referenced_date or temporal.get("referenced_date"),
-        interval_start=fact.interval_start or temporal.get("interval_start"),
-        interval_end=fact.interval_end or temporal.get("interval_end"),
-        confidence=fact.confidence,
-        importance=min(1.0, fact.importance + emotional_importance_boost(emotion)),
-        evidence_count=fact.evidence_count,
-        source_turn_ids=fact.source_turn_ids, session_id=record.session_id,
-        embedding=embedding, fisher_mean=fisher_mean, fisher_variance=fisher_variance,
-        langevin_position=langevin_pos,
-        emotional_valence=emotion.valence, emotional_arousal=emotion.arousal,
-        signal_type=signal, created_at=fact.created_at,
-        pinned=getattr(fact, 'pinned', False),
-        # 4.1.19: the memory kind travels with the fact through enrichment.
-        memory_kind=fact.memory_kind, memory_kind_source=fact.memory_kind_source,
-        memory_kind_confidence=fact.memory_kind_confidence,
-        memory_kind_recipe=fact.memory_kind_recipe, memory_kind_at=fact.memory_kind_at,
-        # v3.6.15 multi-scope: scope is a per-MEMORY property — every fact
-        # derived from a memory inherits the memory's scope. The record is
-        # authoritative; fact-extractor output never carries scope, so reading
-        # it off the fact (as before) silently downgraded extracted facts to
-        # 'personal' and broke `--scope global` on the common extraction path.
-        scope=(getattr(record, 'scope', None)
-               or getattr(fact, 'scope', None) or 'personal'),
-        shared_with=(getattr(record, 'shared_with', None)
-                     if getattr(record, 'scope', None) in ('shared', 'global')
-                     else getattr(fact, 'shared_with', None)),
-    )
+    """Enrich fact fields while preserving access, kind, pin and lifecycle metadata."""
+    from superlocalmemory.core.enriched_fact import enrich
+    return enrich(fact, record, profile_id, embedder=embedder,
+                  entity_resolver=entity_resolver, temporal_parser=temporal_parser,
+                  init_position=_init_langevin_position)
 
 
 # ---------------------------------------------------------------------------
@@ -404,7 +338,8 @@ def _upsert_fact_vectors(fact, profile_id, ann_index, vector_store, embedder=Non
     """
     if not getattr(fact, "embedding", None) and embedder is not None and fact.content:
         try:
-            fact.embedding = embedder.embed(fact.content)
+            from superlocalmemory.core.bounded_embedding import embed_source
+            fact.embedding = embed_source(embedder, fact.content)
         except Exception as _emb_exc:  # pragma: no cover - defensive
             _reraise_materialization_deferral(_emb_exc)
             logger.debug("on-demand embed failed for %s: %s", fact.fact_id, _emb_exc)
@@ -715,8 +650,10 @@ def run_store(
     provenance_complete = provenance is not None
 
     try:
+        from superlocalmemory.encoding.speaker_spans import with_actor
+        context_source = with_actor(content, record.speaker, record.role)
         facts = fact_extractor.extract_facts(
-            turns=[content], session_id=session_id,
+            turns=[context_source], session_id=session_id,
             session_date=parsed_date, speaker_a=speaker,
         )
         extraction_complete = facts is not None
@@ -740,75 +677,17 @@ def run_store(
     if facts is None:
         facts = []
 
-    # V3.3.11: Also store raw content as a verbatim fact to preserve details
-    # that fact extraction may abstract away (dates, names, specifics).
-    # This ensures BM25 and semantic search can always find the original text.
-    # V3.3.12: Extract entities from verbatim content so entity channel + temporal
-    # channel can find it (was entities=[] which blinded the entity-graph and temporal signals).
-    # V3.3.20: Stronger verbatim filter — skip greetings, filler, short phrases.
-    # Verbatim facts with just "Hey! How are you?" dilute embeddings and add noise.
-    _MIN_VERBATIM_WORDS = 8
-    if (not queryable_facts
-            and content.strip()
-            and len(content.strip()) >= 40
-            and len(content.strip().split()) >= _MIN_VERBATIM_WORDS):
-        from superlocalmemory.encoding.entity_mentions import extract_mentions
-        _verbatim_text = content.strip()
-        # The shared Mode A rules, as every other write path uses.
-        _verbatim_entities = extract_mentions(_verbatim_text)
-        verbatim = AtomicFact(
-            fact_id=uuid.uuid4().hex[:16],
-            content=_verbatim_text,
-            fact_type=FactType.EPISODIC,
-            entities=_verbatim_entities,
-            session_id=session_id,
-            observation_date=parsed_date,
-            confidence=0.9,
-            importance=0.5,
-            scope=scope,
-            shared_with=shared_with,
-        )
-        # Avoid duplicate if extraction already produced the exact same text
-        extracted_texts = {f.content.strip().lower() for f in facts}
-        if verbatim.content.strip().lower() not in extracted_texts:
-            facts.append(verbatim)
-
-    if queryable_facts:
-        # Replace any extractor-produced copy of the complete raw turn with the
-        # already-queryable projection, then promote that stable fact ID in
-        # place.  Large inputs may have a clamped queryable projection, so the
-        # projection itself is authoritative for the verbatim retrieval unit.
-        raw_text = content.strip().lower()
-        facts = [
-            fact for fact in facts
-            if fact.content.strip().lower() != raw_text
-            and fact.fact_id not in queryable_ids
-        ]
-        facts.extend(queryable_facts)
-
-    # V3.3.21: If fact extraction produced nothing (short input like "this is test"),
-    # store the raw content as a minimal fact. User explicitly called `slm remember` —
-    # their data should NEVER be silently dropped. The min-length and min-word filters
-    # are designed for automatic conversation extraction, not explicit user storage.
-    if not facts and content.strip():
-        facts = [AtomicFact(
-            fact_id=uuid.uuid4().hex[:16],
-            content=content.strip(),
-            fact_type=FactType.SEMANTIC,
-            entities=[],
-            session_id=session_id,
-            observation_date=parsed_date,
-            confidence=0.7,
-            importance=0.3,
-            scope=scope,
-            shared_with=shared_with,
-        )]
+    from superlocalmemory.core.source_fact_set import source_fact_set
+    facts, protected_source_ids = source_fact_set(
+        facts, content, record, queryable_facts,
+        getattr(config.store, "max_verbatim_chars", 24000),
+    )
 
     if not facts:
         return []
 
-    if type_router:
-        facts = type_router.route_facts(facts)
+    # The extractor already classified every derived fact. Reclassifying here
+    # made one extra LLM call (or embedding call) per fact without new evidence.
 
     # Kinds: the caller's declared kind (confirmed) or a suggestion (label only).
     from superlocalmemory.core.kind_assignment import assign_kinds, kind_update_columns
@@ -905,7 +784,8 @@ def run_store(
                 action = consolidator.consolidate(
                     fact,
                     profile_id,
-                    exclude_fact_ids=queryable_ids,
+                    exclude_fact_ids=(queryable_ids | created_ids
+                                      if fact.fact_id in protected_source_ids else queryable_ids),
                     # Stored by this save, not yet in the vector index.
                     pending_fact_ids=tuple(stored_ids),
                 )
@@ -972,6 +852,10 @@ def run_store(
         elif not is_queryable_promotion:
             db.store_fact(fact)
 
+        if fact.fact_id in protected_source_ids and consolidator:
+            link_source = getattr(consolidator, "link_source", None)
+            if callable(link_source):
+                link_source(fact, profile_id, tuple(stored_ids))
         if not merged_into_older:
             created_ids.add(fact.fact_id)
         if fact.fact_id not in stored_ids:
@@ -1320,11 +1204,13 @@ def run_store_fact_direct(
         fact.memory_id = record.memory_id
 
     if not fact.embedding and embedder:
-        fact.embedding = embedder.embed(fact.content)
+        from superlocalmemory.core.bounded_embedding import embed_source
+        fact.embedding = embed_source(embedder, fact.content)
         if fact.embedding:
             fact.fisher_mean, fact.fisher_variance = (
                 embedder.compute_fisher_params(fact.embedding)
             )
+    fact.entities = valid_names(list(fact.entities or []), fact.content)
     if entity_resolver and fact.entities:
         canonical = entity_resolver.resolve(
             fact.entities, profile_id,

@@ -1190,6 +1190,8 @@ def main() -> None:
     register_view_parser(sub)
     from superlocalmemory.cli.corrections_cmd import register_corrections_parsers
     register_corrections_parsers(sub)  # 4.1.22: corrections your own actions overtook
+    from superlocalmemory.cli.outcome_cmd import register_outcome_parser
+    register_outcome_parser(sub)  # 4.1.25: report whether recalled memories helped
     from superlocalmemory.cli.embedder_cmd import register_embedder_parser
     register_embedder_parser(sub)
 

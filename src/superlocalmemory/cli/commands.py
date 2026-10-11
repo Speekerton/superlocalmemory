@@ -561,6 +561,12 @@ def _cmd_features_dispatch(args: Namespace) -> None:
     cmd_features(args)
 
 
+def _cmd_outcome_dispatch(args: Namespace) -> None:
+    """4.1.25: report an outcome through the shared writer (cli/outcome_cmd.py)."""
+    from superlocalmemory.cli.outcome_cmd import run
+    run(args)
+
+
 def _cmd_corrections_dispatch(args: Namespace) -> None:
     """4.1.22: corrections a user action overtook (cli/corrections_cmd.py)."""
     from superlocalmemory.cli.corrections_cmd import run
@@ -728,6 +734,7 @@ def dispatch(args: Namespace) -> None:
         "features": _cmd_features_dispatch,
         "view": _cmd_view_dispatch,
         "corrections": _cmd_corrections_dispatch,
+        "outcome": _cmd_outcome_dispatch,
         "models": _cmd_models_dispatch,
         "embedder": _cmd_embedder_dispatch,
     }
@@ -2915,6 +2922,7 @@ _COMMAND_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
         ("embedder", "Switch the embedding model in the background"),
         ("models", "Installed Ollama models, recommendations, hosted catalogue"),
         ("corrections", "Corrections your own delete, replace or edit closed"),
+        ("outcome", "Report whether recalled memories helped (trains ranking)"),
     ]),
     ("Privacy & compliance", [
         # gdpr shipped in 4.0.6 but was never listed here, so `slm help` did not
@@ -3433,24 +3441,9 @@ def cmd_doctor(args: Namespace) -> None:
                         f"{config.llm.api_base}/api/tags", timeout=5.0,
                     )
                     if resp.status_code == 200:
-                        models = [
-                            m["name"].split(":")[0]
-                            for m in resp.json().get("models", [])
-                        ]
-                        has_llm = config.llm.model.split(":")[0] in models
-                        if has_llm:
-                            _check(
-                                "Ollama", "PASS",
-                                f"running, {len(models)} models, "
-                                f"'{config.llm.model}' available",
-                            )
-                        else:
-                            _check(
-                                "Ollama", "WARN",
-                                f"running but '{config.llm.model}' "
-                                f"not pulled",
-                                f"ollama pull {config.llm.model}",
-                            )
+                        from superlocalmemory.cli.doctor_models import local_model_finding
+                        models = [m["name"] for m in resp.json().get("models", [])]
+                        _check("Ollama extraction model", *local_model_finding(config, models))
                     else:
                         _check(
                             "Ollama", "WARN",

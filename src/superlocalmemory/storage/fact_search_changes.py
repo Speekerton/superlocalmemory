@@ -25,8 +25,10 @@ restore, migrations), and a trigger sees every one of them.
 The UPDATE triggers name their columns, so recall's own access-counter updates
 are never logged (they would turn every recall into a refresh). Each row says
 what changed: ``v`` (vector, owner, scope or visibility), ``k`` (kind or legacy
-type) or ``*`` (inserted or deleted). A kind backfill therefore never makes the
-vector index re-read embeddings.
+type), ``e`` (the fact's canonical entity links, which the entity graph follows
+without a rebuild: retrieval/graph_catchup) or ``*`` (inserted or deleted). A
+kind backfill therefore never makes the vector index re-read embeddings, and an
+entity re-link never does either.
 
 The log keeps the newest :data:`RETAINED_CHANGES` entries; the trigger prunes
 older ones itself, so nothing has to maintain it. A reader further behind than
@@ -58,11 +60,14 @@ KIND_COLUMNS: tuple[str, ...] = (
     "quarantined", "archive_status",
 )
 
+#: Columns whose change moves a fact in the entity graph (``e`` rows).
+ENTITY_COLUMNS: tuple[str, ...] = ("canonical_entities_json",)
+
 _PRUNE = (
     f"DELETE FROM {TABLE} WHERE seq <= "
     f"(SELECT MAX(seq) FROM {TABLE}) - {RETAINED_CHANGES};"
 )
-_EVENTS = ("insert", "delete", "update_vector", "update_kind")
+_EVENTS = ("insert", "delete", "update_vector", "update_kind", "update_entities")
 
 
 def trigger_name(event: str) -> str:
@@ -117,10 +122,12 @@ def ddl(conn: Any) -> str:
         return ""
     vector = tuple(c for c in VECTOR_COLUMNS if c in present)
     kind = tuple(c for c in KIND_COLUMNS if c in present)
+    entities = tuple(c for c in ENTITY_COLUMNS if c in present)
     return "\n".join((
         _TABLE_DDL,
         _update_trigger("update_vector", vector, "v"),
         _update_trigger("update_kind", kind, "k"),
+        _update_trigger("update_entities", entities, "e") if entities else "",
         "",
     ))
 

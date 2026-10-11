@@ -38,7 +38,7 @@ def test_preview_changes_nothing(root, capsys) -> None:
     before = _state(root / "memory.db")
     assert integrity_cmd.cmd_db_repair_entities(_args()) == 0
     data = _out(capsys)["data"]
-    assert data["facts_relinked"] == 5 and data["changed"] is False
+    assert data["facts_relinked"] == 6 and data["changed"] is False
     assert _state(root / "memory.db") == before
 
 
@@ -52,7 +52,7 @@ def test_apply_backs_up_then_repairs_and_undo_restores(root, capsys) -> None:
     before = _state(root / "memory.db")
     assert integrity_cmd.cmd_db_repair_entities(_args(apply=True, root=str(root))) == 0
     data = _out(capsys)["data"]
-    assert data["facts_relinked"] == 5 and data["backup"]
+    assert data["facts_relinked"] == 6 and data["backup"]
     assert list((root / "backups").glob("*pre-entity-repair*"))
     assert integrity_cmd.cmd_db_repair_entities(_args(undo=data["run_id"], root=str(root))) == 0
     assert _state(root / "memory.db") == before
@@ -70,7 +70,7 @@ def test_the_route_refuses_another_data_folder(root, monkeypatch) -> None:
                        json={"root": "/elsewhere"}).status_code == 409
     assert _state(root / "memory.db") == before
     body = client.post("/api/integrity/repair-entities", json={"root": str(root)}).json()
-    assert body["facts_relinked"] == 5 and body["ran_in"] == "daemon"
+    assert body["facts_relinked"] == 6 and body["ran_in"] == "daemon"
     again = client.post("/api/integrity/repair-entities",
                         json={"root": str(root), "undo_run_id": "nope"})
     assert again.status_code == 409

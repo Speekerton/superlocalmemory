@@ -354,21 +354,27 @@ class SkillPerformanceMiner:
         ).hexdigest()[:32]
 
         existing = conn.execute(
-            "SELECT id, confidence FROM behavioral_assertions WHERE id = ?",
+            "SELECT id, confidence, evidence_count, source "
+            "FROM behavioral_assertions WHERE id = ?",
             (assertion_id,),
         ).fetchone()
 
         confidence = min(0.85, max(0.3, abs(eff) * 0.8 + total / 100))
 
         if existing:
-            old_conf = dict(existing)["confidence"]
-            new_conf = old_conf + (1.0 - old_conf) * REINFORCEMENT_NUDGE
+            row = dict(existing)
+            # Idempotent (audit BRN-02): a rejected rule stays rejected, and a
+            # re-run over the same evidence changes nothing. Confidence is a
+            # function of the evidence, not of how often mining ran.
+            if row.get("source") == "rejected":
+                return "suppressed"
+            if int(total) <= int(row.get("evidence_count") or 0):
+                return "unchanged"
             conn.execute(
                 "UPDATE behavioral_assertions SET "
                 "action = ?, confidence = ?, evidence_count = ?, "
-                "reinforcement_count = reinforcement_count + 1, "
-                "last_reinforced_at = ?, updated_at = ? WHERE id = ?",
-                (action, round(min(0.95, new_conf), 4), total, now, now, assertion_id),
+                "updated_at = ? WHERE id = ?",
+                (action, round(confidence, 4), total, now, assertion_id),
             )
             return "reinforced"
         else:
@@ -399,17 +405,20 @@ class SkillPerformanceMiner:
         ).hexdigest()[:32]
 
         existing = conn.execute(
-            "SELECT id FROM behavioral_assertions WHERE id = ?",
+            "SELECT id, evidence_count, source FROM behavioral_assertions "
+            "WHERE id = ?",
             (assertion_id,),
         ).fetchone()
 
         if existing:
-            conn.execute(
-                "UPDATE behavioral_assertions SET "
-                "action = ?, reinforcement_count = reinforcement_count + 1, "
-                "last_reinforced_at = ?, updated_at = ? WHERE id = ?",
-                (action, now, now, assertion_id),
-            )
+            row = dict(existing)
+            if (row.get("source") != "rejected"
+                    and int(corr_data["count"]) > int(row.get("evidence_count") or 0)):
+                conn.execute(
+                    "UPDATE behavioral_assertions SET action = ?, "
+                    "evidence_count = ?, updated_at = ? WHERE id = ?",
+                    (action, int(corr_data["count"]), now, assertion_id),
+                )
         else:
             conn.execute(
                 "INSERT INTO behavioral_assertions "

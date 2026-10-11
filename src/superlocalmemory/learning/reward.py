@@ -673,11 +673,10 @@ class EngagementRewardModel:
             return _FALLBACK_REWARD
 
         # S9-W1 C1: feed the settled reward into the shadow router so
-        # LLD-10 ShadowTest / ModelRollback see live A/B signals. Reward
-        # in [0, 1] is the NDCG@10 proxy per LLD-08 — it is computed from
-        # engagement signals (cite/edit/dwell/requery) which directly
-        # reflect recall quality. Fail-soft so router issues never poison
-        # the finalize_outcome return contract.
+        # LLD-10 ShadowTest / ModelRollback see live A/B signals. The value
+        # is an ENGAGEMENT reward in [0, 1] (cite/edit/dwell/requery), not an
+        # NDCG@10 — it has no ranked relevance list (audit BRN-19). Fail-soft
+        # so router issues never poison the finalize_outcome return contract.
         if _qid:
             try:
                 from superlocalmemory.core import recall_pipeline as _rp
@@ -689,7 +688,7 @@ class EngagementRewardModel:
                     learning_db=_learn_db,
                     profile_id=_pid,
                     query_id=str(_qid),
-                    ndcg_at_10=float(reward),
+                    reward=float(reward),
                 )
             except Exception as exc:  # noqa: BLE001 — defence in depth
                 logger.debug("feed_recall_settled failed (non-fatal): %s", exc)

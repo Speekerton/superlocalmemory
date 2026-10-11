@@ -150,6 +150,9 @@ from superlocalmemory.storage.migrations import (
     M054_saved_views as _M054,
 )
 from superlocalmemory.storage.migrations import (
+    M055_learning_attribution as _M055,
+)
+from superlocalmemory.storage.migrations import (
     M043_quarantine_display_summaries as _M043,
 )
 
@@ -224,6 +227,11 @@ MIGRATIONS: list[Migration] = [
     # learning.db so the upgrade copies only the smaller database.
     Migration(name=_M054.NAME, db_target="learning", ddl=_M054.DDL,
               dependencies=(_M003.NAME,)),
+    # M055: durable learning attribution (4.1.25). One outcome settles one
+    # play (bandit_plays.outcome_id, unique) and a shadow test records which
+    # arm and model served each recall. learning.db only; additive.
+    Migration(name=_M055.NAME, db_target="learning", ddl=_M055.DDL,
+              dependencies=(_M005.NAME, _M044.NAME)),
     # Review-gated correction metadata is self-contained in memory.db. It
     # contains identifiers only and does not alter temporal fact state.
     Migration(name=_M042.NAME, db_target="memory", ddl=_M042.DDL,

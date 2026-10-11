@@ -8,8 +8,6 @@
 
 from __future__ import annotations
 
-import importlib.util
-import sqlite3
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import os
 import uuid
 from typing import TYPE_CHECKING, Protocol
 

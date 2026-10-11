@@ -438,14 +438,14 @@ def test_ensure_daemon_does_not_unlink_the_start_lock(root, monkeypatch):
     assert daemon_mod._lock_file_path().exists()
 
 
-def test_cleanup_stops_the_guardian_before_clearing_the_record(root):
+def test_cleanup_stops_the_guardian_before_clearing_the_record(root, monkeypatch):
     from superlocalmemory.infra.instance_lock import get_instance_lock
     from superlocalmemory.server import unified_daemon
 
     lock = get_instance_lock()
     ours = _descriptor(state="ready")
     assert lock.try_acquire()
-    unified_daemon._ACTIVE_DAEMON_DESCRIPTOR = ours
+    monkeypatch.setattr(unified_daemon, "_ACTIVE_DAEMON_DESCRIPTOR", ours)
     try:
         from superlocalmemory.infra.daemon_identity import publish_if_owner
         publish_if_owner(ours, lock)
@@ -464,7 +464,6 @@ def test_cleanup_stops_the_guardian_before_clearing_the_record(root):
         assert unified_daemon._RECORD_GUARDIAN is None
         assert not descriptor_path().exists()
     finally:
-        unified_daemon._ACTIVE_DAEMON_DESCRIPTOR = None
         unified_daemon._stop_record_guardian()
         lock.release()
 

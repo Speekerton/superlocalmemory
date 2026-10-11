@@ -78,7 +78,6 @@ def test_marker_carries_no_paths(db_path: Path) -> None:
 
 
 def test_import_of_a_marked_record_saves_plain_text(engine_with_mock_deps) -> None:
-    from superlocalmemory.core.ingestion_command import IngestionOperationRepository
     from superlocalmemory.storage.migrations import M018_ingestion_operations
 
     engine = engine_with_mock_deps

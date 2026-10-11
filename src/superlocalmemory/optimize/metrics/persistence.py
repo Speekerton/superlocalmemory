@@ -8,11 +8,10 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 from typing import TYPE_CHECKING
 
 from superlocalmemory.optimize.metrics.counters import MetricsCollector
-from superlocalmemory.optimize.storage.db import CacheDB, MetricsSnapshot
+from superlocalmemory.optimize.storage.db import CacheDB
 
 if TYPE_CHECKING:
     pass

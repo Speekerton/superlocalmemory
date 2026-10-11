@@ -18,8 +18,6 @@ import pytest
 
 from superlocalmemory.code_graph.git_hooks import (
     _HOOK_MARKER,
-    _HOOK_START,
-    _HOOK_END,
     install_post_commit_hook,
     run_post_commit,
     uninstall_post_commit_hook,

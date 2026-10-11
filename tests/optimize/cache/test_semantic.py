@@ -7,10 +7,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import random
 from types import SimpleNamespace
-from typing import Any
 
 import numpy as np
 import pytest
@@ -226,7 +224,6 @@ def test_vcache_noop_semantic_tier_signature_compat():
 def test_vcache_ann_search_skips_wrong_context_fp(config_enabled, tmp_db, req_factory):
     """A-13: context-fp mismatch → HARD exclusion."""
     from superlocalmemory.optimize.storage.db import CacheDB
-    from superlocalmemory.optimize.cache.semantic import VCacheSemantic as _V
     import sqlite3 as _sq
     tenant = "t1"
     text = "Tell me about Mars"
@@ -279,7 +276,6 @@ def test_vcache_does_not_call_vec_db_when_disabled(config_disabled, tmp_db, req_
 def test_vcache_centroid_defense_blocks_outlier(config_enabled, tmp_db, req_factory):
     """Outlier query (very far from centroid) → return None (adversarial)."""
     from superlocalmemory.optimize.storage.db import CacheDB
-    from superlocalmemory.optimize.cache.semantic import VCacheSemantic as _V
     import sqlite3 as _sq
     tenant = "t1"
     # Build a cluster of 10 vectors all along axis 0

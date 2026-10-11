@@ -23,8 +23,6 @@ Contracts enforced (authoritative per IMPLEMENTATION-MANIFEST C.2):
 
 from __future__ import annotations
 
-import hashlib
-import os
 import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -39,7 +37,6 @@ pytestmark = pytest.mark.benchmark
 from tests.test_benchmarks.evo_memory import (  # noqa: E402
     EvoMemoryBenchmark,
     ComparisonResult,
-    DayMetrics,
     compute_mrr_at_k,
     compute_recall_at_k,
     verify_fixture_sha256,

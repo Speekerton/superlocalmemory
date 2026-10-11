@@ -132,6 +132,13 @@ def installed_plugin_versions(home: Path | None = None) -> dict[str, str]:
     codex_root = home / ".codex" / "plugins"
     if codex_root.is_dir():
         found.update(_from_manifests(codex_root))
+    # What `slm upgrade-hosts` / `slm codex install` actually refresh is the
+    # assets under ~/.agents/skills and ~/.codex/agents, stamped with the version
+    # that wrote them. That is the Codex truth when it exists; the plugin cache
+    # above is Codex's own marketplace copy and is only reported as a note.
+    managed = codex_managed_version(home)
+    if managed:
+        found["superlocalmemory-codex"] = managed
     vscode_root = home / ".vscode" / "extensions"
     if vscode_root.is_dir():  # many extensions: shallow look only
         for manifest in vscode_root.glob("*/plugin.json"):
@@ -142,6 +149,42 @@ def installed_plugin_versions(home: Path | None = None) -> dict[str, str]:
             if isinstance(data, dict) and str(data.get("name", "")) in PLUGIN_NAMES:
                 found[manifest.parent.name] = str(data.get("version", "unknown"))
     return found
+
+
+def codex_managed_version(home: Path | None = None) -> str | None:
+    """The SLM version `slm upgrade-hosts` last refreshed for Codex, if it has."""
+    from superlocalmemory.hooks.codex_assets import read_version_stamp
+
+    return read_version_stamp(home or Path.home())
+
+
+def codex_cache_note(found: dict[str, str], home: Path | None = None) -> str:
+    """A sentence about a Codex plugin-cache copy that differs from the managed assets.
+
+    Empty when there is nothing to say. The cache is Codex's own marketplace
+    copy; `slm upgrade-hosts` does not touch it, so it is named, not counted as stale.
+    """
+    home = home or Path.home()
+    managed = found.get("superlocalmemory-codex")
+    if not managed or not (home / ".codex" / "plugins").is_dir():
+        return ""
+    cached = _from_manifests(home / ".codex" / "plugins").get("superlocalmemory-codex")
+    if not cached or cached == managed:
+        return ""
+    return (f"Codex's own plugin cache holds a {cached} copy, which `slm upgrade-hosts` "
+            f"does not refresh (it refreshes the {managed} assets Codex reads from "
+            "~/.agents/skills and ~/.codex/agents)")
+
+
+def update_command_for(stale: dict[str, str]) -> str:
+    """The command that moves each stale plugin forward, by host."""
+    commands: list[str] = []
+    if any(not name.startswith("superlocalmemory-codex") for name in stale):
+        commands.append("claude plugin marketplace update qualixar && "
+                        "claude plugin update superlocalmemory@qualixar")
+    if any(name.startswith("superlocalmemory-codex") for name in stale):
+        commands.append("slm upgrade-hosts --host codex --apply")
+    return "  then  ".join(commands)
 
 
 def running_in_virtualenv() -> bool:

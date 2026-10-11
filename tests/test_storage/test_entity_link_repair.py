@@ -43,8 +43,19 @@ FACTS = {  # fact -> (raw names, links as saved by the old resolver)
     "f_meena": (["Meena"], ["e_menon"]),
     "f_menon": (["Menon"], ["e_menon"]),
     "f_priya": (["Priya"], ["e_alice"]),
+    "f_alice": (["Alice Smith"], ["e_alice"]),
     "f_none": (["Zed"], []),
+    # Saved by the old extractor: status words, an id, a path word, a stamp.
+    "f_note": (["Final", "PASS", "LIVE", "IST", "b2f4b74fbbad434c", "Users", "Varun",
+                "2026-09-14 00:55"], ["e_users", "e_live", "e_hex", "e_stamp"]),
 }
+NOTE = ("Final: PASS. LIVE at 2026-09-14 00:55 IST for b2f4b74fbbad434c, see "
+        "/Users/varun/notes.md. Varun reviewed it.")
+#: Junk the old extractor made entities of; e_orphan has no fact at all, and
+#: e_summary has none either but a temporal event of an unrelinked fact names it.
+JUNK = (("e_users", "Users"), ("e_live", "LIVE"), ("e_hex", "b2f4b74fbbad434c"),
+        ("e_stamp", "2026-04-29 16:57"), ("e_orphan", "PASS"), ("e_summary", "VERIFIED"),
+        ("e_speaker", "Ravi Kumar"))
 EDGES = [("f_lost", "f_pg", "entity"), ("f_pg", "f_pod", "entity"),
          ("f_pg", "f_pg2", "entity"), ("f_meena", "f_menon", "temporal"),
          ("f_kube", "f_pg2", "entity"), ("f_lost", "f_pod", "semantic")]
@@ -66,10 +77,20 @@ def _build(path: Path) -> DatabaseManager:
     db.store_alias(EntityAlias(entity_id="e_alice", alias="Priya", source="llm"), P)
     # A model's alias the rules leave to a model (one letter in a short word).
     db.store_alias(EntityAlias(entity_id="e_alice", alias="Alyce Smith", source="llm"), P)
+    for eid, name in JUNK:
+        db.store_entity(CanonicalEntity(entity_id=eid, profile_id=P, canonical_name=name))
+        db.store_alias(EntityAlias(entity_id=eid, alias=name, source="canonical"), P)
+    db.store_alias(EntityAlias(entity_id="e_stamp", alias="2026-04-29 16:58",
+                               source="jaro_winkler"), P)
+    # A profile derived from junk goes with it; an event of a fact the repair
+    # does not relink keeps its entity.
+    db.execute("INSERT INTO entity_profiles (profile_entry_id, entity_id, profile_id, "
+               "knowledge_summary) VALUES ('ep1', 'e_orphan', ?, 'derived')", (P,))
     db.store_memory(MemoryRecord(memory_id="m0", profile_id=P, content="notes"))
     for fact_id, (raw, links) in FACTS.items():
+        text = NOTE if fact_id == "f_note" else f"note about {' and '.join(raw)}"
         db.store_fact(AtomicFact(fact_id=fact_id, memory_id="m0", profile_id=P,
-                                 content=f"note about {' and '.join(raw)}", entities=raw,
+                                 content=text, entities=raw,
                                  canonical_entities=links,
                                  observation_date="2026-10-01T00:00:00+00:00"))
     for i, (a, b, kind) in enumerate(EDGES):
@@ -77,6 +98,9 @@ def _build(path: Path) -> DatabaseManager:
                                 edge_type=EdgeType(kind), weight=0.5))
     db.store_temporal_event(TemporalEvent(event_id="ev_pg", profile_id=P, entity_id="e_lost",
                                           fact_id="f_pg", observation_date="2026-10-01"))
+    db.store_temporal_event(TemporalEvent(event_id="ev_keep", profile_id=P,
+                                          entity_id="e_summary", fact_id="f_none",
+                                          observation_date="2026-10-01"))
     db.store_temporal_event(TemporalEvent(event_id="ev_lost", profile_id=P,
                                           entity_id="e_lost", fact_id="f_lost",
                                           observation_date="2026-10-01"))
@@ -93,7 +117,7 @@ def _state(path: Path) -> dict:
     try:
         return {t: sorted(map(repr, conn.execute(f"SELECT * FROM {t}").fetchall())) for t in (
             "canonical_entities", "entity_aliases", "graph_edges", "temporal_events",
-            "fact_entity_associations")} | {"links": sorted(conn.execute(
+            "fact_entity_associations", "entity_profiles")} | {"links": sorted(conn.execute(
                 "SELECT fact_id, canonical_entities_json FROM atomic_facts").fetchall())}
     finally:
         conn.close()
@@ -120,10 +144,12 @@ def test_the_dry_run_reports_and_changes_nothing(db) -> None:
     before = _state(db.db_path)
     report = _plan(db.db_path)
     assert _state(db.db_path) == before
-    assert report["aliases_removed"] == 13          # Lost's 11, Meena, Priya
+    assert report["aliases_removed"] == 14          # Lost's 11, Meena, Priya, a stamp
     assert report["aliases_kept_relabelled"] == 2   # Kubernets (typo), Alyce Smith (model)
-    assert report["facts_relinked"] == 5
-    assert report["entities_to_create"] == 4        # PostgreSQL, Podcasts, Meena, Priya
+    assert report["facts_relinked"] == 6
+    assert report["entities_to_create"] == 5        # PostgreSQL, Podcasts, Meena, Priya, Varun
+    assert report["junk_entities_to_remove"] == 5   # Users, LIVE, the id, the stamp, PASS
+    assert report["junk_entities_kept_referenced"] == 1  # VERIFIED: a temporal event
     assert report["edges_removed"] == 3
     assert report["temporal_events_repointed"] == 1
     assert report["most_aliases_removed"][0] == {"entity": "Lost", "aliases_removed": 11}
@@ -136,11 +162,19 @@ def test_apply_dissolves_the_chain_and_relinks_every_fact(db) -> None:
     assert links["f_lost"] == ["Lost"]
     assert links["f_pg"] == ["PostgreSQL"]
     assert links["f_pod"] == ["Podcasts"]
-    assert links["f_pg2"] == ["PostgreSQL", "Kubernetes"]
+    assert sorted(links["f_pg2"]) == ["Kubernetes", "PostgreSQL"]
     assert links["f_kube"] == ["Kubernetes"]
     assert links["f_meena"] == ["Meena"] and links["f_menon"] == ["Menon"]
     assert links["f_priya"] == ["Priya"]
     assert links["f_none"] == []
+    assert links["f_note"] == ["Varun"]
+    left = {dict(r)["canonical_name"] for r in db.execute(
+        "SELECT canonical_name FROM canonical_entities WHERE entity_id IN "
+        "('e_users','e_live','e_hex','e_stamp','e_orphan','e_summary','e_speaker')")}
+    assert left == {"VERIFIED", "Ravi Kumar"}  # one still named elsewhere; a valid name
+    assert not db.execute("SELECT 1 FROM entity_aliases WHERE entity_id = 'e_users'")
+    assert not db.execute("SELECT 1 FROM entity_profiles WHERE entity_id = 'e_orphan'")
+    assert result["junk_entities_removed"] == 5
     aliases = {dict(r)["alias"]: dict(r)["source"] for r in db.execute(
         "SELECT alias, source FROM entity_aliases WHERE entity_id = 'e_lost'")}
     assert aliases == {"Lost": "canonical"}
@@ -171,7 +205,8 @@ def test_undo_puts_back_exactly_what_was_there(db) -> None:
     before = _state(db.db_path)
     run = ela.apply(db.db_path)["run_id"]
     restored = ela.undo(db.db_path, run)
-    assert restored["facts_restored"] == 5 and restored["created_entities_removed"] == 4
+    assert restored["facts_restored"] == 6 and restored["created_entities_removed"] == 5
+    assert restored["junk_entities_restored"] == 5
     assert _state(db.db_path) == before
     with pytest.raises(ela.UndoRefused):
         ela.undo(db.db_path, run)

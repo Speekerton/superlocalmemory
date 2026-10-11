@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from superlocalmemory.storage.database import DatabaseManager
 
 from superlocalmemory.core.receipt_guard import keeps_own_fact
+from superlocalmemory.encoding.entity_validity import valid_names
 from superlocalmemory.storage.erasure_fence import is_erasing
 from superlocalmemory.storage.models import (
     AtomicFact,
@@ -335,9 +336,13 @@ def enrich_fact(
         if embedder and embedding:
             fisher_mean, fisher_variance = embedder.compute_fisher_params(embedding)
 
+    # Names from a model or an older extractor pass the same validity rules as
+    # the rule-based extractor's (encoding/entity_validity) before they can
+    # become entities: no ids, dates, paths, status words or fragments.
+    entities = valid_names(list(fact.entities or []), fact.content)
     canonical = {}
-    if entity_resolver and fact.entities:
-        canonical = entity_resolver.resolve(fact.entities, profile_id)
+    if entity_resolver and entities:
+        canonical = entity_resolver.resolve(entities, profile_id)
 
     temporal = {}
     if temporal_parser:
@@ -353,7 +358,7 @@ def enrich_fact(
     return AtomicFact(
         fact_id=fact.fact_id, memory_id=record.memory_id,
         profile_id=profile_id, content=fact.content,
-        fact_type=fact.fact_type, entities=fact.entities,
+        fact_type=fact.fact_type, entities=entities,
         canonical_entities=list(canonical.values()),
         observation_date=fact.observation_date or record.session_date,
         referenced_date=fact.referenced_date or temporal.get("referenced_date"),
@@ -1325,6 +1330,7 @@ def run_store_fact_direct(
             fact.fisher_mean, fact.fisher_variance = (
                 embedder.compute_fisher_params(fact.embedding)
             )
+    fact.entities = valid_names(list(fact.entities or []), fact.content)
     if entity_resolver and fact.entities:
         canonical = entity_resolver.resolve(
             fact.entities, profile_id,

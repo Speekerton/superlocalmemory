@@ -107,6 +107,13 @@ GOLD: list[tuple[str, set[str]]] = [
 # celebrated, not silently required.
 _KNOWN_RESIDUAL_FALSE_POSITIVES = {"French"}
 
+# 4.1.25: a single Capitalised everyday English word where a sentence starts is
+# not evidence of a name (on the author's store that rule removes "Final",
+# "Users", "Tested" and hundreds like them). The cost on this set is one name:
+# "Apple" opening "Apple and Microsoft both reported...". Named here so it is
+# a decision, not a silent loss; the same word mid-sentence is still found.
+_KNOWN_RESIDUAL_FALSE_NEGATIVES = {"Apple"}
+
 
 def _score(gold_set: list[tuple[str, set[str]]]) -> tuple[int, int, int]:
     """Return (true_positives, false_positives, false_negatives), micro-averaged."""
@@ -115,8 +122,13 @@ def _score(gold_set: list[tuple[str, set[str]]]) -> tuple[int, int, int]:
         predicted = set(_extract_entities(sentence))
         tp += len(predicted & gold)
         fp += len({e for e in predicted - gold if e not in _KNOWN_RESIDUAL_FALSE_POSITIVES})
-        fn += len(gold - predicted)
+        fn += len(gold - predicted - _KNOWN_RESIDUAL_FALSE_NEGATIVES)
     return tp, fp, fn
+
+
+def test_the_known_false_negative_is_only_at_a_sentence_start() -> None:
+    assert "Apple" not in _extract_entities("Apple and Microsoft both reported strong earnings.")
+    assert "Apple" in _extract_entities("Steve Jobs co-founded Apple in a garage.")
 
 
 class TestEntityExtractionPrecisionRecall:

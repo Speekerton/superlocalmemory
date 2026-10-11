@@ -156,8 +156,17 @@ def sidecar_tables(path: Path, profile_id: str, options: ExportOptions, *,
     return out
 
 
-def code_graph(path: Path, options: ExportOptions) -> dict[str, list[dict]] | None:
-    """``code_graph.db`` in full (repo paths, file and symbol names identify a person at work)."""
+def code_graph(path: Path, options: ExportOptions, *,
+               owned_fact_ids: list[str] | None = None) -> dict[str, list[dict]] | None:
+    """``code_graph.db`` for one person (repo paths, file and symbol names identify one at work).
+
+    The graph has no owner column. ``owned_fact_ids=None`` means the person is
+    the only profile on this computer, so the whole graph is theirs. Otherwise
+    only what their own memories point at is exported: the links, the symbols
+    they link to and the files of those symbols. The rest of a shared graph
+    describes the source code and may name another person's repositories; a
+    portability export must not hand it over.
+    """
     if not path.exists():
         return None
     out: dict[str, list[dict]] = {}
@@ -168,33 +177,81 @@ def code_graph(path: Path, options: ExportOptions) -> dict[str, list[dict]] | No
         options.skipped_tables[path.name] = type(exc).__name__
         return None
     try:
-        names = [r[0] for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
-        for table in names:
-            if table.endswith(_FTS_SUFFIXES):
-                continue
-            try:
-                # Every row, a page at a time: a fixed LIMIT once cut a large
-                # repository's graph at 10,000 rows and said nothing.
-                out[table] = list(table_rows(conn, table, options))
-            except sqlite3.Error as exc:
-                logger.warning("export: code_graph.%s skipped: %s", table, type(exc).__name__)
-                options.skipped_tables[f"{path.name}:{table}"] = type(exc).__name__
+        if owned_fact_ids is None:
+            _whole_graph(conn, path, options, out)
+        else:
+            _linked_graph(conn, path, options, out, owned_fact_ids)
     finally:
         conn.close()
     return out or None
+
+
+def _whole_graph(conn: sqlite3.Connection, path: Path, options: ExportOptions,
+                 out: dict[str, list[dict]]) -> None:
+    names = [r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
+    for table in names:
+        if table.endswith(_FTS_SUFFIXES):
+            continue
+        try:
+            # Every row, a page at a time: a fixed LIMIT once cut a large
+            # repository's graph at 10,000 rows and said nothing.
+            out[table] = list(table_rows(conn, table, options))
+        except sqlite3.Error as exc:
+            logger.warning("export: code_graph.%s skipped: %s", table, type(exc).__name__)
+            options.skipped_tables[f"{path.name}:{table}"] = type(exc).__name__
+
+
+#: (table, how its rows are selected given the linked node ids / file paths)
+_LINKED_SELECTORS = (
+    ("code_memory_links", "slm_fact_id IN (SELECT value FROM json_each(?))", "facts"),
+    ("graph_nodes", "node_id IN (SELECT code_node_id FROM code_memory_links "
+                    "WHERE slm_fact_id IN (SELECT value FROM json_each(?)))", "facts"),
+    ("graph_files", "file_path IN (SELECT file_path FROM graph_nodes WHERE node_id IN "
+                    "(SELECT code_node_id FROM code_memory_links "
+                    "WHERE slm_fact_id IN (SELECT value FROM json_each(?))))", "facts"),
+)
+
+
+def _linked_graph(conn: sqlite3.Connection, path: Path, options: ExportOptions,
+                  out: dict[str, list[dict]], owned: list[str]) -> None:
+    import json
+
+    names = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")}
+    for table, where, _kind in _LINKED_SELECTORS:
+        if table not in names or "code_memory_links" not in names:
+            continue
+        try:
+            out[table] = list(table_rows(conn, table, options, where=where,
+                                         params=(json.dumps(owned),)))
+        except sqlite3.Error as exc:
+            logger.warning("export: code_graph.%s skipped: %s", table, type(exc).__name__)
+            options.skipped_tables[f"{path.name}:{table}"] = type(exc).__name__
+    left_out = sorted(n for n in names
+                      if n not in out and not n.endswith(_FTS_SUFFIXES))
+    if left_out:
+        options.not_exported.append({"tables": left_out, "reason": (
+            "the code graph is shared by every workspace on this computer and records no "
+            "owner. Only the links from your memories to code, and the symbols and files they "
+            "point at, are exported; the rest describes source code and may name another "
+            "person's repositories")})
 
 
 class ProfileExport:
     """Reads one profile's data for an export; see the module docstring."""
 
     def __init__(self, db: Any, profile_id: str, tables: list[str], *,
-                 data_root: Path | None, options: ExportOptions | None = None) -> None:
+                 data_root: Path | None, options: ExportOptions | None = None,
+                 code_graph_facts: list[str] | None = None) -> None:
         self._db = db
         self._profile = profile_id
         self._tables = tables
         self._root = data_root
         self.options = options or ExportOptions()
+        #: ``None`` exports the whole code graph (the person is the only profile);
+        #: a list restricts it to what those facts link to.
+        self._code_graph_facts = code_graph_facts
 
     # -- sections -----------------------------------------------------------
 
@@ -203,7 +260,8 @@ class ProfileExport:
         yield from self._memory_db_sections()
         if self._root is None:
             return
-        graph = code_graph(self._root / "code_graph.db", self.options)
+        graph = code_graph(self._root / "code_graph.db", self.options,
+                           owned_fact_ids=self._code_graph_facts)
         if graph is not None:
             yield "code_graph", "object", graph
         from superlocalmemory.compliance.gdpr_media_export import export_media

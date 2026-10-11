@@ -606,6 +606,30 @@ class LearningDatabase:
         finally:
             conn.close()
 
+    @staticmethod
+    def _other_profile_tables(conn: sqlite3.Connection, already: list[str]) -> list[str]:
+        """Every other table of learning.db that carries a profile (a producer added later).
+
+        ``channel_credits`` and ``co_retrieval_edges`` (written by ordinary recall)
+        were not in the list above, so an erasure left the ids of the memories a
+        person's queries co-retrieved. Receipts and the markers that refuse a late
+        write are decided by ``profile_fold_sidecars`` and are not touched here.
+        """
+        from superlocalmemory.storage.profile_fold_sidecars import DELETE, LEARNING_DECISIONS
+
+        extra: list[str] = []
+        for (name,) in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'").fetchall():
+            if name in already or name.startswith("sqlite_"):
+                continue
+            try:
+                cols = {r[1] for r in conn.execute(f'PRAGMA table_info("{name}")')}
+            except sqlite3.OperationalError:
+                continue
+            if "profile_id" in cols and LEARNING_DECISIONS.get(name, DELETE) == DELETE:
+                extra.append(name)
+        return extra
+
     def reset(self, profile_id: Optional[str] = None) -> None:
         """Delete learning data. GDPR Article 17 handler.
 
@@ -659,6 +683,8 @@ class LearningDatabase:
                         "SELECT name FROM sqlite_master WHERE type='table'"
                     )
                 }
+                if profile_id:
+                    tables = [*tables, *self._other_profile_tables(conn, tables)]
                 for table in tables:
                     # A store predating any of these tables must not abort the
                     # erasure of the rest — an Article 17 request that fails

@@ -1316,4 +1316,5 @@
     }
   }
 
+  window.slmRenderEraseOutcome = renderEraseOutcome;
 }());

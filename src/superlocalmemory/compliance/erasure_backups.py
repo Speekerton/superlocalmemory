@@ -23,6 +23,24 @@ logger = logging.getLogger(__name__)
 #: Folders under the data root that hold full copies of the stores.
 SNAPSHOT_DIRS = ("backups", "pre-migration-snapshots")
 
+#: Folders of copies that are not SQLite files (the graph and vector stores a
+#: scale-engine promotion keeps for rollback). They hold entity names and
+#: vectors and cannot be read here, so each copy is an obligation of kind
+#: ``unreadable`` until it is deleted.
+OPAQUE_DIRS = ("scale-backups",)
+
+
+def _opaque_copies(root: Path) -> list[tuple[str, int]]:
+    found: list[tuple[str, int]] = []
+    for name in OPAQUE_DIRS:
+        folder = Path(root) / name
+        if not folder.is_dir() or folder.is_symlink():
+            continue
+        for child in sorted(folder.iterdir()):
+            if not child.is_symlink():
+                found.append((str(child), int(child.stat().st_mtime)))
+    return found
+
 
 def retention_days_from_config() -> int:
     """The configured obligation retention window, 90 days by default."""
@@ -68,6 +86,7 @@ def record_backup_obligations(
         report = bom.scan_backup_snapshots(Path(data_root) / name, profile_id)
         hits.extend(report.hits)
         unreadable.extend(report.unreadable)
+    unreadable.extend(_opaque_copies(Path(data_root)))
     counts["backup_snapshots_scanned"] = len(hits)
     recorded = 0
     for kind, found in (("contains", hits), ("unreadable", unreadable)):

@@ -27,6 +27,7 @@ _NOT_FAILURES = frozenset({"erasure_complete", "erasure_provable"})
 _RESIDUE_MARKERS = (
     "residue_rows", "fts_residue_rows", "owner_erasure_incomplete",
     "backup_obligations_pending", "erasure_aborted", "backup_snapshots_unreadable",
+    "optimize_capture_present",
 )
 
 #: What each marker means to the person, and the step that retries it.
@@ -48,6 +49,13 @@ _REMAINING: dict[str, tuple[str, str]] = {
                                 "Run the erasure again."),
     "pending_memories_failed": ("Queued saves of this profile could not be removed.",
                                 "Run the erasure again."),
+    "optimize_capture_present": (
+        "optimize_capture.jsonl holds recorded proxy traffic. It names no profile, so it "
+        "cannot be erased selectively.", "Delete optimize_capture.jsonl if you do not need it."),
+    "event_previews_failed": ("Previews of the profile's memories remain in the event log.",
+                              "Run the erasure again."),
+    "recall_queue_failed": ("Queued recall requests could not be cleared.",
+                            "Run the erasure again."),
     "admission_journal_failed": ("Saved requests of this profile could not be removed.",
                                  "Run the erasure again."),
     "sidecar_scrub_failed": ("Deleted text may still sit in free space inside a side database.",

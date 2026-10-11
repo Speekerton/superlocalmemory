@@ -686,6 +686,8 @@ class GDPRCompliance:
             erase_profile_sidecars(
                 data_root, getattr(self._db, "db_path", None), profile_id, counts)
 
+        self._scrub_profile_events(profile_id, _profile_fact_ids, counts)
+
         # Pass 2 — full-tenant wipe (every profile row in every table goes).
         # Each statement runs on its own connection with foreign keys ON (a
         # PRAGMA here would only reach a throwaway connection), so cascades
@@ -847,6 +849,26 @@ class GDPRCompliance:
         counts["erasure_report"] = erasure_outcome.describe(counts)
         logger.info("GDPR erasure for '%s': %d tables, %s", profile_id, len(tables), counts)
         return counts
+
+    def _scrub_profile_events(
+        self, profile_id: str, fact_ids: tuple[str, ...], counts: dict,
+    ) -> None:
+        """Blank event previews of the profile; they are filed under ``default`` by the HTTP path."""
+        from superlocalmemory.core import erasure_scrub
+
+        try:
+            ids = set(fact_ids)
+            for sql in ("SELECT memory_id AS i FROM memories WHERE profile_id = ?",
+                        "SELECT operation_id AS i FROM ingestion_operations WHERE profile_id = ?"):
+                try:
+                    ids.update(str(dict(r)["i"]) for r in self._db.execute(sql, (profile_id,)))
+                except Exception:  # noqa: BLE001 - a store without the table has none of its ids
+                    continue
+            counts["event_previews"] = erasure_scrub.scrub_profile_events(
+                self._db, profile_id, ids)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("GDPR erase: event preview scrub failed: %s", type(exc).__name__)
+            counts["event_previews_failed"] = 1
 
     def _sidecar_root(self) -> Path | None:
         """The data root whose side stores a targeted erasure must also clean."""
@@ -1182,85 +1204,20 @@ class GDPRCompliance:
     def _erase_code_graph(
         self, data_root: Path, *, profile_id: str = "", sole_profile: bool = True,
     ) -> dict:
-        """Erase this profile's share of the live code_graph.db (C2 — Art.17).
+        """Erase this profile's share of the live code_graph.db (C2 - Art.17).
 
-        The graph carries repository paths, file names and symbol names, and no
-        table in it has a profile_id. When the store holds ONE profile the whole
-        graph belongs to that person and wiping it is exactly right.
-
-        When it holds more than one, wiping it destroys the other people's data
-        too — and an erasure request that erases a second data subject is itself
-        a breach, not an over-achievement. So in that case only the rows that
-        are unambiguously this profile's are removed: ``code_memory_links``
-        joins a code node to an SLM fact, and facts carry a profile. The graph
-        of the source code stays, because it describes a repository rather than
-        a person, and the receipt says plainly that it was left.
-
-        Fail-open: an error is recorded in the returned dict so the caller can
-        surface it, but it does NOT abort the rest of the erasure.
+        See :mod:`superlocalmemory.compliance.erasure_code_graph`: the whole graph
+        when this is the only profile, otherwise only the links to this profile's
+        own memories. Fail-open: an error is recorded in the returned dict so the
+        caller can surface it, but it does NOT abort the rest of the erasure.
         """
-        result: dict = {"rows_deleted": 0}
-        code_graph_path = data_root / "code_graph.db"
-        if not code_graph_path.exists():
-            return result
-        try:
-            conn = sqlite3.connect(str(code_graph_path))
-            conn.isolation_level = None  # autocommit so VACUUM can run
-            try:
-                conn.execute("PRAGMA foreign_keys=OFF")
-                tables = [
-                    row[0]
-                    for row in conn.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table' "
-                        "AND name NOT LIKE 'sqlite_%'"
-                    ).fetchall()
-                ]
-                total = 0
-                conn.execute("BEGIN")
-                if sole_profile:
-                    for tbl in tables:
-                        # Skip FTS virtual-table shadow files — deleting base rows handles them
-                        if tbl.endswith((
-                            "_fts", "_fts_data", "_fts_idx",
-                            "_fts_content", "_fts_docsize", "_fts_config",
-                        )):
-                            continue
-                        cur = conn.execute(f"DELETE FROM {tbl}")  # noqa: S608
-                        total += cur.rowcount
-                    result["scope"] = "whole_graph"
-                else:
-                    result["scope"] = "links_only"
-                    result["retained_reason"] = (
-                        "another profile shares this graph; the source-code "
-                        "structure describes a repository, not this person, and "
-                        "deleting it would erase another data subject's records"
-                    )
-                    owned = self._fact_ids_for(profile_id) if profile_id else []
-                    if owned is None:
-                        # Not knowing which links are this person's is a failure
-                        # to erase, not an empty erasure.
-                        raise sqlite3.OperationalError(
-                            "could not list this profile's facts, so its code "
-                            "links cannot be identified"
-                        )
-                    if "code_memory_links" in tables and owned:
-                        cur = conn.execute(
-                            "DELETE FROM code_memory_links WHERE slm_fact_id IN "
-                            "(SELECT value FROM json_each(?))",
-                            (json.dumps(owned),),
-                        )
-                        total += cur.rowcount
-                conn.execute("PRAGMA foreign_keys=ON")
-                conn.execute("COMMIT")
-                # VACUUM must run outside any transaction (autocommit mode required)
-                conn.execute("VACUUM")
-                result["rows_deleted"] = total
-            finally:
-                conn.close()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("GDPR erase: code_graph.db wipe failed: %s", exc)
-            result["error"] = str(exc)
-        return result
+        from superlocalmemory.compliance.erasure_code_graph import erase_code_graph
+
+        owned = None
+        if not sole_profile:
+            owned = self._fact_ids_for(profile_id) if profile_id else []
+        return erase_code_graph(
+            Path(data_root), sole_profile=sole_profile, owned_fact_ids=owned)
 
     # -- C1: backup obligation helpers -------------------------------------
 

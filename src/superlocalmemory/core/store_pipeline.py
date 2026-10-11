@@ -646,8 +646,9 @@ def run_store(
         try:
             from superlocalmemory.core.injection import is_low_quality
             if is_low_quality(content):
-                logger.debug("Store rejected (low-quality content): %s...",
-                             content[:80].replace("\n", " "))
+                # Rejected text is saved nowhere; a log line would be its only copy,
+                # and a log is not covered by an erasure.
+                logger.debug("Store rejected (low-quality content, %d chars)", len(content))
                 return []
         except Exception:
             pass  # Best-effort gate; store succeeds if import fails

@@ -351,3 +351,21 @@ class TestLogging:
                 os.remove(path)
             except OSError:
                 pass
+
+
+def test_the_log_does_not_keep_the_prompt_unless_asked(monkeypatch, tmp_path):
+    """The log names no profile, so an erasure cannot reach it: it must not hold the text."""
+    log_path = str(tmp_path / "topic-shift.log")
+    monkeypatch.setattr(tsh, "_LOG_DIR", str(tmp_path))
+    monkeypatch.setattr(tsh, "_LOG_PATH", log_path)
+    monkeypatch.setattr(tsh, "_LOG_ENABLED", True)
+    monkeypatch.setattr(tsh, "_LOG_PROMPT_TEXT", False)
+
+    tsh._log_decision("s", ["alpha"], [], 0, False, "my secret prompt about Alice Zebrowski")
+
+    text = open(log_path, encoding="utf-8").read()
+    assert "Zebrowski" not in text and "[38 chars]" in text
+
+    monkeypatch.setattr(tsh, "_LOG_PROMPT_TEXT", True)
+    tsh._log_decision("s", ["alpha"], [], 0, False, "opted in to the text")
+    assert "opted in to the text" in open(log_path, encoding="utf-8").read()

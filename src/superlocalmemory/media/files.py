@@ -146,7 +146,23 @@ def remove_original(data_root: str | Path, relpath: str) -> bool:
         current = current / part
         if current.is_symlink():
             return False
+    _drop_backup_mirror_copy(data_root, relpath)
     if not target.is_file():
         return False
     target.unlink()
     return True
+
+
+def _drop_backup_mirror_copy(data_root: str | Path, relpath: str) -> None:
+    """The backup folder keeps a mirror of the originals until its next sync.
+
+    Removing only the live file left an erased picture's bytes in
+    ``backups/media-originals`` for as long as nothing re-synced it. (Copies
+    inside a finished backup set are backups: they are erasure obligations.)
+    """
+    mirrored = Path(data_root) / "backups" / "media-originals" / relpath
+    try:
+        if mirrored.is_file() and not mirrored.is_symlink():
+            mirrored.unlink()
+    except OSError:
+        pass  # the live erase result still stands; the next sync prunes it

@@ -421,7 +421,8 @@ def _verdict_of(snapshot: Path, profile_id: str) -> SnapshotVerdict:
     verdicts = [inspect_snapshot(f, profile_id) for f in files]
     if SnapshotVerdict.CONTAINS in verdicts:
         return SnapshotVerdict.CONTAINS
-    if SnapshotVerdict.UNKNOWN in verdicts or (not verdicts and snapshot.is_file()):
+    if SnapshotVerdict.UNKNOWN in verdicts or not verdicts:
+        # No database inside (a graph or vector store, say) cannot be shown clean.
         return SnapshotVerdict.UNKNOWN
     return SnapshotVerdict.CLEAN
 

@@ -34,7 +34,8 @@ def marker(path: str) -> str:
     return f"ZQXERASE-{path}-7731"
 
 
-def scan(root: Path, needles: list[str]) -> dict[str, list[str]]:
+def scan(root: Path, needles: list[str],
+         binary: dict[str, bytes] | None = None) -> dict[str, list[str]]:
     """``{relative file: [needles found in its bytes]}`` for every file under ``root``.
 
     Includes SQLite ``-wal``/``-shm`` and journal files, free pages inside a
@@ -43,6 +44,7 @@ def scan(root: Path, needles: list[str]) -> dict[str, list[str]]:
     """
     found: dict[str, list[str]] = {}
     encoded = [(n, [n.encode(enc) for enc in _ENCODINGS]) for n in needles]
+    encoded += [(name, [raw]) for name, raw in (binary or {}).items()]
     for path in sorted(root.rglob("*")):
         if path.is_symlink() or not path.is_file():
             continue
@@ -64,6 +66,8 @@ class Universe:
     root: Path
     written: dict[str, str] = field(default_factory=dict)
     ids: dict[str, Any] = field(default_factory=dict)
+    #: Raw bytes that must not survive either (a vector is derived from the words).
+    binary: dict[str, bytes] = field(default_factory=dict)
 
     def mark(self, path: str) -> str:
         text = marker(path)
@@ -91,6 +95,22 @@ def _seed_engine(u: Universe) -> None:
         source_type="python-api", trusted_actor_id=local_trusted_actor_id("python-api"),
         require_complete=True, return_receipt=True, profile_id=PROFILE)
     u.ids["fact_ids"] = list(receipt.final_fact_ids)
+    _note_vector_bytes(u)
+
+
+def _note_vector_bytes(u: Universe) -> None:
+    """The first bytes of the fact's vector as the index stores it."""
+    from superlocalmemory.retrieval import vector_physical
+
+    conn = vector_physical.open_vec(u.engine._db.db_path)
+    try:
+        row = conn.execute(
+            "SELECT embedding FROM fact_embeddings WHERE profile_id = ? LIMIT 1",
+            (PROFILE,)).fetchone()
+    finally:
+        conn.close()
+    if row is not None:
+        u.binary["vector"] = bytes(row[0])[:64]
 
 
 def _seed_receipts(u: Universe) -> None:
@@ -124,6 +144,18 @@ def _seed_pending(u: Universe) -> None:
     from superlocalmemory.cli.pending_store import store_pending
 
     store_pending(f"queued while offline {u.mark('pending')}", base_dir=u.root, profile_id=PROFILE)
+
+
+def _seed_recall_queue(u: Universe) -> None:
+    from superlocalmemory.core.recall_queue import RecallQueue
+
+    queue = RecallQueue(u.root / "recall_queue.db")
+    rid = queue.enqueue(query=f"what did she say {u.mark('recall_query')}", limit_n=5, mode="A",
+                        agent_id="auto_recall_hook", session_id="s1")
+    claimed = queue.claim_pending()
+    queue.complete(rid, received=claimed["received"],
+                   result_json='{"results": [{"content": "' + u.mark("recall_result") + '"}]}')
+    queue.close()
 
 
 def _seed_context_cache(u: Universe) -> None:
@@ -200,7 +232,8 @@ def _seed_backup(u: Universe) -> None:
 
 
 SEEDERS: tuple[Callable[[Universe], None], ...] = (
-    _seed_engine, _seed_receipts, _seed_mesh, _seed_pending, _seed_context_cache,
+    _seed_engine, _seed_receipts, _seed_mesh, _seed_pending, _seed_recall_queue,
+    _seed_context_cache,
     _seed_derive_cache, _seed_learning, _seed_code_graph, _seed_media, _seed_llm_cache,
     _seed_backup,
 )

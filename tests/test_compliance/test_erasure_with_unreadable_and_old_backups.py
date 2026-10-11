@@ -76,3 +76,16 @@ def test_deleting_the_backup_is_what_ends_the_obligation(store) -> None:
             snapshot.unlink()
 
     assert ledger.count_pending(PROFILE) == 0
+
+
+def test_a_scale_engine_rollback_copy_is_an_obligation_until_it_is_deleted(store) -> None:
+    """Graph and vector stores kept for rollback hold entity names and cannot be read here."""
+    copy = store.root / "scale-backups" / "promotion-1"
+    (copy / "cozo").mkdir(parents=True)
+    (copy / "cozo" / "data").write_bytes(b"entity names")
+
+    result = _erase(store)
+
+    assert result["backup_snapshots_unreadable"] == 1 and result["erasure_complete"] == 0
+    ledger = BackupObligationStore(store.root)
+    assert [r["snapshot_path"] for r in ledger.list_pending_for_profile(PROFILE)] == [str(copy)]

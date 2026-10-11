@@ -69,6 +69,9 @@ def test_every_write_path_actually_wrote_the_marker(universe):
                 if p in universe.written}
     missing = [p for p, n in universe.written.items() if n not in seen and n not in api_only]
     assert not missing, f"never persisted their marker, so the scan proves nothing: {missing}"
+    assert universe.binary.get("vector"), "no vector was indexed"
+    assert "vector" in {n for hits in scan(universe.root, [], universe.binary).values()
+                        for n in hits}, "the vector bytes are not in any file: the scan is blind"
 
 
 def test_erasing_a_profile_leaves_no_copy_of_its_words_anywhere(universe):
@@ -76,14 +79,15 @@ def test_erasing_a_profile_leaves_no_copy_of_its_words_anywhere(universe):
 
     result = gdpr.forget_profile(PROFILE)
 
-    survivors = scan(universe.root, universe.needles)
+    survivors = scan(universe.root, universe.needles, universe.binary)
     covered = _covered_backups(universe.root, PROFILE)
     leaks: dict[str, list[str]] = {}
     for file, needles in survivors.items():
         in_covered_backup = any(file == c or file.startswith(c + "/") for c in covered)
         if in_covered_backup and not result.get("erasure_complete"):
             continue  # an honest obligation: the backup is named and the result says so
-        leaks[file] = [universe.path_of(n) for n in needles]
+        leaks[file] = [universe.path_of(n) if n in universe.written.values() else n
+                       for n in needles]
     assert not leaks, f"copies of the erased words remain: {leaks}"
 
 

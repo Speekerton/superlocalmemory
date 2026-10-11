@@ -11,6 +11,8 @@ of the data folder after an erasure, to still hold what the person wrote:
 * ``admission_journal.db``: the encrypted request of every accepted save (the key
   is on this computer, so it is readable here) and, for a save not yet
   committed, the instruction to write it again;
+* ``recall_queue.db``: the prompts the per-prompt hook queued and, for up to an
+  hour after each, the memories recalled for them;
 * ``write_commits``: the receipt ledger, protected from ordinary deletes;
 * ``llmcache.db``: MCP cache values and the reversible originals of compression;
 * ``profiles.json``: the workspace's name and description;
@@ -63,7 +65,8 @@ def _step(counts: dict, name: str, action: Any) -> None:
 
 
 def _scrub_all(root: Path, counts: dict) -> None:
-    names = ["learning.db", "pending.db", "admission_journal.db", "llmcache.db"]
+    names = ["learning.db", "pending.db", "admission_journal.db", "llmcache.db",
+             "recall_queue.db"]
     paths = [root / n for n in names]
     cache = "active_brain_cache.db"
     paths.append(root / cache)
@@ -88,6 +91,30 @@ def erase_profile_sidecars(
     def journal() -> None:
         counts["admission_journal"] = _delete_where_profile(
             root / "admission_journal.db", "admission_journal", profile_id)
+
+    def recall_queue() -> None:
+        # Jobs carry the prompt, not a profile, and a finished job carries what was
+        # recalled. The queue is transport: a dropped job makes the hook fall back
+        # to a direct recall, which is cheaper than keeping someone's words.
+        path = root / "recall_queue.db"
+        if not path.exists():
+            return
+        conn = sqlite3.connect(str(path), timeout=30)
+        try:
+            has = conn.execute("SELECT 1 FROM sqlite_master WHERE name='recall_requests'").fetchone()
+            if has:
+                counts["recall_queue"] = conn.execute("DELETE FROM recall_requests").rowcount
+                conn.commit()
+        finally:
+            conn.close()
+
+    def capture() -> None:
+        # An opt-in developer corpus of raw proxy traffic. It names no profile, so
+        # nothing in it can be selected for removal; say so rather than call the
+        # erasure complete or delete a file the person made on purpose.
+        path = root / "optimize_capture.jsonl"
+        if path.exists() and path.stat().st_size > 0:
+            counts["optimize_capture_present"] = 1
 
     def receipts() -> None:
         if db_path is None:
@@ -115,6 +142,8 @@ def erase_profile_sidecars(
 
     _step(counts, "pending_memories", pending)
     _step(counts, "admission_journal", journal)
+    _step(counts, "recall_queue", recall_queue)
+    _step(counts, "optimize_capture", capture)
     _step(counts, "write_receipts", receipts)
     _step(counts, "optimize_cache", optimize)
     _step(counts, "profile_registry", registry)

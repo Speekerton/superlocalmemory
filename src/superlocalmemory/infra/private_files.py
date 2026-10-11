@@ -42,6 +42,7 @@ PRIVATE_DIRS: tuple[str, ...] = (
     "restore-delta",             # memories carried across a restore
     "backups",                   # routine backups and backup sets (infra/backup.py)
     "secrets",                   # answer-check provider keys (core/judge_keys.py)
+    "scale-backups",             # graph and vector stores kept for rollback
 )
 #: Single files under the data root that hold secrets or copies.
 PRIVATE_FILES: tuple[tuple[str, ...], ...] = (

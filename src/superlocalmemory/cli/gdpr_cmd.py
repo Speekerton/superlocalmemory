@@ -47,6 +47,7 @@ from superlocalmemory.cli.gdpr_io import (
     _db_path,
     _die,
     _json_envelope,
+    _print_erase_text,
     _print_json,
     stream_export_to_file,
     stream_export_to_stdout,
@@ -458,28 +459,6 @@ def _cmd_gdpr_erase(args: Namespace) -> None:
 
     if not ok:
         sys.exit(1)
-
-
-def _print_erase_text(profile: str, statement: dict, ok: bool) -> None:
-    """Say what was removed and what remains, in the words a person can act on."""
-    if ok:
-        status = "COMPLETE"
-    elif statement["complete"]:
-        status = ("COMPLETE, BUT NOT PROVABLE - the data is gone and the "
-                  "tamper-evident receipt did not persist")
-    else:
-        status = "INCOMPLETE"
-    print(f"Art.17 erasure for profile '{profile}': {status}")
-    if statement["removed"]:
-        print("  Removed:")
-        for key, value in statement["removed"].items():
-            print(f"    {key}: {value}")
-    if statement["remains"]:
-        print("  Still to do:")
-        for item in statement["remains"]:
-            print(f"    - {item['what']}")
-            print(f"      {item['retry']}")
-    print("  Verify receipts: slm gdpr verify --profile", profile)
 
 
 def _show_erase_preview(

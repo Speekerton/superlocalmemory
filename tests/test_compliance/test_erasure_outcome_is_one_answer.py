@@ -142,3 +142,16 @@ def test_the_cli_text_names_what_remains(store, capsys) -> None:
     assert stop.value.code == 1
     assert "INCOMPLETE" in text and "COMPLETE\n" not in text.replace("INCOMPLETE", "")
     assert "Backups still hold" in text
+
+
+def test_an_opt_in_traffic_capture_is_reported_not_silently_kept(store) -> None:
+    from superlocalmemory.compliance.gdpr import GDPRCompliance
+
+    (store.root / "optimize_capture.jsonl").write_text('{"request": "anything"}\n')
+
+    result = GDPRCompliance(
+        store.engine._db, engine=store.engine, data_root=store.root).forget_profile(PROFILE)
+
+    assert result["optimize_capture_present"] == 1 and result["erasure_complete"] == 0
+    assert any("optimize_capture.jsonl" in item["what"]
+               for item in result["erasure_report"]["remains"])

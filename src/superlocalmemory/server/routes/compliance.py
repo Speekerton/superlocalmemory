@@ -186,6 +186,33 @@ def _erasure_response(profile_key: str, profile: str, result: dict, **extra) -> 
     return body
 
 
+async def _leave_profile_to_erase(request: Request, profile: str) -> str:
+    """Move the running service off ``profile``; returns "" or the reason it could not.
+
+    Nothing has been erased when this fails, and the answer says so.
+    """
+    import asyncio
+
+    from superlocalmemory.server.profile_runtime import (
+        commit_daemon_profile_switch,
+        get_profile_runtime,
+    )
+
+    try:
+        runtime = get_profile_runtime(request.app.state)
+        if runtime.snapshot.profile_id != profile:
+            return ""
+        await asyncio.to_thread(
+            runtime.transition, "default",
+            lambda prior, target: commit_daemon_profile_switch(request.app.state, prior, target),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("could not leave the profile to erase: %s", type(exc).__name__)
+        return ("The service could not move off this profile (it is busy). Nothing was erased; "
+                "try again in a moment.")
+    return ""
+
+
 @router.post("/api/compliance/retention-policy")
 async def create_retention_policy(request: Request, data: dict):
     """Create a compliance retention policy.
@@ -392,6 +419,13 @@ async def gdpr_erase(request: Request, data: dict = {}):
             source_agent_id="http-gdpr-erase",
             profile_id=profile,
         )
+        # Move the service off the profile BEFORE erasing it. Left active, every
+        # request files the workspace row and its writes under that name again,
+        # so the erased workspace came back at the next page load; and nothing
+        # may be writing to a profile while it is erased.
+        moved = await _leave_profile_to_erase(request, profile)
+        if moved:
+            return {"success": False, "error": moved}
         result = GDPRCompliance(engine._db, engine=engine).forget_profile(profile)
         authorization.complete()
         return _erasure_response("active_profile", profile, result)

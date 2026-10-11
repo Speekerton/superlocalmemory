@@ -48,8 +48,7 @@ compared like a first name):
 
 Fuzzy rules are applied only to canonical names, never to aliases, so a name
 can only ever be one typo away from the name of the entity it joins: nothing
-chains. Aliases written by the old whole-string rule (source ``jaro_winkler``)
-are not trusted for any lookup; ``slm db repair-entities`` re-checks them.
+chains. Aliases are used for exact lookups only (``alias_in_use``).
 """
 
 from __future__ import annotations
@@ -63,22 +62,26 @@ SAME = "same"
 BORDERLINE = "borderline"
 DIFFERENT = "different"
 
-#: Alias sources written before 4.1.25 by the whole-string fuzzy merge
-#: ("jaro_winkler": may be a link in a chain) and by the free-form model
-#: mapping ("llm": filed "Priya" under "gdrive"). No lookup uses them until
-#: ``slm db repair-entities`` has re-checked and relabelled the good ones.
-#: Aliases a model confirms from 4.1.25 on are written as "llm_confirmed".
-UNTRUSTED_ALIAS_SOURCES: frozenset[str] = frozenset({"jaro_winkler", "llm"})
+#: Alias sources written before 4.1.25: the whole-string fuzzy merge
+#: ("jaro_winkler", may be a link of a chain) and the free-form model mapping
+#: ("llm"). ``slm db repair-entities`` re-checks them and relabels the ones it
+#: keeps; aliases a model confirms from 4.1.25 on are "llm_confirmed".
+LEGACY_ALIAS_SOURCES: frozenset[str] = frozenset({"jaro_winkler", "llm"})
 
 
-def trusted_alias_sql(column: str = "source") -> str:
-    """A SQL condition that keeps only aliases a lookup may use."""
-    quoted = ",".join(f"'{s}'" for s in sorted(UNTRUSTED_ALIAS_SOURCES))
-    return f"COALESCE({column}, '') NOT IN ({quoted})"
+def alias_in_use(source: object, alias: str, canonical: str) -> bool:
+    """Whether an exact lookup may use this alias (fuzzy rules never do).
 
-
-def is_trusted_alias_source(source: object) -> bool:
-    return str(source or "") not in UNTRUSTED_ALIAS_SOURCES
+    An old fuzzy-merge alias is used only when the rules would merge it today
+    (a typo of the entity's name). One they reject or leave to a model ("Plot"
+    and "Post" on "Lost", "AgentAssay" on "AgentAssert") was merged with no
+    confirmation, and is exactly what the repair removes. Every other alias, the old model's
+    included, keeps working until the repair has re-checked it, so genuine
+    aliases do not vanish between the upgrade and the repair.
+    """
+    if str(source or "") != "jaro_winkler":
+        return True
+    return compare(str(alias or ""), str(canonical or ""))[0] == SAME
 
 
 _CAMEL_1 = re.compile(r"([a-z])([A-Z])")
@@ -163,6 +166,7 @@ def _is_suffix_extension(a: NameKey, b: NameKey) -> bool:
     return len(short) >= 5 and long_.startswith(short) and len(long_) - len(short) <= 4
 
 
+@lru_cache(maxsize=65536)
 def compare(mention: str, canonical: str) -> tuple[str, str]:
     """(verdict, reason) for treating ``mention`` as the entity ``canonical``."""
     a, b = name_key(mention), name_key(canonical)
@@ -188,17 +192,25 @@ def compare(mention: str, canonical: str) -> tuple[str, str]:
 
 
 _TITLE_WORD = re.compile(r"^[A-Z][a-z]+$")
+_NAMED_TYPES = frozenset({"person", "organization", "place", "product"})
 
 
-def plain_word_may_name(canonical: str) -> bool:
-    """Whether a lower-case word in a question may name this entity exactly.
+def plain_word_may_name(word: str, canonical: str, entity_type: str = "") -> bool:
+    """Whether a lower-case question word may name this entity exactly.
 
-    "pgbouncer", "claude code" or "superlocalmemory" typed in lower case still
-    find their entities. A single Capitalised word ("Lost", "Alice") was made
-    an entity because of its capital letter, so the same word in lower case
-    ("I lost my keys") is not evidence of it.
+    People type "what did alice say" and "when is priya's birthday". A single
+    Capitalised name ("Alice", "Lost") is reached by its lower-case word
+    unless that word is an everyday English word ("lost", "post", "plot":
+    encoding/common_words), in which case only an entity typed as a person,
+    organisation, place or product is. Other names ("pgbouncer", "Claude
+    Code", "SuperLocalMemory") are always reachable: nobody writes them in
+    lower case by accident.
     """
-    return bool(canonical) and not _TITLE_WORD.match(canonical.strip())
+    from superlocalmemory.encoding.common_words import is_common_word
+
+    if not canonical or not _TITLE_WORD.match(canonical.strip()):
+        return bool(canonical)
+    return not is_common_word(word) or entity_type in _NAMED_TYPES
 
 
 class NameIndex:
@@ -244,7 +256,6 @@ class NameIndex:
 
 
 __all__ = [
-    "BORDERLINE", "DIFFERENT", "NameIndex", "NameKey", "SAME", "UNTRUSTED_ALIAS_SOURCES",
-    "compare", "edit_kind", "is_trusted_alias_source", "name_key", "plain_word_may_name",
-    "trusted_alias_sql",
+    "BORDERLINE", "DIFFERENT", "LEGACY_ALIAS_SOURCES", "NameIndex", "NameKey", "SAME",
+    "alias_in_use", "compare", "edit_kind", "name_key", "plain_word_may_name",
 ]

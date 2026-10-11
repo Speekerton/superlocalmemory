@@ -280,14 +280,20 @@ def query_subject(query: str, profile_id: str, *, resolver: Any = None,
     names none or the store cannot be read - never an error, never a write."""
     if resolver is None and db is None:
         return frozenset()
-    from superlocalmemory.retrieval.entity_channel import extract_query_entities
+    from superlocalmemory.retrieval.entity_channel import (
+        extract_query_entities,
+        query_plain_words,
+    )
     from superlocalmemory.retrieval.facets import entity_ids_named
 
     try:
         names = extract_query_entities(query)
-        if not names:
-            return frozenset()
-        return frozenset(entity_ids_named(db, names, profile_id, resolver))
+        found = set(entity_ids_named(db, names, profile_id, resolver)) if names else set()
+        # A lower-case question ("when is priya's birthday") names people too.
+        plain = getattr(resolver, "lookup_plain_words", None)
+        if plain is not None:
+            found |= {str(e) for e in plain(query_plain_words(query), profile_id).values()}
+        return frozenset(found)
     except Exception as exc:  # noqa: BLE001 - ordering is advisory
         logger.debug("kind-aware: the question's subject could not be read (%s)",
                      type(exc).__name__)

@@ -21,6 +21,7 @@ from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from superlocalmemory.encoding.entity_match import alias_in_use as _alias_in_use
 from superlocalmemory.retrieval import adjacency_rcu as _rcu
 from superlocalmemory.retrieval import adjacency_refresh as _refresh
 from superlocalmemory.retrieval import spreading
@@ -948,17 +949,17 @@ class EntityGraphChannel:
         names = [name.strip().lower() for name in raw if name.strip()]
         if names and self._visible_fact_ids and self._entity_to_facts:
             placeholders = ",".join("?" for _ in names)
-            from superlocalmemory.encoding.entity_match import trusted_alias_sql
-
-            _trusted_alias = trusted_alias_sql("source")
             try:
                 rows = self._db.execute(
-                    "SELECT entity_id FROM canonical_entities "
-                    f"WHERE LOWER(canonical_name) IN ({placeholders}) "
-                    "UNION SELECT entity_id FROM entity_aliases "
-                    f"WHERE LOWER(alias) IN ({placeholders}) AND {_trusted_alias}",
+                    "SELECT entity_id, '' AS source, '' AS alias, '' AS canonical_name "
+                    f"FROM canonical_entities WHERE LOWER(canonical_name) IN ({placeholders}) "
+                    "UNION SELECT ea.entity_id, ea.source, ea.alias, ce.canonical_name "
+                    "FROM entity_aliases ea JOIN canonical_entities ce USING (entity_id) "
+                    f"WHERE LOWER(ea.alias) IN ({placeholders})",
                     (*names, *names),
                 )
+                rows = [r for r in map(dict, rows) if _alias_in_use(
+                    r["source"], r["alias"], r["canonical_name"])]
             except Exception:
                 rows = []
             visible_entity_ids = set(self._entity_to_facts)

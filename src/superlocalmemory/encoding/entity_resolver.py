@@ -10,12 +10,13 @@ entity resolution ran but results were silently discarded.
 
 Tiers, strongest evidence first (rules and their sources: entity_match.py):
   a) Exact match in canonical_entities (case-insensitive)
-  b) Trusted alias match in entity_aliases (case-insensitive)
+  b) Exact alias match in entity_aliases (case-insensitive; entity_match.alias_in_use)
   c) The same name once normalized, or one typo in one word, compared with
      canonical names only -- never with aliases, so merges cannot chain
   d) Mode B/C only: a borderline pair the local model confirms
 Before 4.1.25 tier (c) was whole-string Jaro-Winkler >= 0.85 against names and
-aliases alike; its aliases (source 'jaro_winkler') are no longer trusted.
+aliases alike; such an alias (source 'jaro_winkler') answers an exact lookup
+only while the new rules would still accept it.
 
 Part of Qualixar | Author: Varun Pratap Bhardwaj
 License: AGPL-3.0-or-later
@@ -310,7 +311,7 @@ class EntityResolver:
 
         Returns mapping: raw_name -> canonical entity_id. Tiers, strongest
         evidence first (``entity_match`` has the rules and their sources):
-        exact name, a trusted alias, the same name once normalized, a typo of
+        exact name, an alias in use, the same name once normalized, a typo of
         one word of a canonical name; in Mode B/C a borderline pair confirmed
         by the model. Anything else is a new entity. All new entities and
         aliases are persisted before returning.
@@ -343,7 +344,7 @@ class EntityResolver:
         return resolution
 
     def _exact(self, name: str, profile_id: str) -> str | None:
-        """The entity with this exact name, or a trusted alias of it."""
+        """The entity with this exact name, or an alias in use of it."""
         entity = self._db.get_entity_by_name(name, profile_id)
         if entity is not None:
             return entity.entity_id
@@ -375,9 +376,9 @@ class EntityResolver:
     ) -> dict[str, str]:
         """Known entities named in a question, read-only.
 
-        For recall. Finds a name by exact match, a trusted alias, or the same
-        rules a save merges by (never a borderline pair, never an alias made
-        by the old whole-string rule). Never creates an entity, saves an
+        For recall. Finds a name by exact match, an alias in use, or the same
+        rules a save merges by (never a borderline pair, never a fuzzy match
+        on an alias). Never creates an entity, saves an
         alias, updates last-seen, or asks the language model: a question must
         not change the store, and a model call here would spend the recall
         budget. A name that is unknown, or only uncertainly close, is left out.
@@ -395,7 +396,7 @@ class EntityResolver:
 
     def lookup_plain_words(self, words: list[str], profile_id: str) -> dict[str, str]:
         """Entities a lower-case question word names exactly (no spelling
-        rules): see ``entity_match.plain_word_may_name``. Read-only."""
+        rules; see ``entity_match.plain_word_may_name``). Read-only."""
         from superlocalmemory.encoding import entity_lookup_index as eli
 
         index = self._lookup_rows(profile_id)
@@ -404,10 +405,12 @@ class EntityResolver:
             name = _usable_mention(word)
             if name is None:
                 continue
-            hit = eli.plain_word_hit(index, name) if index is not None else None
-            if hit is None and index is None:
+            if index is not None:
+                hit = eli.plain_word_hit(index, name)
+            else:
                 entity = self._db.get_entity_by_name(name, profile_id)
-                ok = entity is not None and em.plain_word_may_name(entity.canonical_name)
+                ok = entity is not None and em.plain_word_may_name(
+                    name, entity.canonical_name, entity.entity_type)
                 hit = entity.entity_id if ok else None
             if hit is not None:
                 found[word] = str(hit)
@@ -427,7 +430,7 @@ class EntityResolver:
             return None
 
     def _lookup_one(self, name: str, profile_id: str, index) -> str | None:
-        """Exact name, then a trusted alias, then a save's merge rules."""
+        """Exact name, then an alias in use, then a save's merge rules."""
         from superlocalmemory.encoding import entity_lookup_index as eli
 
         key = eli.sql_lower(name)
@@ -585,16 +588,17 @@ class EntityResolver:
     # -- Internal: lookups --------------------------------------------------
 
     def _alias_lookup(self, name: str, profile_id: str) -> str | None:
-        """Look up entity_id via a trusted alias (case-insensitive)."""
+        """Look up entity_id via an alias in use (case-insensitive, exact)."""
         rows = self._db.execute(
-            "SELECT ea.entity_id FROM entity_aliases ea "
+            "SELECT ea.entity_id, ea.alias, ea.source, ce.canonical_name "
+            "FROM entity_aliases ea "
             "JOIN canonical_entities ce ON ce.entity_id = ea.entity_id "
-            "WHERE LOWER(ea.alias) = LOWER(?) AND ce.profile_id = ? AND "
-            + em.trusted_alias_sql("ea.source"),
+            "WHERE LOWER(ea.alias) = LOWER(?) AND ce.profile_id = ?",
             (name, profile_id),
         )
-        if rows:
-            return str(dict(rows[0])["entity_id"])
+        for row in map(dict, rows):
+            if em.alias_in_use(row["source"], row["alias"], row["canonical_name"]):
+                return str(row["entity_id"])
         return None
 
     # -- Internal: persistence ----------------------------------------------

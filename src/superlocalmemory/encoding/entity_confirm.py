@@ -47,14 +47,25 @@ def _is_yes(value: Any) -> bool:
     return isinstance(value, str) and value.strip().lower() in ("true", "yes", "same")
 
 
+def _ask(llm: Any, prompt: str, max_tokens: int) -> str:
+    """One call; reasoning off where the backend supports it (a thinking
+    model such as gemma4 otherwise spends the whole budget thinking and
+    returns no answer: measured on gemma4:e2b, every pair came back empty)."""
+    kwargs = {"prompt": prompt, "system": _SYSTEM, "max_tokens": max_tokens,
+              "temperature": 0.0}
+    try:
+        return str(llm.generate(**kwargs, think=False) or "")
+    except TypeError:
+        return str(llm.generate(**kwargs) or "")
+
+
 def confirm_pairs(llm: Any, pairs: list[tuple[str, str]]) -> list[bool]:
     """One answer per pair; a failed or unclear call answers no for all."""
     if llm is None or not pairs:
         return [False] * len(pairs)
     asked = pairs[:MAX_PAIRS_PER_CALL]
     try:
-        response = llm.generate(prompt=_prompt(asked), system=_SYSTEM,
-                                max_tokens=16 + 12 * len(asked), temperature=0.0)
+        response = _ask(llm, _prompt(asked), 16 + 12 * len(asked))
         match = re.search(r"\{[^{}]*\}", str(response or ""))
         answers = json.loads(match.group()) if match else {}
     except Exception as exc:  # noqa: BLE001 -- a model failure must not fail a save

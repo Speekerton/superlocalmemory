@@ -173,16 +173,92 @@ def test_a_question_is_at_least_as_strict_as_a_save(db) -> None:
     assert set(found) == {"agentassert", "Agent Assert"}
 
 
-def test_an_old_model_alias_is_not_trusted_until_repaired(db) -> None:
-    """The pre-4.1.25 model mapping filed "Priya" under "gdrive"."""
-    db.store_entity(CanonicalEntity(entity_id="e_g", profile_id=P, canonical_name="gdrive"))
-    db.store_alias(EntityAlias(entity_id="e_g", alias="Priya", source="llm"), P)
+def test_old_aliases_answer_exact_lookups_until_the_repair(db) -> None:
+    """Between upgrade and repair, genuine old aliases keep working: an old
+    model alias and an old fuzzy alias the rules still accept (a typo)."""
+    db.store_entity(CanonicalEntity(entity_id="e_r", profile_id=P, canonical_name="Robert"))
+    db.store_alias(EntityAlias(entity_id="e_r", alias="Bob", source="llm"), P)
+    db.store_entity(CanonicalEntity(entity_id="e_k", profile_id=P, canonical_name="Kubernetes"))
+    db.store_alias(EntityAlias(entity_id="e_k", alias="Kubernets", source="jaro_winkler"), P)
     resolver = EntityResolver(db, llm=None)
-    assert resolver.lookup(["Priya"], P) == {}
-    assert resolver.resolve(["Priya"], P)["Priya"] != "e_g"
+    assert resolver.lookup(["Bob", "Kubernets"], P) == {"Bob": "e_r", "Kubernets": "e_k"}
+    assert resolver.resolve(["Bob"], P)["Bob"] == "e_r"
 
 
 def test_a_question_uses_no_old_fuzzy_alias_even_spelled_exactly(chained) -> None:
     resolver = EntityResolver(chained, llm=None)
     assert resolver.lookup(["Plot", "PostgreSQL", "Podcasts"], P) == {}
     assert resolver.lookup(["Lost"], P) == {"Lost": "e_lost"}
+
+
+@pytest.fixture()
+def people(chained) -> EntityResolver:
+    for eid, name in (("e_alice", "Alice"), ("e_priya", "Priya"), ("e_post", "Post"),
+                      ("e_plot", "Plot")):
+        chained.store_entity(CanonicalEntity(entity_id=eid, profile_id=P, canonical_name=name))
+    return EntityResolver(chained, llm=None)
+
+
+def _plain(resolver: EntityResolver, question: str) -> dict[str, str]:
+    from superlocalmemory.retrieval.entity_channel import query_plain_words
+
+    return resolver.lookup_plain_words(query_plain_words(question), P)
+
+
+def test_a_lower_case_question_still_reaches_a_person(people) -> None:
+    assert set(_plain(people, "what did alice say").values()) == {"e_alice"}
+    assert set(_plain(people, "when is priya's birthday").values()) == {"e_priya"}
+
+
+def test_everyday_words_in_lower_case_reach_nothing(people) -> None:
+    for question in ("what was lost", "check the post", "the plot thickens",
+                     "zxqv plorth wimble"):
+        assert _plain(people, question) == {}, question
+
+
+def test_an_everyday_word_still_reaches_an_entity_typed_as_a_person(chained) -> None:
+    chained.store_entity(CanonicalEntity(entity_id="e_mark", profile_id=P,
+                                         canonical_name="Mark", entity_type="person"))
+    resolver = EntityResolver(chained, llm=None)
+    assert _plain(resolver, "what did mark say") == {"mark": "e_mark"}
+
+
+def test_the_entity_channel_answers_lower_case_questions(chained) -> None:
+    from superlocalmemory.retrieval.entity_channel import EntityGraphChannel
+    from superlocalmemory.storage.models import AtomicFact, MemoryRecord
+
+    resolver = EntityResolver(chained, llm=None)
+    chained.store_memory(MemoryRecord(memory_id="m0", profile_id=P, content="notes"))
+    for fact_id, text in (("f_alice", "Alice said the launch moves to Monday."),
+                          ("f_priya", "Priya's birthday is on 2 October."),
+                          ("f_lost", "Lost the spare key near the post office.")):
+        names = ["Alice"] if "Alice" in text else ["Priya"] if "Priya" in text else ["Lost"]
+        links = list(resolver.resolve(names, P).values())
+        chained.store_fact(AtomicFact(fact_id=fact_id, memory_id="m0", profile_id=P,
+                                      content=text, entities=names, canonical_entities=links))
+    channel = EntityGraphChannel(chained, resolver)
+    assert [f for f, _ in channel.search("what did alice say", P)] == ["f_alice"]
+    assert [f for f, _ in channel.search("when is priya's birthday", P)] == ["f_priya"]
+    assert channel.search("i lost my post", P) == []
+    assert channel.search("zxqv plorth wimble", P) == []
+
+
+def test_confirmation_turns_reasoning_off_and_works_without_that_option() -> None:
+    from superlocalmemory.encoding.entity_confirm import confirm_pairs
+
+    class Thinking:
+        def __init__(self) -> None:
+            self.think = None
+
+        def generate(self, prompt, system="", max_tokens=0, temperature=0.0, think=None):
+            self.think = think
+            return '{"1": true, "2": false}'
+
+    class Plain:
+        def generate(self, prompt, system="", max_tokens=0, temperature=0.0):
+            return '```json {"1": "yes", "2": "no"} ```'
+
+    thinking = Thinking()
+    pairs = [("Postgres", "PostgreSQL"), ("Jon", "Jan")]
+    assert confirm_pairs(thinking, pairs) == [True, False] and thinking.think is False
+    assert confirm_pairs(Plain(), pairs) == [True, False]

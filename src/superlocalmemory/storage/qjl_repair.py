@@ -46,15 +46,25 @@ def repair_rows(db: DatabaseManager | sqlite3.Connection, profile_id: str,
 
 def original_vector(db: DatabaseManager | sqlite3.Connection, fact_id: str,
                     profile_id: str, dimension: int) -> np.ndarray | None:
+    snapshot = _original_snapshot(db, fact_id, profile_id, dimension)
+    return snapshot[1] if snapshot is not None else None
+
+
+def _original_snapshot(db: DatabaseManager | sqlite3.Connection, fact_id: str,
+                       profile_id: str, dimension: int) -> tuple[bytes | str, np.ndarray] | None:
+    """Keep the exact stored source alongside the vector decoded from it."""
     try:
         rows = list(db.execute(
             "SELECT embedding FROM atomic_facts WHERE fact_id=? AND profile_id=?",
             (fact_id, profile_id)))
-        vector = decode_embedding(rows[0]["embedding"], fact_id=fact_id) if rows else None
+        source = rows[0]["embedding"] if rows else None
+        vector = decode_embedding(source, fact_id=fact_id)
         if vector is None:
             return None
         vector = np.asarray(vector, dtype=np.float64)
-        return vector if vector.shape == (dimension,) and np.isfinite(vector).all() else None
+        if vector.shape != (dimension,) or not np.isfinite(vector).all():
+            return None
+        return source, vector
     except (ValueError, TypeError):
         return None
     except sqlite3.OperationalError as exc:
@@ -74,19 +84,25 @@ def repair_status(db: DatabaseManager | sqlite3.Connection, profile_id: str,
 
 
 def _repair_one(db: DatabaseManager, store: QuantizedEmbeddingStore,
-                row: dict[str, Any], profile_id: str, vector: np.ndarray) -> None:
+                row: dict[str, Any], profile_id: str, vector: np.ndarray,
+                source: bytes | str) -> None:
     qe = store.load(row["fact_id"], profile_id)
     if qe is None:
         raise ValueError("base embedding unavailable")
     payload = store._qjl.encode_residual(vector - store._polar.decode(qe))
     with db.transaction():
+        # Validate both reads in one write statement: the source and base used
+        # to encode the residual must coexist unchanged at this linearization
+        # point. SQLite holds the writer lock through the metadata commit.
         updated = db.execute(
             "UPDATE polar_embeddings SET qjl_bits=? WHERE fact_id=? AND profile_id=? "
-            "AND radius=? AND angle_indices=? AND qjl_bits IS ? AND bit_width=? RETURNING fact_id",
+            "AND radius=? AND angle_indices=? AND qjl_bits IS ? AND bit_width=? "
+            "AND EXISTS (SELECT 1 FROM atomic_facts WHERE fact_id=? AND profile_id=? "
+            "AND embedding IS ?) RETURNING fact_id",
             (payload, row["fact_id"], profile_id, qe.radius, qe.angle_indices,
-             row["qjl_bits"], qe.bit_width))
+             row["qjl_bits"], qe.bit_width, row["fact_id"], profile_id, source))
         if not updated:
-            raise ValueError("quantized embedding changed concurrently; rerun repair")
+            raise ValueError("canonical or quantized embedding changed concurrently; rerun repair")
         db.execute("UPDATE embedding_quantization_metadata SET compressed_size_bytes=? "
                    "WHERE fact_id=? AND profile_id=?",
                    (len(qe.angle_indices) + len(payload), row["fact_id"], profile_id))
@@ -99,8 +115,8 @@ def repair_sketches(db: DatabaseManager, store: QuantizedEmbeddingStore, profile
         return stats
     for row in repair_rows(db, profile_id, config):
         stats["repair_needed"] += 1
-        vector = original_vector(db, row["fact_id"], profile_id, store._polar._d)
-        if vector is None:
+        snapshot = _original_snapshot(db, row["fact_id"], profile_id, store._polar._d)
+        if snapshot is None:
             stats["unrecoverable"] += 1
             logger.warning("QJL fact_id=%s needs re-embedding; no usable original vector",
                            row["fact_id"])
@@ -108,7 +124,8 @@ def repair_sketches(db: DatabaseManager, store: QuantizedEmbeddingStore, profile
         if dry_run:
             continue
         try:
-            _repair_one(db, store, row, profile_id, vector)
+            source, vector = snapshot
+            _repair_one(db, store, row, profile_id, vector, source)
             stats["repaired"] += 1
             logger.info("QJL repaired fact_id=%s", row["fact_id"])
         except (ValueError, TypeError, IndexError, KeyError, sqlite3.Error) as exc:

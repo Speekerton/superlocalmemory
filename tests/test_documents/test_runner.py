@@ -11,7 +11,6 @@ from superlocalmemory.documents import runner as runner_mod
 from superlocalmemory.documents.chunking import chunk_text
 from superlocalmemory.documents.submit import submit_document
 from superlocalmemory.media import open_media_store
-from tests.test_documents.pdfs import make_pdf
 from tests.test_documents.support import KEY, FakeClient, Runtime, fake_script, make_service, pdf_input
 
 

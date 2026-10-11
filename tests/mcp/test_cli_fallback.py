@@ -15,7 +15,6 @@ import importlib
 import json
 import subprocess
 import sys
-import types
 import unittest.mock as mock
 from pathlib import Path
 from typing import Any

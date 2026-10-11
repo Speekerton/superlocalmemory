@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from superlocalmemory import sources
 from superlocalmemory.sources import host as _host  # noqa: F401
 from superlocalmemory.daemon.services import ServiceRegistry
 from superlocalmemory.server import sources_wiring

@@ -20,7 +20,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-import numpy as np
 from numpy.typing import NDArray
 
 from superlocalmemory.core.config import QuantizationConfig

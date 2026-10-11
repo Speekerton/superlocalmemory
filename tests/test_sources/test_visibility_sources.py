@@ -6,8 +6,6 @@ import json
 import sqlite3
 from types import SimpleNamespace
 
-import pytest
-
 from superlocalmemory.retrieval import visibility as vis
 from superlocalmemory.retrieval.visibility import VisibilityContext
 

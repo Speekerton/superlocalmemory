@@ -44,7 +44,6 @@ from superlocalmemory.cli.gdpr_io import (
     KNOWN_GAPS as _KNOWN_GAPS,
     _audit_chain_path,
     _data_root,
-    _db_path,
     _die,
     _json_envelope,
     _print_erase_text,

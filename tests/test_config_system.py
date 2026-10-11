@@ -1,8 +1,6 @@
 """Tests for Config System — Task 4 of V3 build."""
 import json
-import pytest
-from pathlib import Path
-from superlocalmemory.core.config import SLMConfig, LLMConfig
+from superlocalmemory.core.config import SLMConfig
 from superlocalmemory.storage.models import Mode
 
 

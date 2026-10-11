@@ -9,10 +9,8 @@ Ollama, no sqlite-vec required.
 from __future__ import annotations
 
 import logging
-import time
 
 from superlocalmemory.server.recall_health import (
-    DEFAULT_PROBE,
     RecallHealth,
     get_recall_health,
     run_health_tick,

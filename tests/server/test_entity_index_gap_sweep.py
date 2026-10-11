@@ -21,7 +21,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-import pytest
 
 from superlocalmemory.server.entity_index_repair import (
     MAX_TICK_SECONDS,

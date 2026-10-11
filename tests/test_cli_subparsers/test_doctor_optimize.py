@@ -29,7 +29,6 @@ def _make_args(**kwargs) -> Namespace:
 
 def _run_doctor_json(monkeypatch_fixture=None, patch_gather=None) -> list[dict]:
     """Run cmd_doctor with --json and return the checks list."""
-    import io
     from superlocalmemory.cli.commands import cmd_doctor
 
     captured: list[str] = []

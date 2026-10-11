@@ -22,7 +22,6 @@ from pathlib import Path
 from typing import Optional
 
 from superlocalmemory.evolution.types import (
-    EvolutionCandidate,
     EvolutionRecord,
     EvolutionStatus,
     EvolutionType,

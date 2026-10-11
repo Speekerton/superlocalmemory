@@ -2,7 +2,6 @@
 # Licensed under AGPL-3.0-or-later
 """Tests for SavingsEstimator (optimize/metrics/estimator.py)."""
 
-import pytest
 
 from superlocalmemory.optimize.metrics.estimator import SavingsEstimator
 from superlocalmemory.optimize.storage.db import MetricsSnapshot

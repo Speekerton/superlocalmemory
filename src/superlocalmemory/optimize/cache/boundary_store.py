@@ -28,9 +28,7 @@ import secrets
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
-
-import numpy as np
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from superlocalmemory.optimize.storage.db import CacheDB

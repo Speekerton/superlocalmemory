@@ -31,7 +31,7 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from superlocalmemory.encoding.ccq_dates import _parse_date, _temporal_midpoint
 from superlocalmemory.storage.models import _new_id

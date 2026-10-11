@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from datetime import date, timezone
 from pathlib import Path
 
 from superlocalmemory.storage.database import visible_fact_clause_for_connection
@@ -42,7 +41,6 @@ from .base import (
     clean_llm_summary,
     format_highlight,
     SUMMARY_SYSTEM_PROMPT,
-    COVERAGE_FULL,
     COVERAGE_INSUFFICIENT,
     COVERAGE_NO_SESSION,
     COVERAGE_PARTIAL,

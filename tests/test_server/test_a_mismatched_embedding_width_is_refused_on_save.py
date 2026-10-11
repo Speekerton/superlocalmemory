@@ -17,8 +17,6 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-import pytest
-
 from superlocalmemory.server.routes.v3_api import _refuse_incompatible_embedding
 
 

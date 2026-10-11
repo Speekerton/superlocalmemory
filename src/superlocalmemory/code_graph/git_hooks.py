@@ -12,7 +12,6 @@ git state, never blocks the commit. Idempotent installation.
 from __future__ import annotations
 
 import logging
-import os
 import stat
 import subprocess
 import time

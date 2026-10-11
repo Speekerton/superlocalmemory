@@ -20,7 +20,6 @@ from superlocalmemory.core.modes import (
     MODE_A,
     MODE_B,
     MODE_C,
-    ModeCapabilities,
     get_capabilities,
     validate_mode_config,
 )

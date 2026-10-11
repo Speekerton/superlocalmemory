@@ -11,10 +11,8 @@ Provides:
 
 from __future__ import annotations
 
-import json
 import sqlite3
 import uuid
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -156,7 +154,7 @@ def empty_db(tmp_path):
 # (started by other test_api tests via FastAPI/starlette) the process crashes
 # with SIGSEGV on macOS ARM (multi-libomp OpenMP race).
 # ---------------------------------------------------------------------------
-from tests.fixtures.lgb_mock import MockBooster, MockDataset, mock_lgb_train  # noqa: E402
+from tests.fixtures.lgb_mock import MockDataset, mock_lgb_train  # noqa: E402
 
 
 @pytest.fixture(autouse=True, scope="package")

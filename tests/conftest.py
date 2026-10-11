@@ -19,6 +19,7 @@ import sys
 from unittest.mock import MagicMock, patch
 
 # Live-root isolation (audit hook, pytest-owned HOME and data root) lives in
+# isort: off
 # tests/_isolation_plugin.py so it also holds under --noconftest. Importing it
 # here is a no-op when pyproject's addopts already loaded it.
 from tests._isolation_plugin import (  # noqa: E402,F401  (re-exported for tests)
@@ -35,6 +36,9 @@ from tests.thread_leak_guard import (  # noqa: E402,F401  (pytest hook registrat
     pytest_runtest_setup,
     pytest_runtest_teardown,
 )
+# isort: on
+
+pytest_plugins = ["tests.daemon_descriptor_guard"]
 
 
 def pytest_configure(config) -> None:

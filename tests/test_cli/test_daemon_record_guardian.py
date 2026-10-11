@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import subprocess
 import sys
 import threading
@@ -403,10 +404,12 @@ def test_ensure_daemon_starts_when_ownership_ends_during_the_wait(
 
 
 def test_start_server_failure_after_publish_still_cleans_up(root, monkeypatch):
-
     from superlocalmemory.infra.instance_lock import get_instance_lock
     from superlocalmemory.server import unified_daemon
 
+    monkeypatch.setattr(unified_daemon, "_ACTIVE_DAEMON_DESCRIPTOR", None)
+    for name in ("SLM_DAEMON_PORT", "SLM_DAEMON_INSTANCE_ID", "SLM_DAEMON_CAPABILITY"):
+        monkeypatch.setenv(name, os.environ.get(name, ""))
     monkeypatch.setattr(unified_daemon, "install_thread_dump_signal", lambda: None)
     monkeypatch.setattr(unified_daemon, "_cleanup_process_descriptor", lambda d: None)
     monkeypatch.setattr(

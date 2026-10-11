@@ -48,7 +48,7 @@ def test_completed_late_reply_survives_idle_gap():
         judge.shutdown()
 
 
-def test_legacy_nomic_does_not_embed_an_oov_only_phrase(monkeypatch):
+def test_legacy_nomic_vocabulary_is_advisory_even_for_an_oov_only_phrase(monkeypatch):
     from superlocalmemory.core.config import EmbeddingConfig
     from superlocalmemory.retrieval import query_lexicon
 
@@ -56,8 +56,8 @@ def test_legacy_nomic_does_not_embed_an_oov_only_phrase(monkeypatch):
     native = SimpleNamespace(_config=EmbeddingConfig(), embed=Mock(return_value=[1.0]))
     qe = QueryEmbedder(lambda: native)
     try:
-        assert qe.embed("zxqv plorth wimble", 0.1) == (None, channel_status.EMPTY)
-        native.embed.assert_not_called()
+        assert qe.embed("zxqv plorth wimble", 0.1) == ([1.0], None)
+        native.embed.assert_called_once_with("zxqv plorth wimble")
         assert qe.embed("who owns wimble", 0.1) == ([1.0], None)
     finally:
         qe.close()

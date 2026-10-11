@@ -1,13 +1,10 @@
 # Copyright (c) 2026 Varun Pratap Bhardwaj / Qualixar
 # Licensed under AGPL-3.0-or-later - see LICENSE file
-"""OOV-only Nomic phrases require lexical evidence, including on legacy stores.
+"""Whole-word vocabulary coverage is advisory, never a semantic admission rule.
 
-This is a retrieval policy, not a new query vector: rejected phrases still run
-keyword retrieval. Normal questions with known vocabulary remain eligible for
-zero-overlap semantic retrieval. Cache lookup is read-only/offline; no weights
-or tokenizer runtime are loaded into the parent process. BEIR's lexical/dense
-OOD comparison motivates retaining that independent lexical path:
-https://arxiv.org/abs/2104.08663 . The exact policy is measured by SLM's harness.
+Names, code, products and languages use subwords. A missing whole word cannot
+prove gibberish. Answer/evidence checks decide support after retrieval; lexical
+and dense retrieval remain available independently of this signal.
 """
 from __future__ import annotations
 
@@ -40,13 +37,8 @@ def oov_phrase(query: str, vocab: frozenset[str] | None) -> bool:
 
 
 def requires_lexical(embedder, query: str) -> bool:
-    config = getattr(embedder, "_config", None)
-    name = getattr(config, "model_name", None)
-    if not isinstance(name, str):
-        return False
-    if name.removesuffix("@retrieval-v1").rsplit("/", 1)[-1] != _MODEL.split("/")[-1]:
-        return False
-    return oov_phrase(query, vocabulary())
+    """Compatibility hook: no vocabulary evidence justifies vetoing dense recall."""
+    return False
 
 
 @lru_cache(maxsize=1)

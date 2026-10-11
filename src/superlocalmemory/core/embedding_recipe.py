@@ -13,9 +13,7 @@ channel for out-of-domain text: https://arxiv.org/abs/2104.08663 .
 
 from __future__ import annotations
 
-import math
 import re
-from collections import Counter
 from dataclasses import replace
 from typing import Any
 
@@ -32,15 +30,12 @@ def task_model(model: str) -> str:
 
 
 def dense_text(text: str) -> str:
-    """Remove long opaque codes, preserving ordinary words and source text."""
+    """Remove hexadecimal blobs; preserve meaningful letter/digit identifiers."""
 
     def clean(match: re.Match) -> str:
         token = match.group()
-        probabilities = [n / len(token) for n in Counter(token.lower()).values()]
-        entropy = -sum(p * math.log2(p) for p in probabilities)
         is_hex = bool(re.fullmatch(r"[0-9a-fA-F-]+", token))
-        mixed = any(c.isdigit() for c in token) and any(c.isalpha() for c in token)
-        return "" if is_hex or (mixed and entropy >= 3.0) else token
+        return "" if is_hex else token
 
     return " ".join(_TOKEN.sub(clean, text).split())
 

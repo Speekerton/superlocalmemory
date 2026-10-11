@@ -108,15 +108,43 @@ def recovery_verify(request: Request, body: PointBody):
     return _verify(body.id)
 
 
+class ExportBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str | None = Field(default=None, pattern=r"^[a-f0-9]{16}$")
+
+
+def _export_target(root: Path, point_id: str | None) -> str:
+    """The point to export: the one named, else the newest kept one.
+
+    Only when no point exists yet is one created, so an export never evicts
+    an older point from retention (PR 251 review, finding 7).
+    """
+    if point_id:
+        return point_id
+    from superlocalmemory.server.recovery_inventory import points
+
+    kept = points(root)
+    return kept[0]["id"] if kept else bundles.create_point(root)["id"]
+
+
 @router.post("/export")
-def recovery_export(request: Request):
+def recovery_export(request: Request, body: ExportBody | None = None):
     _gate(request)
-    point = bundles.create_point(_root())
-    path = bundles.export_point(_root(), point["id"])
+    root = _root()
+    try:
+        point_id = _export_target(root, body.id if body else None)
+        path = bundles.export_point(root, point_id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from None
+    except Exception:
+        logger.exception("Recovery export failed")
+        raise HTTPException(
+            503, "The export could not be prepared. Check free disk space and retry."
+        ) from None
     return FileResponse(
         path,
         media_type="application/zip",
-        filename=f"slm-recovery-{point['id']}.zip",
+        filename=f"slm-recovery-{point_id}.zip",
         background=BackgroundTask(path.unlink, missing_ok=True),
     )
 

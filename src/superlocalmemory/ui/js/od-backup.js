@@ -63,6 +63,8 @@
         }
         if (!response.ok) {
           return response.text().then(function (message) {
+            // FastAPI answers {"detail": "..."}: show the sentence, not the JSON.
+            try { message = JSON.parse(message).detail || message; } catch (e) { /* plain text */ }
             throw new Error(message || ('Request failed (' + response.status + ')'));
           });
         }
@@ -218,7 +220,7 @@
         URL.revokeObjectURL(objectUrl);
         toast('Backup export downloaded');
       })
-      .catch(function () { toast('Backup export failed', true); })
+      .catch(function (err) { toast((err && err.message) || 'Backup export failed', true); })
       .finally(function () { if (button) button.disabled = false; });
   }
 

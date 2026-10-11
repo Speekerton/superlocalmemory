@@ -61,3 +61,27 @@ it('UX-35: dashboard exports the recovery unit and advertises the new format', a
   assert.ok(h.calls.some(r => r.url === '/api/backup/recovery/create'));
   h.dom.window.close();
 });
+
+it('finding 7: a refused export shows the server reason and downloads nothing', async () => {
+  const h = await mounted();
+  const realFetch = h.window.fetch;
+  h.window.fetch = async (url, init = {}) => {
+    if (String(url).endsWith('/recovery/export')) {
+      return {ok:false,status:409,headers:{get:()=>''},
+              text:async()=>JSON.stringify({detail:'Backup verification failed. Nothing was restored; create a new recovery backup.'}),
+              blob:async()=>{ throw new Error('no blob for an error'); }};
+    }
+    return realFetch(url, init);
+  };
+  const toasts = [];
+  h.window.showToast = (msg) => toasts.push(msg);
+  let downloads = 0;
+  h.window.URL.createObjectURL = () => { downloads += 1; return 'blob:x'; };
+  const button = [...h.document.querySelectorAll('button')].find(b => b.textContent === 'Export recovery archive');
+  button.click();
+  await flushPromises(); await flushPromises();
+  assert.equal(downloads, 0);
+  assert.ok(toasts.some(t => /verification failed/i.test(t)), JSON.stringify(toasts));
+  assert.equal(button.disabled, false);
+  h.dom.window.close();
+});

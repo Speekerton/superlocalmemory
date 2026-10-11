@@ -33,9 +33,9 @@ def _require_read(request: Request) -> None:
 
 def _require_manage(request: Request) -> None:
     """Guard evolution mutations with the same RBAC boundary as v3 settings."""
-    from superlocalmemory.server.rbac_enforce import require_manage
+    from superlocalmemory.server.rbac_enforce import require_global_manage
 
-    require_manage(request)
+    require_global_manage(request)
 
 
 def _read_evolution_config() -> dict:

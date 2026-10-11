@@ -138,10 +138,18 @@ Full docs: [docs/shared-memory.md](./shared-memory.md)
 
 ## Audit trail
 
-Every access-control event is recorded in the hash-chained audit trail:
-user creation, role change, login attempt, session creation, workspace membership
-change. The audit trail cannot be retroactively modified without breaking the
-chain.
+Access-control events are recorded in the hash-chained audit trail
+(`access.*` entries): user creation, update and deletion, role change,
+membership removal and policy change (each as requested, then with its outcome;
+a change is refused if the trail cannot record it), and sign-in (successful,
+failed or throttled) and sign-out. Entries name the acting account, the
+affected account and workspace, old and new role; never a password or token.
+
+Since 4.1.25 each entry's hash covers every stored field, its details included,
+so editing any of them breaks the chain. Entries written before 4.1.25 are
+checked for order and core fields only, and the dashboard says so. The chain is
+plain SHA-256 with an external count-and-head anchor: it detects edits and
+truncation, but someone able to rewrite both files could recompute it.
 
 View the audit trail in the **Governance → Audit** dashboard tab or via CLI:
 

@@ -42,8 +42,7 @@ async def list_overtaken(request: Request, limit: int = 100, profile_id: str = "
 
     try:
         profile = m._routed_profile(profile_id)
-        engine, target, _ctx = m._authorize_memory_mutation(
-            request, "update", "overtaken-list", run_pre_hook=False, profile=profile)
+        engine, target = m._authorize_review_read(request, profile)  # READ (G-M5)
         return {"success": True, "profile_id": target,
                 "overtaken": overtaken_for(engine, target, limit)}
     except HTTPException:

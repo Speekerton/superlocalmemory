@@ -1299,6 +1299,13 @@ def main() -> None:
         help="Remediation action to apply")
     ops_resolve_p.add_argument(
         "--json", action="store_true", help="Output structured JSON (agent-native)")
+    ops_repair_p = ops_sub.add_parser(
+        "repair-saves",
+        help="Re-file saves dead-lettered on another memory (dry run unless --apply)")
+    ops_repair_p.add_argument(
+        "--apply", action="store_true", help="Back up memory.db, then repair")
+    ops_repair_p.add_argument(
+        "--json", action="store_true", help="Output structured JSON (agent-native)")
     ops_status_p = ops_sub.add_parser(
         "status", help="Quick failure count + writer stall overview")
     ops_status_p.add_argument(

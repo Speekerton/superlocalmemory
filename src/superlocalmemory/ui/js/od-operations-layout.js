@@ -151,7 +151,7 @@
           '<div class="card-head">' +
             '<h3>Active retention policies</h3>' +
             '<div class="spacer"></div>' +
-            // New policy button — shows alert since write endpoint is not yet exposed
+            // New policy button: opens the retention-policy form
             '<button class="btn sm" id="od-new-policy-btn">' +
               safeIcon('plus') + ' New policy' +
             '</button>' +

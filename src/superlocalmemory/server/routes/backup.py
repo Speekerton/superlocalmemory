@@ -35,15 +35,23 @@ router.include_router(recovery_router)
 _OAUTH_STATE_TTL_SECONDS = 10 * 60
 _OAUTH_STATE_LOCK = threading.Lock()
 _OAUTH_STATES: dict[str, dict[str, object]] = {}
+
+
 def _require_read(request: Request) -> None:
     """Require READ on the active profile for backup metadata."""
     from superlocalmemory.access.rbac import Permission
     from superlocalmemory.server.rbac_enforce import require_permission
+
     require_permission(request, Permission.READ)
+
+
 def _require_manage(request: Request) -> dict:
     """Require MANAGE for backup configuration, creation, and cloud access."""
-    from superlocalmemory.server.rbac_enforce import require_manage
-    return require_manage(request)
+    from superlocalmemory.server.rbac_enforce import require_global_manage
+
+    return require_global_manage(request)
+
+
 def _require_oauth_start(request: Request) -> None:
     """Allow OAuth initiation from the exact dashboard or an authenticated admin."""
     from superlocalmemory.server.origin import origin_is_daemon

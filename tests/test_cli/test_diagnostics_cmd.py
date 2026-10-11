@@ -32,6 +32,7 @@ def test_successful_ide_connection_records_only_aggregate_activation(
         portable_kit,
         "connect_ide",
         lambda *_args, **_kwargs: {
+            # The merged installer always returns its canonical host id.
             "ide": "cursor",
             "error": None,
             "mcp_config": "wrote",

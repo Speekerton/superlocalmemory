@@ -72,8 +72,21 @@ def _tenant() -> str:
     agent = get_current_agent_id()
     key_id = current_remote_key_id()
     if key_id is None:
-        return agent
+        user = _signed_in_user()
+        # A signed-in person's entries are theirs: the agent segment is chosen
+        # by the caller, so it alone must not open another person's cached
+        # originals (4.1.25 audit OPS-08). No session: unchanged address.
+        return f"user:{user}:{agent}" if user else agent
     return f"remote:{key_id}:{agent}"
+
+
+def _signed_in_user() -> str:
+    """The signed-in user's id when the caller is held to a user, else ``""``."""
+    from superlocalmemory.core.actor_context import Transport
+    from superlocalmemory.core.admission import caller_actor
+
+    actor, mode = caller_actor(Transport.MCP)
+    return actor.principal_id if mode == "company" and actor.is_authenticated else ""
 
 
 def _kv_location(key: str) -> tuple[str, str]:

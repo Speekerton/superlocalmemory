@@ -107,9 +107,9 @@ def _gate(request: Request) -> None:
         raise HTTPException(403, detail="Changes to features are only accepted from this machine.")
     write_identity.require_write_actor(
         request, getattr(request.app.state, "daemon_descriptor", None), actor_kind="features")
-    from superlocalmemory.server.rbac_enforce import require_manage
+    from superlocalmemory.server.rbac_enforce import require_global_manage
 
-    require_manage(request)
+    require_global_manage(request)
 
 
 async def _body(request: Request) -> dict[str, Any]:

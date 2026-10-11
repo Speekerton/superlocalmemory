@@ -96,7 +96,15 @@ def _ws_rbac_allowed(websocket: WebSocket, app_state) -> bool:
         websocket.headers.get("x-slm-user-session", "")
         or websocket.cookies.get("slm_session", "")
     )
-    user = rbac.resolve_session(token) if token else None
+    from superlocalmemory.server.rbac_enforce import presented_session_user
+
+    try:
+        user, refused = presented_session_user(rbac, token)
+    except Exception:
+        logger.warning("ws: session lookup failed — rejecting handshake (fail closed)")
+        return False
+    if refused:
+        return False  # an ended session is not the owner (OPS-24)
 
     if user is None:
         if rbac.require_login():

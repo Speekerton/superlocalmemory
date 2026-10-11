@@ -133,13 +133,20 @@ def test_an_admin_elsewhere_cannot_roll_back_where_they_are_only_a_member(compan
     assert _status(app, case) == "applied"
 
 
-def test_a_viewer_cannot_list_another_profiles_corrections(company) -> None:
+def test_a_viewer_lists_corrections_only_where_they_may_read(company) -> None:
+    """Listing is READ (4.1.25 audit G-M5: a viewer, the role meant to audit,
+    was refused with a message about writing). A workspace the caller has no
+    role on stays closed."""
     client, headers, app = company
     _owner_replace(client, headers, "acl-list")
     viewer = _user(client, headers, app, "work-viewer",
                    {"default": "admin", "work": "viewer"})
+    listed = client.get("/api/corrections", params={"profile_id": "work"},
+                        headers=viewer)
+    assert listed.status_code == 200, listed.text
+    outsider = _user(client, headers, app, "default-only", {"default": "admin"})
     response = client.get("/api/corrections", params={"profile_id": "work"},
-                          headers=viewer)
+                          headers=outsider)
     assert response.status_code == 403, response.text
 
 

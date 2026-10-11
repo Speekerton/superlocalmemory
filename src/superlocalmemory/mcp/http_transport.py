@@ -147,6 +147,49 @@ class SLMFastMCP(MCPServer):
         # Q9: every tool result goes out compact, not pretty-printed.
         install_compact_mcp_json()
         self._slm_allowed = None
+        # UX-13: a tool's {"success": false} answer is reported as isError.
+        from superlocalmemory.mcp.tool_gate import install_tool_error_results
+
+        install_tool_error_results()
+
+    def add_tool(self, fn, *args, **kwargs):
+        """Register ``fn`` behind the default READ gate (mcp/tool_gate, OPS-17).
+
+        A tool with its own ``@admits`` keeps it; only the public allow-list
+        is registered ungated. Every registration path goes through here.
+        """
+        from superlocalmemory.mcp.tool_gate import default_read_gate
+
+        return super().add_tool(default_read_gate(fn), *args, **kwargs)
+
+    async def read_resource(self, uri, context=None):
+        """A refused resource read says why (the SDK hides every other error)."""
+        from mcp.server.mcpserver.exceptions import ResourceError
+        from mcp.shared.exceptions import MCPError
+        from mcp_types import INVALID_REQUEST
+
+        try:
+            return await super().read_resource(uri, context)
+        except ResourceError as exc:
+            cause = exc.__cause__
+            while cause is not None and not isinstance(cause, PermissionError):
+                cause = cause.__cause__ or cause.__context__
+            if cause is not None:
+                raise MCPError(code=INVALID_REQUEST, message=str(cause),
+                               data={"uri": str(uri), "code": "NOT_AUTHORIZED"}) from exc
+            raise
+
+    def resource(self, *args, **kwargs):
+        """Register a resource behind the READ gate (``slm://recent`` and the rest)."""
+        from superlocalmemory.mcp.tool_gate import gate_resource
+
+        register = super().resource(*args, **kwargs)
+
+        def decorator(fn):
+            register(gate_resource(fn))
+            return fn
+
+        return decorator
 
     def configure_tool_surface(self, allowed: frozenset[str]) -> None:
         """Freeze host selection while evaluating feature availability per request."""

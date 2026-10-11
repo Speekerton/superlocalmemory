@@ -15,7 +15,6 @@ import asyncio
 import threading
 
 
-
 def _local_request():
     """A minimal local GET /status request: the handler now checks who is asking."""
     from starlette.requests import Request
@@ -94,5 +93,6 @@ def test_a_finished_recall_builds_its_answer_off_the_loop(monkeypatch) -> None:
                         lambda state: SimpleNamespace(snapshot=None))
     call = recall_core.RecallCall(query="q", limit=1, session_id="s", agent_id="a", fast=True)
 
-    assert asyncio.run(drive(recall_core.run_recall(object(), call, app_state=None))) == {"ok": True}
+    result = asyncio.run(drive(recall_core.run_recall(object(), call, app_state=None)))
+    assert result == {"ok": True}
     assert seen == [True], "the recall's answer was built on the event loop"

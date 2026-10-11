@@ -22,7 +22,6 @@ from superlocalmemory.infra.daemon_identity import (
 )
 
 
-
 def _local_request():
     """A minimal local GET /status request: the handler now checks who is asking."""
     from starlette.requests import Request

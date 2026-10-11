@@ -31,7 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from superlocalmemory.core import laya_interpreter, laya_process
+from superlocalmemory.core import laya_interpreter, laya_paths, laya_process
 from superlocalmemory.infra.data_root import canonical_data_root
 
 try:
@@ -160,6 +160,9 @@ def check_interpreter(python: str, *, strict_location: bool = True) -> str:
     earlier is re-checked without it, since its ownership checks already catch
     anyone else changing it.
     """
+    moved = laya_paths.venv_refusal(Path(python).parent.parent)
+    if moved:
+        return moved
     return laya_interpreter.refusal(python, strict_location=strict_location,
                                     in_temp_dir=lambda path: _is_in_temp_dir(path))
 
@@ -178,6 +181,9 @@ def _record_matches(record: dict[str, Any] | None, python: str, model_path: str)
 
 def _status_from_record(record: dict[str, Any], *, managed: bool,
                           hf_home_override: str = "") -> LayaRuntimeStatus:
+    if record.get("_path_error"):
+        return _needs_fix(managed=True, python=str(record.get("python", "")),
+                          error=str(record["_path_error"]))
     python = str(record.get("python", ""))
     model_path = str(record.get("model_path", ""))
     hf_home = hf_home_override or str(record.get("hf_home", ""))
@@ -219,6 +225,10 @@ def _inside(path: str, root: Path) -> bool:
 def _on_disk(retrieval_config: Any, run_dir: Path) -> LayaRuntimeStatus:
     managed_record = _read_json(run_dir / ".slm-managed")
     adopted_record = _read_json(run_dir / "adopted.json")
+    if managed_record is not None:
+        managed_record = laya_paths.managed_record(managed_record, run_dir)
+        if managed_record.get("_path_error") and adopted_record is None:
+            return _status_from_record(managed_record, managed=True)
 
     cfg_python = str(getattr(retrieval_config, "sufficiency_python", "") or "").strip()
     cfg_model = str(getattr(retrieval_config, "sufficiency_model", "") or "").strip()
@@ -227,8 +237,10 @@ def _on_disk(retrieval_config: Any, run_dir: Path) -> LayaRuntimeStatus:
     if cfg_python and cfg_model and Path(cfg_model).is_absolute():
         for record, managed in ((adopted_record, False), (managed_record, True)):
             if _record_matches(record, cfg_python, cfg_model):
+                if managed and cfg_hf_home:
+                    record = laya_paths.managed_record({**record, "hf_home": cfg_hf_home}, run_dir)
                 return _status_from_record(
-                    record, managed=managed, hf_home_override=cfg_hf_home)
+                    record, managed=managed, hf_home_override="" if managed else cfg_hf_home)
         managed = _inside(cfg_python, run_dir)
         return _needs_fix(managed=managed, python=cfg_python, hf_home=cfg_hf_home,
                           model_path=cfg_model, error=UNFINISHED if managed else UNCHECKED)
@@ -476,10 +488,12 @@ _STEP_VENV, _STEP_PIP, _STEP_WEIGHTS = "venv", "pip", "weights"
 
 def _run_resumable_steps(run_dir: Path, venv_dir: Path, venv_python: Path,
                           hf_cache: Path, report: ProgressFn) -> str | None:
-    """venv -> pip -> weights, skipping whatever the stamp says is already
-    done. Returns a plain-language error, or None once all three succeed."""
+    """Run remaining venv/pip/weights steps; return an error or None on success."""
     stamp = _load_stamp(run_dir)
 
+    if laya_paths.venv_refusal(venv_dir):
+        shutil.rmtree(venv_dir)
+        stamp.pop(_STEP_VENV, None)
     if not (stamp.get(_STEP_VENV) and venv_python.exists()):
         # A new environment is empty: whatever the stamp says was installed
         # into the old one is not in this one.
@@ -530,6 +544,8 @@ def _verify_and_record(run_dir: Path, venv_python: Path, hf_cache: Path,
     rather than 'not installed'."""
     ok, reason = verify(str(venv_python), str(hf_cache), str(model_path))
     previous = _read_json(run_dir / ".slm-managed")
+    if previous is not None:
+        previous = laya_paths.managed_record(previous, run_dir)
     if reason == VERIFY_BUSY and previous is not None and _record_matches(
             previous, str(venv_python), str(model_path)):
         return bool(previous.get("verified")), reason
@@ -540,8 +556,9 @@ def _verify_and_record(run_dir: Path, venv_python: Path, hf_cache: Path,
         "created_at": _existing_created_at(run_dir) or _now_iso(),
         "verified": ok,
         "verified_at": _now_iso() if ok else "",
-        "python": str(venv_python),
-        "model_path": str(model_path),
+        "python": str(venv_python.relative_to(run_dir)),
+        "model_path": str(model_path.relative_to(run_dir)),
+        "hf_home": str(hf_cache.relative_to(run_dir)),
         "reason": "" if ok else reason,
     }
     _write_json_atomic(run_dir / ".slm-managed", record)

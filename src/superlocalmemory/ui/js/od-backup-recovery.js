@@ -32,7 +32,7 @@
     var box = document.createElement('div'); box.className = 'recovery-preview';
     var info = document.createElement('p');
     info.textContent = 'Verified backup from ' + data.created + '. Includes: ' + data.stores.join(', ') +
-      '. Excludes: ' + data.omissions.join(', ') + '. The daemon will stop and restart. Changes made since this backup may be lost. A safety copy is kept.';
+      '. Excludes: ' + data.omissions.join(', ') + '. Accounts, sessions and the sign-in setting stay as they are now. The daemon will stop and restart. Changes made since this backup may be lost. A safety copy is kept.';
     var label = document.createElement('label'); label.textContent = 'Type RESTORE to confirm: ';
     var input = document.createElement('input'); input.type = 'text'; input.setAttribute('aria-label', 'Type RESTORE to confirm'); label.appendChild(input);
     var restore = button('Restore this backup'); restore.disabled = true;

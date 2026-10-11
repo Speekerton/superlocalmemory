@@ -38,9 +38,16 @@ def _root():
 
 
 def _gate(request):
-    from superlocalmemory.server.routes.backup import _require_manage
+    """Recovery reads and replaces every workspace's data: installation-wide MANAGE.
 
-    _require_manage(request)
+    MANAGE on the active workspace is not enough (PR 251 review, finding 1).
+    The machine owner or an administrator of every workspace may act; the
+    mutation gate's ``/api/backup`` rule (scope ``global``) refuses the rest
+    before the handler runs, and this covers the read routes too.
+    """
+    from superlocalmemory.server.rbac_enforce import require_global_manage
+
+    require_global_manage(request)
 
 
 def _verify(point_id):

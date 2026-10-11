@@ -16,6 +16,13 @@ from superlocalmemory.infra.backup import (
     BackupSetManifest,
     StoreEntry,
 )
+from superlocalmemory.infra.backup_credentials import (
+    CREDENTIAL_TABLES,
+    OMISSION,
+    carry_forward,
+    scrub_store,
+)
+from superlocalmemory.infra.backup_credentials import capture as capture_credentials
 from superlocalmemory.infra.private_files import create_private_file
 from superlocalmemory.server.config_file import read_config, update_config
 from superlocalmemory.storage._durable_json import write_json_atomic
@@ -162,22 +169,46 @@ def verify_point(root: Path, point_id: str) -> dict:
 
 
 def export_point(root: Path, point_id: str) -> Path:
+    """Zip a verified point, with accounts, sessions and sign-in links removed.
+
+    The point on disk keeps its bytes; each store that holds credential tables
+    is copied, scrubbed (``infra.backup_credentials``) and listed in the
+    exported manifest with its new checksum, so the archive still verifies.
+    """
     manifest = verify_point(root, point_id)
     point = _point_dir(Path(root), point_id)
-    fd, name = tempfile.mkstemp(prefix="slm-recovery-", suffix=".zip", dir=Path(root) / "backups")
+    backups = Path(root) / "backups"
+    fd, name = tempfile.mkstemp(prefix="slm-recovery-", suffix=".zip", dir=backups)
     import os
 
     os.close(fd)
     export = Path(name)
     try:
-        with zipfile.ZipFile(export, "w", zipfile.ZIP_DEFLATED) as archive:
-            for entry in manifest["files"]:
-                archive.write(point / entry["name"], entry["name"])
-            archive.writestr("recovery.json", json.dumps(manifest))
+        with tempfile.TemporaryDirectory(prefix=".export-", dir=backups) as scratch:
+            files = [_export_member(point, entry, Path(scratch)) for entry in manifest["files"]]
+            exported = {**manifest, "files": [entry for entry, _ in files],
+                        "excluded": [OMISSION]}
+            exported.pop("verified", None)
+            exported.pop("size_mb", None)
+            with zipfile.ZipFile(export, "w", zipfile.ZIP_DEFLATED) as archive:
+                for entry, source in files:
+                    archive.write(source, entry["name"])
+                archive.writestr("recovery.json", json.dumps(exported))
         return export
     except Exception:
         export.unlink(missing_ok=True)
         raise
+
+
+def _export_member(point: Path, entry: dict, scratch: Path) -> tuple[dict, Path]:
+    source = point / entry["name"]
+    if entry["name"] not in CREDENTIAL_TABLES:
+        return entry, source
+    copy = scratch / entry["name"]
+    shutil.copyfile(source, copy)
+    if not scrub_store(copy, entry["name"]):
+        return entry, source
+    return {**entry, "bytes": copy.stat().st_size, "sha256": _hash(copy)}, copy
 
 
 def _merge_settings(current, restored):
@@ -222,9 +253,13 @@ def restore_point(root: Path, point_id: str) -> None:
     # Existing coordinator owns safety copies, rollback and erasure-obligation replay.
     # Keep the coordinator's shared-media mirror out of this restore. Original
     # bytes are authorized against the post-erasure catalog below.
+    # Accounts, sessions and the sign-in policy are never rolled back by a
+    # restore: the ones this installation has now carry forward.
+    accounts = capture_credentials(root)
     with tempfile.TemporaryDirectory(prefix=".offline-restore-", dir=root / "backups") as isolated:
         offline = BackupCoordinator(MANAGED_DATABASES, root, Path(isolated))
         offline.restore_from_manifest(native)
+    carry_forward(root, accounts)
     for name in SETTINGS:
         src = point / "settings" / name
         if src.is_file():

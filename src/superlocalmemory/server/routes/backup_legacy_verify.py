@@ -14,10 +14,11 @@ class LegacyBody(BaseModel):
 
 @router.post("/verify-legacy")
 def verify_legacy(request: Request, body: LegacyBody):
-    from superlocalmemory.server.routes.backup import _get_backup_manager, _require_manage
+    from superlocalmemory.server.rbac_enforce import require_global_manage
+    from superlocalmemory.server.routes.backup import _get_backup_manager
     from superlocalmemory.storage._snapshot_manifest import sha256_file, verify_snapshot
 
-    _require_manage(request)
+    require_global_manage(request)
     root = Path(_get_backup_manager().backup_dir).resolve()
     path = root / body.filename
     if path.name != body.filename or path.suffix != ".db" or path.is_symlink():

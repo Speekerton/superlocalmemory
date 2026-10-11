@@ -12,6 +12,7 @@ every surface, and only ``supported`` passes a gate that needs a checked answer.
 from __future__ import annotations
 
 import asyncio
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -95,25 +96,44 @@ class _SupportedEngine(_UnjudgedEngine):
         return resp
 
 
-def _gate(engine_cls, **kw) -> dict:
+def _gate(engine_cls, tmp_path, **kw) -> dict:
+    from superlocalmemory.loops.receipt_jobs import register_job, run_registered_check
+    from tests.mcp.test_loop_independent_receipts import _threaded_receipt_connection
+
+    conn = _threaded_receipt_connection()
+    db = SimpleNamespace(execute=lambda sql, p=(): conn.execute(sql, p).fetchall())
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "state").write_text("current revision")
+    job = register_job(
+        db, profile_id="default", task_id="build", watcher_name="gate", producer="checker",
+        command=[sys.executable, "-I", "-c", "pass"], cwd=work, artifact_paths=["state"],
+        data_root=tmp_path / "slm", allow_prestart_evidence=True,
+    )
+    run_registered_check(db, job["job_id"])
+    engine = engine_cls()
+    engine._db = db
     cap = _Capture()
-    register_loop_tools(cap, engine_cls)
-    return asyncio.run(cap.fns["slm_loop_run"](
-        name="gate", gate_query="MATCH build passed", max_iterations=2,
-        poll_interval_s=0.25, **kw))
+    register_loop_tools(cap, lambda: engine)
+    try:
+        return asyncio.run(cap.fns["slm_loop_run"](
+            name="gate", gate_query="MATCH build passed", max_iterations=2,
+            gate_contract={"job_id": job["job_id"]}, poll_interval_s=0.25, **kw))
+    finally:
+        conn.close()
 
 
-def test_an_unchecked_match_never_passes_a_gate_that_needs_support() -> None:
-    out = _gate(_UnjudgedEngine, require_support=True)
+def test_an_unchecked_match_never_passes_a_gate_that_needs_support(tmp_path) -> None:
+    out = _gate(_UnjudgedEngine, tmp_path, require_support=True)
     assert out["ok"] is True and out["status"] != "DONE", out
 
 
-def test_a_checked_sufficient_match_passes_it() -> None:
-    assert _gate(_SupportedEngine, require_support=True)["status"] == "DONE"
+def test_a_checked_sufficient_match_passes_it(tmp_path) -> None:
+    assert _gate(_SupportedEngine, tmp_path, require_support=True)["status"] == "DONE"
 
 
-def test_the_score_gate_alone_is_unchanged_by_default() -> None:
-    assert _gate(_UnjudgedEngine)["status"] == "DONE"
+def test_the_score_gate_alone_is_unchanged_by_default(tmp_path) -> None:
+    assert _gate(_UnjudgedEngine, tmp_path)["status"] == "DONE"
 
 
 # -- the reorder branch out of budget, and what a remembered verdict is bound to ---

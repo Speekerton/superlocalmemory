@@ -68,12 +68,13 @@ def run_check(
     db, *, profile_id, task_id, run_id, producer, command, cwd, timeout=30,
     validate_result=None,
 ):
-    """Run the operator's pinned check and persist its independently measured result.
+    """Persist a diagnostic execution; public callbacks cannot authorize DONE.
 
     There are deliberately no verdict, status, digest or output input parameters.
     A waiting MCP agent has no tool that can call this writer with its own claims.
-    Registered executions supply an operator validation callback. Measurement
-    stays private until that callback succeeds; a refusal inserts no receipt.
+    Measurement stays private until the callback succeeds; a refusal inserts
+    no receipt. Its return value is discarded. Only the private registered
+    runner authenticates admitted measurements after hermetic validation.
     """
     for value in (profile_id, task_id, run_id, producer):
         if not isinstance(value, str) or not value.strip():

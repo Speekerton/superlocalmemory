@@ -41,18 +41,7 @@ def new_job(db, root, code="print('pass')", *, prior=True):
     )
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "stage", ["after_measurement", "before_validation", "after_validation_before_insert"]
-)
-async def test_no_pending_pass_can_be_promoted(receipt_db, tmp_path, monkeypatch, stage):
-    job = new_job(receipt_db, tmp_path)
-    entered, release = threading.Event(), threading.Event()
-
-    def pause():
-        entered.set()
-        assert release.wait(5)
-
+def pause_stage(monkeypatch, stage, pause):
     if stage == "after_measurement":
         original = writer._execution
 
@@ -78,6 +67,21 @@ async def test_no_pending_pass_can_be_promoted(receipt_db, tmp_path, monkeypatch
             return original(*a, **kw)
 
         monkeypatch.setattr(writer, "_store", paused)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "stage", ["after_measurement", "before_validation", "after_validation_before_insert"]
+)
+async def test_no_pending_pass_can_be_promoted(receipt_db, tmp_path, monkeypatch, stage):
+    job = new_job(receipt_db, tmp_path)
+    entered, release = threading.Event(), threading.Event()
+
+    def pause():
+        entered.set()
+        assert release.wait(5)
+
+    pause_stage(monkeypatch, stage, pause)
     task = asyncio.create_task(
         asyncio.to_thread(receipt_jobs.run_registered_check, receipt_db, job["job_id"])
     )

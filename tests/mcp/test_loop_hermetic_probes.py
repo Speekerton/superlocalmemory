@@ -222,6 +222,7 @@ async def test_bypass_mmap_dirty_page_aba(db, tmp_path):
     finally:
         mapping.close()
         os.close(fd)
+    assert outcome == {"verdict": "FAIL", "exit": 1}
     print(
         {
             "probe": "mmap",
@@ -234,9 +235,13 @@ async def test_bypass_mmap_dirty_page_aba(db, tmp_path):
     assert result["status"] == "HALT", f"mmap ABA certified failing state: {outcome} {result}"
 
 
+def hdi(*args):
+    subprocess.run(["hdiutil", *map(str, args)], check=True, stdin=subprocess.DEVNULL)
+
+
 @pytest.mark.asyncio
 async def test_bypass_mount_over_declared_ancestor(db, tmp_path):
-    """Unprivileged hdiutil mount over a declared directory, then detach (macOS)."""
+    """Mount ABA in the live tree must never affect the already-copied input."""
     if sys.platform != "darwin":
         pytest.skip("hdiutil probe")
     cwd, sync = layout(tmp_path)
@@ -248,123 +253,66 @@ async def test_bypass_mount_over_declared_ancestor(db, tmp_path):
     src.mkdir()
     (src / "state").write_text("pass")
     image = tmp_path / "pass.dmg"
-    subprocess.run(
-        [
-            "hdiutil",
-            "create",
-            "-quiet",
-            "-srcfolder",
-            str(src),
-            "-format",
-            "UDRO",
-            "-ov",
-            str(image),
-        ],
-        check=True,
-    )
-    command, job = sync_job(db, cwd, sync, "data/state", state)
+    hdi("create", "-quiet", "-srcfolder", src, "-format", "UDRO", "-ov", image)
+    _, job = sync_job(db, cwd, sync, "data/state", state)
 
     def attack():
         wait_for(sync / "started")
-        subprocess.run(
-            [
-                "hdiutil",
-                "attach",
-                "-quiet",
-                "-nobrowse",
-                "-readonly",
-                "-mountpoint",
-                str(data),
-                str(image),
-            ],
-            check=True,
-        )
-        (sync / "go").touch()
-        wait_for(sync / "read_done")
-        subprocess.run(["hdiutil", "detach", "-quiet", str(data)], check=True)
-        (sync / "restored").touch()
+        hdi("attach", "-quiet", "-nobrowse", "-readonly", "-mountpoint", data, image)
+        try:
+            (sync / "go").touch()
+            wait_for(sync / "read_done")
+        finally:
+            hdi("detach", "-quiet", data)
+            (sync / "restored").touch()
 
     outcome = run_with(db, job, attack)
-    result = await watch(db, job["job_id"])
-    print(
-        {
-            "probe": "mount",
-            "registered_bytes": state.read_text(),
-            "run": outcome,
-            "watcher": result["status"],
-            "passed": result["passed"],
-        }
-    )
-    assert result["status"] == "HALT", f"mount ABA certified failing state: {outcome} {result}"
+    assert outcome == {"verdict": "FAIL", "exit": 1}
+    assert state.read_text() == "fail"
+    assert (await watch(db, job["job_id"]))["status"] == "HALT"
+
+
+def rewrite_restore(state, sync, base):
+    wait_for(sync / "started")
+    fd = os.open(state, os.O_RDWR)
+    try:
+        os.pwrite(fd, b"pass", 0)
+        os.fsync(fd)
+        (sync / "go").touch()
+        wait_for(sync / "read_done")
+        os.pwrite(fd, b"fail", 0)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    os.utime(state, ns=(base.st_atime_ns, base.st_mtime_ns))
+    (sync / "restored").touch()
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("fs", ["ExFAT", "MS-DOS"])
 async def test_bypass_posix_host_without_change_time(db, tmp_path, fs):
-    """os.name=='posix' but the volume's ctime is its mtime: utime restores it."""
+    """Filesystem timestamp semantics have no authority over copied bytes."""
     if sys.platform != "darwin":
         pytest.skip("hdiutil probe")
     image, mount = tmp_path / "vol.dmg", tmp_path / "vol"
     mount.mkdir()
-    subprocess.run(
-        [
-            "hdiutil",
-            "create",
-            "-quiet",
-            "-size",
-            "8m",
-            "-fs",
-            fs,
-            "-volname",
-            "V",
-            "-ov",
-            str(image),
-        ],
-        check=True,
-    )
-    subprocess.run(
-        ["hdiutil", "attach", "-quiet", "-nobrowse", "-mountpoint", str(mount), str(image)],
-        check=True,
-    )
+    hdi("create", "-quiet", "-size", "8m", "-fs", fs, "-volname", "V", "-ov", image)
+    hdi("attach", "-quiet", "-nobrowse", "-mountpoint", mount, image)
     try:
         cwd, sync = mount / "work", tmp_path / "sync"
         cwd.mkdir()
         sync.mkdir()
         state = cwd / "state"
         state.write_text("fail")
-        command, job = sync_job(db, cwd, sync, "state", state)
-        time.sleep(2.2)  # FAT mtime granularity
+        _, job = sync_job(db, cwd, sync, "state", state)
+        time.sleep(2.2)  # retain the original FAT-granularity attack
         base = state.stat()
-
-        def attack():
-            wait_for(sync / "started")
-            fd = os.open(state, os.O_RDWR)
-            try:
-                os.pwrite(fd, b"pass", 0)
-                os.fsync(fd)
-                (sync / "go").touch()
-                wait_for(sync / "read_done")
-                os.pwrite(fd, b"fail", 0)
-                os.fsync(fd)
-            finally:
-                os.close(fd)
-            os.utime(state, ns=(base.st_atime_ns, base.st_mtime_ns))
-            (sync / "restored").touch()
-
-        outcome = run_with(db, job, attack)
-        result = await watch(db, job["job_id"])
-        print(
-            {
-                "probe": fs,
-                "registered_bytes": state.read_text(),
-                "run": outcome,
-                "watcher": result["status"],
-                "passed": result["passed"],
-            }
-        )
+        outcome = run_with(db, job, lambda: rewrite_restore(state, sync, base))
+        assert outcome == {"verdict": "FAIL", "exit": 1}
+        assert state.read_text() == "fail"
+        assert (await watch(db, job["job_id"]))["status"] == "HALT"
     finally:
-        subprocess.run(["hdiutil", "detach", "-quiet", "-force", str(mount)])
-    assert result["status"] == "HALT", f"{fs} ABA certified failing state: {outcome} {result}"
+        hdi("detach", "-quiet", "-force", mount)
 
 
 @pytest.mark.asyncio
@@ -403,16 +351,7 @@ async def test_bypass_undeclared_file_planted_after_registration(db, tmp_path, v
     for name in plant:
         (cwd / name).unlink()
     after = rerun(command, cwd)
-    print(
-        {
-            "probe": variant,
-            "honest_exit_before_plant": honest,
-            "receipt": receipt["verdict"],
-            "watcher": result["status"],
-            "passed": result["passed"],
-            "registered_revision_exit_after_unplant": after,
-        }
-    )
+    assert honest != 0 and after != 0 and receipt["verdict"] == "FAIL"
     assert result["status"] == "HALT", (
         f"planted undeclared input certified failing revision {result}"
     )

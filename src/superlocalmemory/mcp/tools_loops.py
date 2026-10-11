@@ -121,9 +121,12 @@ def register_loop_tools(
         """Wait under hard bounds for independently executed verification.
 
         DONE requires gate_contract={"job_id": <operator registration nonce>}.
-        The operator registers the current task revision, watcher name, approved
-        check and freshness via loops.receipt_jobs.register_job, then executes
-        run_registered_check. Older caller-selected contracts fail closed.
+        The operator pins check files, declares mutable artifact paths/globs,
+        watcher name and freshness via loops.receipt_jobs.register_job, then
+        executes run_registered_check in a private copy. DONE copies and hashes
+        current inputs again. Older caller-selected contracts fail closed.
+        Hosts without secure no-follow directory handles refuse registration;
+        the watcher exposes the platform or receipt reason in its result.
         Pre-start evidence requires explicit permission in that registration.
         Recall locates context; related text or support alone cannot pass.
         require_support additionally requires a supported answer check.

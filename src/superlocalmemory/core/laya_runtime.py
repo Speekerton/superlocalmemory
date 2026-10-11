@@ -23,8 +23,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import threading
-import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -749,13 +747,15 @@ def adopt(python: str, hf_home: str, model_path: str = "") -> LayaRuntimeStatus:
 
 # remove() lives in core/laya_remove.py; re-exported here, where callers
 # (and tests that replace it) have always found it.
-from superlocalmemory.core.laya_remove import forget_adopted, remove  # noqa: E402
-
+from superlocalmemory.core.laya_remove import (  # noqa: E402
+    forget_adopted as forget_adopted,
+    remove as remove,
+)
 
 # The background jobs the dashboard starts and polls live in core/laya_jobs.py;
 # re-exported here, where callers have always found them.
 from superlocalmemory.core.laya_jobs import (  # noqa: E402
     LayaAdoptJob,
     LayaInstallJob,
-    LayaTestJob,
+    LayaTestJob as LayaTestJob,
 )

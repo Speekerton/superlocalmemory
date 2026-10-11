@@ -16,8 +16,6 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
 from superlocalmemory.storage.embedding_migrator import (
     _normalize_signature,
     check_embedding_migration,

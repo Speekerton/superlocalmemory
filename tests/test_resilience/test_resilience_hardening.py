@@ -15,14 +15,12 @@ from __future__ import annotations
 
 import json
 import os
-import signal
 import socket
 import sqlite3
 import sys
 import time
 from pathlib import Path
-from threading import Thread
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -116,7 +114,6 @@ class TestBoundedRetryLoop:
         Scenario: holder crashes between our retry intervals.
         Expected: start() completes normally (no exception) after the claim succeeds.
         """
-        from superlocalmemory.core.remember_runtime import CanonicalRememberRuntime
 
         mock_coordinator = MagicMock()
         # claim: False, False, True (first outer check + 2 loop retries)
@@ -143,7 +140,6 @@ class TestBoundedRetryLoop:
         NOT CanonicalRememberUnavailable (traceback crash for non-technical users).
         """
         from superlocalmemory.core.remember_runtime import (
-            CanonicalRememberUnavailable,
             DaemonAlreadyServing,
         )
 
@@ -491,7 +487,7 @@ class TestPermissionErrorIsAlive:
 
         # Import psutil conditionally to test the os.kill fallback path
         try:
-            import psutil as _psutil
+            import psutil as _psutil  # noqa: F401
             # If psutil is available, _is_pid_alive uses psutil.pid_exists.
             # Test the PermissionError path by disabling psutil.
             with patch.dict("sys.modules", {"psutil": None}):
@@ -511,7 +507,7 @@ class TestPermissionErrorIsAlive:
         from superlocalmemory.infra.self_heal import _is_pid_alive
 
         try:
-            import psutil as _psutil
+            import psutil as _psutil  # noqa: F401
             with patch.dict("sys.modules", {"psutil": None}):
                 with patch("os.kill", side_effect=ProcessLookupError("no such process")):
                     result = _is_pid_alive(99999)

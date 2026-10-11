@@ -24,7 +24,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Generator
 
-import numpy as np
 
 from superlocalmemory.storage.embedding_codec import encode_embedding
 from superlocalmemory.retrieval import vector_presence

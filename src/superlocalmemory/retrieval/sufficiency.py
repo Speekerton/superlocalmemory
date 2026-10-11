@@ -43,7 +43,6 @@ from typing import Protocol, runtime_checkable
 
 from superlocalmemory.core import recall_gate
 from superlocalmemory.encoding.memory_kind_recipe import KindAnswer, KindRecipe
-from superlocalmemory.retrieval import answer_question_forms as question_forms
 from superlocalmemory.retrieval import laya_kinds
 from superlocalmemory.retrieval.answer_check_status import (
     DETAIL_REUSED,
@@ -137,6 +136,8 @@ class SufficiencyVerdict:
     #: Memories an explicit rule recognised as answering (answer_question_forms):
     #: sufficient whatever the model's own numbers, which are kept as they were.
     rule_support: tuple[int, ...] = ()
+    rule_reject: bool = False
+    document_count: int = 0
 
     @property
     def answer_confidence(self) -> float:
@@ -144,7 +145,8 @@ class SufficiencyVerdict:
 
     @property
     def insufficient(self) -> bool:
-        return self.answer_confidence < self.threshold and not self.rule_support
+        return not self.rule_support and (
+            self.rule_reject or self.answer_confidence < self.threshold)
 
 
 @runtime_checkable
@@ -293,10 +295,6 @@ class LayaSufficiencyJudge:
       until its setup changes (a new setup builds a new judge).
     * Other load failures retry within a cycle, and each failed cycle waits
       longer than the last before the next one may start.
-    * A judgement that misses its deadline costs that recall its verdict only.
-      The worker keeps the model; its late reply is read and discarded by the
-      next request. Only a worker that has not answered for ``_WEDGED_S`` is
-      replaced.
     """
 
     backend = "laya"
@@ -464,6 +462,8 @@ class LayaSufficiencyJudge:
         ``reuse`` is asked once the worker is this recall's, before anything is
         sent: a verdict that became known meanwhile is returned (``DETAIL_REUSED``).
         """
+        from superlocalmemory.retrieval.laya_set_recipe import refresh
+        refresh(self)
         docs = coerce_documents(documents[: self.top_k])
         if not isinstance(query, str) or not query or not docs:
             return JudgeOutcome(None, STATUS_SKIPPED)
@@ -485,6 +485,8 @@ class LayaSufficiencyJudge:
         warm-up: a check finished after its recall returned is not a reason to
         load a model. Asked one memory at a time (``core.answer_check_deferred``).
         """
+        from superlocalmemory.retrieval.laya_set_recipe import refresh
+        refresh(self)
         docs = coerce_documents(documents[: self.top_k])
         if not isinstance(query, str) or not query or not docs:
             return JudgeOutcome(None, STATUS_SKIPPED)
@@ -535,26 +537,24 @@ class LayaSufficiencyJudge:
             return JudgeOutcome(None, STATUS_BUSY if self._ready else STATUS_UNAVAILABLE)
         if seconds_left(deadline) < self._min_ask_s:
             return JudgeOutcome(None, STATUS_BUSY)
-        resp = self._exchange(proc, {"cmd": "judge", "query": query, "documents": rendered,
-                                     "question": self._recipe.question}, deadline)
+        from superlocalmemory.retrieval.laya_set_recipe import request_for
+        payload = request_for(self._recipe, query, rendered)
+        resp = self._exchange(proc, payload, deadline)
         if resp is None:
             logger.info("Laya sufficiency judge did not answer in time; "
                         "this recall is reported unjudged")
             return JudgeOutcome(None, STATUS_UNAVAILABLE)
         if not resp.get("ok"):
             return JudgeOutcome(None, STATUS_UNAVAILABLE)
-        probabilities = _valid_probabilities(resp.get("probabilities"), len(rendered))
+        probabilities = _valid_probabilities(resp.get("probabilities"), len(payload["documents"]))
         if probabilities is None:
             logger.warning("Laya sufficiency judge returned a malformed answer; ignoring it")
             return JudgeOutcome(None, STATUS_UNAVAILABLE)
         self._failures = 0
-        # A permission question may also be settled by an explicit rule; only a
-        # verdict it settled carries the rule's id (retrieval/answer_question_forms.py).
-        support = question_forms.rule_support(query, rendered)
-        return JudgeOutcome(SufficiencyVerdict(
-            probabilities, self.threshold,
-            question_forms.calibration_id_for(self.calibration_id, support),
-            self.calibration_status, self.backend, support), STATUS_JUDGED)
+        from superlocalmemory.retrieval.source_verdict import settle
+        verdict = SufficiencyVerdict(probabilities, self.threshold, self.calibration_id,
+                                      self.calibration_status, self.backend)
+        return JudgeOutcome(settle(query, rendered, verdict), STATUS_JUDGED)
 
     # -- memory typing (background only) ------------------------------------
 

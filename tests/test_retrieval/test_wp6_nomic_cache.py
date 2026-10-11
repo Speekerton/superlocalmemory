@@ -39,3 +39,23 @@ def test_a_late_old_space_reply_cannot_poison_the_new_cache():
         finally:
             release.set()
             query.close()
+
+
+def test_a_stale_submission_cannot_be_joined_by_the_new_space():
+    import threading
+
+    release = threading.Event()
+    def slow(text):
+        release.wait(2)
+        return [1.0, 0.0]
+    holder = {'embedder': SimpleNamespace(embed=slow)}
+    query = QueryEmbedder(lambda: holder['embedder'])
+    old, generation = query._current_provider()
+    holder['embedder'] = SimpleNamespace(embed=lambda text: [0.0, 1.0])
+    query._current_provider()
+    try:
+        query._future_for('same question', old, generation)
+        assert query.embed('same question', 0.1) == ([0.0, 1.0], None)
+    finally:
+        release.set()
+        query.close()

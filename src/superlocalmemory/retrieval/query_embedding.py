@@ -56,7 +56,7 @@ class QueryEmbedder:
         self._cache: dict[str, list[float]] = {}
         self._cache_max_size = cache_max_size
         self._lock = threading.Lock()
-        self._inflight: dict[str, concurrent.futures.Future] = {}
+        self._inflight: dict[tuple[int, str], concurrent.futures.Future] = {}
         # Created on first use: an engine with no embedder (Mode A without
         # vectors) or one only ever used from background work owns no threads.
         self._executor: concurrent.futures.ThreadPoolExecutor | None = None
@@ -95,7 +95,7 @@ class QueryEmbedder:
 
     def _future_for(self, query: str, embedder: Any, generation: int) -> concurrent.futures.Future:
         with self._lock:
-            fut = self._inflight.get(query)
+            fut = self._inflight.get((generation, query))
             if fut is not None:
                 return fut
             if self._executor is None:
@@ -108,9 +108,9 @@ class QueryEmbedder:
                     thread_name_prefix="slm-query-embed",
                 )
             fut = self._executor.submit(self._compute, query, embedder, generation)
-            self._inflight[query] = fut
+            self._inflight[generation, query] = fut
 
-        def _done(_f, q=query) -> None:
+        def _done(_f, q=(generation, query)) -> None:
             with self._lock:
                 if self._inflight.get(q) is _f:
                     del self._inflight[q]
@@ -119,6 +119,11 @@ class QueryEmbedder:
         # inline, and the callback takes the same (non-reentrant) lock.
         fut.add_done_callback(_done)
         return fut
+
+    def _current_result(self, vector, generation):
+        self._current_provider()
+        with self._lock:
+            return (vector, None) if generation == self._generation else (None, chstat.WARMING)
 
     def _not_ready(self) -> bool:
         """A cold or reloading provider explicitly reports not warm."""
@@ -149,9 +154,10 @@ class QueryEmbedder:
 
         if requires_lexical(embedder, query):
             return None, chstat.EMPTY  # lexical retrieval still runs; not a model outage
-        cached = self._cache.get(query)
+        with self._lock:
+            cached = self._cache.get(query) if generation == self._generation else None
         if cached is not None:
-            return cached, None
+            return self._current_result(cached, generation)
         if getattr(embedder, "needs_service", False) is True:
             return None, chstat.NEEDS_SERVICE  # no point waiting: nothing is loading
         from superlocalmemory.core.recall_gate import is_background_work
@@ -162,18 +168,16 @@ class QueryEmbedder:
             # this question started while the model was loading is joined,
             # not repeated.
             with self._lock:
-                pending = self._inflight.get(query)
+                pending = self._inflight.get((generation, query))
             if pending is not None:
-                return pending.result(), None
+                return self._current_result(pending.result(), generation)
             vector = self._compute(query, embedder, generation)
-            return (vector, None) if generation == self._generation else (None, chstat.WARMING)
+            return self._current_result(vector, generation)
         warming = self._not_ready()
         fut = self._future_for(query, embedder, generation)
         try:
             vector = fut.result(timeout=max(0.0, wait_seconds))
-            if generation != self._generation:
-                return None, chstat.WARMING
-            return vector, None
+            return self._current_result(vector, generation)
         except concurrent.futures.TimeoutError:
             logger.warning(
                 "Embedding model not ready within %.1fs; this recall runs "

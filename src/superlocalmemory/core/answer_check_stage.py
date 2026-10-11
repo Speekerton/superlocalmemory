@@ -39,8 +39,8 @@ from superlocalmemory.retrieval.answer_check_status import (
     ANSWER_CHECK_STATUSES,
     DETAIL_BUDGET,
     DETAIL_MEDIA_UNJUDGED,
-    DETAIL_NONE,
     DETAIL_NO_RESULTS,
+    DETAIL_NONE,
     DETAIL_NOT_A_QUESTION,
     DETAIL_OTHER_PROFILE,
     DETAIL_REUSED,
@@ -49,6 +49,7 @@ from superlocalmemory.retrieval.answer_check_status import (
     STATUS_OFF,
     STATUS_SKIPPED,
     STATUS_UNAVAILABLE,
+    STATUS_WARMING,
     AnswerCheckTrace,
     JudgeOutcome,
     judge_deadline,
@@ -76,15 +77,23 @@ def run_answer_check(retrieval_engine: Any, query: str, response: Any, *,
     or global result): consent to send is this install's, but in a team that
     memory may be someone else's.
     """
+    from superlocalmemory.core.answer_check_reload import changed_on_disk
     from superlocalmemory.core.recall_gate import is_background_work
-
     judge = getattr(retrieval_engine, _JUDGE_ATTR, None)
     if judge is None:
         return JudgeOutcome(None, STATUS_OFF)
     if answer_check_skipped() or is_background_work():
         return JudgeOutcome(None, STATUS_SKIPPED, DETAIL_NOT_A_QUESTION)
+    if changed_on_disk(retrieval_engine, judge=judge):
+        return JudgeOutcome(None, STATUS_UNAVAILABLE, "settings_changed")
+    if getattr(judge, "backend", None) == "laya":
+        from superlocalmemory.retrieval.laya_set_recipe import refresh
+        refresh(judge)
     if not response.results:
         return JudgeOutcome(None, STATUS_SKIPPED, DETAIL_NO_RESULTS)
+    readiness = _local_readiness(judge)
+    if readiness is not None:
+        return readiness
     if media_rerank.all_unreadable(response.results):
         return JudgeOutcome(None, STATUS_SKIPPED, DETAIL_MEDIA_UNJUDGED)
     if _would_send_another_profiles_memory(judge, response, profile_id, request):
@@ -127,6 +136,18 @@ def run_answer_check(retrieval_engine: Any, query: str, response: Any, *,
     if outcome.status == STATUS_JUDGED and outcome.detail != DETAIL_REUSED:
         answer_check_memo.store(judge, query, documents, outcome.verdict, binding=binding)
     return outcome
+
+
+def _local_readiness(judge):
+    if getattr(judge, 'backend', None) != 'laya' or getattr(judge, 'ready', None) is not False:
+        return None
+    if getattr(judge, '_permanent_error', ''):
+        return JudgeOutcome(None, STATUS_UNAVAILABLE)
+    start = getattr(judge, 'start_warmup', None)
+    if callable(start):
+        start()
+    status = STATUS_UNAVAILABLE if getattr(judge, 'loading', None) is False else STATUS_WARMING
+    return JudgeOutcome(None, status)
 
 
 def _binding(retrieval_engine: Any, response: Any, profile_id: str | None,
@@ -179,16 +200,14 @@ def _deadline_or_skip(recall_started: float | None) -> Any:
 
 def _top_documents(judge: Any, response: Any) -> list[Any]:
     """What the plain check reads: the top ``top_k`` memories' text. Never raises."""
-    from superlocalmemory.retrieval.judge_recipe import JudgeDocument, document_from_fact
+    from superlocalmemory.retrieval.judge_recipe import clean_documents, document_from_fact
     from superlocalmemory.retrieval.sufficiency import DEFAULT_TOP_K
 
     top_k = getattr(judge, "top_k", DEFAULT_TOP_K)
     if not isinstance(top_k, int) or isinstance(top_k, bool) or top_k < 1:
         top_k = DEFAULT_TOP_K
     docs = [document_from_fact(getattr(r, "fact", None)) for r in response.results[:top_k]]
-    # Saving labels are not part of what the memory says.
-    return [d if "[" not in d.content else JudgeDocument(content=media_rerank.strip_labels(d.content))
-            for d in docs]
+    return clean_documents(docs)
 
 
 def _would_send_another_profiles_memory(judge: Any, response: Any,

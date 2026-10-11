@@ -153,7 +153,7 @@ class TestTheBudgetIsThreeSeconds:
 class TestASkipSaysSoAndWhy:
     def test_budget_skip_is_on_the_envelope(self, mode_a_config, monkeypatch) -> None:
         judge = _JitteryLaya()
-        judge.ready = False  # nothing finished later: this test is about the skip
+        judge.ready = True  # a cold check now reports warming; exercise a warm budget skip
         out = _run(judge, mode_a_config, monkeypatch, delay=SLOW_S)
         meta = recall_response_metadata(out)
         assert meta["answer_check_status"] == "skipped"

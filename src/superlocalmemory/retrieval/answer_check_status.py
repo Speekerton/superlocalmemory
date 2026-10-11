@@ -67,7 +67,7 @@ DETAIL_REUSED = "reused"
 #: Every result is a picture with no words of its own: a text check has nothing to read.
 DETAIL_MEDIA_UNJUDGED = "media_unjudged"
 
-ANSWER_CHECK_DETAILS = frozenset({
+ANSWER_CHECK_DETAILS = frozenset({"settings_changed",
     DETAIL_NONE, DETAIL_NOT_A_QUESTION, DETAIL_NO_RESULTS, DETAIL_OTHER_PROFILE,
     DETAIL_BUDGET, DETAIL_REUSED, DETAIL_MEDIA_UNJUDGED,
 })
@@ -161,6 +161,9 @@ def answer_check_note(status: object, detail: object = DETAIL_NONE) -> str:
                 "and did not free up in time.")
     if status == STATUS_WARMING:
         return f"{_NOT_CHECKED}: the on-device check is still loading its model."
+    if detail == "settings_changed":
+        from superlocalmemory.core.answer_check_reload import NOTICE
+        return NOTICE
     if status == STATUS_UNAVAILABLE:
         return f"{_NOT_CHECKED}: the check did not answer in time or could not run."
     return ""

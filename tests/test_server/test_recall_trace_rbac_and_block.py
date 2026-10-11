@@ -34,18 +34,28 @@ class _Engine:
         resp.abstention_reason = "judged_insufficient"
         resp.answer_confidence = 0.18
         resp.answer_check_trace = AnswerCheckTrace(
-            detail="", backend="laya", threshold=0.5, reordered=False,
-            retrieval_ms=812.3, judge_ms=201.0, total_ms=1013.3)
+            detail="",
+            backend="laya",
+            threshold=0.5,
+            reordered=False,
+            retrieval_ms=812.3,
+            judge_ms=201.0,
+            total_ms=1013.3,
+        )
         return resp
 
 
 @pytest.fixture()
 def app(monkeypatch):
-    monkeypatch.setattr("superlocalmemory.server.routes.helpers.get_active_profile",
-                        lambda: "default")
+    monkeypatch.setattr(
+        "superlocalmemory.server.routes.helpers.get_active_profile", lambda: "default"
+    )
     monkeypatch.setattr(v3_api, "_record_learning_signals", lambda *a, **k: None)
     application = FastAPI()
     application.state.engine = _Engine()
+    from superlocalmemory.server.routes.recall_trace import install
+
+    install(v3_api.router)
     application.include_router(v3_api.router)
     return application
 
@@ -69,11 +79,21 @@ def test_trace_open_in_personal_mode(app) -> None:
 def test_trace_answer_check_block_shape(app) -> None:
     body = TestClient(app).post(TRACE, json={"query": "q"}).json()
     assert body["answer_check"] == {
-        "status": "judged", "detail": "", "judge": "laya", "abstained": True,
-        "abstention_reason": "judged_insufficient", "answer_confidence": 0.18,
-        "threshold": 0.5, "reordered": False, "retrieval_ms": 812.3, "judge_ms": 201.0,
-        "embed_ms": None, "rerank_ms": None,
-        "total_ms": 1013.3, "ceiling_ms": 3000.0}
+        "status": "judged",
+        "detail": "",
+        "judge": "laya",
+        "abstained": True,
+        "abstention_reason": "judged_insufficient",
+        "answer_confidence": 0.18,
+        "threshold": 0.5,
+        "reordered": False,
+        "retrieval_ms": 812.3,
+        "judge_ms": 201.0,
+        "embed_ms": None,
+        "rerank_ms": None,
+        "total_ms": 1013.3,
+        "ceiling_ms": 3000.0,
+    }
     assert body["abstained"] is True  # the existing envelope is untouched
 
 
@@ -87,6 +107,7 @@ def test_trace_answer_check_block_carries_stage_timings(app, monkeypatch) -> Non
         resp = real(query, **kw)
         resp.stage_ms = {"query_embedding": 45.5, "rerank": 12.0, "channels": 650.0}
         return resp
+
     monkeypatch.setattr(engine, "recall", staged)
     block = TestClient(app).post(TRACE, json={"query": "q"}).json()["answer_check"]
     assert block["embed_ms"] == 45.5
@@ -101,6 +122,7 @@ def test_trace_block_without_a_trace_has_null_timings(app, monkeypatch) -> None:
         resp = real(query, **kw)
         resp.answer_check_trace = None
         return resp
+
     monkeypatch.setattr(engine, "recall", no_trace)
     block = TestClient(app).post(TRACE, json={"query": "q"}).json()["answer_check"]
     assert block["total_ms"] is None and block["judge_ms"] is None and block["judge"] == ""
@@ -122,12 +144,59 @@ def test_trace_says_why_a_recall_was_not_checked(app, monkeypatch) -> None:
         resp.answer_check_status, resp.answer_check_detail = "skipped", "budget"
         resp.abstained, resp.abstention_reason, resp.answer_confidence = False, None, None
         resp.answer_check_trace = AnswerCheckTrace(
-            detail="budget", backend="laya", threshold=None, reordered=False,
-            retrieval_ms=2950.0, judge_ms=0.0, total_ms=2951.0)
+            detail="budget",
+            backend="laya",
+            threshold=None,
+            reordered=False,
+            retrieval_ms=2950.0,
+            judge_ms=0.0,
+            total_ms=2951.0,
+        )
         return resp
+
     monkeypatch.setattr(engine, "recall", skipped)
     body = TestClient(app).post(TRACE, json={"query": "q"}).json()
     assert body["answer_check"]["detail"] == "budget"
     assert body["answer_check_reason"] == "budget" and body["answer_check_ran"] is False
     assert body["answer_check_note"].startswith("Answer check did not run")
     assert "only the verdict is missing" in body["answer_check_note"]
+
+
+def test_recall_lab_uses_the_same_bounded_deadline_as_agent_recall(app, monkeypatch):
+    import asyncio
+    import time
+
+    import httpx
+
+    from superlocalmemory.server import recall_core
+
+    monkeypatch.setattr(recall_core, "effective_budget_s", lambda call: 0.1)
+    real = app.state.engine.recall
+
+    def slow(*a, **kw):
+        time.sleep(0.3)
+        return real(*a, **kw)
+
+    app.state.engine.recall = slow
+
+    async def check():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            start = time.monotonic()
+            response = await client.post(TRACE, json={"query": "Who approved the release?"})
+            assert time.monotonic() - start < 0.2
+            assert response.json()["answerability"] == "unjudged"
+
+    asyncio.run(check())
+
+
+def test_cold_recall_lab_reports_warming_without_initializing_a_model(app, monkeypatch):
+    from superlocalmemory.server.routes import helpers
+
+    app.state.engine = None
+    monkeypatch.setattr(helpers, 'get_engine_lazy', lambda state: (_ for _ in ()).throw(
+        AssertionError('A request must not initialize models on the event loop')))
+    response = TestClient(app).post(TRACE, json={'query': 'a question?'})
+    assert response.status_code == 503
+    assert response.json()['answer_check_status'] == 'warming'

@@ -136,20 +136,30 @@ def _text(document: Any) -> str:
     return content if isinstance(content, str) else repr(content)
 
 
-def key_for(judge: Any, query: str, documents: Sequence[Any],
-            binding: Binding | None = None) -> str:
+def key_for(
+    judge: Any,
+    query: str,
+    documents: Sequence[Any],
+    binding: Binding | None = None,
+    *,
+    calibration=None,
+) -> str:
     """Everything the verdict depends on, hashed. Memory text is not kept."""
     b = binding or Binding()
-    material = json.dumps([
-        query,
-        [_text(d) for d in documents],
-        repr(getattr(judge, "threshold", None)),
-        repr(getattr(judge, "calibration_id", None)),
-        repr(getattr(judge, "top_k", None)),
-        [repr(getattr(judge, a, None)) for a in ("backend", "model", "recipe",
-                                                  "config_epoch")],
-        b.profile_id, list(b.fact_ids), list(b.kinds),
-    ], ensure_ascii=True)
+    material = json.dumps(
+        [
+            query,
+            [_text(d) for d in documents],
+            repr(calibration[0] if calibration else getattr(judge, "threshold", None)),
+            repr(calibration[1] if calibration else getattr(judge, "calibration_id", None)),
+            repr(getattr(judge, "top_k", None)),
+            [repr(getattr(judge, a, None)) for a in ("backend", "model", "recipe", "config_epoch")],
+            b.profile_id,
+            list(b.fact_ids),
+            list(b.kinds),
+        ],
+        ensure_ascii=True,
+    )
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
@@ -173,9 +183,15 @@ def _put(table: OrderedDict, key: str, value: Any, current: float) -> None:
         table.popitem(last=False)
 
 
-def lookup(judge: Any, query: str, documents: Sequence[Any], *,
-           now: float | None = None, binding: Binding | None = None,
-           changed: Changed | None = None) -> Any:
+def lookup(
+    judge: Any,
+    query: str,
+    documents: Sequence[Any],
+    *,
+    now: float | None = None,
+    binding: Binding | None = None,
+    changed: Changed | None = None,
+) -> Any:
     """The remembered verdict for exactly this input, or None.
 
     ``changed`` (when given) is asked whether a judged memory changed since the
@@ -203,14 +219,35 @@ def lookup(judge: Any, query: str, documents: Sequence[Any], *,
     return verdict
 
 
-def store(judge: Any, query: str, documents: Sequence[Any], verdict: Any, *,
-          now: float | None = None, binding: Binding | None = None) -> None:
+def store(
+    judge: Any,
+    query: str,
+    documents: Sequence[Any],
+    verdict: Any,
+    *,
+    now: float | None = None,
+    binding: Binding | None = None,
+) -> None:
     """Remember a genuine verdict. Callers pass only verdicts the judge gave."""
+    from superlocalmemory.retrieval.source_verdict import base_identity
+
+    identity = getattr(judge, "calibration_id", None)
+    if isinstance(identity, str) and verdict is not None:
+        if (
+            base_identity(verdict.calibration_id) != identity
+            or verdict.threshold != judge.threshold
+        ):
+            return  # a completed old request cannot acquire a new recipe's memo key
     memo = _usable(judge)
     if memo is None or verdict is None:
         return
     b = binding or Binding()
-    key = key_for(judge, query, documents, b)
+    calibrated = (
+        (verdict.threshold, base_identity(verdict.calibration_id))
+        if isinstance(identity, str)
+        else None
+    )
+    key = key_for(judge, query, documents, b, calibration=calibrated)
     current = time.monotonic() if now is None else now
     with memo.lock:
         _put(memo.entries, key, (verdict, b.seq, b.fact_ids), current)
@@ -242,8 +279,9 @@ def live_checks(judge: Any) -> int:
         return memo.live
 
 
-def finish_later(judge: Any, query: str, documents: Sequence[Any], *,
-                 binding: Binding | None = None) -> threading.Thread | None:
+def finish_later(
+    judge: Any, query: str, documents: Sequence[Any], *, binding: Binding | None = None
+) -> threading.Thread | None:
     """Judge after the recall returned, so the next identical recall is judged.
 
     Queued per judge and carried out by one thread (``answer_check_deferred``),
@@ -289,5 +327,17 @@ def clear(judge: Any) -> None:
             memo.pending.clear()
 
 
-__all__ = ["Binding", "MAX_ENTRIES", "MAX_PENDING", "TTL_S", "clear", "finish_later", "key_for",
-           "live_check", "live_checks", "lookup", "remembers", "store"]
+__all__ = [
+    "Binding",
+    "MAX_ENTRIES",
+    "MAX_PENDING",
+    "TTL_S",
+    "clear",
+    "finish_later",
+    "key_for",
+    "live_check",
+    "live_checks",
+    "lookup",
+    "remembers",
+    "store",
+]

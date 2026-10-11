@@ -1,0 +1,143 @@
+"""Three seconds includes admission; generous legacy environment values cannot widen it."""
+
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+from superlocalmemory.server import recall_core
+
+
+def test_default_and_override_cannot_exceed_three_seconds(monkeypatch):
+    monkeypatch.delenv("SLM_SEARCH_RECALL_TIMEOUT_S", raising=False)
+    assert recall_core.recall_budget_s() <= 3
+    monkeypatch.setenv("SLM_SEARCH_RECALL_TIMEOUT_S", "25")
+    assert recall_core.recall_budget_s() <= 3
+
+
+def test_admission_is_part_of_the_same_deadline(monkeypatch):
+    from superlocalmemory.server import profile_runtime, recall_fallback
+
+    async def run():
+        gate = asyncio.Semaphore(0)
+        monkeypatch.setattr(recall_core, "RECALL_SEMAPHORE", gate)
+        monkeypatch.setattr(recall_core, "effective_budget_s", lambda call: 0.12)
+        monkeypatch.setattr(
+            profile_runtime,
+            "get_profile_runtime",
+            lambda state: SimpleNamespace(
+                snapshot=SimpleNamespace(profile_id="default", generation=1)
+            ),
+        )
+        monkeypatch.setattr(
+            recall_fallback,
+            "recall_keyword_fallback",
+            lambda *a, **kw: {
+                "answerability": "unjudged",
+                "answer_check_status": "skipped",
+                "results": [],
+            },
+        )
+        monkeypatch.setattr(recall_core, "_envelope", lambda *a: {"answerability": "unjudged"})
+        engine = SimpleNamespace(recall=Mock())
+        call = recall_core.RecallCall(
+            query="a fresh question",
+            limit=3,
+            session_id="",
+            agent_id="test",
+            profile_id="default",
+            fast=False,
+        )
+        task = asyncio.create_task(
+            recall_core.run_recall(engine, call, app_state=SimpleNamespace())
+        )
+        await asyncio.sleep(0.2)
+        completed_inside_budget = task.done()
+        gate.release()  # lets the old implementation leave instead of leaking a test task
+        try:
+            result = await task
+            assert completed_inside_budget
+            assert result["answerability"] == "unjudged"
+            engine.recall.assert_not_called()
+        finally:
+            if not task.done():
+                task.cancel()
+
+    asyncio.run(run())
+
+
+def test_slow_response_assembly_is_also_bounded(monkeypatch):
+    import time
+
+    from superlocalmemory.server import profile_runtime
+
+    async def run():
+        monkeypatch.setattr(recall_core, "effective_budget_s", lambda call: 0.1)
+        monkeypatch.setattr(
+            profile_runtime,
+            "get_profile_runtime",
+            lambda state: SimpleNamespace(
+                snapshot=SimpleNamespace(profile_id="default", generation=1)
+            ),
+        )
+        monkeypatch.setattr(recall_core, "_engine_call", lambda *a: object())
+
+        def slow(*a):
+            time.sleep(0.3)
+            return {"answerability": "supported"}
+
+        monkeypatch.setattr(recall_core, "_envelope", slow)
+        call = recall_core.RecallCall("a question?", 3, "", "test", True)
+        started = time.monotonic()
+        result = await recall_core.run_recall(object(), call, app_state=SimpleNamespace())
+        assert time.monotonic() - started < 0.2
+        assert result["answerability"] == "unjudged"
+        assert result["no_confident_match"] is False
+
+    asyncio.run(run())
+
+
+def test_executor_work_is_counted_and_transition_leased_until_it_finishes(monkeypatch):
+    import threading
+    from contextlib import contextmanager
+
+    from superlocalmemory.core import recall_gate
+    from superlocalmemory.server import profile_runtime
+
+    entered, release = threading.Event(), threading.Event()
+    active = []
+
+    @contextmanager
+    def lease():
+        active.append(True)
+        try:
+            yield True
+        finally:
+            active.pop()
+
+    runtime = SimpleNamespace(
+        snapshot=SimpleNamespace(profile_id="default", generation=1), operation_nowait=lease
+    )
+
+    def slow(*args):
+        entered.set()
+        release.wait(1)
+        return {}
+
+    monkeypatch.setattr(profile_runtime, "get_profile_runtime", lambda state: runtime)
+    monkeypatch.setattr(recall_core, "effective_budget_s", lambda call: 0.1)
+    monkeypatch.setattr(recall_core, "_engine_call", lambda *a: None)
+    monkeypatch.setattr(recall_core, "_fallback", slow)
+    engine = object()
+
+    async def run():
+        call = recall_core.RecallCall("a question?", 3, "", "test", True)
+        baseline = recall_gate.in_flight()
+        try:
+            await recall_core.run_recall(engine, call, app_state=SimpleNamespace(engine=engine))
+            assert entered.is_set()
+            assert active
+            assert recall_gate.in_flight() > baseline
+        finally:
+            release.set()
+
+    asyncio.run(run())

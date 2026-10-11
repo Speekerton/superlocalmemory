@@ -88,6 +88,12 @@ def _finish(judge: Any, memo: Any, key: str, query: str,
     from superlocalmemory.core import answer_check_memo
     from superlocalmemory.retrieval.answer_check_status import STATUS_BUSY
 
+    if getattr(judge, 'backend', None) == 'laya':
+        from superlocalmemory.retrieval.laya_set_recipe import refresh
+        refresh(judge)
+    if getattr(getattr(judge, "_recipe", None), "recipe_id", None) == "sufficiency-set-v2":
+        _finish_set(judge, memo, query, documents, by, binding)
+        return
     with memo.lock:
         if answer_check_memo._fresh(memo.entries, key, time.monotonic()) is not None:
             return
@@ -100,6 +106,9 @@ def _finish(judge: Any, memo: Any, key: str, query: str,
                 _keep(memo, key, parts)
                 return
             outcome = judge.assess_if_idle(query, [document])
+            if getattr(getattr(judge, '_recipe', None), 'recipe_id', None) == 'sufficiency-set-v2':
+                _finish_set(judge, memo, query, documents, by, binding)
+                return  # never combine singleton measurements under a SET threshold
             if getattr(outcome, "status", None) == STATUS_BUSY:
                 time.sleep(POLL_S)  # a recall (or memory typing) has the worker
                 continue
@@ -112,6 +121,11 @@ def _finish(judge: Any, memo: Any, key: str, query: str,
             return  # a live recall judged this question meanwhile
     verdict = _combine(parts)
     if verdict is not None:
+        from superlocalmemory.retrieval.judge_recipe import ACTIVE_RECIPE, coerce_documents
+        from superlocalmemory.retrieval.source_verdict import settle
+        recipe = getattr(judge, "_recipe", ACTIVE_RECIPE)
+        rendered = [recipe.render(d) for d in coerce_documents(documents)]
+        verdict = settle(query, rendered, verdict)
         answer_check_memo.store(judge, query, documents, verdict, binding=binding)
 
 
@@ -128,6 +142,7 @@ def _single(outcome: Any) -> Any:
 def _combine(parts: list[Any]) -> Any:
     """One verdict over every memory, exactly as one request would have given it."""
     from superlocalmemory.retrieval import answer_question_forms as forms
+    from superlocalmemory.retrieval.source_verdict import base_identity
     from superlocalmemory.retrieval.sufficiency import SufficiencyVerdict
 
     if not parts or any(p is None for p in parts):
@@ -135,14 +150,14 @@ def _combine(parts: list[Any]) -> Any:
     first = parts[0]
     # A part the permission rule settled carries the rule's suffix; the judge is
     # the same one when the ids agree once that suffix is set aside.
-    same = {(p.threshold, forms.base_calibration_id(p.calibration_id),
+    same = {(p.threshold, base_identity(p.calibration_id),
              p.calibration_status, p.backend) for p in parts}
     if len(same) != 1:
         return None  # the judge changed between memories: nothing coherent to keep
     support = tuple(i for i, p in enumerate(parts) if p.rule_support)
     return SufficiencyVerdict(
         tuple(p.probabilities[0] for p in parts), first.threshold,
-        forms.calibration_id_for(forms.base_calibration_id(first.calibration_id), support),
+        forms.calibration_id_for(base_identity(first.calibration_id), support),
         first.calibration_status, first.backend, support)
 
 
@@ -155,3 +170,18 @@ def _keep(memo: Any, key: str, parts: list[Any]) -> None:
 
 
 __all__ = ["POLL_S", "THREAD_NAME", "WAIT_FOR_IDLE_S", "start_worker"]
+
+
+def _finish_set(judge, memo, query, documents, by, binding):
+    from superlocalmemory.core import answer_check_memo
+    from superlocalmemory.core.answer_check_stage import genuine_verdict
+    from superlocalmemory.retrieval.answer_check_status import STATUS_BUSY
+    while _quiet(judge, memo, by):
+        outcome = judge.assess_if_idle(query, documents)
+        if outcome.status == STATUS_BUSY:
+            time.sleep(POLL_S)
+            continue
+        verdict = genuine_verdict(outcome.verdict)
+        if verdict is not None:
+            answer_check_memo.store(judge, query, documents, verdict, binding=binding)
+        return

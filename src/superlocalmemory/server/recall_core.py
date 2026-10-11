@@ -41,18 +41,14 @@ RECALL_SEMAPHORE = asyncio.Semaphore(3)
 
 
 def recall_budget_s() -> float:
-    """Generous latency budget for a recall before the keyword fallback (v3.8.3).
+    """The public three-second ceiling; an environment override may only shorten it."""
+    from superlocalmemory.retrieval.answer_check_status import RECALL_CEILING_S
 
-    SLM's value is quality recall under heavy multi-agent load, so semantic
-    recall is given ample time; the keyword fallback is a LAST-RESORT safety
-    net for a genuine hang (e.g. a wedged embedder), not a speed cutoff. Tune
-    with SLM_SEARCH_RECALL_TIMEOUT_S (shared with the dashboard search route).
-    """
     try:
-        v = float(os.environ.get("SLM_SEARCH_RECALL_TIMEOUT_S", ""))
-        return v if v > 0 else 25.0
+        value = float(os.environ.get("SLM_SEARCH_RECALL_TIMEOUT_S", ""))
+        return min(value, RECALL_CEILING_S) if value > 0 else RECALL_CEILING_S
     except (TypeError, ValueError):
-        return 25.0
+        return RECALL_CEILING_S
 
 
 #: A call budget is never allowed below this: the keyword fallback still has to run.
@@ -118,6 +114,7 @@ class RecallCall:
     budget_s: float | None = None
     #: How a remote caller came in (see ``retrieval/remote_view``); ``""`` is a local caller.
     caller_view: str = ""
+    trace: bool = False
 
 
 def effective_budget_s(call: RecallCall) -> float:
@@ -134,12 +131,14 @@ def effective_budget_s(call: RecallCall) -> float:
 
 
 def _visibility_for(engine: Any, call: RecallCall) -> Any:
-    """What this caller may not see, for the thread that runs the recall (nothing for a local caller)."""
+    """The caller's visibility context; local callers use the engine's scope."""
     if not call.caller_view:
         return nullcontext()
     from superlocalmemory.retrieval import remote_view, visibility
 
-    ctx = remote_view.context_for(call.caller_view, engine._db, call.profile_id or engine.profile_id)
+    ctx = remote_view.context_for(
+        call.caller_view, engine._db, call.profile_id or engine.profile_id
+    )
     return visibility.use(ctx) if ctx is not None else nullcontext()
 
 
@@ -148,16 +147,24 @@ def _engine_call(engine: Any, call: RecallCall) -> Any:
     from superlocalmemory.core import answer_check_history as history
     from superlocalmemory.core.answer_check_scope import skip_answer_check
 
-    with skip_answer_check() if call.skip_answer_check else nullcontext(), \
-            history.origin(call.origin) if call.origin else nullcontext(), \
-            _visibility_for(engine, call):
+    with (
+        skip_answer_check() if call.skip_answer_check else nullcontext(),
+        history.origin(call.origin) if call.origin else nullcontext(),
+        _visibility_for(engine, call),
+    ):
         return engine.recall(
-            call.query, limit=call.limit, session_id=call.session_id,
-            agent_id=call.agent_id, fast=call.fast,
+            call.query,
+            limit=call.limit,
+            session_id=call.session_id,
+            agent_id=call.agent_id,
+            fast=call.fast,
             profile_id=call.profile_id or None,
-            include_global=call.include_global, include_shared=call.include_shared,
-            window=call.window or None, as_of=call.as_of or None,
-            known_as_of=call.known_as_of or None, valid_at=call.valid_at or None,
+            include_global=call.include_global,
+            include_shared=call.include_shared,
+            window=call.window or None,
+            as_of=call.as_of or None,
+            known_as_of=call.known_as_of or None,
+            valid_at=call.valid_at or None,
             include_unknown=call.include_unknown,
             # Only when given: an engine stand-in need not know these.
             **({"facets": call.facets} if call.facets is not None else {}),
@@ -166,25 +173,34 @@ def _engine_call(engine: Any, call: RecallCall) -> Any:
 
 
 def _envelope(engine: Any, call: RecallCall, response: Any, snapshot: Any) -> dict:
+    if call.trace:
+        from superlocalmemory.server.routes.recall_trace import envelope
+        return envelope(engine, call, response)
     from superlocalmemory.server.recall_serializer import (
         recall_response_metadata,
         serialize_recall_response,
     )
 
-    memory_ids = list({r.fact.memory_id for r in response.results[:call.limit]
-                       if r.fact.memory_id})
+    memory_ids = list(
+        {r.fact.memory_id for r in response.results[: call.limit] if r.fact.memory_id}
+    )
     memory_map = (
         engine._db.get_memory_content_batch(
-            memory_ids, call.profile_id or engine.profile_id,
-            include_global=True, include_shared=True,
-        ) if memory_ids else {}
+            memory_ids,
+            call.profile_id or engine.profile_id,
+            include_global=True,
+            include_shared=True,
+        )
+        if memory_ids
+        else {}
     )
     retrieval = getattr(engine._config, "retrieval", None)
-    from superlocalmemory.retrieval.media_channel import memory_sources
     from superlocalmemory.core.kind_query import engine_display_min_confidence
+    from superlocalmemory.retrieval.media_channel import memory_sources
 
     results, no_confident_match = serialize_recall_response(
-        response, limit=call.limit,
+        response,
+        limit=call.limit,
         memory_map={k: sanitize_json_text(v) for k, v in memory_map.items()},
         source_map=memory_sources(engine._db, memory_ids),
         per_fact_max=getattr(retrieval, "recall_per_fact_max_chars", 2400),
@@ -192,7 +208,8 @@ def _envelope(engine: Any, call: RecallCall, response: Any, snapshot: Any) -> di
         # Markers only on session-bearing recalls: a marker can only buy a
         # learning signal when a pending outcome exists to settle.
         include_marker=call.include_marker,
-        full=call.full, include_source=call.include_source,
+        full=call.full,
+        include_source=call.include_source,
         # One kind threshold for the filter and the labels on every surface.
         display_min_confidence=engine_display_min_confidence(engine),
     )
@@ -209,8 +226,7 @@ def _envelope(engine: Any, call: RecallCall, response: Any, snapshot: Any) -> di
         "query_type": response.query_type,
         "result_count": len(results),
         "retrieval_time_ms": round(response.retrieval_time_ms, 1),
-        "channel_weights": {k: round(v, 3)
-                            for k, v in (response.channel_weights or {}).items()},
+        "channel_weights": {k: round(v, 3) for k, v in (response.channel_weights or {}).items()},
         "total_candidates": getattr(response, "total_candidates", 0),
         "results": results,
         "count": len(results),
@@ -220,55 +236,76 @@ def _envelope(engine: Any, call: RecallCall, response: Any, snapshot: Any) -> di
 
 
 async def run_recall(engine: Any, call: RecallCall, *, app_state: Any) -> dict:
-    """Run one recall and return its response body. Raises on an engine failure.
-
-    The caller has already authorised the request and checked the profile.
-    """
+    """One deadline covers queue admission, worker execution and response assembly."""
     from superlocalmemory.core.recall_gate import RecallHold
     from superlocalmemory.server.profile_runtime import get_profile_runtime
-    from superlocalmemory.server.recall_fallback import recall_keyword_fallback
+    from superlocalmemory.server.recall_deadline import submit, timed_out, wait_until
 
-    # Marks a recall in flight so background work pauses. The mark is held
-    # until the engine work this recall started has ended, on every path.
-    hold = RecallHold()
-    acquired = False
+    loop = asyncio.get_running_loop()
+    budget = effective_budget_s(call)
+    public_deadline = loop.time() + budget
+    worker_deadline = public_deadline - min(0.20, budget * 0.25)
+    runtime = get_profile_runtime(app_state)
+    snapshot = runtime.snapshot
+    hold, acquired = RecallHold(), False
     try:
-        # Deep recalls are gated; fast recalls keep their bounded channels and
-        # skip remote agentic verification, so they do not need the semaphore.
         if not call.fast:
-            await RECALL_SEMAPHORE.acquire()
-            acquired = True
-        # v3.8.3: bound the recall so callers never hang on a wedged embedder.
-        # Poll the executor future (which cannot be cancelled) without blocking
-        # the loop; only past the generous budget is the keyword answer served.
-        loop = asyncio.get_running_loop()
-        future = loop.run_in_executor(None, hold.run, _engine_call, engine, call)
-        budget = effective_budget_s(call)
-        deadline = loop.time() + budget
-        while not future.done() and loop.time() < deadline:
-            await asyncio.sleep(0.05)
-        snapshot = get_profile_runtime(app_state).snapshot
-        if not future.done():
-            future.add_done_callback(lambda f: (f.cancelled() or f.exception()))
-            logger.warning("recall: semantic recall exceeded %.0fs budget for %r — "
-                           "serving keyword fallback", budget, call.query[:80])
-            # The fallback honours the same facets the primary path was given.
-            with _visibility_for(engine, call):
-                return recall_keyword_fallback(
-                    engine, call.query, call.limit, profile_id=call.profile_id or None,
-                    profile=call.profile_id or snapshot.profile_id,
-                    profile_generation=snapshot.generation, facets=call.facets,
-                )
-        # Reads memory text and serialises: on the executor, never the loop, which
-        # every other request (and the next recall's answer) is waiting on.
-        return await loop.run_in_executor(None, hold.run, _envelope, engine, call,
-                                          future.result(), snapshot)
+            try:
+                await asyncio.wait_for(RECALL_SEMAPHORE.acquire(),
+                                       max(0, worker_deadline - loop.time()))
+                acquired = True
+            except asyncio.TimeoutError:
+                return await _bounded_fallback(
+                    engine, call, app_state, public_deadline, snapshot, hold, runtime)
+        future = submit(loop, hold, runtime, app_state, engine, _engine_call, engine, call)
+        response = await wait_until(future, worker_deadline)
+        if response is None:
+            logger.warning("Recall deadline reached; trying unjudged keyword fallback")
+            return await _bounded_fallback(
+                    engine, call, app_state, public_deadline, snapshot, hold, runtime)
+        envelope = submit(loop, hold, runtime, app_state, engine, _envelope,
+                          engine, call, response, snapshot)
+        assembled = await wait_until(envelope, public_deadline)
+        return assembled if assembled is not None else timed_out(call, snapshot)
     finally:
         if acquired:
             RECALL_SEMAPHORE.release()
         hold.leave()
 
 
-__all__ = ["RECALL_BUDGET_FLOOR_S", "RECALL_SEMAPHORE", "RecallCall",
-           "effective_budget_s", "parse_budget_s", "recall_budget_s", "run_recall",
-           "sanitize_json_text"]
+async def _bounded_fallback(engine, call, app_state, deadline, snapshot, hold, runtime):
+    from superlocalmemory.server.recall_deadline import submit, timed_out, unjudged, wait_until
+
+    future = submit(asyncio.get_running_loop(), hold, runtime, app_state, engine,
+                    _fallback, engine, call, app_state)
+    result = await wait_until(future, deadline)
+    return unjudged(result) if result is not None else timed_out(call, snapshot)
+
+
+def _fallback(engine: Any, call: RecallCall, app_state: Any) -> dict:
+    from superlocalmemory.server.profile_runtime import get_profile_runtime
+    from superlocalmemory.server.recall_fallback import recall_keyword_fallback
+
+    snapshot = get_profile_runtime(app_state).snapshot
+    with _visibility_for(engine, call):
+        return recall_keyword_fallback(
+            engine,
+            call.query,
+            call.limit,
+            profile_id=call.profile_id or None,
+            profile=call.profile_id or snapshot.profile_id,
+            profile_generation=snapshot.generation,
+            facets=call.facets,
+        )
+
+
+__all__ = [
+    "RECALL_BUDGET_FLOOR_S",
+    "RECALL_SEMAPHORE",
+    "RecallCall",
+    "effective_budget_s",
+    "parse_budget_s",
+    "recall_budget_s",
+    "run_recall",
+    "sanitize_json_text",
+]

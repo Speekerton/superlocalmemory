@@ -277,6 +277,29 @@ def _record_canonical_feedback(
         return False
 
 
+def _learning_evidence(engine, profile_id: str) -> dict:
+    """``status`` + evidence fields for session_init's ``learning`` block."""
+    try:
+        from pathlib import Path as _Path
+
+        from superlocalmemory.learning.learning_state import learning_readiness
+
+        state = learning_readiness(
+            _Path(engine._config.base_dir) / "learning.db",
+            _Path(engine._db.db_path), profile_id,
+        )
+    except Exception as exc:  # noqa: BLE001 — session_init must not fail on it
+        logger.debug("learning evidence unavailable: %s", exc)
+        return {"status": "unknown", "learning_demonstrated": False}
+    return {
+        "status": state["status"],
+        "learning_demonstrated": state["learning_demonstrated"],
+        "labelled_outcomes": state["labelled_outcomes"],
+        "settled_from_outcomes": state["settled_from_outcomes"],
+        "active_model": bool(state["active_model"]),
+    }
+
+
 def _canonical_feedback_count(profile_id: str) -> int | None:
     """Count the store that gates the adaptive phases.
 
@@ -759,13 +782,10 @@ def register_active_tools(server, get_engine: Callable) -> None:
                 "learning": {
                     "feedback_signals": feedback_count,
                     "phase": _phase_for_signal_count(feedback_count),
-                    "status": (
-                        "collecting"
-                        if feedback_count < _PHASE_2_THRESHOLD
-                        else "learning"
-                        if feedback_count < _PHASE_3_THRESHOLD
-                        else "trained"
-                    ),
+                    # From the model registry and settled plays, never from a
+                    # count of reports (audit BRN-12: 'trained' was claimed
+                    # with zero models trained).
+                    **_learning_evidence(engine, pid),
                 },
                 # Scheduled-event surface: present only when facts exist in the
                 # 14-day window. Absent means the window is empty, not an error.
@@ -908,6 +928,7 @@ def register_active_tools(server, get_engine: Callable) -> None:
         feedback: str = "relevant",
         query: str = "",
         profile_id: str = "",
+        recall_query_id: str = "",
     ) -> dict:
         """Report whether a recalled memory was useful.
 
@@ -918,6 +939,10 @@ def register_active_tools(server, get_engine: Callable) -> None:
         over time. The more feedback, the smarter the system gets.
         ``profile_id``: the profile the memory was recalled from (empty = the
         active one).
+        ``recall_query_id``: the ``query_id`` recall returned. With it, the
+        judgement is also stored as an outcome of that exact recall (the same
+        writer ``report_outcome`` uses), so it settles that recall's bandit
+        play and becomes a training label for it.
         """
         try:
             from superlocalmemory.mcp.request_profile import tool_profile
@@ -985,6 +1010,12 @@ def register_active_tools(server, get_engine: Callable) -> None:
             # nothing consumes, so the caller had no way to notice that
             # learning.db was never touched.
             count = _canonical_feedback_count(pid)
+            if recall_query_id:
+                from superlocalmemory.learning.outcome_events import (
+                    record_feedback_outcome,
+                )
+                record_feedback_outcome(engine, pid, fact_id, feedback,
+                                        recall_query_id)
             authorization.complete()
 
             if not canonical_recorded or count is None:

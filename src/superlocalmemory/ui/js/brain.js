@@ -1259,7 +1259,7 @@
       hasCandidate ? String(sp.active_candidate_id) : 'none',
     ));
     grid.appendChild(kv(
-      'Paired observations', String(sp.paired_observations || 0),
+      'Live-test observations', String(sp.paired_observations || 0),
     ));
     grid.appendChild(kv(
       'Rollbacks (90d)', String(sp.rollback_count_90d || 0),

@@ -295,6 +295,7 @@ class RetrievalEngine:
         # a dict on the engine would have two concurrent recalls overwriting
         # each other's report.
         channel_status: dict[str, str] = {}
+        graph_lag_s: float | None = None  # set when the entity graph ran
 
         # Profile shortcut (runs before channel search).
         #
@@ -512,6 +513,10 @@ class RetrievalEngine:
                     include_global=include_global, include_shared=include_shared)
                 if eg_scores is None:  # incomplete, never "found nothing"
                     dropped_channels.add("entity_graph")
+                else:
+                    graph_lag_s = entity_graph_warmup.lag_of(
+                        self._entity, profile_id, include_global=include_global,
+                        include_shared=include_shared)
                 channel_status["entity_graph"] = (chstat.WARMING if eg_scores is None
                                                   else chstat.OK if eg_scores else chstat.EMPTY)
                 if eg_scores:
@@ -733,6 +738,7 @@ class RetrievalEngine:
             community_context=self._community_context(results, profile_id),
             incomplete_channels=tuple(sorted(dropped_channels)),
             channel_status=dict(channel_status),
+            graph_lag_s=graph_lag_s,
             stage_ms=dict(stage_ms),
             project_scope=project_scope,
             tag_scope=tag_scope,

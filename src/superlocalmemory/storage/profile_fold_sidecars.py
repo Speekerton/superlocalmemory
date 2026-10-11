@@ -30,7 +30,7 @@ LEARNING_DECISIONS: dict[str, str] = {
     "learning_signals": DELETE, "learning_features": DELETE, "learning_feedback": DELETE,
     "engagement_metrics": DELETE, "learning_model_state": DELETE, "bandit_arms": DELETE,
     "bandit_plays": DELETE, "evolution_config": DELETE, "evolution_llm_cost_log": DELETE,
-    "shadow_observations": DELETE,
+    "shadow_observations": DELETE, "shadow_assignments": DELETE,
     "agent_experiences": PURGED, "cognitive_turn_receipts": PURGED,
     "external_evidence_receipts": PURGED, "execution_learning_receipts": PURGED,
     "execution_learning_events": PURGED, "answer_check_events": PURGED, "saved_views": PURGED,

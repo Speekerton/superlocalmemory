@@ -170,6 +170,7 @@ from superlocalmemory.storage.migrations import (
     M052_memory_kinds as _M052,
     M053_answer_check_history as _M053,
     M054_saved_views as _M054,
+    M055_learning_attribution as _M055,
 )
 
 # Emit under the runner's logger name so operational log filters that key on
@@ -233,6 +234,7 @@ _MODULES = {
     _M052.NAME: _M052,
     _M053.NAME: _M053,
     _M054.NAME: _M054,
+    _M055.NAME: _M055,
 }
 
 # Exact historical DDL fingerprints whose resulting schema is intentionally

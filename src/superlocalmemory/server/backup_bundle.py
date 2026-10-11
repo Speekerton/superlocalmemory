@@ -182,7 +182,7 @@ def verify_point(root: Path, point_id: str) -> dict:
 
 
 def export_point(root: Path, point_id: str) -> Path:
-    """Zip a verified point, with accounts, sessions and sign-in links removed.
+    """Zip a verified point, with accounts, sessions and the sign-in setting removed.
 
     The point on disk keeps its bytes; each store that holds credential tables
     is copied, scrubbed (``infra.backup_credentials``) and listed in the

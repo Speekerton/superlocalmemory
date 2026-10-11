@@ -225,9 +225,10 @@ what is left out on purpose. Every checksum is read back from the finished archi
 before the download is offered. `config.json` (it can hold provider API keys) and
 the identity and access secrets are never bundled; copy `config.json` yourself if
 you want your settings. The archive is a temporary file, removed after the
-response, created readable by you only. User accounts, sign-in sessions,
-the sign-in setting and upload links are removed from the exported stores:
-password and token hashes never leave the computer. There is no one-click
+response, created readable by you only. User accounts, sign-in sessions
+and the sign-in setting are removed from the exported stores, and upload
+links are never in a backup at all: password and token hashes never leave the
+computer. There is no one-click
 restore of this archive: unpack it and restore the stores with the daemon
 stopped.
 

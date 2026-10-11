@@ -2,7 +2,7 @@
 # Licensed under AGPL-3.0-or-later - see LICENSE file
 # Part of SuperLocalMemory V4 | https://qualixar.com | https://varunpratap.com
 
-"""Accounts, sessions and sign-in links are installation state, not memory.
+"""Accounts, sessions and the sign-in policy are installation state, not memory.
 
 Two rules follow, and this module is where both live:
 
@@ -22,17 +22,20 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
-#: Store file -> tables that hold accounts, credentials or the sign-in policy.
+#: Backed-up store file -> tables that hold accounts, credentials or the sign-in
+#: policy. Upload links (``upload_links``) live in ``media/uploads.db``, a file
+#: no recovery point or export contains (``infra.backup_media`` copies only
+#: content-addressed originals), so they need no entry here.
 CREDENTIAL_TABLES: dict[str, tuple[str, ...]] = {
     "memory.db": ("rbac_users", "rbac_memberships", "rbac_sessions", "rbac_settings"),
-    "media.db": ("upload_links",),
 }
 
 #: Shown in export manifests next to the other deliberate omissions.
 OMISSION = {
-    "what": "accounts, sessions and sign-in links",
+    "what": "accounts, sessions and the sign-in setting",
     "reason": "password and token hashes never leave this computer; a restore keeps "
-              "the accounts this installation has now",
+              "the accounts this installation has now. Upload links are never in a "
+              "backup at all",
     "tables": sorted(t for tables in CREDENTIAL_TABLES.values() for t in tables),
 }
 

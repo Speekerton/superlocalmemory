@@ -113,6 +113,10 @@ def public_view(job: dict | None, *, now: float | None = None) -> dict | None:
         "done": done, "total": total, "copied": int(job.get("copied") or 0),
         "caught_up": int(job.get("caught_up") or 0), "eta_seconds": eta,
         "error": job.get("error"), "created_at": job["created_at"],
+        "queued_reason": (
+            "Waiting for the background worker to start re-indexing and load the target model; "
+            "the current model continues serving recall."
+            if job["state"] == "queued" else None),
         "started_at": started, "finished_at": job.get("finished_at"),
         "activated_at": job.get("activated_at"), "stats": stats,
     }

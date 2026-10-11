@@ -434,6 +434,7 @@ def _build_server_block(
 
 def _pin_stdio_runtime(block: dict[str, Any], host: str) -> None:
     """Pin the process while preserving each host's command/environment schema."""
+    from superlocalmemory.cli.deployment import security_environment
     from superlocalmemory.infra.data_root import canonical_data_root
 
     command = block.get("command")
@@ -445,6 +446,7 @@ def _pin_stdio_runtime(block: dict[str, Any], host: str) -> None:
     env_key = "environment" if host == "opencode" else "env"
     block.setdefault(env_key, {}).update(
         SLM_MCP_HOST=host, SLM_DATA_DIR=str(canonical_data_root()),
+        **security_environment(),
     )
 
 

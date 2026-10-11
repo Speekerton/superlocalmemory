@@ -4605,6 +4605,9 @@ def _register_dashboard_routes(application: FastAPI) -> None:
     from superlocalmemory.server.routes.config_api import router as config_api_router
     application.include_router(config_api_router)
 
+    from superlocalmemory.server.routes.local_apps import router as local_apps_router
+    application.include_router(local_apps_router)
+
     # Optional hosted connections must never become a local startup requirement.
     try:
         from superlocalmemory.server.routes.connections import router as connections_router
@@ -4804,7 +4807,18 @@ def _register_daemon_routes(application: FastAPI) -> None:
         writers instead present the install token, which is never the daemon
         process capability.
         """
-        from superlocalmemory.server.write_identity import require_write_actor
+        from superlocalmemory.server.loopback import is_loopback
+        from superlocalmemory.server.write_identity import (
+            authenticated_request_actor,
+            require_write_actor,
+        )
+
+        if (request.client and is_loopback(request.client.host)
+                and not any(request.headers.get(key) for key in (
+                    "X-SLM-Daemon-Capability", "X-Install-Token", "X-SLM-API-Key"))):
+            return authenticated_request_actor(
+                request, getattr(application.state, "daemon_descriptor", None),
+                actor_kind="dashboard")
 
         return require_write_actor(
             request,

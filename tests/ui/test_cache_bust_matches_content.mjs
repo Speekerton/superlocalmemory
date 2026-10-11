@@ -79,7 +79,8 @@ const HASHED = ['od-brain.js', 'od-graph.js', 'fact-detail.js', 'od-memories.js'
                 // 4.1.25: the Upgrade memory engine card in Settings.
                 'od-engine-upgrade.js',
                 // 4.1.25 launch polish: the Find a picture box.
-                'od-media-find.js'];
+                'od-media-find.js', 'od-local-apps.js', 'od-daemon-controls.js',
+                'od-health.js', 'od-components.js'];
 //: Stylesheets stamped the same way (static/css/<name>?v=<sha256[:8]>).
 const HASHED_CSS = ['od-apps.css', 'design-system.css'];
 

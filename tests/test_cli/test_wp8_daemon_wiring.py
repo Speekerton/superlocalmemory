@@ -148,3 +148,11 @@ def test_settings_reports_bound_port_when_it_differs_from_environment(monkeypatc
     request = SimpleNamespace(app=SimpleNamespace(
         state=SimpleNamespace(daemon_descriptor=SimpleNamespace(port=19284))))
     assert config_api.get_daemon_config(request)["port"] == 19284
+
+
+def test_gui_mcp_autostart_preserves_strict_policy(monkeypatch):
+    from superlocalmemory.hooks.portable_kit import IDE_MATRIX, _build_server_block
+
+    monkeypatch.setenv("SLM_REQUIRE_CREDENTIALS", "1")
+    block = _build_server_block(IDE_MATRIX["cursor"], "stdio", 19281, "code")
+    assert block["env"]["SLM_REQUIRE_CREDENTIALS"] == "1"

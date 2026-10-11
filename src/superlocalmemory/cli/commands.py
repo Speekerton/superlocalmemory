@@ -3886,6 +3886,9 @@ def cmd_doctor(args: Namespace) -> None:
             f"could not be measured: {_mh_exc}",
         )
 
+    from superlocalmemory.cli.doctor_mcp import connected_apps_finding
+    _check("Connected MCP apps", *connected_apps_finding())
+
     refile_data = None
     if getattr(args, "refile_hidden", False):
         from superlocalmemory.cli.doctor_refile import run_refile
@@ -4071,7 +4074,11 @@ def cmd_mcp(_args: Namespace) -> None:
             kill_orphan,
         )
         _reaper_cfg = ReaperConfig(orphan_age_threshold_hours=0.0)
-        for _orphan in find_orphans(_reaper_cfg):
+        _orphans = (
+            [] if os.environ.get("SLM_DISABLE_WARMUP_SIDE_EFFECTS") == "1"
+            else find_orphans(_reaper_cfg)
+        )
+        for _orphan in _orphans:
             # A unified daemon is expected to be detached from the launching
             # shell and can therefore have PPID 1.  The MCP reaper must never
             # treat that healthy shared daemon as an orphaned stdio server.

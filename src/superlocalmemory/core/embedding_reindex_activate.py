@@ -80,6 +80,8 @@ def _publish(runner: Any, job: dict, embedder: Any, target: Any, snapshot: Any) 
     _write_stored_signature(runner.data_root, job["to_signature"])
     secrets.put(runner.data_root, secrets.PREVIOUS, previous_key)
     secrets.drop(runner.data_root, secrets.TARGET)
+    from superlocalmemory.optimize.cache.semantic_embedder import invalidate_embedding_space
+    invalidate_embedding_space()
     try:  # out-of-process fallbacks still hold the old model
         from superlocalmemory.core.worker_pool import WorkerPool
 
@@ -115,7 +117,6 @@ def activate_job(runner: Any, job: dict, embedder: Any, target: Any) -> dict:
         TransitionDrainTimeout,
         get_profile_runtime,
     )
-
     conn = sp.connect(runner.db_path)
     outcome: dict[str, Any] = {}
     try:
@@ -135,7 +136,6 @@ def activate_job(runner: Any, job: dict, embedder: Any, target: Any) -> dict:
                 _reverse(runner, conn, job, f"the new model could not be put in service: {exc}")
                 raise ActivationFailed(str(exc)) from exc
             outcome["publish_ms"] = round((time.perf_counter() - published) * 1000, 1)
-
         held = time.perf_counter()
         try:
             if runner.app_state is not None:
@@ -152,7 +152,8 @@ def activate_job(runner: Any, job: dict, embedder: Any, target: Any) -> dict:
                     update_job(conn, job["job_id"], state="catching_up")
             return get_job(conn, job["job_id"])
         except TransitionDrainTimeout as exc:
-            logger.info("re-index job %s: requests did not drain (%s); retrying", job["job_id"], exc)
+            logger.info("re-index job %s: requests did not drain (%s); retrying",
+                        job["job_id"], exc)
             return get_job(conn, job["job_id"])
         outcome["window_ms"] = round((time.perf_counter() - held) * 1000, 1)
         outcome["quiet"] = getattr(runner, "quiet", None)

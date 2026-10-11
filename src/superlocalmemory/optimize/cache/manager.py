@@ -78,47 +78,10 @@ class NoOpSemantic(SemanticTier):
         return False
 
 
-class _LazySemanticEmbedder:
-    """Start the canonical embedding service only after an opted-in lookup."""
-
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._service = None
-
-    def __call__(self, text: str) -> list[float] | None:
-        if self._service is None:
-            with self._lock:
-                if self._service is None:
-                    from superlocalmemory.core.config import SLMConfig
-                    from superlocalmemory.core.embeddings import EmbeddingService
-
-                    config = SLMConfig.load()
-                    name = getattr(config.embedding, "model_name", "")
-                    versioned = name.endswith("@retrieval-v1")
-                    if config.embedding.provider == "slm-media" or versioned:
-                        # Managed/versioned inputs go through the shared factory.
-                        from superlocalmemory.core.engine_wiring import init_embedder
-
-                        self._service = init_embedder(config)
-                    else:
-                        self._service = EmbeddingService(config.embedding)
-        return self._service.embed(text)
-
-    @property
-    def dimension(self) -> int:
-        from superlocalmemory.core.config import SLMConfig
-
-        return int(SLMConfig.load().embedding.dimension)
-
-    def close(self) -> None:
-        service = self._service
-        self._service = None
-        if service is not None:
-            try:
-                service.unload()
-            except Exception:
-                pass
-
+# Compatibility import for callers of the previous factory location.
+from superlocalmemory.optimize.cache.semantic_embedder import (  # noqa: E402
+    LazySemanticEmbedder as _LazySemanticEmbedder,
+)
 
 # ---------------------------------------------------------------------------
 # Metrics

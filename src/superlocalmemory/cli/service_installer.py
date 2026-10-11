@@ -217,21 +217,26 @@ def uninstall_linux() -> bool:
 
 
 def status_linux() -> dict:
+    installed = _linux_service_path().exists()
     try:
         result = subprocess.run(
             ["systemctl", "--user", "is-active", "superlocalmemory"],
             capture_output=True, text=True, timeout=10,
         )
-        active = result.stdout.strip() == "active"
+        active = result.returncode == 0 and result.stdout.strip() == "active"
         return {
             "platform": "Linux",
             "service_type": "systemd user service",
-            "installed": True,
+            "installed": installed or active,
             "active": active,
             "details": result.stdout.strip(),
         }
     except Exception:
-        return {"platform": "Linux", "service_type": "systemd", "installed": False}
+        return {
+            "platform": "Linux", "service_type": "systemd user service",
+            "installed": installed, "active": False,
+            "details": "Could not query systemctl",
+        }
 
 
 # ─── Windows: Task Scheduler ─────────────────────────────────────────────

@@ -51,11 +51,27 @@ def timed_out(call, snapshot):
 def submit(loop, hold, runtime, state, engine, fn, *args):
     from contextlib import nullcontext
 
+    from superlocalmemory.server.recall_admission import current_recall_lease
+    from superlocalmemory.server.recall_dispatch import RetainedDispatch
+
+    parent = current_recall_lease()
+    retained = parent.fork() if parent is not None else None
+
     def guarded():
-        lease = getattr(runtime, "operation_nowait", None)
-        with lease() if lease else nullcontext(True) as admitted:
+        legacy = getattr(runtime, "operation_nowait", None) if retained is None else None
+        with legacy() if legacy else nullcontext(True) as admitted:
             if admitted is None or getattr(state, "engine", engine) is not engine:
                 return None
             return fn(*args)
 
-    return loop.run_in_executor(None, hold.run, guarded)
+    dispatch = RetainedDispatch(retained, hold, guarded) if retained is not None else None
+    if dispatch is not None:
+        parent.track(dispatch)
+    try:
+        if dispatch is not None:
+            return loop.run_in_executor(None, dispatch.run)
+        return loop.run_in_executor(None, hold.run, guarded)
+    except BaseException:
+        if dispatch is not None:
+            dispatch.abandon()
+        raise

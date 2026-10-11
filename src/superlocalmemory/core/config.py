@@ -799,6 +799,8 @@ class QuantizationConfig:
     qjl: QJLConfig = field(default_factory=QJLConfig)
     default_bit_width: int = 32
     eap_enabled: bool = True
+    #: Inert: no code reclaims vectors, so False changes nothing (EAP says so when it runs).
+    #: Kept so a saved config that names it still loads.
     keep_float32_backup: bool = True
     auto_compact_interval_hours: int = 6
     polar_search_penalty: float = 0.97  # V3.3.8: 0.95→0.97, TurboQuant has lower MSE

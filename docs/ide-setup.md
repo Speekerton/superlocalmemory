@@ -55,7 +55,7 @@ The fastest way to connect all your IDEs:
 slm connect
 ```
 
-This scans your system for installed IDEs, configures each one, and verifies the connection. Run it once after installing SLM.
+This configures detected host configurations. Use `slm connect --list --json` for the supported host IDs and install methods. A configuration write leaves host verification pending; use `--verify` with HTTP transport to check the owned daemon and MCP protocol, then check registration inside the host.
 
 To connect a specific IDE:
 
@@ -216,22 +216,20 @@ Restart Cursor. The memory tools appear in the tool list automatically.
 **Auto:**
 
 ```bash
-slm connect vscode
+slm connect vscode-copilot --here
 ```
 
 **Manual — HTTP (recommended, v3.6.7+):**
 
-Add to VS Code settings (JSON):
+Save to `.vscode/mcp.json` in your project (the same path as `--here`):
 
 ```json
 {
-  "mcp": {
-    "servers": {
+  "servers": {
       "superlocalmemory": {
         "type": "http",
         "url": "http://127.0.0.1:8765/mcp/"
       }
-    }
   }
 }
 ```
@@ -240,13 +238,11 @@ Add to VS Code settings (JSON):
 
 ```json
 {
-  "mcp": {
-    "servers": {
+  "servers": {
       "superlocalmemory": {
         "command": "npx",
         "args": ["-y", "superlocalmemory", "mcp"]
       }
-    }
   }
 }
 ```
@@ -297,7 +293,7 @@ Add to `~/.windsurf/mcp.json`:
 **Auto:**
 
 ```bash
-slm connect gemini
+slm connect gemini-cli
 ```
 
 **Manual — HTTP (recommended, v3.6.7+):**
@@ -308,7 +304,7 @@ Add to `~/.gemini/settings.json`:
 {
   "mcpServers": {
     "superlocalmemory": {
-      "url": "http://127.0.0.1:8765/mcp/"
+      "httpUrl": "http://127.0.0.1:8765/mcp/"
     }
   }
 }
@@ -331,7 +327,7 @@ Add to `~/.gemini/settings.json`:
 
 ## Antigravity IDE / agy CLI
 
-Antigravity IDE and the `agy` CLI both read from `~/.gemini/antigravity/mcp_config.json`.
+Antigravity IDE and the `agy` CLI both read from `~/.gemini/config/mcp_config.json`.
 
 **HTTP (recommended, v3.6.7+):**
 
@@ -339,7 +335,7 @@ Antigravity IDE and the `agy` CLI both read from `~/.gemini/antigravity/mcp_conf
 {
   "mcpServers": {
     "superlocalmemory": {
-      "url": "http://127.0.0.1:8765/mcp/"
+      "serverUrl": "http://127.0.0.1:8765/mcp/"
     }
   }
 }
@@ -537,18 +533,17 @@ Restart the IDE after adding the server.
 slm connect continue
 ```
 
-**Manual:** Add to `~/.continue/config.json`:
+**Manual:** Merge into `~/.continue/config.yaml`, preserving your existing header and models:
 
-```json
-{
-  "mcpServers": [
-    {
-      "name": "superlocalmemory",
-      "command": "npx",
-      "args": ["-y", "superlocalmemory", "mcp"]
-    }
-  ]
-}
+```yaml
+# https://docs.continue.dev/reference
+name: SLM Config
+version: 1.0.0
+schema: v1
+mcpServers:
+  - name: superlocalmemory
+    command: slm
+    args: [mcp]
 ```
 
 ---

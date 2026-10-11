@@ -258,20 +258,27 @@ def _before_any_switch_the_probe_finds_alpha_in_the_old_space(lane):
     assert lane.status()["live"] == "stub-old::768"
 
 
+def _hammer_recall(lane, seen, empty_states, stop):
+    while not stop.is_set():
+        started = time.monotonic()
+        code, payload = lane.daemon.request(
+            "GET", "/recall", params={"q": PROBE, "profile_id": "default"})
+        top = (payload.get("results") or [{}])[0].get("content", "") if code == 200 else ""
+        seen.append((time.monotonic() - started, code, _which(str(top))))
+        if not top:
+            empty_states.append({key: payload.get(key) for key in (
+                "channel_status", "incomplete_channels", "retrieval_mode",
+                "degraded_reason", "answer_check_status", "no_confident_match")})
+
+
 def _recall_is_served_throughout_a_switch_and_flips_once_at_activation(lane):
     DELAY["stub-new"] = 0.15
     seen: list[tuple[float, int, str]] = []
+    empty_states: list[dict] = []
     stop = threading.Event()
 
-    def hammer() -> None:
-        while not stop.is_set():
-            started = time.monotonic()
-            code, payload = lane.daemon.request("GET", "/recall",
-                                                params={"q": PROBE, "profile_id": "default"})
-            top = (payload.get("results") or [{}])[0].get("content", "") if code == 200 else ""
-            seen.append((time.monotonic() - started, code, _which(str(top))))
-
-    thread = threading.Thread(target=hammer, daemon=True)
+    thread = threading.Thread(
+        target=_hammer_recall, args=(lane, seen, empty_states, stop), daemon=True)
     thread.start()
     try:
         code, body = lane.switch("stub-new")
@@ -292,7 +299,9 @@ def _recall_is_served_throughout_a_switch_and_flips_once_at_activation(lane):
     codes = {code for _t, code, _w in seen}
     answers = [w for _t, code, w in seen]
     assert codes == {200}, f"recall was not served throughout: {sorted(codes)}"
-    assert set(answers) <= {"ALPHA", "BETA"}, f"a recall mixed spaces: {set(answers)}"
+    assert set(answers) <= {"ALPHA", "BETA"}, (
+        f"a recall mixed spaces: {set(answers)}; empty states: {empty_states[:5]}"
+    )
     flip = answers.index("BETA")
     assert "ALPHA" not in answers[flip:], "the old space answered after the new one"
     assert answers.count("ALPHA") >= 3 and answers.count("BETA") >= 3, answers

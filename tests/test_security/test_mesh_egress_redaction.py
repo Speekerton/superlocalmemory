@@ -33,7 +33,6 @@ import sqlite3
 import time
 from unittest.mock import MagicMock, patch
 
-import httpx
 import pytest
 
 #: An Anthropic-key-shaped secret — recognized by core.security_primitives'

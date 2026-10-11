@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -59,10 +58,8 @@ def test_wrap_agent_print_only_prints_instructions(capsys) -> None:
     """print-only agents print help text and return 0."""
     cfg_path = Path("/tmp/__not_used__.json")
     # ensure_proxy_running checks module-level store; we need it to think proxy is on
-    from superlocalmemory.optimize.config import _set_config_store, get_optimize_config
-    from superlocalmemory.optimize.config.defaults import DEFAULT_OPTIMIZE_CONFIG
+    from superlocalmemory.optimize.config import _set_config_store
     # Use a config with proxy_enabled=True
-    from superlocalmemory.optimize.config.schema import OptimizeConfig
     from superlocalmemory.optimize.config.store import ConfigStore
     import tempfile
 
@@ -101,7 +98,6 @@ def test_withSLM_returns_unchanged_when_disabled(monkeypatch, tmp_path: Path) ->
     # Force a config that returns enabled=False
     from superlocalmemory.optimize.config import _set_config_store, _reset_config_store
     from superlocalmemory.optimize.config.store import ConfigStore
-    from superlocalmemory.optimize.config.schema import OptimizeConfig
 
     p = tmp_path / "oc.json"
     p.write_text(json.dumps({"enabled": False}), encoding="utf-8")
@@ -135,7 +131,6 @@ def test_withSLM_returns_unchanged_for_unknown_type(monkeypatch, tmp_path: Path)
 def test_wrap_agent_settings_file_dry_run(tmp_path: Path) -> None:
     """settings-file mechanism dry_run prints but does not write."""
     from superlocalmemory.optimize.config import _set_config_store, _reset_config_store
-    from superlocalmemory.optimize.config.schema import OptimizeConfig
     from superlocalmemory.optimize.config.store import ConfigStore
     import tempfile
 
@@ -173,7 +168,6 @@ def test_wrap_agent_settings_file_writes(tmp_path: Path) -> None:
     _set_config_store(store)
     try:
         from superlocalmemory.optimize.adapters import _agent_registry
-        from superlocalmemory.optimize.adapters.wrap import _atomic_write_text
         import copy
         orig_registry = copy.deepcopy(_agent_registry.AGENT_REGISTRY)
         # Override the settings_path to use tmp_path

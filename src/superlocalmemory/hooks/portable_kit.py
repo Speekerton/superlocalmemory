@@ -11,7 +11,7 @@ Writes SLM's MCP block into the target IDE config via MERGE-NOT-CLOBBER:
 - claude-code is OUT: short-circuits to a plugin pointer, no config written.
 - AGENTS.md is appended with <!-- SLM-START/END --> markers (never overwrite).
 
-IDE_MATRIX verified against ide/configs/* templates (read-only; configs are the authoritative source).
+IDE_MATRIX follows the linked official host schemas; ide/configs contains matching examples.
 """
 
 from __future__ import annotations
@@ -21,7 +21,6 @@ import json
 import logging
 import os
 import sys
-import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -116,16 +115,17 @@ IDE_MATRIX: dict[str, IDEDescriptor] = {
         server_block={"command": "slm", "args": ["mcp"], "type": "stdio"},
         caveats="project .cursor/mcp.json",
     ),
+    # https://www.antigravity.google/docs/mcp/ (opened 2026-10-11)
     "antigravity": IDEDescriptor(
         ide_id="antigravity",
         display="Antigravity (agy)",
-        mcp_path_global=".antigravity/mcp.json",
-        mcp_path_project=None,
+        mcp_path_global=".gemini/config/mcp_config.json",
+        mcp_path_project=".agents/mcp_config.json",
         server_key="mcpServers",
         fmt="json",
         agents_md_path=None,
-        server_block={"command": "slm", "args": ["mcp"], "type": "stdio"},
-        caveats="Vertex auth (R1); path [CN-ONLINE]",
+        server_block={"command": "slm", "args": ["mcp"]},
+        caveats="Antigravity 2.0 global/workspace MCP contract",
     ),
     "windsurf": IDEDescriptor(
         ide_id="windsurf",
@@ -138,6 +138,7 @@ IDE_MATRIX: dict[str, IDEDescriptor] = {
         server_block={"command": "slm", "args": ["mcp"], "type": "stdio"},
         caveats="path [CN-ONLINE]",
     ),
+    # https://geminicli.com/docs/tools/mcp-server/
     "gemini-cli": IDEDescriptor(
         ide_id="gemini-cli",
         display="Gemini CLI",
@@ -149,6 +150,7 @@ IDE_MATRIX: dict[str, IDEDescriptor] = {
         server_block={"command": "slm", "args": ["mcp"], "type": "stdio"},
         caveats="Google deprecating; path [CN-ONLINE]",
     ),
+    # https://code.visualstudio.com/docs/agent-customization/mcp-servers
     "vscode-copilot": IDEDescriptor(
         ide_id="vscode-copilot",
         display="VS Code / Copilot",
@@ -178,19 +180,20 @@ IDE_MATRIX: dict[str, IDEDescriptor] = {
         mcp_path_project=".mcp.json",
         server_key="mcpServers",
         fmt="json",
-        agents_md_path=".junie/AGENTS.md",  # Junie guidelines file (GA) — carries memory + optimize protocol
+        agents_md_path=".junie/AGENTS.md",  # Junie guidelines for memory and optimize
         server_block={"command": "slm", "args": ["mcp"], "type": "stdio"},
         caveats="path per product [CN-ONLINE]",
     ),
+    # https://opencode.ai/docs/mcp-servers/ and https://opencode.ai/docs/config/
     "opencode": IDEDescriptor(
         ide_id="opencode",
         display="OpenCode",
-        mcp_path_global=".config/opencode/config.json",
-        mcp_path_project=None,
+        mcp_path_global=".config/opencode/opencode.json",
+        mcp_path_project="opencode.json",
         server_key="mcp",
         fmt="json",
         agents_md_path=None,
-        server_block={"command": "slm", "args": ["mcp"]},
+        server_block={"type": "local", "command": ["slm", "mcp"]},
         caveats="top-level key is 'mcp'",
     ),
     "claude-desktop": IDEDescriptor(
@@ -225,23 +228,19 @@ IDE_MATRIX: dict[str, IDEDescriptor] = {
         caveats="tomllib read / tomli_w write",
     ),
     # --- YAML IDEs ---
+    # https://docs.continue.dev/reference (mcpServers, opened 2026-10-11)
     "continue": IDEDescriptor(
-        ide_id="continue",
-        display="Continue.dev",
-        mcp_path_global=".continue/config.yaml",
-        mcp_path_project=".continue/config.yaml",
-        server_key="contextProviders",
-        fmt="yaml",
-        agents_md_path=None,
-        server_block={
-            "name": "mcp",
-            "params": {
-                "serverName": "superlocalmemory",
-                "command": "slm",
-                "args": ["mcp"],
-            },
-        },
-        caveats="contextProviders is a LIST; append+dedupe by serverName",
+        ide_id="continue", display="Continue.dev",
+        mcp_path_global=".continue/config.yaml", mcp_path_project=".continue/config.yaml",
+        server_key="mcpServers", fmt="yaml", agents_md_path=None,
+        server_block={"name": "superlocalmemory", "command": "slm", "args": ["mcp"]},
+        caveats="mcpServers is a list; merge by name",
+    ),
+    # https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins/
+    "hermes": IDEDescriptor(
+        ide_id="hermes", display="Hermes (native plugin)",
+        mcp_path_global="", mcp_path_project=None, server_key="", fmt="", agents_md_path=None,
+        caveats="hermes plugins install 'https://github.com/qualixar/superlocalmemory.git#hermes-plugin'",
     ),
     # --- OUT: claude-code defers to the plugin installer ---
     "claude-code": IDEDescriptor(
@@ -287,179 +286,14 @@ def connect_ide(
     transport: str = "stdio",
     daemon_port: int = 8765,
 ) -> dict[str, Any]:
-    """Wire SLM into the target IDE config via merge-not-clobber.
+    """Merge a schema-specific MCP config; host registration remains pending."""
+    from superlocalmemory.hooks.portable_install import install
 
-    Args:
-        transport: MCP transport to write into the config.
-            "stdio" (default, zero regression) — uses the IDE's canonical server_block.
-            "http" — native MCP Streamable-HTTP block; requires SLM daemon at daemon_port.
-            "http-mcp-remote" — stdio bridge via mcp-remote for stdio-only clients.
-        daemon_port: Daemon listen port for http / http-mcp-remote (default 8765).
-
-    Returns a result dict:
-        {ide, transport, mcp_config: wrote|merged|unchanged|would_write|skipped|error,
-         mcp_path, agents_md: wrote|skipped(...)|unchanged|error,
-         servers_preserved: int, error: str|None}
-    """
-    result: dict[str, Any] = {
-        "ide": ide_id,
-        "transport": transport,
-        "mcp_config": "error",
-        "mcp_path": "",
-        "agents_md": "skipped(not-run)",
-        "servers_preserved": 0,
-        "error": None,
-    }
-
-    # Step 0 — validate transport
-    if transport not in VALID_TRANSPORTS:
-        result["error"] = (
-            f"Invalid transport '{transport}'. "
-            f"Valid choices: {', '.join(sorted(VALID_TRANSPORTS))}"
-        )
-        return result
-
-    # Step 0b — refuse an unknown profile before writing it into a config
-    if profile:
-        from superlocalmemory.mcp.profile_names import (
-            UnknownProfileError, canonical_profile, unknown_profile_message,
-        )
-        try:
-            canonical_profile(profile)
-        except UnknownProfileError:
-            result["error"] = unknown_profile_message(profile, source="--profile")
-            return result
-
-    # Step 1 — resolve
-    desc = resolve_descriptor(ide_id)
-    if desc is None:
-        result["error"] = (
-            f"Unknown IDE '{ide_id}'. Supported: {', '.join(supported_ides())}"
-        )
-        return result
-
-    if ide_id == "vscode-copilot" and not here:
-        result["error"] = (
-            "VS Code / Copilot integration is project-scoped. "
-            "Run `slm connect vscode-copilot --here` from the project root."
-        )
-        return result
-
-    # Step 1a — claude-code short-circuit (AC6)
-    if desc.fmt == "":
-        print(CLAUDE_CODE_PLUGIN_POINTER)
-        result["mcp_config"] = "skipped"
-        result["agents_md"] = "skipped(claude-code-out)"
-        return result
-
-    # Step 2 — scope resolution
-    effective_home = home or Path.home()
-    if here:
-        if project is None:
-            result["error"] = "--here requires --project (project root path)"
-            return result
-        scope_root = project
-        config_path = project / (desc.mcp_path_project or desc.mcp_path_global)
-    else:
-        scope_root = effective_home
-        # A home the caller names is self-contained: the real APPDATA is not consulted.
-        config_path = global_config_path(desc, effective_home,
-                                         environ=None if home is None else {})
-    result["mcp_path"] = str(config_path)
-
-    # Step 3 — load existing config
-    try:
-        data = _load_config(config_path, desc.fmt)
-    except _ParseError as exc:
-        result["error"] = str(exc)
-        # File is untouched (we never wrote; abort)
-        return result
-
-    # Step 4 — daemon health-check for HTTP transports (advisory, never blocks write)
-    if transport in ("http", "http-mcp-remote") and desc.fmt != "":
-        if not _check_daemon_health(daemon_port):
-            print(
-                f"[SLM] Warning: daemon not reachable at http://127.0.0.1:{daemon_port}/api/v3/health. "
-                f"Run `slm serve start` to start it, or `slm serve install` to register as an OS service.",
-                file=sys.stderr,
-            )
-
-    # Step 5 — extract server container and build block
-    # For YAML-format IDEs (continue.dev), transport is ignored — their block
-    # structure is list-based and incompatible with the JSON http/mcp-remote block.
-    if desc.fmt == "yaml":
-        if transport != "stdio":
-            logger.warning(
-                "transport=%r is not supported for YAML-format IDE %r; using stdio fallback.",
-                transport,
-                ide_id,
-            )
-        mcp_status, servers_preserved = _merge_yaml_list(
-            data, desc, profile
-        )
-        result["mcp_config"] = mcp_status
-        result["servers_preserved"] = servers_preserved
-    else:
-        servers = data.setdefault(desc.server_key, {})
-        pre_count = len(servers)
-        pre_slm = copy.deepcopy(servers.get("superlocalmemory"))
-
-        # Build the server block for the requested transport
-        block = _build_server_block(desc, transport, daemon_port, profile)
-
-        servers["superlocalmemory"] = block
-
-        if servers.get("superlocalmemory") == pre_slm and pre_slm is not None:
-            mcp_status = "unchanged"
-        elif pre_slm is None:
-            mcp_status = "wrote"
-        else:
-            mcp_status = "merged"
-
-        result["servers_preserved"] = max(0, pre_count - (0 if pre_slm is None else 1))
-        result["mcp_config"] = mcp_status
-
-    # Step 6 — atomic write. A dry run deliberately exercises the merge and
-    # packaged-asset lookup path without touching a user-owned IDE config.
-    if dry_run:
-        result["mcp_config"] = "would_write"
-        if desc.agents_md_path is None:
-            result["agents_md"] = "skipped(unsupported)"
-        elif agents_md_source is None:
-            result["agents_md"] = "skipped(no-source)"
-        else:
-            try:
-                source_content = agents_md_source()
-            except Exception as exc:
-                result["agents_md"] = "error(source-unavailable)"
-                result["error"] = f"AGENTS.md asset lookup failed: {exc}"
-                return result
-            if not isinstance(source_content, str) or not source_content.strip():
-                result["agents_md"] = "error(empty-source)"
-                result["error"] = "AGENTS.md asset is empty"
-                return result
-            result["agents_md"] = "would_write"
-        return result
-
-    try:
-        _atomic_write(config_path, data, desc.fmt)
-    except Exception as exc:
-        result["error"] = f"Write failed: {exc}"
-        result["mcp_config"] = "error"
-        return result
-
-    # Verify idempotent: if nothing changed, re-read and confirm
-    if result["mcp_config"] != "unchanged":
-        pass  # already wrote
-    else:
-        pass  # already unchanged; atomic write still ran (idempotent)
-
-    # Step 7 — AGENTS.md
-    result["agents_md"] = _handle_agents_md(
-        desc, scope_root, agents_md_source, here
+    return install(
+        sys.modules[__name__], ide_id, home=home, project=project, here=here,
+        profile=profile, source=agents_md_source, dry_run=dry_run,
+        transport=transport, port=daemon_port,
     )
-
-    return result
 
 
 def connect_many(
@@ -473,35 +307,7 @@ def connect_many(
     transport: str = "stdio",
     daemon_port: int = 8765,
 ) -> list[dict[str, Any]]:
-    """Wire SLM into multiple IDE configs via non-destructive merge.
-
-    Iterates over ``ide_ids`` and calls :func:`connect_ide` for each entry.
-    Each IDE is processed independently — a failure on one IDE does NOT abort
-    the remaining targets.
-
-    The underlying :func:`connect_ide` is MERGE-NOT-CLOBBER:
-    - Only the ``superlocalmemory`` server key is touched.
-    - All other MCP servers + top-level keys are preserved byte-for-byte.
-    - Writes are atomic (.tmp + os.replace).
-
-    Args:
-        ide_ids: IDE ids to wire (from :data:`IDE_MATRIX`).  Pass an empty
-            list to no-op.  Unknown ids produce error entries in the output.
-        home: Override ``$HOME`` (test hook).
-        project: Project root for ``here=True`` installs.
-        here: When True, write to project-relative path instead of global.
-        profile: Inject ``SLM_MCP_PROFILE`` env-var (stdio) or URL param (http).
-        agents_md_source: Callable returning AGENTS.md content to append.
-        transport: MCP transport to use for all IDEs ("stdio", "http",
-            "http-mcp-remote"). Default "stdio" preserves existing behavior.
-        daemon_port: Daemon listen port for http/http-mcp-remote (default 8765).
-
-    Returns:
-        List of per-IDE result dicts, one per input id.  Each dict has the
-        same shape as :func:`connect_ide`'s return value::
-
-            {ide, transport, mcp_config, mcp_path, agents_md, servers_preserved, error}
-    """
+    """Connect each requested host independently through the same registry."""
     return [
         connect_ide(
             ide_id,
@@ -564,40 +370,27 @@ def _merge_yaml_list(
     data: dict[str, Any],
     desc: IDEDescriptor,
     profile: str | None,
+    *, block: dict[str, Any] | None = None,
 ) -> tuple[str, int]:
-    """Merge SLM entry into a list-style YAML contextProviders (continue.dev).
-
-    Returns (status, servers_preserved).
-    """
-    providers: list[dict] = data.setdefault(desc.server_key, [])
-    if not isinstance(providers, list):
-        providers = []
-        data[desc.server_key] = providers
-
-    pre_count = sum(
-        1 for p in providers
-        if p.get("params", {}).get("serverName") != "superlocalmemory"
-    )
-
-    # Check if SLM already present
-    existing_idx = None
-    for i, p in enumerate(providers):
-        if p.get("params", {}).get("serverName") == "superlocalmemory":
-            existing_idx = i
-            break
-
-    block = copy.deepcopy(desc.server_block)
+    """Merge Continue's current mcpServers list without clobbering user settings."""
+    # https://docs.continue.dev/reference
+    for key, value in {"name": "SLM Config", "version": "1.0.0", "schema": "v1"}.items():
+        data.setdefault(key, value)
+    providers = data.setdefault(desc.server_key, [])
+    if not isinstance(providers, list) or any(not isinstance(p, dict) for p in providers):
+        raise ValueError("mcpServers must be a list of server objects")
+    block = copy.deepcopy(block if block is not None else desc.server_block)
     if profile:
-        block.setdefault("params", {})["env"] = {"SLM_MCP_PROFILE": profile}
-
-    if existing_idx is not None:
-        if providers[existing_idx] == block:
-            return "unchanged", pre_count
-        providers[existing_idx] = block
-        return "merged", pre_count
-    else:
-        providers.append(block)
-        return "wrote", pre_count
+        block["env"] = {"SLM_MCP_PROFILE": profile}
+    preserved = sum(p.get("name") != "superlocalmemory" for p in providers)
+    for i, entry in enumerate(providers):
+        if entry.get("name") == "superlocalmemory":
+            if entry == block:
+                return "unchanged", preserved
+            providers[i] = block
+            return "merged", preserved
+    providers.append(block)
+    return "wrote", preserved
 
 
 def _build_server_block(
@@ -606,30 +399,35 @@ def _build_server_block(
     daemon_port: int,
     profile: str | None,
 ) -> dict[str, Any]:
-    """Return the server block for the requested transport.
+    """Use each host's declared transport and environment keys."""
+    from urllib.parse import urlencode
 
-    YAML and TOML IDEs use a format-specific block structure that is
-    incompatible with the JSON http/mcp-remote block — caller should never
-    reach here for those (they take the yaml branch in connect_ide).
-    For JSON-format IDEs:
-      "stdio"           → copy of desc.server_block with optional SLM_MCP_PROFILE env
-      "http"            → native MCP HTTP block; profile goes as URL query param
-      "http-mcp-remote" → mcp-remote stdio bridge; profile appended to proxied URL
-    """
-    base_url = f"http://127.0.0.1:{daemon_port}/mcp/"
-
-    if transport == "http":
-        url = base_url + (f"?profile={profile}" if profile else "")
-        return {"type": "http", "url": url}
-
-    if transport == "http-mcp-remote":
-        url = base_url + (f"?profile={profile}" if profile else "")
-        return {"type": "stdio", "command": "mcp-remote", "args": [url]}
-
-    # Default: stdio — preserve existing behavior exactly
-    block = copy.deepcopy(desc.server_block)
+    url = f"http://127.0.0.1:{daemon_port}/mcp/"
     if profile:
-        block.setdefault("env", {})["SLM_MCP_PROFILE"] = profile
+        url += "?" + urlencode({"profile": profile})
+    if transport == "http":
+        # https://raw.githubusercontent.com/continuedev/continue/main/packages/config-yaml/src/schemas/mcp/index.ts
+        if desc.ide_id == "continue":
+            return {"name": "superlocalmemory", "type": "streamable-http", "url": url}
+        if desc.ide_id == "opencode":
+            return {"type": "remote", "url": url}
+        if desc.ide_id == "antigravity":
+            return {"serverUrl": url}
+        if desc.ide_id == "gemini-cli":
+            return {"httpUrl": url}
+        return {"type": "http", "url": url}
+    if transport == "http-mcp-remote":
+        block = ({"type": "local", "command": ["mcp-remote", url]}
+                 if desc.ide_id == "opencode" else {"command": "mcp-remote", "args": [url]})
+        if desc.ide_id == "continue":
+            block["name"] = "superlocalmemory"
+        if desc.ide_id not in {"opencode", "antigravity", "continue"}:
+            block["type"] = "stdio"
+    else:
+        block = copy.deepcopy(desc.server_block)
+    if profile:
+        env_key = "environment" if desc.ide_id == "opencode" else "env"
+        block.setdefault(env_key, {})["SLM_MCP_PROFILE"] = profile
     return block
 
 
@@ -640,13 +438,16 @@ def _check_daemon_health(daemon_port: int, timeout: float = 2.0) -> bool:
     Never raises — all exceptions are caught and treated as "unreachable".
     """
     try:
-        import urllib.request
         import urllib.error
+        import urllib.request
 
-        url = f"http://127.0.0.1:{daemon_port}/api/v3/health"
+        url = f"http://127.0.0.1:{daemon_port}/health"
         req = urllib.request.Request(url, method="GET")
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             if resp.status != 200:
+                return False
+            payload = json.loads(resp.read())
+            if payload.get("status") != "ok":
                 return False
         # Reachable is not enough on a computer shared by several accounts:
         # the port must be this account's own SuperLocalMemory.
@@ -689,11 +490,7 @@ def _handle_agents_md(
     agents_md_source: Callable[[], str] | None,
     here: bool,
 ) -> str:
-    """Append SLM section to AGENTS.md with <!-- SLM-START/END --> markers.
-
-    D-1 resolution: only write AGENTS.md in --here (project) scope;
-    skip in global scope (don't litter $HOME).
-    """
+    """Append a marked SLM section without overwriting user rules."""
     if desc.agents_md_path is None:
         return "skipped(unsupported)"
 

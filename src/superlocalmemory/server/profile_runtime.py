@@ -118,6 +118,23 @@ class ProfileRuntime:
             self._active_operations += 1
             return self._snapshot
 
+    def acquire_lease(self):
+        """Admit one foreground operation whose ownership can be transferred."""
+        from superlocalmemory.server.profile_lease import OperationLease
+
+        return OperationLease(self, self.acquire_operation())
+
+    def retain_operation(self, lease):
+        """Fork a live admission, including while its generation is draining."""
+        from superlocalmemory.server.profile_lease import OperationLease
+
+        with lease._lock, self._condition:
+            if (lease.runtime is not self or lease._released
+                    or lease.snapshot != self._snapshot):
+                raise RuntimeError("cannot retain an expired profile operation")
+            self._active_operations += 1
+            return OperationLease(self, lease.snapshot)
+
     def _try_acquire_operation_nowait(self) -> ProfileSnapshot | None:
         """Non-blocking acquire: returns None immediately when a transition is pending.
 
@@ -508,6 +525,9 @@ class ProfileRuntimeMiddleware:
             "/api/v3/mode/set",
             "/api/v3/embedding/config",
             "/api/v3/scope/config",
+            # Erasing the active profile moves the service to another one first,
+            # which drains every lease, this request's own included.
+            "/api/compliance/gdpr/erase",
         }
         return profile_switch or config_transition
 
@@ -526,58 +546,40 @@ class ProfileRuntimeMiddleware:
 
         import asyncio
 
+        from superlocalmemory.server.profile_lease import release_late_lease
+
         runtime = get_profile_runtime(self._app_state)
         acquire_task = asyncio.create_task(
-            asyncio.to_thread(runtime.acquire_operation)
+            asyncio.to_thread(runtime.acquire_lease)
         )
         try:
             # Shield the worker so cancellation cannot strand a lease that the
             # thread acquires after this coroutine has already unwound.
-            snapshot = await asyncio.shield(acquire_task)
+            lease = await asyncio.shield(acquire_task)
         except asyncio.CancelledError:
-            await acquire_task
-            runtime.release_operation()
+            acquire_task.add_done_callback(release_late_lease)
             raise
-        scope.setdefault("state", {})["profile_snapshot"] = snapshot
-        token = _REQUEST_PROFILE.set(snapshot.profile_id)
+        await self._serve_admitted(scope, receive, send, lease)
 
-        # The operation lease guards the SYNCHRONOUS route work that produces
-        # the response — not the streaming of its body. A long-lived SSE body
-        # would otherwise hold the lease for its whole lifetime and make every
-        # profile switch time out during drain (HTTP 503):
-        #   * /events/stream runs `while True: await sleep(1)` FOREVER while a
-        #     dashboard tab is open;
-        #   * /api/v3/chat/stream streams LLM tokens for up to 120s.
-        # Release the lease the instant the response starts. By then the route
-        # handler has finished its engine work and returned its Response
-        # (FastAPI buffers normal responses before sending response.start).
-        # Streaming generators that still need the engine (chat recall) already
-        # re-acquire their own short-lived lease internally, and /events/stream
-        # only reads the EventBus DB — neither depends on this outer lease.
-        released = False
+    async def _serve_admitted(self, scope, receive, send, lease):
+        from superlocalmemory.server.profile_lease import bind_request_lease
 
-        def _release_lease_once() -> None:
-            # Single-task coroutine chain — a plain flag is sufficient; the
-            # underlying release_operation() is lock-guarded and idempotent-safe
-            # only via this guard, so never call it twice.
-            nonlocal released
-            if not released:
-                released = True
-                runtime.release_operation()
+        scope.setdefault("state", {})["profile_snapshot"] = lease.snapshot
+        token = _REQUEST_PROFILE.set(lease.snapshot.profile_id)
 
         async def _send(message) -> None:
+            # Streaming bodies do not keep the request's admission. Any work
+            # already forked into an executor retains its own counted lease.
             if message.get("type") == "http.response.start":
-                _release_lease_once()
+                lease.release()
             await send(message)
 
         try:
-            await self._app(scope, receive, _send)
+            with bind_request_lease(lease):
+                await self._app(scope, receive, _send)
         finally:
             _REQUEST_PROFILE.reset(token)
-            # Safety net: a request that errors before emitting response.start
-            # (or an ASGI app that never sends one) must still release its lease.
-            # Release is lock-only and must not itself be cancellation-prone.
-            _release_lease_once()
+            lease.release()
 
 
 __all__ = [

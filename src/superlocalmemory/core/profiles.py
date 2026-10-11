@@ -114,6 +114,14 @@ class ProfileManager:
         The temp file is closed before the rename: Windows refuses to rename
         a file that is still open (WinError 32).
         """
+        from superlocalmemory.core import profile_tombstones
+
+        # A profile erased since this manager loaded must not be written back.
+        erased = profile_tombstones.erased_digests(self._base_dir)
+        for name in [n for n in self._profiles if profile_tombstones.digest(n) in erased]:
+            del self._profiles[name]
+            if self._active_name == name:
+                self._active_name = _RESERVED
         data = json.dumps(
             {"active": self._active_name,
              "profiles": [asdict(p) for p in self._profiles.values()]},
@@ -154,6 +162,9 @@ class ProfileManager:
         _validate_name(name)
         if name in self._profiles:
             raise ValueError(f"Profile '{name}' already exists.")
+        from superlocalmemory.core import profile_tombstones
+
+        profile_tombstones.clear(self._base_dir, name)  # a deliberate creation
         profile = Profile(
             profile_id=_pid(), name=name, description=description,
             personality=personality, mode=mode,

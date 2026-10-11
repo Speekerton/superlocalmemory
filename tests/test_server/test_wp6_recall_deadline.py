@@ -141,3 +141,20 @@ def test_executor_work_is_counted_and_transition_leased_until_it_finishes(monkey
             release.set()
 
     asyncio.run(run())
+
+
+def test_paused_background_work_does_not_refuse_foreground_recall(monkeypatch):
+    from superlocalmemory.server import profile_runtime
+
+    async def run():
+        runtime = profile_runtime.ProfileRuntime('default')
+        runtime._background_paused = True
+        monkeypatch.setattr(profile_runtime, 'get_profile_runtime', lambda state: runtime)
+        monkeypatch.setattr(recall_core, '_engine_call', lambda *a: object())
+        monkeypatch.setattr(recall_core, '_envelope', lambda *a: {'worked': True})
+        engine = object()
+        result = await recall_core.run_recall(engine,
+            recall_core.RecallCall('a question?', 3, '', 'test', True),
+            app_state=SimpleNamespace(engine=engine))
+        assert result == {'worked': True}
+    asyncio.run(run())

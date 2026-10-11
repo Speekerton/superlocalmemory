@@ -13,11 +13,14 @@ MEMORY BUDGET
 A slot keeps the walk's array view (retrieval/graph_adjacency) and nothing
 else of size: the dict-of-lists adjacency, the per-fact entity lists and the
 metrics dicts the loader builds are dropped once the arrays exist. On the
-owner's store (25.6k nodes, 611k edges, 3.5k entities) that is about 20 MB of
-CSR arrays plus ~8 MB of node and entity maps, ~30 MB a scope, against several
-hundred MB when the dict adjacency was kept. ``SLM_ADJ_CACHE_PROFILES`` scopes
-(default 3) bound the cache at ~90 MB; a write's delta allocates one more
-copy of the arrays for the length of the splice.
+audit-sized shape (25.6k nodes, 611k undirected edges) the array payload is
+20.2 MB: 32 bytes per edge plus 24 bytes per node and 8 bytes for the CSR
+sentinel. ``tests/test_retrieval/test_adjacency_slot_budget.py`` measures this
+layout and checks that cached slots discard the builder's dictionaries.
+Python node and entity maps add workload-dependent storage; the array figure
+is not total RSS. ``SLM_ADJ_CACHE_PROFILES`` (default 3) bounds slot count,
+not bytes. A splice temporarily retains old and new arrays, and a cold build
+also holds its dictionary inputs until the snapshot is installed.
 """
 
 from __future__ import annotations

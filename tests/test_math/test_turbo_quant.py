@@ -11,8 +11,6 @@ Tests 19-22: polar_quant.py backward compat
 
 from __future__ import annotations
 
-import math
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -182,8 +180,6 @@ class TestRotationCopyOnDetect:
         self, monkeypatch, tmp_dir: Path,
     ) -> None:
         """Test 6: Copies polar_rotation_{d}.npy if turbo doesn't exist."""
-        import shutil
-        import tempfile
 
         # Create a fake .superlocalmemory dir in tmp
         slm_dir = tmp_dir / ".superlocalmemory"
@@ -419,8 +415,6 @@ class TestLegacyDecode:
         """Test 17: BLOB without TQ prefix decodes via polar path."""
         from superlocalmemory.math.polar_quant import (
             PolarQuantEncoder,
-            _cartesian_to_polar_angles,
-            _polar_to_cartesian,
         )
 
         d = 16
@@ -525,7 +519,6 @@ class TestPolarQuantBackwardCompat:
         """Test 21: Turbo encoder can decode legacy polar BLOBs."""
         from superlocalmemory.math.polar_quant import (
             PolarQuantEncoder,
-            QuantizedEmbedding,
         )
 
         d = 16

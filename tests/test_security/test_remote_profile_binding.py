@@ -62,7 +62,7 @@ def test_every_argument_of_every_remote_tool_is_classified(registry) -> None:
     groups = (binding.PROFILE_ARGUMENTS, binding.READ_SCOPE_ARGUMENTS,
               binding.WRITE_SCOPE_ARGUMENTS, binding.NEUTRAL_ARGUMENTS, binding.MEDIA_ARGUMENTS)
     assert sum(len(g) for g in groups) == len(binding.CLASSIFIED_ARGUMENTS)
-    # media_upload_link takes no file arguments: it is a media tool, but not one that may carry them.
+    # media_upload_link is a media tool that cannot carry file arguments.
     assert binding.MEDIA_ARGUMENT_TOOLS | {"media_upload_link"} == policy.MEDIA_TOOLS
     media_seen = {a for t, args in remote.items() if t in policy.MEDIA_TOOLS for a in args}
     assert binding.MEDIA_ARGUMENTS <= media_seen, sorted(binding.MEDIA_ARGUMENTS - media_seen)
@@ -72,6 +72,16 @@ def test_every_argument_of_every_remote_tool_is_classified(registry) -> None:
 def test_no_profile_or_scope_like_argument_is_filed_as_neutral(registry) -> None:
     looks_scoped = re.compile(r"profile|scope|shared|global|tenant|workspace|namespace")
     assert not {a for a in binding.NEUTRAL_ARGUMENTS if looks_scoped.search(a)}
+
+
+def test_outcome_report_key_is_retained_inside_the_bound_profile():
+    arguments = {"memory_ids": "fact-a", "outcome": "success", "report_id": "retry-a"}
+    result = binding.bind_arguments("report_outcome", arguments, key_name="test", bound="work")
+    assert result["report_id"] == "retry-a"
+    assert result["profile_id"] == "work"
+    with pytest.raises(binding.BindingRefusal):
+        binding.bind_arguments("report_outcome", {**arguments, "profile_id": "other"},
+                               key_name="test", bound="work")
 
 
 def test_every_remote_tool_that_takes_scope_is_pinned_to_personal(registry) -> None:
@@ -452,6 +462,7 @@ def test_no_profile_runtime_means_no_remote_tool_call() -> None:
 
 def test_media_arguments_are_accepted_only_for_the_media_tools():
     import pytest
+
     from superlocalmemory.server.remote_profile_binding import BindingRefusal, bind_arguments
 
     assert bind_arguments("get_media", {"media_id": "abcdef12", "variant": "thumb"},
@@ -466,6 +477,7 @@ def test_media_arguments_are_accepted_only_for_the_media_tools():
 
 def test_a_remote_app_cannot_name_a_file_even_for_a_media_tool():
     import pytest
+
     from superlocalmemory.server.remote_profile_binding import BindingRefusal, bind_arguments
 
     for tool in ("remember_media", "remember_document"):

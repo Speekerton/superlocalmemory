@@ -42,7 +42,6 @@ import numpy as np
 
 from superlocalmemory.storage.database import _scope_where
 from superlocalmemory.storage.embedding_codec import (
-    EMBEDDING_BYTES,
     expected_bytes,
     decode_embedding,
 )

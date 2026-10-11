@@ -34,21 +34,54 @@ def _print_json(data: Any) -> None:
 
 
 def _json_envelope(
-    command: str, *, data: dict | None = None, error: dict | None = None
+    command: str, *, data: dict | None = None, error: dict | None = None,
+    success: bool | None = None,
 ) -> dict:
-    """Build the standard agent-native JSON envelope used across all SLM CLIs."""
+    """Build the standard agent-native JSON envelope used across all SLM CLIs.
+
+    ``success`` defaults to "no error". A command whose work partly happened
+    (an incomplete erasure) passes ``success=False`` together with both an
+    ``error`` and the ``data`` of what did happen, so the envelope says exactly
+    what was and was not done and agrees with the exit code.
+    """
     from superlocalmemory.cli.json_output import _get_version
 
     env: dict = {
-        "success": error is None,
+        "success": (error is None) if success is None else bool(success),
         "command": command,
         "version": _get_version(),
     }
     if error is not None:
         env["error"] = error
-    else:
+    if error is None or data is not None:
         env["data"] = data if data is not None else {}
     return env
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Erasure result text
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _print_erase_text(profile: str, statement: dict, ok: bool) -> None:
+    """Say what was removed and what remains, in the words a person can act on."""
+    if ok:
+        status = "COMPLETE"
+    elif statement["complete"]:
+        status = ("COMPLETE, BUT NOT PROVABLE - the data is gone and the "
+                  "tamper-evident receipt did not persist")
+    else:
+        status = "INCOMPLETE"
+    print(f"Art.17 erasure for profile '{profile}': {status}")
+    if statement["removed"]:
+        print("  Removed:")
+        for key, value in statement["removed"].items():
+            print(f"    {key}: {value}")
+    if statement["remains"]:
+        print("  Still to do:")
+        for item in statement["remains"]:
+            print(f"    - {item['what']}")
+            print(f"      {item['retry']}")
+    print("  Verify receipts: slm gdpr verify --profile", profile)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -81,12 +114,16 @@ def stream_export_to_file(gdpr: Any, profile: str, out_path: Path, *,
     The export is written to ``<out>.part`` (owner-only) and renamed on success,
     so a failure never leaves a truncated file that looks like a finished export.
     """
+    from superlocalmemory.infra.private_files import open_private_new
+
     part = out_path.with_name(out_path.name + ".part")
-    fd = os.open(part, os.O_RDWR | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd = open_private_new(part)
     try:
         with os.fdopen(fd, "w+b") as fp:
             summary = gdpr.write_profile_export(profile, fp, include_embeddings=include_embeddings)
-        os.replace(part, out_path)
+            fp.flush()
+            os.fsync(fp.fileno())
+        os.replace(part, out_path)  # a new owner-only file replaces any broader one, or a link
     except BaseException:
         part.unlink(missing_ok=True)
         raise
@@ -126,23 +163,25 @@ def stream_export_to_stdout(gdpr: Any, profile: str, *, include_embeddings: bool
 KNOWN_GAPS = [
     {
         "ref": "C1",
-        "summary": "backups/ directory is outside erasure scope",
+        "summary": "backup copies are not rewritten by an erasure",
         "detail": (
-            "Up to 10 rotating snapshots of memory.db, learning.db and "
-            "related DB files survive an Art.17 erasure.  The erasure receipt "
-            "records a 'backup_obligation' so the obligation is tracked, but "
-            "the snapshots are not automatically purged.  Snapshots are "
-            "re-erased on restore."
+            "Backup snapshots (backups/, pre-migration-snapshots/, pre-restore/) "
+            "that hold an erased profile, or cannot be read to show they do not, "
+            "are recorded as erasure obligations and the erasure reports itself "
+            "incomplete while any exists. A backup is never rewritten (its "
+            "checksums would stop matching); the erasure is replayed on every "
+            "restore of it, and the obligation ends only when the backup is "
+            "deleted or re-read clean. Age does not end it."
         ),
     },
     {
         "ref": "C2",
-        "summary": "code_graph.db is not in erasure scope",
+        "summary": "a shared code graph is only partly erased",
         "detail": (
-            "Repository paths, file names and symbol names (identifying data "
-            "in a work context) are stored in code_graph.db.  This file is "
-            "covered by compliance/gdpr.py but the per-table discovery "
-            "operates on the main memory.db only."
+            "code_graph.db has no owner column. When several profiles exist, an "
+            "erasure removes the links between the erased profile's memories and "
+            "code, and keeps the repository structure, which describes the "
+            "source rather than the person. The result says so."
         ),
     },
 ]
@@ -153,6 +192,6 @@ ART_COVERAGE = {
     "art17_right_to_erasure": True,
     "art20_right_to_portability": True,
     "backup_scope": "outstanding_obligation_recorded_on_receipt",
-    "audit_chain": "HMAC-chained tamper-evident",
+    "audit_chain": "hash-chained tamper-evident",
     "erasure_fails_closed": True,
 }

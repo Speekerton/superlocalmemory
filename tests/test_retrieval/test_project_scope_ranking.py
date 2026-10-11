@@ -61,7 +61,7 @@ def _embed(text: str) -> list[float]:
     return (vec / norm).tolist() if norm else (vec + 1e-3).tolist()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture()
 def store(tmp_path_factory):
     from superlocalmemory.core.config import SLMConfig
     from superlocalmemory.core.engine import MemoryEngine

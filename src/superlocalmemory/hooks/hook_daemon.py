@@ -29,7 +29,6 @@ import socket
 import stat
 import sys
 import threading
-import time
 from pathlib import Path
 
 from superlocalmemory.infra.data_root import state_path

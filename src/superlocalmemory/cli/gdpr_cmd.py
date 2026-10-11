@@ -44,9 +44,9 @@ from superlocalmemory.cli.gdpr_io import (
     KNOWN_GAPS as _KNOWN_GAPS,
     _audit_chain_path,
     _data_root,
-    _db_path,
     _die,
     _json_envelope,
+    _print_erase_text,
     _print_json,
     stream_export_to_file,
     stream_export_to_stdout,
@@ -108,7 +108,7 @@ def _cmd_gdpr_status(args: Namespace) -> None:
             chain = AuditChain(str(_audit_chain_path()))
             scope_filter = {"profile_id": profile} if profile else {}
             audit_recent = chain.query(limit=10, **scope_filter)
-            audit_count = len(chain.query(limit=100_000, **scope_filter))
+            audit_count = chain.count(**scope_filter)
         except Exception:
             pass
 
@@ -426,43 +426,37 @@ def _cmd_gdpr_erase(args: Namespace) -> None:
             print("  The erasure may be incomplete.  Check the audit_chain.db receipt.", file=sys.stderr)
         sys.exit(1)
 
-    complete = counts.get("erasure_complete", 0)
-    # Whether it can be SHOWN to have happened is a separate answer, and
-    # printing COMPLETE while the tamper-evident receipt failed to persist is
-    # how the command line came to disagree with the API about the same erasure.
-    provable = counts.get("erasure_provable", complete)
+    from superlocalmemory.compliance import erasure_outcome
+
+    # One verdict for every surface (compliance/erasure_outcome.py): the JSON
+    # envelope, the printed text and the exit code below all read it, so they
+    # cannot disagree about the same erasure.
+    statement = erasure_outcome.describe(counts)
+    ok = erasure_outcome.erasure_succeeded(counts)
     result_data = {
         "profile": profile,
-        "erasure_complete": bool(complete),
-        "erasure_provable": bool(provable),
-        "counts": counts,
+        "erasure_complete": bool(statement["complete"]),
+        "erasure_provable": bool(statement["provable"]),
+        "removed": statement["removed"],
+        "remains": statement["remains"],
+        "counts": {k: v for k, v in counts.items() if k != "erasure_report"},
         "note": (
-            "Erasure recorded in audit_chain.db. "
-            "Backups/ remain as an outstanding obligation (C1). "
-            "Run `slm gdpr verify --profile PROFILE` to confirm receipts."
+            "Erasure recorded in audit_chain.db. Run "
+            "`slm gdpr verify --profile PROFILE` to confirm receipts."
         ),
     }
 
     if use_json:
-        _print_json(_json_envelope("gdpr-erase", data=result_data))
+        error = None if ok else {
+            "code": "ERASURE_INCOMPLETE",
+            "message": erasure_outcome.failure_message(counts),
+            "hint": "; ".join(item["retry"] for item in statement["remains"]),
+        }
+        _print_json(_json_envelope("gdpr-erase", data=result_data, error=error, success=ok))
     else:
-        if not complete:
-            status_str = "INCOMPLETE (check counts)"
-        elif not provable:
-            status_str = (
-                "COMPLETE, BUT NOT PROVABLE — the data is gone and the "
-                "tamper-evident receipt did not persist"
-            )
-        else:
-            status_str = "COMPLETE"
-        print(f"Art.17 erasure for profile '{profile}': {status_str}")
-        for k, v in counts.items():
-            print(f"  {k}: {v}")
-        print()
-        print("  Backups/ contain outstanding obligation — see C1 gap.")
-        print("  Verify receipts: slm gdpr verify --profile", profile)
+        _print_erase_text(profile, statement, ok)
 
-    if not complete or not provable:
+    if not ok:
         sys.exit(1)
 
 
@@ -511,14 +505,16 @@ def _show_erase_preview(
         "tables_affected": len(tables),
         "total_rows": sum(row_counts.values()),
         "also_purged": [
-            "learning.db (sidecar)",
-            "active_brain_cache.db",
-            "vector store entries",
+            "learning.db, pending.db and admission_journal.db rows of the profile",
+            "write receipts (write_commits) of the profile",
+            "active_brain_cache.db, derive_cache.db and the MCP cache / compression originals",
+            "vector index entries and the profile's entry in profiles.json",
+            "pictures, documents and the code-graph links of its memories",
         ],
         "survives": [
-            "erasure_receipts (tamper-evident audit chain)",
-            "profiles record (for GDPR accountability)",
-            "backups/ (outstanding obligation — C1)",
+            "erasure_receipts and the audit chain (proof that the erasure happened; hashes only)",
+            "backups (backups/, pre-migration-snapshots/, pre-restore/): each is recorded "
+            "as an erasure obligation and the result stays INCOMPLETE until it is deleted",
         ],
         "warning": (
             "This operation is IRREVERSIBLE. "

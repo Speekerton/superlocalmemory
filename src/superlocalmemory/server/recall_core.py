@@ -237,9 +237,9 @@ def _envelope(engine: Any, call: RecallCall, response: Any, snapshot: Any) -> di
 
 async def run_recall(engine: Any, call: RecallCall, *, app_state: Any) -> dict:
     """One deadline covers queue admission, worker execution and response assembly."""
-    from superlocalmemory.core.recall_gate import RecallHold
     from superlocalmemory.server.profile_runtime import get_profile_runtime
-    from superlocalmemory.server.recall_deadline import submit, timed_out, wait_until
+    from superlocalmemory.server.recall_admission import foreground_admission
+    from superlocalmemory.server.recall_deadline import timed_out
 
     loop = asyncio.get_running_loop()
     budget = effective_budget_s(call)
@@ -247,6 +247,20 @@ async def run_recall(engine: Any, call: RecallCall, *, app_state: Any) -> dict:
     worker_deadline = public_deadline - min(0.20, budget * 0.25)
     runtime = get_profile_runtime(app_state)
     snapshot = runtime.snapshot
+    async with foreground_admission(runtime, worker_deadline) as admitted:
+        if not admitted:
+            return timed_out(call, snapshot)
+        snapshot = runtime.snapshot
+        return await _run_admitted(
+            engine, call, app_state, runtime, snapshot, public_deadline, worker_deadline)
+
+
+async def _run_admitted(engine, call, app_state, runtime, snapshot,
+                        public_deadline, worker_deadline):
+    from superlocalmemory.core.recall_gate import RecallHold
+    from superlocalmemory.server.recall_deadline import submit, timed_out, wait_until
+
+    loop = asyncio.get_running_loop()
     hold, acquired = RecallHold(), False
     try:
         if not call.fast:

@@ -20,10 +20,16 @@ LOOPBACK = ("127.0.0.1", 50123)
 
 
 @pytest.fixture
-def app_and_engine(engine_with_mock_deps):
+def app_and_engine(engine_with_mock_deps, monkeypatch):
     from superlocalmemory.access.rbac import RbacEngine
+    from superlocalmemory.server import unified_daemon
     from superlocalmemory.server.profile_runtime import bind_profile_runtime
     from superlocalmemory.server.unified_daemon import create_app
+
+    # Each test app models a new daemon process. A prior app left in
+    # "starting" can retain its port (including 0) while create_app reuses the
+    # process descriptor. Whether its startup finished must not affect us.
+    monkeypatch.setattr(unified_daemon, "_ACTIVE_DAEMON_DESCRIPTOR", None)
 
     engine = engine_with_mock_deps
     engine.profile_id = "default"

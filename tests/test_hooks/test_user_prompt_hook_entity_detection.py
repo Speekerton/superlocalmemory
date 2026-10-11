@@ -19,11 +19,8 @@ from __future__ import annotations
 
 import io
 import json
-import sys
 import time
-from pathlib import Path
 
-import pytest
 
 
 # --------------------------------------------------------------------------

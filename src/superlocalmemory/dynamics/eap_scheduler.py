@@ -9,7 +9,7 @@ Couples Ebbinghaus retention scores to embedding bit-width:
   R > 0.5  ->  8 (int8, sqlite-vec native)
   R > 0.2  ->  4 (polar 4-bit)
   R > 0.05 ->  2 (polar 2-bit)
-  R <= 0.05->  0 (forgotten, delete embedding)
+  R <= 0.05->  0 (forgotten: marked, hidden from recall; vectors are KEPT)
 
 The EAP cycle:
   1. Fetch all facts with retention data + current bit_width
@@ -17,8 +17,12 @@ The EAP cycle:
   3. Execute downgrades (compress) and upgrades (restore)
   4. Return stats
 
-HR-03: Original float32 NEVER deleted unless keep_float32_backup=False
-       AND fact is in archive/forgotten zone.
+HR-03: Original float32 is NEVER deleted by this scheduler. A forgotten memory
+       is a logical state (``deleted`` in the stats counts those transitions);
+       its vector and its stored embedding stay, so an upgrade or a re-access
+       can restore it, and the vector backfill would rebuild a removed one.
+       ``keep_float32_backup=False`` therefore changes nothing; a cycle says so
+       instead of reporting a reclamation that did not happen.
 HR-04: Quantization ONLY via EAP scheduler (not ad-hoc).
 
 Part of Qualixar | Author: Varun Pratap Bhardwaj
@@ -27,9 +31,7 @@ License: AGPL-3.0-or-later
 
 from __future__ import annotations
 
-import json
 import logging
-import sqlite3
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -117,7 +119,14 @@ class EAPScheduler:
             "skipped": 0,
             "deleted": 0,
             "errors": 0,
+            #: Vectors physically removed by this cycle. Always 0: see HR-03 above.
+            "vectors_reclaimed": 0,
         }
+        if not self._config.keep_float32_backup:
+            stats["note"] = (
+                "keep_float32_backup=False has no effect: forgotten memories are marked and "
+                "hidden, and their vectors are kept (nothing is physically reclaimed)")
+            logger.warning("EAP: %s", stats["note"])
 
         # Step 1: Fetch all facts with retention + current bit_width
         try:
@@ -241,10 +250,7 @@ class EAPScheduler:
         )
 
     def _handle_deletion(self, fact_id: str, profile_id: str) -> None:
-        """Mark an embedding as deleted (forgotten).
-
-        HR-03: Only deletes if keep_float32_backup is False.
-        """
+        """Mark an embedding as forgotten. Logical only: no vector is removed (HR-03)."""
         try:
             self._db.execute(
                 "INSERT INTO embedding_quantization_metadata "

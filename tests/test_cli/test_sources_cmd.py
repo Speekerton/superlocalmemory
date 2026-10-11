@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import io
 import json
 from argparse import Namespace
-
-import pytest
 
 from superlocalmemory.cli import sources_cmd
 from superlocalmemory.cli.daemon import DaemonConflict, DaemonNotFound

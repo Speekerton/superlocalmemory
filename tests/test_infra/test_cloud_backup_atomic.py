@@ -18,13 +18,11 @@ Fix: atomic os.open(O_CREAT|O_WRONLY|O_TRUNC|O_NOFOLLOW, 0o600) + fsync +
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import stat
 import sys
 import types
-import unittest.mock as mock
 from pathlib import Path
 
 import pytest
@@ -42,7 +40,6 @@ def _make_module(tmp_path: Path):
     We patch MEMORY_DIR at the module level so the module never touches
     ~/.superlocalmemory during tests.
     """
-    import importlib
     import superlocalmemory.infra.cloud_backup as cb_mod
 
     # Monkeypatch the module-level constant

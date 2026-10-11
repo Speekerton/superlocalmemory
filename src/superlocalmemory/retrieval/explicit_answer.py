@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import re
 
-RULE_ID = "explicit-approver-v1"
+from superlocalmemory.retrieval.source_assertions import affirmative_sentences
+
+RULE_ID = "explicit-approver-v2"
 _ASK = re.compile(r"^who (?:approved|signed off(?: on)?) (.+?)\??$", re.I)
 _APPROVAL = re.compile(r"\b([A-Z][a-z]+(?: [A-Z][a-z]+){1,3}) approved ([^.!?\n]+)[.!]?", re.M)
 _SKIP = frozenset("a an the in on for of synthetic fictional who approved".split())
@@ -29,23 +31,9 @@ def attribution_support(question: str, memory: str) -> bool:
     required = _anchors(ask[1])
     if not required or not required <= _anchors(memory):
         return False
-    for match in _APPROVAL.finditer(memory):
-        # Reject an assertion embedded in a denied, conditional, or quoted claim.
-        prefix = memory[: match.start()].rsplit(".", 1)[-1]
-        if re.search(
-            r"\b(not|never|no|if|unless|whether|said|claims?|reportedly|might|may|false|denied|incorrect|suppose)\b",
-            prefix,
-            re.I,
-        ):
-            continue
-        if any(c in prefix + match[0] for c in ('"', "“", "”")):
-            continue
-        sentence = match[0]
-        if re.search(
-            r"\b(not|never|no|undecided|pending|suppose|false|denied|incorrect|if|unless|whether)\b",
-            sentence,
-            re.I,
-        ):
+    for sentence in affirmative_sentences(memory):
+        match = _APPROVAL.search(sentence)
+        if match is None:
             continue
         obj = _matching_object(required, match, memory)
         if obj is None:

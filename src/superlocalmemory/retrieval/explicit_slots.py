@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import re
 
-RULE_ID = "requested-slot-v1"
+from superlocalmemory.retrieval.source_assertions import affirmative_sentences
+
+RULE_ID = "requested-slot-v2"
 _STOP = frozenset("what which who is are the a an of for used called named employee person".split())
 _UNCERTAIN = re.compile(
     r"\b(not|never|no|unknown|if|unless|may|might|said|claims?|whether)\b", re.I
@@ -26,12 +28,10 @@ def _words(text):
 def supports_slot(question: str, memory: str) -> bool:
     usage = _USAGE.fullmatch(question.strip())
     person = _PERSON.fullmatch(question.strip())
-    for sentence in re.split(r"[.!?\n]", memory):
-        if _UNCERTAIN.search(sentence) or any(c in sentence for c in ('"', "“", "”")):
-            continue
+    for sentence in affirmative_sentences(memory):
         if usage and re.search(
             rf"^\s*{re.escape(usage[1])}\s+"
-            r"(?:exposes|provides|converts|serves|is used (?:for|to))\b",
+            r"(?:exposes|provides|converts|serves|is used (?:for|to))\s+\w.+$",
             sentence,
             re.I,
         ):

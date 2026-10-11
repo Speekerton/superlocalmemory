@@ -5,7 +5,7 @@
 import os
 import stat
 import tempfile
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 
@@ -17,21 +17,45 @@ def platform_reason():
     return None
 
 
+@contextmanager
+def directory_handle(path, *, create=False):
+    """Hold every ancestor, refusing links before opening or creating children."""
+    path = Path(path).absolute()
+    if '..' in path.parts:
+        raise ValueError('Private storage needs a no-follow path without traversal')
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    with ExitStack() as stack:
+        try:
+            fd = os.open(path.anchor, flags)
+            stack.callback(os.close, fd)
+            for part in path.parts[1:]:
+                if create:
+                    try:
+                        os.mkdir(part, mode=0o700, dir_fd=fd)
+                    except FileExistsError:
+                        pass
+                fd = os.open(part, flags, dir_fd=fd)
+                stack.callback(os.close, fd)
+        except OSError as error:
+            raise ValueError(
+                'Private check storage requires no-follow directories; symlinks refused') from error
+        yield fd
+
+
 def private_dir(path):
-    path = Path(path)
-    if not path.exists():
-        if not path.parent.exists():
-            private_dir(path.parent)
-        path.mkdir(mode=0o700, exist_ok=True)
-    info = path.lstat()
-    if not stat.S_ISDIR(info.st_mode):
-        raise ValueError('Private check storage cannot contain symlinks')
-    os.chmod(path, 0o700)
+    path = Path(path).absolute()
+    with directory_handle(path, create=True) as fd:
+        if not stat.S_ISDIR(os.fstat(fd).st_mode):
+            raise ValueError('Private check storage must be a directory')
+        os.fchmod(fd, 0o700)
     return path
 
 
 def private_file(path):
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    path = Path(path)
+    with directory_handle(path.parent) as directory:
+        fd = os.open(path.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                     0o600, dir_fd=directory)
     return os.fdopen(fd, 'wb')
 
 

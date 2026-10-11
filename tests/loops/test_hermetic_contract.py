@@ -136,22 +136,23 @@ def test_store_tampering_refuses_before_execution(receipt_db, tmp_path, monkeypa
 
 
 def test_execution_uses_private_dirs_allowlist_and_devnull(receipt_db, tmp_path, monkeypatch):
+    from superlocalmemory.loops import check_process
     monkeypatch.setenv('PYTHONPATH', str(tmp_path / 'malicious'))
     monkeypatch.setenv('SECRET_TEST_SENTINEL', 'not a real secret')
     work, _, job = register(receipt_db, tmp_path, code='pass')
-    real_run = execution_receipts.subprocess.run
+    real_run = check_process.subprocess.Popen
     captured = []
 
     def capture(command, **kwargs):
         captured.append((command, kwargs))
         return real_run(command, **kwargs)
 
-    monkeypatch.setattr(execution_receipts.subprocess, 'run', capture)
+    monkeypatch.setattr(check_process.subprocess, 'Popen', capture)
     receipt_jobs.run_registered_check(receipt_db, job['job_id'])
     command, options = captured[0]
     run = Path(options['cwd'])
     assert not run.is_relative_to(work) and not run.exists()
-    assert options['stdin'] == execution_receipts.subprocess.DEVNULL
+    assert options['stdin'] == check_process.subprocess.DEVNULL
     assert 'PYTHONPATH' not in options['env'] and 'SECRET_TEST_SENTINEL' not in options['env']
     for name in ('HOME', 'TMPDIR', 'XDG_CACHE_HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME'):
         assert Path(options['env'][name]).is_relative_to(run)

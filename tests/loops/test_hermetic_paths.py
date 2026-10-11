@@ -1,8 +1,6 @@
 """Private storage and command paths cannot escape the hermetic workspace."""
 
-import os
 import sys
-from pathlib import Path
 
 import pytest
 

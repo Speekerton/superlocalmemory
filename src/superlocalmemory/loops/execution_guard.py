@@ -10,6 +10,8 @@ import secrets
 import stat
 from pathlib import Path
 
+from superlocalmemory.loops.private_workspace import directory_handle, private_file
+
 
 def admission(job):
     """Public identity descriptor alone cannot mint an admitted receipt."""
@@ -21,13 +23,14 @@ def _key(store, *, create=False):
     path = Path(store) / 'admission.key'
     if create:
         try:
-            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            stream = private_file(path)
         except FileExistsError:
             pass
         else:
-            with os.fdopen(fd, 'wb') as stream:
+            with stream:
                 stream.write(secrets.token_bytes(32))
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with directory_handle(path.parent) as directory:
+        fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
     with os.fdopen(fd, 'rb') as stream:
         info = os.fstat(stream.fileno())
         if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077:

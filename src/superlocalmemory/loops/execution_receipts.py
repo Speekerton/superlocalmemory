@@ -11,12 +11,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-import subprocess
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from superlocalmemory.loops.private_workspace import execution_environment
+from superlocalmemory.loops.check_process import execute
 
 _SCHEMA = (
     "CREATE TABLE IF NOT EXISTS loop_execution_receipts ("
@@ -41,20 +40,7 @@ def _execution(command, cwd, timeout):
         or not all(isinstance(arg, str) and arg and "\x00" not in arg for arg in command)
     ):
         raise ValueError("Check command must be a nonempty argv sequence")
-    try:
-        result = subprocess.run(
-            command,
-            cwd=cwd,
-            timeout=timeout,
-            shell=False,
-            env=execution_environment(cwd),
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-        )
-        return result.returncode, result.stdout, result.stderr
-    except (subprocess.TimeoutExpired, OSError):
-        return -1, "", "Independent check did not complete"
+    return execute(command, cwd, timeout)
 
 
 def _store(db, receipt):

@@ -14,11 +14,23 @@ from superlocalmemory.loops.private_workspace import private_dir, temporary
 def relocated(command, cwd, destination):
     root = Path(cwd)
     argv = []
+    literal = False
     for arg in command:
-        path = Path(arg)
+        if literal:
+            argv.append(arg)
+            literal = False
+            continue
+        prefix, value = ('', arg)
+        if arg.startswith('-') and '=' in arg:
+            option, value = arg.split('=', 1)
+            prefix = option + '='
+        path = Path(value)
+        if '..' in path.parts:
+            raise ValueError('Check command paths must be confined without traversal')
         if path.is_absolute() and path.is_relative_to(root):
-            arg = str(Path(destination) / path.relative_to(root))
-        argv.append(arg)
+            value = str(Path(destination) / path.relative_to(root))
+        argv.append(prefix + value)
+        literal = arg == '-c'
     return argv
 
 

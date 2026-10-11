@@ -60,9 +60,10 @@ def _registration_storage(cwd, data_root):
     if reason:
         raise ValueError(reason)
     root = Path(data_root).absolute() if data_root is not None else canonical_data_root()
-    if root.is_relative_to(Path(cwd)):
+    store_path = root / 'loop-checks'
+    if store_path.resolve().is_relative_to(Path(cwd)):
         raise ValueError('Hermetic check data root must be outside the approved project directory')
-    store = private_dir(root / 'loop-checks')
+    store = private_dir(store_path)
     _key(store, create=True)
     return store
 

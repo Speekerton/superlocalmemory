@@ -62,18 +62,7 @@ def _pre_populate_with_other_server(config_path: Path, fmt: str, server_key: str
 
     elif fmt == "yaml":
         import yaml
-        data = {
-            server_key: [
-                {
-                    "name": "mcp",
-                    "params": {
-                        "serverName": "othersrv",
-                        "command": "other-cmd",
-                        "args": ["--flag"],
-                    },
-                }
-            ]
-        }
+        data = {server_key: [{"name": "othersrv", "command": "other-cmd", "args": ["--flag"]}]}
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(yaml.safe_dump(data), encoding="utf-8")
 
@@ -173,7 +162,7 @@ class TestConnectMany:
         data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
         providers = data.get(desc.server_key, [])
         server_names = [
-            p.get("params", {}).get("serverName") for p in providers
+            p.get("name") for p in providers
         ]
         assert "othersrv" in server_names
         assert "superlocalmemory" in server_names

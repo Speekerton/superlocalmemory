@@ -41,7 +41,6 @@ from superlocalmemory.hooks.portable_kit import (  # noqa: E402
     connect_many,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -262,7 +261,10 @@ def test_connect_many_propagates_transport(fake_home: Path) -> None:
         config_path = fake_home / desc.mcp_path_global
         data = json.loads(config_path.read_text(encoding="utf-8"))
         block = data[desc.server_key]["superlocalmemory"]
-        assert block["type"] == "http", f"IDE {r['ide']} did not get http block"
+        if r["ide"] == "antigravity":
+            assert "serverUrl" in block
+        else:
+            assert block["type"] == "http", f"IDE {r['ide']} did not get http block"
 
 
 # ---------------------------------------------------------------------------
@@ -289,7 +291,9 @@ def test_cli_connect_transport_flag_declared() -> None:
         timeout=10,
     )
     help_output = cp.stdout + cp.stderr
-    assert "--transport" in help_output, f"--transport flag missing from connect help: {help_output[:500]}"
+    assert "--transport" in help_output, (
+        f"--transport flag missing from connect help: {help_output[:500]}"
+    )
     assert "--port" in help_output, f"--port flag missing from connect help: {help_output[:500]}"
 
 

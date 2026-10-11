@@ -152,6 +152,7 @@
   function layaReadiness() {
     var laya = status.laya;
     if (!status.apple_silicon) return { ready: false, text: 'Needs a Mac with Apple Silicon. Choose Online with Jev instead.' };
+    if (status.execution && status.execution.state !== 'ready' && status.active === 'laya') return { ready: false, text: status.execution.detail, action: 'check' };
     if (laya.state === 'ready') return { ready: true, text: 'Ready.' };
     if (laya.state === 'installing') return { ready: false, text: 'Being set up — you can Save once it says Ready.' };
     if (laya.action === 'check') return { ready: false, text: 'SLM found an install it hasn’t checked yet. Choose “Check this install” below — nothing is downloaded.', action: 'check' };
@@ -293,6 +294,7 @@
 
   /* ── On this Mac ─────────────────────────────────────────────── */
   function layaHeadline(laya) {
+    if (status.active === 'laya' && status.execution && status.execution.state !== 'ready') return status.execution.detail;
     if (contactLost && laya.state === 'installing') return 'Lost contact with SLM, so progress is unknown. Reload the page.';
     switch (laya.state) {
       case 'ready': return 'Ready' + (laya.managed ? '.' : ' — using an install you already had.');
@@ -306,7 +308,7 @@
     var laya = status.laya;
     var box = card('On this Mac', 'ac-laya');
     // Found-but-unchecked is a next step, not an error: no red for it.
-    var tone = laya.state === 'ready' ? 'ok'
+    var tone = laya.state === 'ready' && (!status.execution || status.execution.state === 'ready') ? 'ok'
       : laya.state === 'failed' && !/hasn.t checked it yet/.test(laya.error || '') ? 'bad' : '';
     box.appendChild(note(layaHeadline(laya), tone, 'ac-laya-state'));
     if (laya.state === 'installing' && !contactLost) {
@@ -340,6 +342,19 @@
         buttons.appendChild(onClick(btn(external ? 'Forget this install' : 'Remove', false, 'laya-remove'),
           function () { layaRemove(external); }));
       }
+    }
+    var calibration = status.calibration || { state: 'idle' };
+    if (status.active === 'laya') {
+      var calibrate = btn(calibration.state === 'running' ? 'Calibrating…' : 'Calibrate on my store', false, 'calibrate');
+      calibrate.disabled = !canManage || calibration.state === 'running' || (status.execution && status.execution.state !== 'ready');
+      calibrate.addEventListener('click', function () {
+        send('/calibration', 'POST', { model: 'llama3.2:latest', samples: 32 }).then(function (result) {
+          if (!result.ok) { toast(why(result)); return; }
+          status.calibration = result.data; schedulePoll(); render();
+        });
+      });
+      buttons.appendChild(calibrate);
+      box.appendChild(note('Calibration ' + calibration.state + ': ' + (calibration.done || 0) + '/' + (calibration.total || 0) + '. ' + (calibration.detail || 'Questions and labels stay on this machine; uses your installed GPU model.'), 'dim'));
     }
     box.appendChild(buttons);
     if (status.laya_test_running) box.appendChild(note('Testing — this loads the model once and asks it one question.', 'dim'));
@@ -602,7 +617,7 @@
 
   /* ── polling, refresh, bootstrap ──────────────────────────────── */
   function busy(s) {
-    return s.laya.state === 'installing' || !!(s.adopt && s.adopt.running) || !!s.laya_test_running;
+    return !!(s.execution && s.execution.state === 'warming') || !!(s.calibration && s.calibration.state === 'running') || s.laya.state === 'installing' || !!(s.adopt && s.adopt.running) || !!s.laya_test_running;
   }
   function stopPoll() { if (pollTimer) clearInterval(pollTimer); pollTimer = null; }
   function schedulePoll() {

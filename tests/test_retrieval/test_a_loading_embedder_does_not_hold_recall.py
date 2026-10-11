@@ -150,7 +150,8 @@ def test_background_work_embeds_inline_exactly_as_before() -> None:
             seen.append(threading.current_thread().name)
             return [0.3] * 8
 
-    qe = QueryEmbedder(lambda: _Where())
+    provider = _Where()
+    qe = QueryEmbedder(lambda: provider)
     with background_work():
         assert qe.embed("q", 0.0) == ([0.3] * 8, None)
     assert seen == [threading.current_thread().name]

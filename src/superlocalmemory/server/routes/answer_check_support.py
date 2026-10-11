@@ -45,10 +45,14 @@ logger = logging.getLogger("superlocalmemory.server.routes.answer_check")
 #: because a finished background job applies its result through the same path.
 MUTATION_LOCK = threading.RLock()
 
-KEY_PROBLEM = ("The saved key file was changed outside SLM, so it isn't used. "
-               "Remove the key and enter it again.")
-NOT_CONFIRMED = ("Your choice is saved, but SLM couldn't confirm the online check "
-                 "stopped. Restart SLM to be sure.")
+KEY_PROBLEM = (
+    "The saved key file was changed outside SLM, so it isn't used. "
+    "Remove the key and enter it again."
+)
+NOT_CONFIRMED = (
+    "Your choice is saved, but SLM couldn't confirm the online check "
+    "stopped. Restart SLM to be sure."
+)
 
 #: How long a worked-out "what would run" answer is reused when no engine is
 #: up to ask directly. Working it out can start a Python process; the
@@ -60,6 +64,7 @@ _resolve_lock = threading.Lock()
 
 
 # -- settings ------------------------------------------------------------------
+
 
 def state_dir() -> Path:
     return (MEMORY_DIR / "config.json").parent
@@ -73,15 +78,14 @@ def effective_retrieval() -> Any:
 def save(change: Callable[[dict[str, Any]], Mapping[str, Any]]) -> Any:
     """Write through the one store; returns the effective retrieval after it."""
     answer_check_state.update(
-        state_dir(), change,
-        seed=lambda: answer_check_state.snapshot(effective_retrieval()))
+        state_dir(), change, seed=lambda: answer_check_state.snapshot(effective_retrieval())
+    )
     return effective_retrieval()
 
 
 def without_rerank(values: Mapping[str, Any]) -> dict[str, Any]:
     """Reordering off, its consent included: it never resumes without being asked."""
-    return {**values, "sufficiency_jev_rerank": False,
-            "sufficiency_jev_rerank_consent": False}
+    return {**values, "sufficiency_jev_rerank": False, "sufficiency_jev_rerank_consent": False}
 
 
 def laya_paths(status: Any) -> dict[str, str]:
@@ -91,8 +95,9 @@ def laya_paths(status: Any) -> dict[str, str]:
     return paths
 
 
-def forget_managed_install(values: Mapping[str, Any], *,
-                           every_path: bool = False) -> dict[str, Any]:
+def forget_managed_install(
+    values: Mapping[str, Any], *, every_path: bool = False
+) -> dict[str, Any]:
     """After the managed install is deleted: its paths go (so the dashboard
     says "Not installed", not "Needs a check"), and an explicit on-device
     choice becomes Off. Paths to an install someone adopted are kept — unless
@@ -105,8 +110,10 @@ def forget_managed_install(values: Mapping[str, Any], *,
         return any(text == root or text.startswith(root + os.sep) for root in roots)
 
     out = dict(values)
-    if every_path or any(inside(values.get(k)) for k in (
-            "sufficiency_python", "sufficiency_model", "sufficiency_hf_home")):
+    if every_path or any(
+        inside(values.get(k))
+        for k in ("sufficiency_python", "sufficiency_model", "sufficiency_hf_home")
+    ):
         defaults = answer_check_state.field_defaults()
         for key in ("sufficiency_python", "sufficiency_hf_home", "sufficiency_model"):
             out[key] = defaults[key]
@@ -121,8 +128,10 @@ _MODE_LABELS = {"laya": "on this Mac", "jev": "online with Jev", "off": "off"}
 def rerank_chosen(retrieval: Any) -> bool:
     """Whether the person turned Jev's reordering on (and accepted its notice) —
     remembered while another option is chosen, when it does not run."""
-    return (getattr(retrieval, "sufficiency_jev_rerank", False) is True
-            and getattr(retrieval, "sufficiency_jev_rerank_consent", False) is True)
+    return (
+        getattr(retrieval, "sufficiency_jev_rerank", False) is True
+        and getattr(retrieval, "sufficiency_jev_rerank_consent", False) is True
+    )
 
 
 def switched_message(mode: str, retrieval: Any) -> str:
@@ -130,12 +139,15 @@ def switched_message(mode: str, retrieval: Any) -> str:
     that Jev's reordering pauses while another option is chosen."""
     text = f"Answer check is now {_MODE_LABELS.get(mode, mode)}. Only one option runs at a time."
     if mode != judge_selection.MODE_JEV and rerank_chosen(retrieval):
-        text += (" Reordering with Jev is off while it isn't chosen; it comes back "
-                 "when you choose Jev again.")
+        text += (
+            " Reordering with Jev is off while it isn't chosen; it comes back "
+            "when you choose Jev again."
+        )
     return text
 
 
 # -- the running check ------------------------------------------------------------
+
 
 def live_engine(app_state: Any) -> Any:
     """The published retrieval engine, or None. Never builds one: a status read
@@ -190,8 +202,10 @@ def detach_laya(app_state: Any) -> bool:
 def _permitted(retrieval: Any, judge: Any) -> bool:
     if judge_selection.backend_of(judge) != judge_selection.MODE_JEV:
         return True
-    if (getattr(retrieval, "sufficiency_judge", "") != judge_selection.MODE_JEV
-            or getattr(retrieval, "sufficiency_jev_consent", False) is not True):
+    if (
+        getattr(retrieval, "sufficiency_judge", "") != judge_selection.MODE_JEV
+        or getattr(retrieval, "sufficiency_jev_consent", False) is not True
+    ):
         return False
     running_k = getattr(judge, "rerank_k", 0)
     running_k = running_k if isinstance(running_k, int) else 0
@@ -215,12 +229,16 @@ def enforce(app_state: Any, retrieval: Any) -> bool:
 
 # -- status -----------------------------------------------------------------------
 
+
 def key_state(provider: str) -> dict[str, Any]:
     """Whether a key is saved, its last four characters, or what is wrong with it."""
     store = judge_keys.JudgeKeyStore()
     try:
-        return {"has_key": bool(store.has_key(provider)),
-                "key_hint": store.masked(provider), "key_problem": ""}
+        return {
+            "has_key": bool(store.has_key(provider)),
+            "key_hint": store.masked(provider),
+            "key_problem": "",
+        }
     except judge_keys.JudgeKeyStoreError:
         logger.warning("answer_check: the saved %s key file failed its safety check", provider)
         return {"has_key": False, "key_hint": "", "key_problem": KEY_PROBLEM}
@@ -228,8 +246,12 @@ def key_state(provider: str) -> dict[str, Any]:
 
 def _resolved(retrieval: Any, laya_status: Any) -> str:
     """What the config would run, when no engine is up to ask. Cached briefly."""
-    key = (tuple(sorted(answer_check_state.snapshot(retrieval).items())),
-           laya_status.state, laya_status.python, laya_status.model_path)
+    key = (
+        tuple(sorted(answer_check_state.snapshot(retrieval).items())),
+        laya_status.state,
+        laya_status.python,
+        laya_status.model_path,
+    )
     now = time.monotonic()
     with _resolve_lock:
         hit = _resolve_cache.get(key)
@@ -271,8 +293,11 @@ def rerank_status(retrieval: Any, active: str, judge: Any) -> dict[str, Any]:
     if running and judge is not None:
         running_k = getattr(judge, "rerank_k", 0)
         running = isinstance(running_k, int) and running_k > 0
-    return {"enabled": enabled, "active": running,
-            "k": clamp_rerank_k(getattr(retrieval, "sufficiency_jev_rerank_k", None))}
+    return {
+        "enabled": enabled,
+        "active": running,
+        "k": clamp_rerank_k(getattr(retrieval, "sufficiency_jev_rerank_k", None)),
+    }
 
 
 def calibration_status(active: str, reordering: bool) -> str | None:
@@ -306,9 +331,12 @@ def record_test(kind: str, ok: bool, message: str, seconds: float | None) -> dic
     import json
     from datetime import datetime, timezone
 
-    result = {"ok": bool(ok), "message": str(message)[:300],
-              "seconds": None if seconds is None else round(float(seconds), 1),
-              "at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    result = {
+        "ok": bool(ok),
+        "message": str(message)[:300],
+        "seconds": None if seconds is None else round(float(seconds), 1),
+        "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
     with _tests_lock:
         data = read_tests()
         data[kind] = result
@@ -330,8 +358,11 @@ def read_tests() -> dict[str, Any]:
         data = json.loads(_tests_path().read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
-    return {k: v for k, v in data.items() if k in ("laya", "jev") and isinstance(v, dict)} \
-        if isinstance(data, dict) else {}
+    return (
+        {k: v for k, v in data.items() if k in ("laya", "jev") and isinstance(v, dict)}
+        if isinstance(data, dict)
+        else {}
+    )
 
 
 def forget_test(kind: str) -> None:
@@ -353,10 +384,27 @@ def build_status(app_state: Any) -> dict[str, Any]:
     active = active_backend(app_state, retrieval, laya_status)
     provider = retrieval.sufficiency_jev_provider
     rerank = rerank_status(retrieval, active, judge)
+    from superlocalmemory.server.answer_check_execution import execution_status
+
+    execution = execution_status(judge, live_engine(app_state))
+    laya_view = laya_status.to_dict()
+    if active == "laya" and execution["state"] == "unavailable":
+        laya_view = {
+            **laya_view,
+            "state": "needs_check",
+            "action": "check",
+            "error": execution["detail"],
+            "message": execution["detail"],
+        }
+    job = getattr(app_state, "answer_calibration_job", None)
     return {
         "mode": retrieval.sufficiency_judge,
         "active": active,
-        "laya": laya_status.to_dict(),
+        "laya": laya_view,
+        "execution": execution,
+        "calibration": job.status()
+        if job is not None
+        else {"state": "idle", "done": 0, "total": 0},
         "adopt": adopt_status(),
         "setup_running": laya_runtime.LayaInstallJob.instance().running,
         "laya_test_running": laya_runtime.LayaTestJob.instance().running,

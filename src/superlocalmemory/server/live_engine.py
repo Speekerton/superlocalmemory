@@ -18,6 +18,9 @@ from typing import Any
 
 def engine_to_close(app_state: Any, started: Any) -> Any:
     """The engine currently published, falling back to the one start-up built."""
+    job = getattr(app_state, "answer_calibration_job", None)
+    if job is not None:
+        job.stop()  # before the published engine's DB/judge are closed
     return getattr(app_state, "engine", None) or started
 
 

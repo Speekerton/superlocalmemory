@@ -313,3 +313,24 @@ describe('Automatic — the never-chosen state (audit 4.1.20 L11)', function () 
     assert.equal(p.root.querySelector('.ac-auto-state'), null);
   });
 });
+
+it('successful local calibration starts polling and renders progress', async () => {
+  const initial = status({ mode: 'laya', active: 'laya', laya: { state: 'ready' },
+                          execution: { state: 'ready', detail: 'Ready' } });
+  const p = await mount(initial, {
+    '/api/v3/answer-check/calibration': () => ({ status: 202,
+      body: { state: 'running', done: 0, total: 48, detail: 'Building local labels' } }),
+  });
+  let polls = 0;
+  p.w.setInterval = () => { polls += 1; return 42; };
+  await click(p, p.ac('calibrate'));
+  assert.equal(polls, 1);
+  assert.match(p.root.textContent, /Calibration running: 0\/48/);
+  assert.equal(p.ac('calibrate').disabled, true);
+});
+
+it('an installed but warming judge never displays a Ready headline', async () => {
+  const p = await mount(status({ mode: 'laya', active: 'laya', laya: { state: 'ready' },
+    execution: { state: 'warming', detail: 'The on-device model is warming' } }));
+  assert.match(p.text('.ac-laya-state'), /warming/);
+});

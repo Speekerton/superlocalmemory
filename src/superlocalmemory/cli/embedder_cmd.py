@@ -223,10 +223,22 @@ def _simple(command: str, path: str, timeout: float = 60.0):
     return handler
 
 
-_HANDLERS = {"switch": _switch, "upgrade": _upgrade, "status": _status,
-             "rollback": _simple("rollback", "/rollback", timeout=_ROLLBACK_TIMEOUT_S),
-             "cancel": _simple("cancel", "/cancel"),
-             "forget-previous": _simple("forget-previous", "/forget-previous")}
+def _calibrate(args: Namespace) -> None:
+    from superlocalmemory.cli.calibration_cmd import run
+
+    run(args)
+
+
+_HANDLERS = {
+    "calibrate": _calibrate,
+    "calibration-status": _calibrate,
+    "switch": _switch,
+    "upgrade": _upgrade,
+    "status": _status,
+    "rollback": _simple("rollback", "/rollback", timeout=_ROLLBACK_TIMEOUT_S),
+    "cancel": _simple("cancel", "/cancel"),
+    "forget-previous": _simple("forget-previous", "/forget-previous"),
+}
 
 
 def cmd_embedder(args: Namespace) -> None:
@@ -275,20 +287,38 @@ def register_embedder_parser(sub: Any) -> None:
         help="Nomic retrieval-v1: task prompts and opaque-token normalization (staged swap)",
     )
     s.add_argument("--dimension", type=int, default=0, help="the model's vector size")
-    s.add_argument("--provider", default="",
-                   help="sentence-transformers | ollama | openai | slm-media (default: current)")
+    s.add_argument(
+        "--provider",
+        default="",
+        help="sentence-transformers | ollama | openai | slm-media (default: current)",
+    )
     s.add_argument("--endpoint", default="", help="OpenAI-compatible endpoint URL")
     s.add_argument("--no-wait", action="store_true", help="return as soon as it is queued")
     _json_flag(s)
-    u = esub.add_parser("upgrade", help="move your memories to the newer memory engine (rolls back)")
+    u = esub.add_parser(
+        "upgrade", help="move your memories to the newer memory engine (rolls back)"
+    )
     u.add_argument("--yes", "-y", action="store_true", help="do not ask")
     u.add_argument("--no-wait", action="store_true", help="return as soon as it is queued")
     _json_flag(u)
-    for name, text in (("status", "progress of the current or last switch"),
-                       ("rollback", "go back to the previous model (re-indexes)"),
-                       ("cancel", "stop a running switch; the current model stays"),
-                       ("forget-previous", "free the previous model's vectors")):
+    c = esub.add_parser("calibrate", help="measure answer-check and embedding floors on this store")
+    c.add_argument("--model", default="llama3.2:latest", choices=("llama3.2:latest", "gemma3:4b"))
+    c.add_argument("--samples", type=int, default=32)
+    _json_flag(c)
+    _json_flag(esub.add_parser("calibration-status", help="local calibration progress"))
+    for name, text in (
+        ("status", "progress of the current or last switch"),
+        ("rollback", "go back to the previous model (re-indexes)"),
+        ("cancel", "stop a running switch; the current model stays"),
+        ("forget-previous", "free the previous model's vectors"),
+    ):
         _json_flag(esub.add_parser(name, help=text))
 
 
-__all__ = ["cmd_embedder", "describe", "register_embedder_parser", "status_line", "text_provider_note"]
+__all__ = [
+    "cmd_embedder",
+    "describe",
+    "register_embedder_parser",
+    "status_line",
+    "text_provider_note",
+]

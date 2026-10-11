@@ -15,7 +15,7 @@ def is_recall(scope):
 def remaining_deadline(budget):
     deadline = asyncio.get_running_loop().time() + budget
     ingress = _DEADLINE.get()
-    return min(deadline, ingress) if ingress is not None else deadline
+    return min(deadline, ingress - 0.01) if ingress is not None else deadline
 
 
 async def serve(app, state, scope, receive, send):

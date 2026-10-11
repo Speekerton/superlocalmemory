@@ -258,7 +258,7 @@ async def run_recall(engine: Any, call: RecallCall, *, app_state: Any) -> dict:
 async def _run_admitted(engine, call, app_state, runtime, snapshot,
                         public_deadline, worker_deadline):
     from superlocalmemory.core.recall_gate import RecallHold
-    from superlocalmemory.server.recall_deadline import submit, timed_out, wait_until
+    from superlocalmemory.server.recall_deadline import submit, wait_until
 
     loop = asyncio.get_running_loop()
     hold, acquired = RecallHold(), False
@@ -277,14 +277,33 @@ async def _run_admitted(engine, call, app_state, runtime, snapshot,
             logger.warning("Recall deadline reached; trying unjudged keyword fallback")
             return await _bounded_fallback(
                     engine, call, app_state, public_deadline, snapshot, hold, runtime)
+        minimal = _minimal_envelope(call, response, snapshot)
         envelope = submit(loop, hold, runtime, app_state, engine, _envelope,
                           engine, call, response, snapshot)
         assembled = await wait_until(envelope, public_deadline)
-        return assembled if assembled is not None else timed_out(call, snapshot)
+        from superlocalmemory.server.recall_deadline import unjudged
+        return assembled if assembled is not None else unjudged(minimal)
     finally:
         if acquired:
             RECALL_SEMAPHORE.release()
         hold.leave()
+
+
+def _minimal_envelope(call, response, snapshot):
+    """Keep already-retrieved facts without any source hydration/database access."""
+    results = [
+        {"fact_id": result.fact.fact_id, "memory_id": result.fact.memory_id,
+         "content": sanitize_json_text(result.fact.content[:2400]), "score": result.score}
+        for result in (getattr(response, "results", ()) or ())[:call.limit]
+    ]
+    return {
+        "ok": True, "query": call.query, "profile": call.profile_id or snapshot.profile_id,
+        "profile_generation": snapshot.generation,
+        "results": results, "count": len(results), "result_count": len(results),
+        "channel_status": dict(getattr(response, "channel_status", {}) or {}),
+        "retrieval_mode": "partial_context",
+        "degraded_reason": "recall_assembly_budget_exceeded",
+    }
 
 
 async def _bounded_fallback(engine, call, app_state, deadline, snapshot, hold, runtime):

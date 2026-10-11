@@ -16,14 +16,23 @@ async def wait_until(future, deadline):
 
 
 def unjudged(payload):
-    from superlocalmemory.retrieval.answer_check_status import answer_check_note
-
+    if payload.get("degraded_reason") == "recall_assembly_budget_exceeded":
+        note = ("Response assembly timed out. Retrieved matches are shown without source context; "
+                "the response was not checked.")
+    elif payload.get("results"):
+        note = ("Full results were unavailable before the recall deadline. "
+                "Only keyword fallback matches are shown; they were not checked.")
+    else:
+        note = ("Full results were unavailable before the recall deadline; "
+                "no keyword fallback matches were ready. The request was not checked.")
     return {
         **payload,
         "answerability": "unjudged",
         "answer_check_status": "skipped",
         "answer_check_detail": "budget",
-        "answer_check_note": answer_check_note("skipped", "budget"),
+        "answer_check_note": note,
+        "answer_check_reason": "budget",
+        "answerability_reason": "budget_exhausted",
         "no_confident_match": False,
     }
 

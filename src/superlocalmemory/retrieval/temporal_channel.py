@@ -21,6 +21,7 @@ from dateutil.parser import ParserError
 from dateutil.parser import parse as dateutil_parse
 
 from superlocalmemory.encoding.temporal_parser import TemporalParser
+from superlocalmemory.retrieval.temporal_slice_cache import TemporalSliceCache
 from superlocalmemory.storage.database import _scope_where
 
 if TYPE_CHECKING:
@@ -74,6 +75,7 @@ class TemporalChannel:
 
     def __init__(self, db: DatabaseManager) -> None:
         self._db = db
+        self._slice_cache = TemporalSliceCache()
 
     def search(
         self,
@@ -293,19 +295,14 @@ class TemporalChannel:
             include_shared=include_shared,
             prefix="af",
         )
-        # The bound has to match what the caller is looking for. Taking the
-        # newest 5,000 rows is right when the question is "what is recent", and
-        # wrong when it is "what happened in March 2024" — those events carry old
-        # rowids and were simply never loaded, so the answer was missing rather
-        # than slow. When a target date is known, bound by proximity to THAT date
-        # instead; the scan stays bounded either way.
+        key = (profile_id, bool(include_global), bool(include_shared), near_date)
+        return self._slice_cache.load(
+            self._db, key, lambda: self._read_events(where, params, near_date))
+
+    def _read_events(self, where: str, params: list,
+                     near_date: str | None) -> list[dict]:
+        """The original SQL and ordering, including same-fact event ties."""
         if near_date is not None:
-            # Include events that carry only interval_start/interval_end with no
-            # referenced_date or observation_date. The original filter required
-            # at least one of the point-date columns to be non-NULL, which
-            # excluded duration events ("during March 2024") entirely. The
-            # ORDER BY now uses the best available date column so that duration
-            # events are ranked by their interval_start when no point date exists.
             rows = self._db.execute(
                 "SELECT te.fact_id, te.observation_date, te.referenced_date, "
                 "te.interval_start, te.interval_end, af.created_at "
@@ -315,9 +312,6 @@ class TemporalChannel:
                 "  AND (te.referenced_date IS NOT NULL "
                 "       OR te.observation_date IS NOT NULL "
                 "       OR te.interval_start IS NOT NULL) "
-                # Thousands of events can tie on the proximity expression when
-                # they share a date, and a tie with no secondary key is broken by
-                # storage order. That decides which of them survive the LIMIT.
                 "ORDER BY ABS(julianday(COALESCE(te.referenced_date, "
                 "                               te.observation_date, "
                 "                               te.interval_start)) "
@@ -336,6 +330,7 @@ class TemporalChannel:
                 (*params,),
             )
         return [dict(r) for r in rows]
+
 
     def _recency_fallback(
         self,

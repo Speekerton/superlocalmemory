@@ -175,6 +175,9 @@ from superlocalmemory.storage.migrations import (
 from superlocalmemory.storage.migrations import (
     M056_recall_channel_indexes as _M056,
 )
+from superlocalmemory.storage.migrations import (
+    M057_temporal_retrieval_version as _M057,
+)
 
 # Order matters: M003 creates the log table. The runner handles M003's own
 # bootstrap (it can't record itself before it exists).
@@ -379,4 +382,5 @@ DEFERRED_MIGRATIONS: list[Migration] = [
     # No dependency: it clears one column no other migration reads.
     Migration(name=_M051.NAME, db_target="memory", ddl=_M051.DDL),
     Migration(name=_M056.NAME, db_target="memory", ddl=_M056.DDL),
+    Migration(name=_M057.NAME, db_target="memory", ddl=_M057.DDL),
 ]

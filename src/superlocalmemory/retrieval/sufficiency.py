@@ -712,11 +712,21 @@ class LayaSufficiencyJudge:
         if self._stale is None:
             return True
         stale_id, sent_at = self._stale
+        reader = self._reader_for(proc)
+        # Age measures how long nobody polled, not how long inference took.
+        # Drain an already-completed correlated reply before declaring a wedge.
+        for _ in range(16):
+            line = reader.readline(time.monotonic())
+            if line is None:
+                break
+            reply = json.loads(line)
+            if isinstance(reply, dict) and reply.get("id", stale_id) == stale_id:
+                self._stale = None
+                return True
         if time.monotonic() - sent_at > _WEDGED_S:
             logger.warning("Laya sufficiency judge stopped answering; replacing it")
             self._worker_lost()
             return False
-        reader = self._reader_for(proc)
         wait_until = min(deadline - self._min_ask_s, sent_at + _WEDGED_S)
         while True:
             line = reader.readline(wait_until)

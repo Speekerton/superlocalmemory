@@ -1,39 +1,11 @@
 # Copyright (c) 2026 Varun Pratap Bhardwaj / Qualixar
 # Licensed under AGPL-3.0-or-later - see LICENSE file
 
-"""Embed a recall query without letting a loading model hold the whole recall.
+"""Bound every foreground query embedding, including warm queues and reloads.
 
-WHY THIS EXISTS
----------------
-On a fresh daemon the local embedding model takes tens of seconds to load (a
-measured 32.7 s on a fresh install). The query embedding used to be a plain
-blocking call made BEFORE any channel was dispatched, so every recall in that
-window sat behind the model load — keyword search included, though it needs no
-embedding at all. The daemon's last-resort budget then fired and answered with
-a degraded fallback, and a memory saved seconds earlier with a "queryable"
-receipt came back as "No confident match".
-
-ONLY while the embedder has never been ready (its ``is_warm`` is ``False`` and
-it has not answered a single request since it was created), the embedding runs
-on its own worker and the recall waits for it no longer than the per-channel hang guard
-(``CHANNEL_HANG_GUARD_SECONDS``). If the vector is not back by then, the
-channels that need it are reported as ``warming`` and the recall is marked
-incomplete, while the channels that need no vector run and can find the memory.
-
-ONCE THE EMBEDDER HAS BEEN READY — or when it does not say (no ``is_warm``) —
-the recall embeds inline and waits exactly as 4.1.19 did, with no bound. That
-includes the reload after a 30-minute idle unload or a memory-pressure kill
-(``has_loaded_once``): a slow embed on a model that loaded before is waited
-for; this is not a speed cap.
-
-WHAT IT COSTS IN QUALITY
-------------------------
-Nothing on a warm daemon: that path is unchanged. In the cold window the
-alternative was not "a recall with semantic search", it was a recall with NO
-channels at all (the daemon budget fallback), so this strictly adds results.
-The abandoned embed is not cancelled: it finishes on its worker and lands in
-the query cache, so the same question asked again gets every channel as soon
-as the model is up.
+An unfinished query continues off the caller's clock and populates the cache.
+Cold/reloading models report warming; an already-warm slow worker reports
+ timeout. Background work remains inline to retain its priority context.
 """
 
 from __future__ import annotations
@@ -52,7 +24,7 @@ __all__ = ["QueryEmbedder", "embed_as_query"]
 
 
 def embed_as_query(embedder: Any, text: str) -> list[float] | None:
-    """Embed a question: with the embedder's question prompt when it has one, else as ``embed`` does.
+    """Use the query prompt when available, otherwise the provider's plain embed.
 
     Models that take different prompts for questions and memories (the managed text
     model) define ``embed_query``; every other embedder is called exactly as before.
@@ -73,7 +45,10 @@ class QueryEmbedder:
     """
 
     def __init__(
-        self, embedder: Callable[[], Any], *, cache_max_size: int = 512,
+        self,
+        embedder: Callable[[], Any],
+        *,
+        cache_max_size: int = 512,
     ) -> None:
         # A provider, not the object: the owning engine's embedder can be
         # swapped after construction and every call must see the current one.
@@ -86,25 +61,39 @@ class QueryEmbedder:
         # vectors) or one only ever used from background work owns no threads.
         self._executor: concurrent.futures.ThreadPoolExecutor | None = None
         self._closed = False
+        self._owner = None
+        self._generation = 0
 
     @property
     def cache(self) -> dict[str, list[float]]:
         return self._cache
 
-    def _remember(self, query: str, vector: list[float] | None) -> None:
+    def _current_provider(self):
+        embedder = self._provider()
+        with self._lock:
+            if embedder is not self._owner:
+                self._owner = embedder
+                self._generation += 1
+                self._cache.clear()
+                self._inflight.clear()
+            return embedder, self._generation
+
+    def _remember(self, query: str, vector: list[float] | None, generation: int) -> None:
         if vector is None:
             return
         with self._lock:
+            if self._closed or generation != self._generation:
+                return
             if query not in self._cache and len(self._cache) >= self._cache_max_size:
                 self._cache.pop(next(iter(self._cache)))
             self._cache[query] = vector
 
-    def _compute(self, query: str) -> list[float] | None:
-        vector = embed_as_query(self._provider(), query)
-        self._remember(query, vector)
+    def _compute(self, query: str, embedder: Any, generation: int) -> list[float] | None:
+        vector = embed_as_query(embedder, query)
+        self._remember(query, vector, generation)
         return vector
 
-    def _future_for(self, query: str) -> concurrent.futures.Future:
+    def _future_for(self, query: str, embedder: Any, generation: int) -> concurrent.futures.Future:
         with self._lock:
             fut = self._inflight.get(query)
             if fut is not None:
@@ -115,9 +104,10 @@ class QueryEmbedder:
                 # Two workers: one may be parked behind a cold model load
                 # while a second question still gets its turn once it is up.
                 self._executor = concurrent.futures.ThreadPoolExecutor(
-                    max_workers=2, thread_name_prefix="slm-query-embed",
+                    max_workers=2,
+                    thread_name_prefix="slm-query-embed",
                 )
-            fut = self._executor.submit(self._compute, query)
+            fut = self._executor.submit(self._compute, query, embedder, generation)
             self._inflight[query] = fut
 
         def _done(_f, q=query) -> None:
@@ -131,17 +121,8 @@ class QueryEmbedder:
         return fut
 
     def _not_ready(self) -> bool:
-        """True only for a model that has NEVER loaded and says it is not ready.
-
-        Unknown is ready. An embedder that has answered before
-        (``has_loaded_once``) is ready too, even while ``is_warm`` is False
-        because the idle timer or memory pressure unloaded its worker: a
-        model that loaded once is reloading, and that recall waits for it
-        exactly as 4.1.19 did instead of losing its semantic channels.
-        """
+        """A cold or reloading provider explicitly reports not warm."""
         embedder = self._provider()
-        if getattr(embedder, "has_loaded_once", None) is True:
-            return False
         return getattr(embedder, "is_warm", None) is False
 
     def embed(self, query: str, wait_seconds: float) -> tuple[list[float] | None, str | None]:
@@ -152,24 +133,30 @@ class QueryEmbedder:
             return self._embed(query, wait_seconds)
         finally:
             from superlocalmemory.core.recall_gate import mark_query_embedded
+
             mark_query_embedded()
 
     def _embed(self, query: str, wait_seconds: float) -> tuple[list[float] | None, str | None]:
-        """Embed ``query``; ``wait_seconds`` bounds the wait only while the
-        embedder is not ready yet. A ready embedder is waited for unbounded.
+        """Embed ``query``; ``wait_seconds`` bounds every foreground wait, including reloads
+        and warm workers queued behind ingestion.
 
         Raises whatever the embedder raised, exactly as the direct call did.
         """
-        if self._provider() is None:
+        embedder, generation = self._current_provider()
+        if embedder is None:
             return None, None
+        from superlocalmemory.retrieval.query_lexicon import requires_lexical
+
+        if requires_lexical(embedder, query):
+            return None, chstat.EMPTY  # lexical retrieval still runs; not a model outage
         cached = self._cache.get(query)
         if cached is not None:
             return cached, None
-        if getattr(self._provider(), "needs_service", False) is True:
+        if getattr(embedder, "needs_service", False) is True:
             return None, chstat.NEEDS_SERVICE  # no point waiting: nothing is loading
         from superlocalmemory.core.recall_gate import is_background_work
 
-        if is_background_work() or not self._not_ready():
+        if is_background_work():
             # 4.1.19 behaviour, inline on the caller's thread (background
             # callers keep their thread-local priority marker). An embed for
             # this question started while the model was loading is joined,
@@ -178,17 +165,22 @@ class QueryEmbedder:
                 pending = self._inflight.get(query)
             if pending is not None:
                 return pending.result(), None
-            return self._compute(query), None
-        fut = self._future_for(query)
+            vector = self._compute(query, embedder, generation)
+            return (vector, None) if generation == self._generation else (None, chstat.WARMING)
+        warming = self._not_ready()
+        fut = self._future_for(query, embedder, generation)
         try:
-            return fut.result(timeout=max(0.0, wait_seconds)), None
+            vector = fut.result(timeout=max(0.0, wait_seconds))
+            if generation != self._generation:
+                return None, chstat.WARMING
+            return vector, None
         except concurrent.futures.TimeoutError:
             logger.warning(
                 "Embedding model not ready within %.1fs; this recall runs "
                 "without the channels that need it and is marked incomplete",
                 wait_seconds,
             )
-            return None, chstat.WARMING
+            return None, chstat.WARMING if warming or self._not_ready() else chstat.TIMEOUT
 
     def worker_threads(self) -> list[threading.Thread]:
         """This embedder's pool threads (none until a cold embed created it)."""

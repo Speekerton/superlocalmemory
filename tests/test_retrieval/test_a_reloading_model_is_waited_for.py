@@ -60,7 +60,7 @@ def test_a_model_that_never_loaded_is_still_bounded(service_with) -> None:
     assert time.monotonic() - t0 < _RELOAD
 
 
-def test_after_an_idle_unload_the_reload_is_waited_for(service_with) -> None:
+def test_after_an_idle_unload_the_reload_is_bounded(service_with) -> None:
     sp, svc, qe = service_with(fake.answering_worker(0.0), fake.answering_worker(_RELOAD))
     assert svc.embed("load it once") == [0.5] * 4
     assert svc.unload(timeout=1.0) is True   # the 30-minute idle timer's call
@@ -69,12 +69,12 @@ def test_after_an_idle_unload_the_reload_is_waited_for(service_with) -> None:
 
     t0 = time.monotonic()
     vector, status = qe.embed("question after a break", _GUARD)
-    assert (vector, status) == ([0.5] * 4, None)
-    assert time.monotonic() - t0 >= _RELOAD * 0.9, "it did not wait for the reload"
+    assert (vector, status) == (None, chstat.WARMING)
+    assert time.monotonic() - t0 < _RELOAD * 0.9
     assert len(sp.procs) == 2
 
 
-def test_after_a_memory_pressure_kill_the_reload_is_waited_for(
+def test_after_a_memory_pressure_kill_the_reload_is_bounded(
     service_with, monkeypatch,
 ) -> None:
     sp, svc, qe = service_with(fake.answering_worker(0.0), fake.answering_worker(_RELOAD))
@@ -89,7 +89,7 @@ def test_after_a_memory_pressure_kill_the_reload_is_waited_for(
     assert svc.has_loaded_once is True
 
     vector, status = qe.embed("question under pressure", _GUARD)
-    assert (vector, status) == ([0.5] * 4, None)
+    assert (vector, status) == (None, chstat.WARMING)
     assert len(sp.procs) == 2
 
 

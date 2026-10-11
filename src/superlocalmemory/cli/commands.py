@@ -3915,6 +3915,9 @@ def cmd_doctor(args: Namespace) -> None:
         if failed > 0:
             print("Run the suggested fix commands above, then re-run: slm doctor")
 
+    if failed > 0:
+        sys.exit(1)
+
 
 def cmd_trace(args: Namespace) -> None:
     """Recall with per-channel score breakdown."""

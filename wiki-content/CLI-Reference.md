@@ -25,6 +25,9 @@ It never starts the daemon. A missing descriptor warns with `slm serve start`;
 a dead recorded process or an invalid or unhealthy daemon fails with
 `slm restart`. The daemon check is also included in `--json` output.
 
+Doctor exits **0** for passes or warnings only, and **1** if any check fails.
+The complete text or JSON report is emitted before the exit status is set.
+
 ## Memory Operations
 
 ### Store

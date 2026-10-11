@@ -670,7 +670,11 @@ def main() -> None:
     trace_p.add_argument("--json", action="store_true", help="Output structured JSON (agent-native)")
 
     # -- Diagnostics (continued) ----------------------------------------
-    doctor_p = sub.add_parser("doctor", help="Pre-flight check: deps, embedding worker, connectivity")
+    doctor_p = sub.add_parser(
+        "doctor", help="Pre-flight check: deps, embedding worker, connectivity",
+        description="Check dependencies, configuration and daemon health. "
+        "Exit codes: 0 for passes or warnings only; 1 if any check fails.",
+    )
     doctor_p.add_argument("--json", action="store_true", help="Output structured JSON (agent-native)")
     doctor_p.add_argument(
         "--quick", action="store_true",

@@ -471,6 +471,9 @@ probe (0.5-second timeout). Doctor never starts the daemon. A missing descriptor
 warns with `slm serve start`; a dead recorded process, invalid descriptor or
 unhealthy daemon fails with `slm restart`. The check appears in JSON output too.
 
+Exit codes: **0** when checks pass or report warnings only; **1** when any check
+fails. Doctor prints the complete report before exiting, including with `--json`.
+
 Doctor also reads the same failure counts as `slm ops status`: a "Failed saves"
 row warns when saves were given up on after repeated attempts (dead-lettered, so
 those memories may lack entities or graph links) and fails at 50 or more. Its fix

@@ -117,12 +117,12 @@ def test_an_older_stamp_is_reported_stale_with_the_codex_command() -> None:
 
 
 def _plugin_row(monkeypatch) -> dict:
-    from superlocalmemory.cli.commands import cmd_doctor
+    from tests.helpers.doctor import run_doctor_report
 
     captured: list[dict] = []
     with patch("superlocalmemory.cli.json_output.json_print",
                side_effect=lambda event, data=None, **kw: captured.append(data or {})):
-        cmd_doctor(Namespace(json=True, quick=True))
+        run_doctor_report(Namespace(json=True, quick=True))
     return {c["name"]: c for c in captured[-1]["checks"]}["plugin_skills"]
 
 

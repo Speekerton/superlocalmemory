@@ -14,15 +14,19 @@ from superlocalmemory.storage.models import MemoryRecord, RetrievalResult
 
 
 @contextmanager
-def recall_sources(base_dir: Path, results: list[RetrievalResult]) -> Iterator[DatabaseManager]:
+def recall_sources(base_dir: Path, results: list[RetrievalResult], *,
+                   db: DatabaseManager | None = None) -> Iterator[DatabaseManager]:
     """Give every candidate its own source, preserving its owner and identity.
 
     Only the source pointer is assigned. Content, order, scores, evidence and
     result objects stay untouched so downstream assertions retain their force.
-    Each call gets a fresh store, including when a test changes memory text.
+    By default each call gets a fresh store, including when memory text changes.
+    A borrowed fixture store retains its entities and remains open afterward.
+    Stable source ids keep otherwise identical recall snapshots comparable.
     """
     with TemporaryDirectory(prefix="recall-sources-", dir=base_dir) as directory:
-        db = DatabaseManager(Path(directory) / "memory.db")
+        borrowed = db is not None
+        db = db if borrowed else DatabaseManager(Path(directory) / "memory.db")
         try:
             db.initialize(schema)
             with db.raw_connection() as conn:
@@ -36,11 +40,13 @@ def recall_sources(base_dir: Path, results: list[RetrievalResult]) -> Iterator[D
                 fact = result.fact
                 db.execute("INSERT OR IGNORE INTO profiles (profile_id,name) VALUES (?,?)",
                            (fact.profile_id, fact.profile_id))
-                record = MemoryRecord(content=fact.content, profile_id=fact.profile_id,
+                record = MemoryRecord(memory_id=fact.memory_id or f"recall-source-{fact.fact_id}",
+                                      content=fact.content, profile_id=fact.profile_id,
                                       scope=fact.scope, shared_with=fact.shared_with)
                 db.store_memory(record)
                 fact.memory_id = record.memory_id
                 db.store_fact(fact)
             yield db
         finally:
-            db.close()
+            if not borrowed:
+                db.close()

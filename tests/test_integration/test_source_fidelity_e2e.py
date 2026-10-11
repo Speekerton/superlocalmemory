@@ -119,10 +119,10 @@ class _StubModels(BaseHTTPRequestHandler):
                                  for i, t in enumerate(texts)]})
             return
         messages = request.get("messages") or []
-        system = " ".join(str(m.get("content", "")) for m in messages if m.get("role") == "system")
-        user = " ".join(str(m.get("content", "")) for m in messages if m.get("role") == "user")
+        user = request.get("prompt") or " ".join(
+            str(m.get("content", "")) for m in messages if m.get("role") == "user")
         answer = "[]"
-        if "fact extraction engine" in system:
+        if "Extract supported atomic statements." in user and "--- SOURCE ---" in user:
             if "Kestrel" in user:
                 answer = json.dumps(KESTREL_EXTRACTION)
             elif "release owner" in user:
@@ -265,8 +265,9 @@ class TestModeBModelExtraction:
         withheld = [f for f in facts if f["quarantined"]]
         assert any(f["content"] == KESTREL for f in live), "the user's own words stay live"
         assert all(_no_invented_2004_date(f) for f in live), live
-        assert {f["content"] for f in withheld} >= {"The recall happened on June 1st, 2004"}
-        assert all(f["unresolved_reason"].startswith("source_fidelity:") for f in withheld)
+        assert not withheld, "new extraction rejects unsupported facts before storage"
+        assert not any("June 1st, 2004" in f["content"] for f in facts)
+        assert all(_no_invented_2004_date(f) for f in facts)
         assert any("2004.6 ms" in f["content"] for f in live if f["content"] != KESTREL), (
             "a faithful model fact is kept"
         )
@@ -275,42 +276,26 @@ class TestModeBModelExtraction:
         assert contents, "the memory is still found"
         assert not any("2004-06" in c or "June 1st, 2004" in c for c in contents), contents
 
-    def test_polarity_damage_stays_in_answers_marked_unverified(self, mode_b_daemon) -> None:
-        """Heuristic findings never withhold; recall marks them in evidence_chain."""
+    def test_polarity_order_and_status_damage_never_reach_storage(self, mode_b_daemon) -> None:
         _remember_and_enrich(mode_b_daemon, POLICY, "g03-b-policy")
         by_text = {f["content"]: f for f in _memory_facts(mode_b_daemon, POLICY)}
-        damaged = POLICY_DAMAGE & set(by_text)
-        assert damaged == POLICY_DAMAGE, "the stub's damaged facts reached the store"
-        for text in damaged:
-            assert by_text[text]["quarantined"] == 0, text
-            assert by_text[text]["unresolved_reason"].startswith("source_fidelity_unverified:")
+        assert not (POLICY_DAMAGE & set(by_text)), "unsupported model statements must not be stored"
+        assert "The team uses GitHub Actions" in by_text, "faithful model extraction is still used"
         assert by_text["The team uses GitHub Actions"]["quarantined"] == 0
-        assert by_text[POLICY]["quarantined"] == 0, "the verbatim memory is never withheld"
-
-        items = []
+        assert by_text[POLICY]["quarantined"] == 0, "the verbatim memory stays live"
         for query in ("publish approval release owner", "ship iOS Android build order",
                       "team Jenkins GitHub Actions"):
-            items += mode_b_daemon.recall(query, profile_id="default").get("results", [])
-        seen = {str(i.get("content", "")): i for i in items}
-        assert any("Never publish without approval" in c for c in seen), sorted(seen)
-        flagged = [t for t in damaged if t in seen]
-        assert flagged, "at least one damaged fact is recalled so its mark can be checked"
-        for text in flagged:
-            assert any(str(e).startswith("source_fidelity_unverified:")
-                       for e in seen[text].get("evidence_chain", [])), seen[text]
-        for text in ({POLICY} | GOOD_TEXTS) & set(seen):
-            assert not any(str(e).startswith("source_fidelity")
-                           for e in seen[text].get("evidence_chain", [])), seen[text]
+            contents = _recall_contents(mode_b_daemon, query)
+            assert not (POLICY_DAMAGE & set(contents))
 
-    def test_withheld_and_unverified_facts_are_offered_for_review(self, mode_b_daemon) -> None:
+    def test_pre_storage_rejection_leaves_no_pending_review(self, mode_b_daemon) -> None:
         listing = _fidelity_listing(mode_b_daemon)
-        withheld_ids = {f["fact_id"] for f in listing["withheld"]["facts"]}
-        stored = _rows(mode_b_daemon, "SELECT fact_id FROM atomic_facts WHERE quarantined = 1")
-        assert withheld_ids == {r["fact_id"] for r in stored} and withheld_ids
-        withheld_reasons = {r for f in listing["withheld"]["facts"] for r in f["reasons"]}
-        assert withheld_reasons == {"number_became_date"}, withheld_reasons
-        review_reasons = {r for f in listing["to_review"]["facts"] for r in f["reasons"]}
-        assert {"negation_lost", "order_reversed", "status_lost"} <= review_reasons
+        assert not listing["withheld"]["facts"]
+        assert not listing["to_review"]["facts"]
+        assert not _rows(mode_b_daemon, "SELECT fact_id FROM atomic_facts WHERE quarantined = 1")
+        stored = {f["content"] for f in _memory_facts(mode_b_daemon, POLICY)}
+        assert not (POLICY_DAMAGE & stored)
+        assert "The team uses GitHub Actions" in stored
 
     def test_correction_apply_and_rollback_keep_the_measurement(self, mode_b_daemon) -> None:
         facts = _memory_facts(mode_b_daemon, KESTREL)

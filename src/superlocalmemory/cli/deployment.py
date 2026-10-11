@@ -17,7 +17,8 @@ def configured_port(saved_port: int | None = None) -> int:
         raw = saved_port
     if not raw:
         try:
-            raw = json.loads(state_path("config.json").read_text()).get("daemon_port")
+            config = json.loads(state_path("config.json").read_text(encoding="utf-8"))
+            raw = config.get("daemon_port")
         except (OSError, ValueError, AttributeError):
             raw = None
     try:

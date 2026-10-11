@@ -15,6 +15,8 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
+from superlocalmemory.infra.mcp_registry_files import RegistryFiles
+
 HOST_NAMES = {
     "claude-code": "Claude Code",
     "claude-desktop": "Claude Desktop",
@@ -70,7 +72,6 @@ def register(
     if identity is None:
         raise RuntimeError("Cannot establish local MCP process identity")
     path = _path(root, session)
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     row = {
         "session_id": session,
         "pid": pid,
@@ -79,51 +80,69 @@ def register(
         "code_version": version,
         "tools": sorted(set(tools)),
         "connected_at": time.time(),
+        "data_root": os.path.normcase(str(root.resolve())),
     }
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(row), encoding="utf-8")
-    os.chmod(temporary, 0o600)
-    temporary.replace(path)
+    with RegistryFiles(root, create=True) as files:
+        files.write(path.name, json.dumps(row))
 
 
 def unregister(root: Path, session: str) -> None:
-    _path(root, session).unlink(missing_ok=True)
-    _path(root, session).with_suffix(".reconnect").unlink(missing_ok=True)
-
-
-def _live_row(path: Path) -> dict[str, Any] | None:
+    path = _path(root, session)
     try:
-        row = json.loads(path.read_text(encoding="utf-8"))
+        with RegistryFiles(root) as files:
+            for name in (path.name, path.with_suffix(".reconnect").name):
+                try:
+                    files.remove(name)
+                except OSError:
+                    continue  # unsafe entries never justify touching their targets
+    except OSError:
+        return  # transport teardown also runs when registration was refused
+
+
+def _live_row(files: RegistryFiles, session: str) -> dict[str, Any] | None:
+    try:
+        row = json.loads(files.read(f"{session}.json"))
+        if row.get("data_root") != str(files.root):
+            return None
         pid = row["pid"]
         if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
             return None
-        if row.get("session_id") != path.stem or row.get("host") not in HOST_NAMES:
+        if row.get("session_id") != session or row.get("host") not in HOST_NAMES:
             return None
         expected = row.get("process_identity")
-        if not expected or process_identity(pid) != expected:
+        if not isinstance(expected, str) or not expected or process_identity(pid) != expected:
             return None
         if not isinstance(row.get("tools"), list) or not isinstance(row.get("code_version"), str):
             return None
         return row
-    except (OSError, ValueError, KeyError, TypeError):
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return None
+
+
+def _registered_apps(root: Path, current: str) -> list[dict[str, Any]]:
+    apps = []
+    try:
+        with RegistryFiles(root) as files:
+            for name in files.names():
+                if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}\.json", name):
+                    continue
+                row = _live_row(files, name[:-5])
+                if row is not None:
+                    apps.append({
+                        **row,
+                        "name": HOST_NAMES[row["host"]],
+                        "stale_version": row["code_version"] != current,
+                        "version_reported": True,
+                        "connection_evidence": "initialized-session",
+                    })
+    except OSError:
+        pass  # missing or unsafe files establish no connection
+    return apps
 
 
 def snapshot(root: Path, *, installed_version: str | None = None) -> dict[str, Any]:
     current = installed_version or globals()["installed_version"]()
-    apps = []
-    for path in sorted((root / "mcp-processes").glob("*.json")):
-        row = _live_row(path)
-        if row is not None:
-            apps.append(
-                {
-                    **row,
-                    "name": HOST_NAMES[row["host"]],
-                    "stale_version": row["code_version"] != current,
-                    "version_reported": True,
-                    "connection_evidence": "initialized-session",
-                }
-            )
+    apps = _registered_apps(root, current)
     from superlocalmemory.infra.mcp_legacy import discover
 
     apps.extend(discover(root, {row["pid"] for row in apps}))
@@ -145,23 +164,26 @@ def snapshot(root: Path, *, installed_version: str | None = None) -> dict[str, A
 
 def request_reconnect(root: Path, session: str) -> bool:
     path = _path(root, session)
-    row = _live_row(path)
-    if row is None:
-        from superlocalmemory.infra.mcp_legacy import reconnect
+    try:
+        with RegistryFiles(root) as files:
+            row = _live_row(files, session)
+            if row is not None:
+                files.write(path.with_suffix(".reconnect").name, row["process_identity"])
+                return True
+    except OSError:
+        pass
+    from superlocalmemory.infra.mcp_legacy import reconnect
 
-        return reconnect(root, session)
-    path.with_suffix(".reconnect").write_text(row["process_identity"], encoding="utf-8")
-    return True
+    return reconnect(root, session)
 
 
 def reconnect_requested(root: Path, session: str) -> bool:
     path = _path(root, session)
-    row = _live_row(path)
     try:
-        return (
-            row is not None
-            and path.with_suffix(".reconnect").read_text() == row["process_identity"]
-        )
+        with RegistryFiles(root) as files:
+            row = _live_row(files, session)
+            return (row is not None
+                    and files.read(path.with_suffix(".reconnect").name) == row["process_identity"])
     except OSError:
         return False
 

@@ -81,9 +81,9 @@ def _detected_hosts(home: Path | None = None) -> list[str]:
     """Return only hosts already containing an SLM-owned integration block."""
     from superlocalmemory.hooks.portable_kit import (
         IDE_MATRIX,
-        global_config_path,
         _load_config,
         _ParseError,
+        global_config_path,
     )
 
     effective_home = home or Path.home()
@@ -128,7 +128,7 @@ def _contains_slm_block(data: dict[str, Any], desc: Any) -> bool:
         providers = data.get(desc.server_key, [])
         return isinstance(providers, list) and any(
             isinstance(item, dict)
-            and item.get("params", {}).get("serverName") == "superlocalmemory"
+            and item.get("name") == "superlocalmemory"
             for item in providers
         )
     servers = data.get(desc.server_key, {})

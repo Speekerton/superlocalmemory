@@ -22,6 +22,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from superlocalmemory.cli import service_inventory
 from superlocalmemory.cli.deployment import (
     configured_port,
     security_environment,
@@ -30,6 +31,7 @@ from superlocalmemory.cli.deployment import (
     windows_security_lines,
 )
 from superlocalmemory.infra.data_root import canonical_data_root, state_path
+from superlocalmemory.infra.service_mutation import serialized
 
 logger = logging.getLogger(__name__)
 
@@ -91,20 +93,14 @@ def _macos_plist_content() -> str:
     return plistlib.dumps(payload, fmt=plistlib.FMT_XML, sort_keys=False).decode()
 
 
+@serialized
 def install_macos() -> bool:
     plist = _macos_plist_path()
-    plist.parent.mkdir(parents=True, exist_ok=True)
-    plist.write_text(_macos_plist_content(), encoding="utf-8")
+    if not service_inventory.prepare_install("macos", plist):
+        return False
+    if not service_inventory.write(plist, _macos_plist_content()):
+        return False
     logger.info("Wrote LaunchAgent plist: %s", plist)
-
-    # Load the service
-    try:
-        subprocess.run(
-            ["launchctl", "unload", str(plist)],
-            capture_output=True, timeout=10,
-        )
-    except Exception:
-        pass
 
     result = subprocess.run(
         ["launchctl", "load", str(plist)],
@@ -119,32 +115,14 @@ def install_macos() -> bool:
 
 
 def uninstall_macos() -> bool:
-    plist = _macos_plist_path()
-    if plist.exists():
-        try:
-            subprocess.run(
-                ["launchctl", "unload", str(plist)],
-                capture_output=True, timeout=10,
-            )
-        except Exception:
-            pass
-        plist.unlink()
-        logger.info("LaunchAgent removed: %s", plist)
-    return True
+    return service_inventory.uninstall("macos")
 
 
 def status_macos() -> dict:
-    result = subprocess.run(
-        ["launchctl", "list", service_identity()],
-        capture_output=True, text=True, timeout=10,
-    )
-    installed = result.returncode == 0
     return {
-        "platform": "macOS",
-        "service_type": "LaunchAgent",
-        "installed": installed,
+        "platform": "macOS", "service_type": "LaunchAgent",
         "plist_path": str(_macos_plist_path()),
-        "details": result.stdout.strip() if installed else "Not installed",
+        **service_inventory.status("macos"),
     }
 
 
@@ -182,10 +160,13 @@ WantedBy=default.target
 """
 
 
+@serialized
 def install_linux() -> bool:
     service = _linux_service_path()
-    service.parent.mkdir(parents=True, exist_ok=True)
-    service.write_text(_linux_service_content(), encoding="utf-8")
+    if not service_inventory.prepare_install("linux", service):
+        return False
+    if not service_inventory.write(service, _linux_service_content()):
+        return False
     logger.info("Wrote systemd user service: %s", service)
 
     try:
@@ -209,42 +190,14 @@ def install_linux() -> bool:
 
 
 def uninstall_linux() -> bool:
-    try:
-        subprocess.run(
-            ["systemctl", "--user", "stop", service_identity()], capture_output=True, timeout=10,
-        )
-        subprocess.run(
-            ["systemctl", "--user", "disable", service_identity()], capture_output=True, timeout=10,
-        )
-    except Exception:
-        pass
-    service = _linux_service_path()
-    if service.exists():
-        service.unlink()
-        logger.info("systemd user service removed: %s", service)
-    try:
-        subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True, timeout=10)
-    except Exception:
-        pass
-    return True
+    return service_inventory.uninstall("linux")
 
 
 def status_linux() -> dict:
-    try:
-        result = subprocess.run(
-            ["systemctl", "--user", "is-active", service_identity()],
-            capture_output=True, text=True, timeout=10,
-        )
-        active = result.stdout.strip() == "active"
-        return {
-            "platform": "Linux",
-            "service_type": "systemd user service",
-            "installed": True,
-            "active": active,
-            "details": result.stdout.strip(),
-        }
-    except Exception:
-        return {"platform": "Linux", "service_type": "systemd", "installed": False}
+    return {
+        "platform": "Linux", "service_type": "systemd user service",
+        **service_inventory.status("linux"),
+    }
 
 
 # ─── Windows: Task Scheduler ─────────────────────────────────────────────
@@ -267,22 +220,16 @@ def _windows_vbs_content() -> str:
     )
 
 
+@serialized
 def install_windows() -> bool:
     # Create a VBS wrapper to run Python without console window
     vbs_path = state_path(f"start-daemon-{service_identity()}.vbs")
-    vbs_path.parent.mkdir(parents=True, exist_ok=True)
-    vbs_path.write_text(_windows_vbs_content(), encoding="utf-8")
+    if not service_inventory.prepare_install("windows", vbs_path):
+        return False
+    if not service_inventory.write(vbs_path, _windows_vbs_content()):
+        return False
 
-    # Use schtasks to create a logon trigger task
-    try:
-        # Remove existing task if any
-        subprocess.run(
-            ["schtasks", "/Delete", "/TN", service_identity(), "/F"],
-            capture_output=True, timeout=10,
-        )
-    except Exception:
-        pass
-
+    # Existing owned tasks were removed by prepare_install.
     try:
         result = subprocess.run(
             [
@@ -291,7 +238,6 @@ def install_windows() -> bool:
                 "/TR", f'wscript.exe "{vbs_path}"',
                 "/SC", "ONLOGON",
                 "/RL", "LIMITED",
-                "/F",
             ],
             capture_output=True, text=True, timeout=10,
         )
@@ -307,38 +253,15 @@ def install_windows() -> bool:
 
 
 def uninstall_windows() -> bool:
-    try:
-        subprocess.run(
-            ["schtasks", "/Delete", "/TN", service_identity(), "/F"],
-            capture_output=True, timeout=10,
-        )
-        logger.info("Windows Task Scheduler task removed")
-    except Exception:
-        pass
-
-    vbs_path = state_path(f"start-daemon-{service_identity()}.vbs")
-    if vbs_path.exists():
-        vbs_path.unlink()
-
-    return True
+    return service_inventory.uninstall("windows")
 
 
 def status_windows() -> dict:
-    try:
-        result = subprocess.run(
-            ["schtasks", "/Query", "/TN", service_identity(), "/FO", "LIST"],
-            capture_output=True, text=True, timeout=10,
-        )
-        installed = result.returncode == 0
-        return {
-            "platform": "Windows",
-            "service_type": "Task Scheduler",
-            "installed": installed,
-            "task_name": service_identity(),
-            "details": result.stdout.strip()[:200] if installed else "Not installed",
-        }
-    except Exception:
-        return {"platform": "Windows", "service_type": "Task Scheduler", "installed": False}
+    return {
+        "platform": "Windows", "service_type": "Task Scheduler",
+        "task_name": service_identity(),
+        **service_inventory.status("windows"),
+    }
 
 
 # ─── Cross-platform dispatcher ───────────────────────────────────────────

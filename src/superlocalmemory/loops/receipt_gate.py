@@ -59,6 +59,12 @@ def _receipt_status(db, job, contract, running_agent, watcher_name, started_at):
         return False, 'no execution receipt'
     receipt = dict(rows[0])
     if not _valid(receipt, minimum, job):
+        evidence = json.loads(receipt['evidence'])
+        if (receipt['verdict'] == 'FAIL' and verify_admission(job, receipt)
+                and minimum <= _time(receipt['produced_at']) <= datetime.now(UTC)
+                and hashlib.sha256(receipt['evidence'].encode()).hexdigest()
+                == receipt['evidence_digest'] and evidence.get('stop_reason')):
+            return False, evidence['stop_reason']
         return False, 'latest receipt failed, stale or unauthenticated'
     proof = json.loads(receipt['evidence'])['admission']
     if not matches(dict(job, revision_digest=proof['revision_digest'])):

@@ -89,8 +89,11 @@ def run_check(
 
 
 def _measurement(profile_id, task_id, run_id, producer, digest, exit_code, stdout, stderr):
-    evidence = json.dumps(
-        {"exit_code": exit_code, "stdout": stdout, "stderr": stderr}, sort_keys=True)
+    measurement = {"exit_code": exit_code, "stdout": stdout, "stderr": stderr}
+    if exit_code == -1 and stderr.startswith(('a process started by the check is still running:',
+                                              'Cannot validate the user process table')):
+        measurement['stop_reason'] = stderr
+    evidence = json.dumps(measurement, sort_keys=True)
     receipt = dict(
         receipt_id=uuid.uuid4().hex,
         profile_id=profile_id,

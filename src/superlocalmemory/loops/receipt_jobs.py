@@ -15,6 +15,7 @@ from superlocalmemory.infra.data_root import canonical_data_root
 from superlocalmemory.loops import artifact_revision
 from superlocalmemory.loops.artifact_revision import copy_inputs, matches
 from superlocalmemory.loops.check_definition import materialize, normalized, prepare, relocated
+from superlocalmemory.loops.check_lock import exclusive_check
 from superlocalmemory.loops.execution_guard import _key
 from superlocalmemory.loops.execution_receipts import _run_registered, command_digest
 from superlocalmemory.loops.private_workspace import platform_reason, private_dir, temporary
@@ -149,7 +150,7 @@ def run_registered_check(db, job_id, *, timeout=30):
     reason = platform_reason()
     if reason:
         raise ValueError(reason)
-    with temporary(Path(job['store_path']) / 'runs') as run_dir:
+    with exclusive_check(job['store_path']), temporary(Path(job['store_path']) / 'runs') as run_dir:
         materialize(job, run_dir)
         artifacts, revision = artifact_revision.copy_inputs(
             job['cwd'], json.loads(job['artifact_paths_json']), run_dir, allow_empty=True)

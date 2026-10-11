@@ -92,7 +92,7 @@ def test_cancel_closes_outstanding_local_generator_connection(tmp_path, monkeypa
         def close(self):
             left.close()
 
-    monkeypatch.setattr(calibration_examples.http.client, "HTTPConnection", Connection)
+    monkeypatch.setattr(calibration_examples, "local_ollama_connection", Connection)
     job = CalibrationJob()
     try:
         job.start(_engine(tmp_path))

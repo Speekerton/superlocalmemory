@@ -52,3 +52,14 @@ def test_cancel_after_atomic_publication_returns_complete_instead_of_promising_p
         assert not job._stop.cancel_requested
     finally:
         job.stop()
+
+
+def test_local_generator_connection_is_built_only_by_the_fixed_loopback_gate(monkeypatch):
+    import http.client
+    from unittest.mock import Mock
+
+    from superlocalmemory.core import outbound_http
+    connect = Mock()
+    monkeypatch.setattr(http.client, "HTTPConnection", connect)
+    outbound_http.local_ollama_connection()
+    connect.assert_called_once_with("127.0.0.1", 11434, timeout=30)

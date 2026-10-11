@@ -258,3 +258,14 @@ __all__ = [
     "transport_options",
     "urlopen",
 ]
+
+
+def local_ollama_connection(timeout: float = 30):
+    """Cancellable stdlib connection to the fixed local generator.
+
+    This transport never uses environment proxies or follows redirects. Its
+    destination cannot be supplied by a caller; memory remains on loopback.
+    The socket stays available to the calibration cancellation owner.
+    """
+    import http.client
+    return http.client.HTTPConnection("127.0.0.1", 11434, timeout=timeout)

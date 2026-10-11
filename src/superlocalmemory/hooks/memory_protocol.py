@@ -110,14 +110,14 @@ def memory_protocol_markdown() -> str:
 def optimize_protocol_markdown() -> str:
     """Return the agent-facing token-optimization protocol block (cache/compress).
 
-    Proxy-free: these MCP tools let the agent losslessly shrink large tool output
+    Proxy-free: these MCP tools let the agent shrink large tool output reversibly (originals kept)
     and reuse repeated reads through the same surface, so an agent on any
     front-end (not just Claude Code) can save tokens without a proxy. Fail-open —
     a non-ok result means "use the original and continue".
     """
     return (
         "## Runtime token-optimization protocol (fail-open)\n"
-        "SLM can losslessly compress large tool output and cache repeated reads "
+        "SLM can reversibly compress large tool output and cache repeated reads "
         "through the same MCP surface — no proxy required. These calls only save "
         "tokens; if one returns `ok: false`, use the original and continue.\n\n"
         "- **Large tool output (>2000 chars)** → `hub__call_tool` with "

@@ -154,34 +154,34 @@ def _preserve_exact_lexical_evidence(
 
 def feed_recall_settled(
     *,
-    memory_db: str,
     learning_db: str,
     profile_id: str,
     query_id: str,
-    ndcg_at_10: float,
+    reward: float | None = None,
+    ndcg_at_10: float | None = None,
+    memory_db: str = "",
 ) -> None:
-    """Route a settled recall's NDCG@10 into the shadow router.
+    """Route one settled recall's reward into the shadow router.
 
-    The arm is recomputed from ``query_id`` so callers don't need to
-    persist arm assignment anywhere — the router's determinism
-    guarantees the same arm decision at settle-time that was used at
-    recall-time.
+    Called when a recall's reward becomes known: an explicit outcome settling
+    its bandit play (``reward_from_outcomes``) or an engagement label being
+    finalized (``EngagementRewardModel.finalize_outcome``). The router credits
+    it to the arm recorded when the recall was SERVED (``shadow_assignments``);
+    a query served outside a test is ignored there.
 
-    Called from ``EngagementRewardModel.finalize_outcome`` (LLD-08 §4.2)
-    after the reward row is committed. Cheap on the hot path: one
-    singleton-cache read + one paired-list append.
+    ``ndcg_at_10`` is the pre-4.1.25 name of ``reward`` — the value was never
+    an NDCG (audit BRN-19). ``memory_db`` is accepted and unused.
     """
+    del memory_db
+    value = reward if reward is not None else ndcg_at_10
+    if value is None or not query_id:
+        return
     try:
         from superlocalmemory.core import shadow_router as _sr
         router = _sr.get_shadow_router(
-            memory_db=memory_db,
-            learning_db=learning_db,
-            profile_id=profile_id,
+            learning_db=learning_db, profile_id=profile_id,
         )
-        arm = router.route_query(query_id)
-        router.on_recall_settled(
-            query_id=query_id, arm=arm, ndcg_at_10=float(ndcg_at_10),
-        )
+        router.on_recall_settled(query_id=query_id, reward=float(value))
     except Exception as exc:  # pragma: no cover — defence in depth
         logger.debug("feed_recall_settled error: %s", exc)
 
@@ -375,6 +375,7 @@ def apply_ranking(
     record_plays: bool = True,
     memory_db_path: Any = None,
     play_sink: dict | None = None,
+    learning_db_path: Any = None,
 ) -> "RecallResponse":
     """Run the ranking pipeline at the requested version.
 
@@ -413,6 +414,7 @@ def apply_ranking(
             record_plays=record_plays,
             memory_db_path=memory_db_path,
             play_sink=play_sink,
+            learning_db_path=learning_db_path,
         )
     except Exception as exc:  # pragma: no cover — defensive
         logger.debug("apply_ranking ensemble step skipped: %s", exc)
@@ -1046,6 +1048,11 @@ def apply_v2_bandit_ensemble(
             db = _ReadOnlyLearningView(db_path)
             signal_count = db.count_signals(profile_id)
             active_model = load_active(db, profile_id)
+            # While a retrained candidate is under test, half the recalls are
+            # ranked by it and the assignment is recorded (audit BRN-01).
+            from superlocalmemory.learning.shadow_serving import serving_model
+            active_model = serving_model(db_path, profile_id, query_id,
+                                         active_model)
         except Exception as exc:
             logger.debug("v2 bandit: model/signal load skipped: %s", exc)
 
@@ -1099,12 +1106,12 @@ def apply_v2_bandit_ensemble(
                 if recorded:
                     play_sink["shown"] = list(shown_ids)
 
-        # Recall is a query.  Implicit learning signals are deliberately
-        # disabled on this path: even a non-blocking enqueue eventually writes
-        # canonical/learning state and turns dashboard polling into contention.
-        # An explicit feedback command owns durable learning signals instead.
-        # NOTE: this gates the twenty-row exposure enqueue ONLY. The play above
-        # is recorded regardless — see this function's docstring.
+        # Exposure capture for the ranker's training rows. Off unless the
+        # caller asks (run_recall asks only in v2-ensemble mode): the enqueue
+        # is a put_nowait, the signal worker writes later, and the rows are
+        # exposures — the phase counter excludes them (signal_kinds).
+        # NOTE: this gates the exposure enqueue ONLY. The play above is
+        # recorded regardless — see this function's docstring.
         if record_signals:
             try:
                 top20 = final_results[:20]
@@ -1235,6 +1242,17 @@ def _top_ids(results: list) -> list[str]:
             if getattr(r, "fact", None) is not None]
 
 
+def _engine_learning_db(config: Any) -> Path | None:
+    """``<base_dir>/learning.db`` for this engine's config, when it has one."""
+    base = getattr(config, "base_dir", None)
+    if not base:
+        return None
+    try:
+        return Path(base) / "learning.db"
+    except TypeError:  # a stand-in config in tests
+        return None
+
+
 def run_recall(
     query: str,
     profile_id: str,
@@ -1262,8 +1280,15 @@ def run_recall(
     include_unknown: bool = False,
     answer_check: str | None = None,
     facets: Any = None,
+    query_id: str | None = None,
 ) -> RecallResponse:
     """Recall relevant facts for a query.
+
+    ``query_id`` is this recall's one identity. The engine allocates it and
+    returns it on the response; the bandit play, the shadow assignment and
+    the exposure features are all recorded under the same id, so an outcome
+    that quotes it settles exactly this recall (audit BRN-13). A fresh id is
+    minted only for a direct caller that supplies none.
 
     Multi-scope: ``include_global`` / ``include_shared`` control which
     scopes participate in retrieval (passed through to retrieval engine).
@@ -1420,15 +1445,24 @@ def run_recall(
     try:
         import os as _os
         import uuid as _uuid
-        query_id = _uuid.uuid4().hex
+        query_id = str(query_id or "") or _uuid.uuid4().hex
         mode = _resolve_ranking_mode(_os.environ)
+        # Exposure features are recorded (asynchronously, by the signal
+        # worker) only when the operator turned adaptive ranking on: they are
+        # the trainer's input, and without them no labelled row can exist
+        # (audit BRN-12). An exposure is never counted as feedback.
         response = apply_ranking(
             response, query, profile_id, query_id,
-            config=config, pipeline_version=mode, record_signals=False,
+            config=config, pipeline_version=mode,
+            record_signals=(mode == "v2-ensemble"),
             # the store THIS recall read from, so the outcome bonus
             # cannot resolve a different one
             memory_db_path=getattr(db, "db_path", None),
             play_sink=play_sink,
+            # ...and the learning store beside it: the play, the assignment
+            # and the exposure belong to the engine's store, not to whatever
+            # the default data root resolves to.
+            learning_db_path=_engine_learning_db(config),
         )
     except Exception as exc:
         logger.debug("Ranking pipeline skipped: %s", exc)

@@ -23,14 +23,20 @@ def wired(tmp_path):
     db.initialize(schema)
     vector_store = MagicMock(available=True)
     vector_store.search.return_value = []
-    yield config, db, vector_store
-    db.close()
+    retrievals = []
+    try:
+        yield config, db, vector_store, retrievals
+    finally:
+        for retrieval in retrievals:
+            retrieval.close(wait=True)
+        db.close()
 
 
 @pytest.mark.parametrize("bit_width", [8, 4, 2])
 def test_enabled_quantized_only_fact_is_used_by_wired_channel(wired, bit_width):
-    config, db, vector_store = wired
+    config, db, vector_store, retrievals = wired
     retrieval = init_retrieval(config, db, None, None, None, vector_store=vector_store)
+    retrievals.append(retrieval)
     channel = retrieval._semantic
     qas = channel._qas
     assert qas is not None
@@ -53,7 +59,7 @@ def test_enabled_quantized_only_fact_is_used_by_wired_channel(wired, bit_width):
 
 
 def test_disabled_configuration_is_explicit(wired, caplog):
-    config, db, vector_store = wired
+    config, db, vector_store, _retrievals = wired
     config.quantization = replace(config.quantization, enabled=False)
     with caplog.at_level("INFO"):
         assert _init_quantization_aware_search(vector_store, db, config) is None
@@ -61,7 +67,7 @@ def test_disabled_configuration_is_explicit(wired, caplog):
 
 
 def test_initialization_failure_is_visible(wired, caplog):
-    config, db, vector_store = wired
+    config, db, vector_store, _retrievals = wired
     with patch("superlocalmemory.math.polar_quant.PolarQuantEncoder",
                side_effect=ValueError("bad codec")):
         assert _init_quantization_aware_search(vector_store, db, config) is None

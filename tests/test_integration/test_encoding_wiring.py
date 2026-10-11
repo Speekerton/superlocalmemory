@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import patch
 
@@ -81,13 +82,13 @@ class _MockEmbedder:
 # ---------------------------------------------------------------------------
 
 @pytest.fixture()
-def engine(tmp_path: Path) -> MemoryEngine:
+def engine(tmp_path: Path) -> Iterator[MemoryEngine]:
     config = SLMConfig.for_mode(Mode.A, base_dir=tmp_path)
     config.db_path = tmp_path / "test.db"
     config.retrieval = RetrievalConfig(use_cross_encoder=False)
     eng = MemoryEngine(config)
     with patch(
-        "superlocalmemory.core.embeddings.EmbeddingService",
+        "superlocalmemory.core.engine_wiring.init_embedder",
         return_value=_MockEmbedder(768),
     ):
         eng.initialize()
@@ -95,7 +96,10 @@ def engine(tmp_path: Path) -> MemoryEngine:
     # materializer). These tests assert enrichment artifacts synchronously,
     # so drive the complete path. See tests/conftest.force_sync_enrichment.
     from tests.conftest import force_sync_enrichment
-    return force_sync_enrichment(eng)
+    try:
+        yield force_sync_enrichment(eng)
+    finally:
+        eng.close()
 
 
 def _query(engine: MemoryEngine, sql: str, params: tuple = ()) -> list[dict]:

@@ -54,6 +54,8 @@ def ranked_authorized_topk(db: Any, ranked: list[tuple[str, float]], profile_id:
     Authorization preserves order and scores. Walking the sorted prefix and
     backfilling rejected ranks is therefore exactly full authorization followed
     by slicing. No visibility cache is used: revocations take effect on each read.
+    After the first rejection, scan at least 64 ranks per authorization query
+    so sparse visibility cannot turn the remaining budget into one-row queries.
     Negative slices retain the historical Python slicing behaviour.
     """
     if top_k < 0:
@@ -61,11 +63,12 @@ def ranked_authorized_topk(db: Any, ranked: list[tuple[str, float]], profile_id:
     out: list[tuple[str, float]] = []
     cursor = 0
     while len(out) < top_k and cursor < len(ranked):
-        size = min(800, top_k - len(out))
+        remaining = top_k - len(out)
+        size = min(800, max(64, remaining) if cursor else remaining)
         page = ranked[cursor:cursor + size]
         out.extend(filter_authorized_results(db, page, profile_id, **scope))
         cursor += size
-    return out
+    return out[:top_k]
 
 
 class EntityGraphChannel:

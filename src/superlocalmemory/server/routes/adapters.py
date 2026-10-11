@@ -27,6 +27,36 @@ class AdapterAction(BaseModel):
     name: str
 
 
+class AdapterSetup(AdapterAction):
+    path: str
+
+
+@router.post("/api/adapters/configure")
+async def configure_adapter_api(body: AdapterSetup, request: Request):
+    from pathlib import Path
+
+    from fastapi import HTTPException
+
+    from superlocalmemory.ingestion.adapter_manager import _load_config, _save_config
+    from superlocalmemory.server.rbac_enforce import require_manage
+
+    require_manage(request)
+    if body.name not in ("gmail", "calendar", "transcript"):
+        raise HTTPException(422, "Choose a supported adapter.")
+    path = Path(body.path).expanduser()
+    if not path.is_absolute() or not path.exists():
+        raise HTTPException(422, "Choose an existing absolute folder or file path.")
+    if body.name == "transcript" and not path.is_dir():
+        raise HTTPException(422, "Transcripts need a folder.")
+    if body.name != "transcript" and not path.is_file():
+        raise HTTPException(422, "Choose an MBOX or ICS file.")
+    field = {"transcript": "watch_dir", "gmail": "mbox_path", "calendar": "ics_path"}[body.name]
+    config = _load_config()
+    config.setdefault(body.name, {}).update({field: str(path), "tier": "auto"})
+    _save_config(config)
+    return {"ok": True, "message": "Setup saved. Retry Start."}
+
+
 @router.get("/api/adapters")
 async def list_adapters_api():
     """List all adapters with their enabled/running status."""

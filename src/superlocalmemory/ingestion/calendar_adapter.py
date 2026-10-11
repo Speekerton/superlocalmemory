@@ -68,6 +68,9 @@ class CalendarAdapter(BaseAdapter):
         self._stop_event.wait(self._poll_interval)
 
     def _detect_tier(self) -> None:
+        from superlocalmemory.ingestion.adapter_config import validate_tier
+
+        validate_tier("calendar", self._tier)
         if self._tier != "auto":
             return
 

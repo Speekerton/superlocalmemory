@@ -77,6 +77,9 @@ class GmailAdapter(BaseAdapter):
 
     def _detect_tier(self) -> None:
         """Auto-detect the best available tier."""
+        from superlocalmemory.ingestion.adapter_config import validate_tier
+
+        validate_tier("gmail", self._tier)
         if self._tier != "auto":
             return
 

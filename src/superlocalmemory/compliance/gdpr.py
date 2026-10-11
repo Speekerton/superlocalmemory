@@ -76,30 +76,6 @@ def _retention_days_from_config() -> int:
         pass
     return 90  # owner-set default
 
-#: Rows fetched per page when an export reads a table in full.
-_EXPORT_PAGE_ROWS = 1000
-
-
-def _every_row(cursor: sqlite3.Cursor) -> list[dict]:
-    """All rows of ``cursor`` as dicts, fetched a page at a time."""
-    out: list[dict] = []
-    while True:
-        page = cursor.fetchmany(_EXPORT_PAGE_ROWS)
-        if not page:
-            return out
-        out.extend(dict(row) for row in page)
-
-
-# Friendly export keys → canonical table names (stable Art.20 export contract).
-_EXPORT_ALIASES = {
-    "facts": "atomic_facts",
-    "entities": "canonical_entities",
-    "edges": "graph_edges",
-    "feedback": "feedback_records",
-    "scenes": "memory_scenes",
-}
-
-
 def _unproject_entity(entity_id: str) -> bool:
     """Remove an entity node from the graph projection, if there is one.
 
@@ -356,74 +332,52 @@ class GDPRCompliance:
 
     # -- Right to Access (Art. 15) -----------------------------------------
 
-    def export_profile_data(self, profile_id: str) -> dict:
+    def export_profile_data(self, profile_id: str, *, include_embeddings: bool = False) -> dict:
         """Export ALL data for a profile in machine-readable format (Art. 15 /
         Art. 20). Covers every profile-scoped table discovered from the schema,
-        plus the profile record itself."""
-        self._audit("export", "profile", profile_id, "Full data export")
+        plus the profile record itself, the code graph, media records, learned
+        signals and audit records (``compliance/gdpr_export.py``).
 
-        data: dict = {"profile_id": profile_id, "exported_at": _now()}
-        for table in self._profile_scoped_tables():
-            try:
-                rows = self._db.execute(
-                    f"SELECT * FROM {table} WHERE profile_id = ?", (profile_id,)
-                )
-                data[table] = [dict(r) for r in rows]
-            except Exception as exc:  # pragma: no cover — defensive per-table
-                logger.warning("export: table %s skipped: %s", table, exc)
-
-        # Profile record itself (the tenant metadata).
-        try:
-            rows = self._db.execute("SELECT * FROM profiles WHERE profile_id = ?", (profile_id,))
-            data["profile_record"] = [dict(r) for r in rows]
-        except Exception:
-            data["profile_record"] = []
-
-        # C2 — include code_graph.db in Art.15 export (repo paths, file names,
-        # and symbol names are identifying data in a work context).
-        # Without an explicit root the files next to the memory database are
-        # this installation's — the same rule erasure uses. Reading is safe;
-        # leaving them out made the dashboard export silently incomplete.
-        export_root = self._data_root
-        if export_root is None:
-            db_path = getattr(self._db, "db_path", None)
-            if db_path is not None:
-                export_root = Path(db_path).resolve().parent
-        if export_root is not None:
-            code_graph_data = self._export_code_graph(export_root)
-            if code_graph_data is not None:
-                data["code_graph"] = code_graph_data
-
-            # Pictures, documents, connected folders and jobs live in media.db,
-            # another file the table sweep never reached. Records only.
-            from superlocalmemory.compliance.gdpr_media_export import export_media
-
-            media_data = export_media(export_root, profile_id, self._db)
-            if media_data is not None:
-                data["media"] = media_data
-
-            # What the system learned about how this person works: which
-            # questions they asked, which answers they found useful, and the
-            # weights derived from that. It was erased on request and could not
-            # be asked for -- which makes an export that claims to be everything
-            # untrue. It lives in a second file, so the table sweep above never
-            # reached it.
-            behaviour = self._export_learning_signals(export_root, profile_id)
-            if behaviour is not None:
-                data["learning_signals"] = behaviour
-
-        # total_items counts the canonical (table-name) keys only, before
-        # friendly aliases are added, so it is not double-counted.
-        data["total_items"] = sum(len(v) for v in data.values() if isinstance(v, list))
-
-        # Backward-compatible friendly aliases for the well-known keys (stable
-        # export contract) — they reference the same lists, not copies.
-        for friendly, table in _EXPORT_ALIASES.items():
-            if table in data:
-                data[friendly] = data[table]
-
+        Binary and vector columns are left out unless ``include_embeddings``;
+        the ``export_manifest`` key says what was left out and why. The result
+        is plain JSON: every value is already a JSON type. A large profile
+        should use :meth:`write_profile_export`, which does not hold the export
+        in memory.
+        """
+        data = self._profile_export(profile_id, include_embeddings).as_dict()
         logger.info("Exported %d items for profile '%s'", data["total_items"], profile_id)
         return data
+
+    def write_profile_export(
+        self, profile_id: str, fp, *, include_embeddings: bool = False,
+    ) -> dict:
+        """Stream the Art. 15 / 20 export of ``profile_id`` to ``fp``.
+
+        ``fp`` is a binary file opened ``w+b`` (the writer copies the friendly
+        aliases back out of it). Returns ``{"bytes", "total_items", "tables"}``.
+        Raises on failure; a half-written file is the caller's to discard.
+        """
+        summary = self._profile_export(profile_id, include_embeddings).write(fp)
+        logger.info("Exported %d items (%d bytes) for profile '%s'",
+                    summary["total_items"], summary["bytes"], profile_id)
+        return summary
+
+    def _profile_export(self, profile_id: str, include_embeddings: bool):
+        from superlocalmemory.compliance.export_encoding import ExportOptions
+        from superlocalmemory.compliance.gdpr_export import ProfileExport
+
+        self._audit("export", "profile", profile_id, "Full data export")
+        # Without an explicit root the files next to the memory database are
+        # this installation's -- the same rule erasure uses. Reading is safe;
+        # leaving them out made the dashboard export silently incomplete.
+        root = self._data_root
+        if root is None:
+            db_path = getattr(self._db, "db_path", None)
+            root = Path(db_path).resolve().parent if db_path is not None else None
+        return ProfileExport(
+            self._db, profile_id, self._profile_scoped_tables(), data_root=root,
+            options=ExportOptions(include_embeddings=include_embeddings),
+        )
 
     # -- Right to Erasure (Art. 17) ----------------------------------------
 
@@ -1248,115 +1202,6 @@ class GDPRCompliance:
             logger.warning("GDPR erase: code_graph.db wipe failed: %s", exc)
             result["error"] = str(exc)
         return result
-
-    def _export_code_graph(self, data_root: Path) -> dict | None:
-        """Read code_graph.db for Art.15 export (C2).
-
-        Returns a dict keyed by table name whose values are lists of row dicts,
-        or None if the file does not exist or cannot be read.
-        """
-        code_graph_path = data_root / "code_graph.db"
-        if not code_graph_path.exists():
-            return None
-        export: dict = {}
-        try:
-            uri = f"file:{code_graph_path}?mode=ro"
-            conn = sqlite3.connect(uri, uri=True, timeout=5)
-            conn.row_factory = sqlite3.Row
-            try:
-                tables = [
-                    row[0]
-                    for row in conn.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table' "
-                        "AND name NOT LIKE 'sqlite_%'"
-                    ).fetchall()
-                ]
-                for tbl in tables:
-                    if tbl.endswith((
-                        "_fts", "_fts_data", "_fts_idx",
-                        "_fts_content", "_fts_docsize", "_fts_config",
-                    )):
-                        continue
-                    try:
-                        # Every row, read a page at a time: a fixed LIMIT here
-                        # once cut a large repository's graph at 10,000 rows
-                        # and the export said nothing.
-                        export[tbl] = _every_row(
-                            conn.execute(f"SELECT * FROM {tbl}")  # noqa: S608
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning("GDPR export: code_graph table %s failed: %s", tbl, exc)
-            finally:
-                conn.close()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("GDPR export: code_graph.db read failed: %s", exc)
-            return None
-        return export if export else None
-
-    def _export_learning_signals(
-        self, data_root: Path, profile_id: str
-    ) -> dict | None:
-        """Read this workspace's rows out of ``learning.db`` for an export.
-
-        Everything the system inferred about how somebody works is personal
-        data about them, and an export that leaves it out is not the export it
-        says it is. Erasure already covers this file; asking for it did not.
-
-        Scoped by ``profile_id`` wherever the table has one, and skipped where
-        it does not -- a table with no workspace column holds nothing that can
-        be attributed to one workspace, and returning it would export another
-        workspace's rows into this person's file.
-
-        Every row, never a sample: a fixed ``LIMIT`` here once returned the
-        oldest 10,000 Answer Check history rows of a profile holding more and
-        said nothing. Rows are read in pages so the database is not asked to
-        materialise the whole table at once.
-        """
-        learning_path = data_root / "learning.db"
-        if not learning_path.exists():
-            return None
-        export: dict = {}
-        try:
-            conn = sqlite3.connect(
-                f"file:{learning_path}?mode=ro", uri=True, timeout=5,
-            )
-            conn.row_factory = sqlite3.Row
-            try:
-                tables = [
-                    row[0] for row in conn.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table' "
-                        "AND name NOT LIKE 'sqlite_%'"
-                    ).fetchall()
-                ]
-                for table in tables:
-                    if table.endswith((
-                        "_fts", "_fts_data", "_fts_idx",
-                        "_fts_content", "_fts_docsize", "_fts_config",
-                    )):
-                        continue
-                    try:
-                        columns = {
-                            row[1] for row in
-                            conn.execute(f"PRAGMA table_info({table})")  # noqa: S608
-                        }
-                        if "profile_id" not in columns:
-                            continue
-                        rows = _every_row(conn.execute(
-                            f"SELECT * FROM {table} WHERE profile_id = ?",  # noqa: S608
-                            (profile_id,),
-                        ))
-                        if rows:
-                            export[table] = rows
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning(
-                            "export: learning table %s skipped: %s", table, exc,
-                        )
-            finally:
-                conn.close()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("export: learning.db could not be read: %s", exc)
-            return None
-        return export or None
 
     # -- C1: backup obligation helpers -------------------------------------
 

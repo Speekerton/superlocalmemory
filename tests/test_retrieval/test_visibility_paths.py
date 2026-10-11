@@ -147,7 +147,7 @@ def _media_engine(tmp_path, monkeypatch):
              _make_fact("page", "a bicycle page")]
     for f, m in zip(facts, ["m_note", "m_img", "m_page"]):
         f.memory_id = m
-    eng = _build_engine(facts=facts, semantic_results=[("t1", 0.9), ("img", 0.8), ("page", 0.7)],
+    eng = _build_engine(facts=facts, semantic_results=[("t1", 0.9), ("img", 0.85), ("page", 0.82)],
                         bm25_results=[("t1", 2.0)])
     sql_log: list[str] = []
 

@@ -276,6 +276,80 @@ async function slmFetch(input, init) {
 }
 
 // ============================================================================
+// Data export: download a file and report what really happened
+// ----------------------------------------------------------------------------
+// The exports used to be started with `a.href = ...; a.click()` and the page
+// printed "Export started" without looking at the answer. When the daemon failed
+// (4.1.25 audit G-C2) the person received nothing, or a file that said "Internal
+// server error", and the page said it had worked. This fetches the file, so an
+// error status is an error on screen, and only a complete file is saved.
+// ============================================================================
+
+function slmFormatBytes(bytes) {
+    if (!isFinite(bytes) || bytes < 0) return '';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+    return (bytes / 1073741824).toFixed(2) + ' GB';
+}
+
+async function slmDownloadExport(url, opts) {
+    opts = opts || {};
+    var response;
+    try {
+        response = await fetch(url, {
+            credentials: 'same-origin',
+            timeoutMs: opts.timeoutMs || 600000,
+        });
+    } catch (error) {
+        return { ok: false, status: 0,
+                 error: 'the SuperLocalMemory daemon did not answer (' +
+                        ((error && error.name === 'AbortError') ? 'timed out' : 'not reachable') + ')' };
+    }
+    if (!response.ok) {
+        var detail = '';
+        try {
+            var body = await response.json();
+            var raw = body && (body.detail || body.error || body.message);
+            detail = typeof raw === 'string' ? raw : (raw ? JSON.stringify(raw) : '');
+        } catch (ignored) { /* the body was not JSON */ }
+        return { ok: false, status: response.status,
+                 error: detail || ('the daemon answered HTTP ' + response.status) };
+    }
+    var blob;
+    try {
+        blob = await response.blob();
+    } catch (error) {
+        return { ok: false, status: response.status, error: 'the download was interrupted' };
+    }
+    var disposition = (response.headers && response.headers.get('Content-Disposition')) || '';
+    var named = disposition.match(/filename="?([^";]+)"?/i);
+    var filename = named ? named[1] : (opts.filename || 'slm-export');
+    var count = response.headers && response.headers.get('X-SLM-Records');
+    var objectUrl = URL.createObjectURL(blob);
+    var link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(function () { URL.revokeObjectURL(objectUrl); }, 60000);
+    return { ok: true, status: response.status, filename: filename, size: blob.size,
+             records: count === null || count === undefined ? null : Number(count) };
+}
+
+function slmExportMessage(result) {
+    if (!result || !result.ok) {
+        return 'Export failed: ' + ((result && result.error) || 'unknown error') + '.';
+    }
+    var parts = [];
+    if (result.records !== null && result.records !== undefined) parts.push(result.records + ' records');
+    parts.push(slmFormatBytes(result.size));
+    return 'Export saved as ' + result.filename + ' (' + parts.join(', ') + ').';
+}
+
+// ============================================================================
 // v3.4.23 — version fingerprint + auto-reload on daemon upgrade
 // ----------------------------------------------------------------------------
 // index.html ships with <meta name="slm-version" content="__SLM_VERSION__">

@@ -181,7 +181,7 @@ class TestFloorBeforeReranker:
         db = _mock_db([f1])
 
         sem = MagicMock()
-        sem.search.return_value = [("f1", 0.75)]  # above 0.60 floor
+        sem.search.return_value = [("f1", 0.875)]  # raw cosine 0.75, above the 0.60 floor
         bm = MagicMock()
         bm.search.return_value = []
         emb = MagicMock()
@@ -197,7 +197,7 @@ class TestFloorBeforeReranker:
         response = engine.recall("asyncio", "default", Mode.A, limit=10)
         fact_ids = [r.fact.fact_id for r in response.results]
         assert "f1" in fact_ids, (
-            "f1 passed the evidence floor (semantic=0.75); must appear in results"
+            "f1 passed the evidence floor (raw cosine 0.75); must appear in results"
         )
 
 

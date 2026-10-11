@@ -109,7 +109,7 @@ def _edge_arrays(snap: AdjacencySnapshot, nodes: _Nodes,
         rows = np.concatenate((rows, np.asarray(add_src, dtype=np.int64)))
         cols = np.concatenate((cols, np.asarray(add_dst, dtype=np.int64)))
         weights = np.concatenate((weights, np.asarray(add_w, dtype=np.float64)))
-        order = np.argsort(rows, kind="stable")
+        order = np.argsort(rows, kind="stable")  # tie-break: CSR row, then input edge ordinal
         rows, cols, weights = rows[order], cols[order], weights[order]
     indptr = np.zeros(n + 1, dtype=np.int64)
     np.cumsum(np.bincount(rows, minlength=n), out=indptr[1:])
@@ -120,7 +120,7 @@ def _insert_rows(snap: AdjacencySnapshot, base: np.ndarray, add_src: list[int],
                  add_dst: list[int], add_w: list[float]):
     """Additions only: insert each new entry at the end of its row, one pass."""
     rows = np.asarray(add_src, dtype=np.int64)
-    order = np.argsort(rows, kind="stable")
+    order = np.argsort(rows, kind="stable")  # tie-break: CSR row, then input edge ordinal
     rows = rows[order]
     cols = np.asarray(add_dst, dtype=np.int64)[order]
     weights = np.asarray(add_w, dtype=np.float64)[order]

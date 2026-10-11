@@ -220,9 +220,18 @@ def test_apply_syncs_the_stale_row_and_removes_the_orphans(drifted):
     assert not [k for k in again["done"] if k.startswith("vector_parity.")]
 
 
-def test_receipts_hold_ids_and_counts_only_and_are_not_undoable(drifted):
+@pytest.fixture
+def receipt_drifted(monkeypatch, request):
+    """Valid random hex IDs can contain 'b64'; exercise that case every time."""
+    random_uuid = uuid.uuid4
+    monkeypatch.setattr(uuid, "uuid4", lambda: uuid.UUID("b64" + random_uuid().hex[3:]))
+    return request.getfixturevalue("drifted")
+
+
+def test_receipts_hold_ids_and_counts_only_and_are_not_undoable(receipt_drifted):
     from superlocalmemory.storage.integrity_repair import Limits, Repair
 
+    drifted = receipt_drifted
     repair = Repair(drifted["db"], limits=Limits(pause_s=0, confirm_s=0), lance=drifted["lance"])
     summary = repair.apply()
     run_id = summary["run_id"]
@@ -235,13 +244,19 @@ def test_receipts_hold_ids_and_counts_only_and_are_not_undoable(drifted):
     assert {r[0] for r in receipts} == {"resync_stale_vectors", "remove_orphan_lance_vectors"}
     assert all(r[5] == 0 for r in receipts)
     by_action = {r[0]: json.loads(r[3]) for r in receipts}
+    assert "b64" in drifted["ids"]["stale"]  # valid ID, not an encoded vector
     assert by_action["resync_stale_vectors"]["rows"] == 1
     assert by_action["resync_stale_vectors"]["fact_ids"] == [drifted["ids"]["stale"]]
     assert by_action["remove_orphan_lance_vectors"]["rows"] == 4
+    assert sorted(by_action["remove_orphan_lance_vectors"]["fact_ids"]) == sorted(
+        [drifted["ids"]["withheld"], drifted["ids"]["soft"], drifted["erased"], drifted["ghost"]]
+    )
+    for receipt in receipts:
+        assert set(json.loads(receipt[3])) == {"rows", "fact_ids"}
+        assert json.loads(receipt[4]) == {"rows": 0}
     # no vector, no text: the only thing in a receipt besides ids is counts
     dump = json.dumps(receipts)
     assert drifted["marker"] not in dump and "orchard" not in dump
-    assert "b64" not in dump
     # nothing is kept to put back: a stale or orphaned vector must not return
     assert conn.execute("SELECT COUNT(*) FROM integrity_repair_undo WHERE run_id = ?",
                         (run_id,)).fetchone()[0] == 0

@@ -44,9 +44,10 @@ import json
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
+from superlocalmemory.encoding.ccq_dates import _parse_date, _temporal_midpoint
 from superlocalmemory.storage.models import _new_id
 
 if TYPE_CHECKING:
@@ -156,30 +157,8 @@ class _UnionFind:
 # ---------------------------------------------------------------------------
 
 
-def _parse_date(raw: str | None) -> datetime | None:
-    """Parse ISO-8601 dates with multiple format fallbacks."""
-    if not raw:
-        return None
-    for fmt in (
-        "%Y-%m-%dT%H:%M:%S.%f",
-        "%Y-%m-%dT%H:%M:%S",
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%d",
-    ):
-        try:
-            return datetime.strptime(raw, fmt)
-        except ValueError:
-            continue
-    return None
-
-
-def _temporal_midpoint(dates: list[datetime]) -> str:
-    """Compute ISO-8601 midpoint of a list of datetimes."""
-    if not dates:
-        return datetime.now(timezone.utc).isoformat()
-    ts = [d.timestamp() for d in dates]
-    mid = sum(ts) / len(ts)
-    return datetime.fromtimestamp(mid).isoformat()
+# _parse_date / _temporal_midpoint live in encoding/ccq_dates.py and are
+# imported at the top of this module (tests import them from here).
 
 
 # ---------------------------------------------------------------------------
@@ -339,6 +318,10 @@ class CognitiveConsolidator:
           - Facts above retention threshold
           - Facts already in ccq_consolidated_blocks (HR-01, HR-08)
         """
+        # Only facts the store still believes are consolidated: a fact a
+        # correction retired must never be copied into a fresh, current gist
+        # (audit BRN-31 — the retired rule came back under a new id).
+        current = self._db.current_fact_clause("f")
         rows = self._db.execute(
             """
             SELECT f.fact_id, f.content, f.canonical_entities_json,
@@ -363,6 +346,7 @@ class CognitiveConsolidator:
               -- Exactly the damage this release exists to stop, on a path the
               -- release did not otherwise touch.
               AND COALESCE(f.quarantined, 0) = 0
+              {current}
               AND f.fact_id NOT IN (
                   SELECT je.value
                   FROM ccq_consolidated_blocks ccb,
@@ -371,7 +355,7 @@ class CognitiveConsolidator:
               )
             ORDER BY r.retention_score ASC
             LIMIT ?
-            """,
+            """.replace("{current}", current),
             (
                 profile_id,
                 profile_id,
@@ -491,16 +475,17 @@ class CognitiveConsolidator:
             )
             dated.append((fid, _parse_date(raw)))
 
-        dated.sort(key=lambda t: t[1] or datetime.min)
+        # A fact whose date is unknown cannot be shown to fall inside the
+        # window, so it joins nothing (audit BRN-32: it used to join whatever
+        # cluster was open, which merged facts months apart).
+        dated = [(fid, dt) for fid, dt in dated if dt is not None]
+        dated.sort(key=lambda t: t[1])
 
         sub_clusters: list[list[str]] = [[]]
         prev_dt: datetime | None = None
         window_seconds = self._config.temporal_window_days * 86400
 
         for fid, dt in dated:
-            if dt is None:
-                sub_clusters[-1].append(fid)
-                continue
             if (
                 prev_dt is not None
                 and (dt - prev_dt).total_seconds() > window_seconds
@@ -780,6 +765,11 @@ class CognitiveConsolidator:
         # set_fact_lifecycle_zone is transaction-aware and reuses the active
         # connection rather than opening a nested one.
         with self._db.transaction():
+            # Re-check inside the transaction: a correction may have retired a
+            # source after it was selected. Its content must not become a
+            # current gist (audit BRN-31), so the cluster is abandoned.
+            gist_confidence = self._still_current_confidence(
+                cluster.fact_ids, profile_id)
             # --- Store replacement fact FIRST (ordering guarantee) ---
             # The gist is persisted as a live atomic fact so it is immediately
             # recallable.  Source archival happens only after this write lands.
@@ -798,7 +788,9 @@ class CognitiveConsolidator:
                     content=gist.gist_text,
                     canonical_entities=list(gist.key_entities),
                     importance=0.8,
-                    confidence=1.0,
+                    # No more certain than its least certain source; it used
+                    # to be stamped 1.0 whatever the evidence (BRN-31).
+                    confidence=gist_confidence,
                     session_id="ccq",
                     embedding=gist_embedding,
                 )
@@ -832,6 +824,21 @@ class CognitiveConsolidator:
                 )
 
         return block_id
+
+    def _still_current_confidence(self, fact_ids: tuple[str, ...],
+                                  profile_id: str) -> float:
+        """Min confidence of the sources; raises if any is no longer current."""
+        marks = ",".join("?" for _ in fact_ids)
+        rows = self._db.execute(
+            f"SELECT confidence FROM atomic_facts f WHERE f.profile_id = ? "
+            f"AND f.fact_id IN ({marks}){self._db.current_fact_clause('f')}",
+            (profile_id, *fact_ids),
+        )
+        if len(rows or []) != len(fact_ids):
+            raise RuntimeError(
+                "a source was retired or removed after selection; "
+                "cluster abandoned")
+        return min(float(dict(r).get("confidence") or 0.0) for r in rows)
 
     # ------------------------------------------------------------------
     # Step 6: Audit trail

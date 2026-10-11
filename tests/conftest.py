@@ -40,6 +40,9 @@ from tests.thread_leak_guard import (  # noqa: E402,F401  (pytest hook registrat
 def pytest_configure(config) -> None:
     """Fail tests on swallowed live-root refusals even when addopts were overridden."""
     _ensure_isolation_plugin(config)
+    from tests.dev_metadata import check_installed_version
+
+    check_installed_version()
 
 
 # V3.3.14: Windows CI fix — KeyboardInterrupt during daemon thread teardown.
@@ -377,4 +380,3 @@ def engine_with_mock_deps(mode_a_config, mock_embedder, tmp_path):
 
     yield engine
     engine.close()
-

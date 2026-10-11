@@ -37,7 +37,7 @@ async def test_failed_related_memory_never_finishes(require_support):
 async def test_only_exact_independent_receipt_can_finish(change, tmp_path):
     import sys
 
-    from superlocalmemory.loops.execution_receipts import run_check
+    from superlocalmemory.loops.receipt_jobs import register_job, run_registered_check
 
     conn = _threaded_receipt_connection()
     db = SimpleNamespace(execute=lambda sql, p=(): conn.execute(sql, p).fetchall())
@@ -48,16 +48,21 @@ async def test_only_exact_independent_receipt_can_finish(change, tmp_path):
         "-c",
         "raise SystemExit(1)" if change == "failed" else "print('6 passed')",
     ]
-    receipt = run_check(
+    artifact = tmp_path / "build"
+    artifact.write_text("current revision")
+    job = register_job(
         db,
         profile_id="default",
         task_id="build",
-        run_id="external-run",
+        watcher_name="gate",
         producer=producer,
         command=command,
         cwd=tmp_path,
+        artifact_paths=[artifact],
+        allow_prestart_evidence=True,
     )
-    contract = _case_contract(receipt, change)
+    receipt = run_registered_check(db, job["job_id"])
+    contract = _case_contract(receipt, change, job)
     engine = _FakeEngine()
     engine._db = db
     engine.recall = lambda *a, **k: SimpleNamespace(
@@ -121,7 +126,7 @@ def test_ordinary_memory_cannot_mint_independent_evidence():
     conn.close()
 
 
-def _case_contract(receipt, change):
+def _case_contract(receipt, change, job=None):
     contract = {
         key: receipt[key]
         for key in ("task_id", "run_id", "producer", "command_digest", "evidence_digest")
@@ -135,6 +140,11 @@ def _case_contract(receipt, change):
         contract["evidence_digest"] = "0" * 64
     elif change == "unknown_author":
         contract["producer"] = "unregistered-checker"
+    if job is not None:
+        if change in {"none", "self", "failed"}:
+            return {"job_id": job["job_id"]}
+        # The requester cannot override registered identity, time or evidence.
+        return {"job_id": job["job_id"], **contract}
     return contract
 
 
@@ -153,18 +163,18 @@ async def test_waits_for_independent_receipt_with_unpredictable_output(tmp_path)
     import asyncio
     import sys
 
-    from superlocalmemory.loops.execution_receipts import command_digest, run_check
+    from superlocalmemory.loops.receipt_jobs import register_job, run_registered_check
 
     conn = _threaded_receipt_connection()
     db = SimpleNamespace(execute=lambda sql, p=(): conn.execute(sql, p).fetchall())
     command = [sys.executable, "-I", "-c", "import uuid; print(uuid.uuid4())"]
-    contract = {
-        "task_id": "build",
-        "run_id": "delayed",
-        "producer": "checker",
-        "command_digest": command_digest(command, tmp_path),
-        "min_timestamp": datetime.now(UTC).isoformat(),
-    }
+    artifact = tmp_path / "build"
+    artifact.write_text("current revision")
+    job = register_job(
+        db, profile_id="default", task_id="build", watcher_name="wait", producer="checker",
+        command=command, cwd=tmp_path, artifact_paths=[artifact],
+    )
+    contract = {"job_id": job["job_id"]}
     engine = _FakeEngine()
     engine._db = db
     engine.recall = lambda *a, **k: SimpleNamespace(
@@ -176,14 +186,7 @@ async def test_waits_for_independent_receipt_with_unpredictable_output(tmp_path)
     async def independent_check():
         await asyncio.sleep(0.1)
         return await asyncio.to_thread(
-            run_check,
-            db,
-            profile_id="default",
-            task_id="build",
-            run_id="delayed",
-            producer="checker",
-            command=command,
-            cwd=tmp_path,
+            run_registered_check, db, job["job_id"],
         )
 
     checker = asyncio.create_task(independent_check())
@@ -201,6 +204,7 @@ def test_latest_failed_execution_overrides_an_older_pass(tmp_path):
 
     from superlocalmemory.loops.execution_receipts import run_check
     from superlocalmemory.loops.receipt_gate import receipt_passes
+    from superlocalmemory.loops.receipt_jobs import register_job, run_registered_check
 
     conn = sqlite3.connect(":memory:", isolation_level=None)
     conn.row_factory = sqlite3.Row
@@ -217,32 +221,27 @@ def test_latest_failed_execution_overrides_an_older_pass(tmp_path):
         "from pathlib import Path; raise SystemExit(0 if Path('state').read_text()=='pass' else 1)",
     ]
     state.write_text("pass")
-    passed = run_check(
-        db,
-        profile_id="default",
-        task_id="build",
-        run_id="same-run",
-        producer="checker",
-        command=command,
-        cwd=tmp_path,
+    job = register_job(
+        db, profile_id="default", task_id="build", watcher_name="build", producer="checker",
+        command=command, cwd=tmp_path, artifact_paths=[state], allow_prestart_evidence=True,
     )
+    run_registered_check(db, job["job_id"])
+    contract = {"job_id": job["job_id"]}
+    engine = SimpleNamespace(_db=db, profile_id="default")
+    assert receipt_passes(engine, [], contract, "mcp_client", watcher_name="build")
     state.write_text("fail")
     run_check(
         db,
         profile_id="default",
         task_id="build",
-        run_id="same-run",
+        run_id=job["run_id"],
         producer="checker",
         command=command,
         cwd=tmp_path,
     )
-    contract = {
-        key: passed[key]
-        for key in ("task_id", "run_id", "producer", "command_digest", "evidence_digest")
-    }
-    contract["min_timestamp"] = passed["produced_at"]
+    state.write_text("pass")  # Same current artifact; newest real execution still failed.
     assert not receipt_passes(
-        SimpleNamespace(_db=db, profile_id="default"), [], contract, "mcp_client"
+        engine, [], contract, "mcp_client", watcher_name="build",
     )
     conn.close()
 

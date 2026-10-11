@@ -20,55 +20,50 @@ def _time(value):
 
 
 def _admitted(contract, running_agent):
-    if not isinstance(contract, dict):
-        return False
-    required = (
-        "task_id",
-        "run_id",
-        "producer",
-        "min_timestamp",
-        "command_digest",
-    )
-    if any(not isinstance(contract.get(k), str) or not contract[k] for k in required):
-        return False
-    digest = contract.get("evidence_digest")
-    if digest not in (None, "") and (
-        not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest)
-    ):
-        return False
-    return contract["producer"] != running_agent and bool(
-        re.fullmatch(r"[a-f0-9]{64}", contract["command_digest"])
+    return (
+        isinstance(contract, dict) and set(contract) == {"job_id"}
+        and isinstance(contract["job_id"], str)
+        and bool(re.fullmatch(r"[a-f0-9]{32}", contract["job_id"]))
     )
 
 
-def _valid(receipt, contract):
-    now, minimum = datetime.now(UTC), _time(contract["min_timestamp"])
+def _valid(receipt, minimum):
+    now = datetime.now(UTC)
     return (
         receipt["verdict"] == "PASS"
         and type(receipt["exit_code"]) is int
         and receipt["exit_code"] == 0
         and minimum <= _time(receipt["produced_at"]) <= now
         and hashlib.sha256(receipt["evidence"].encode()).hexdigest() == receipt["evidence_digest"]
-        and (
-            not contract.get("evidence_digest")
-            or receipt["evidence_digest"] == contract["evidence_digest"]
-        )
     )
 
 
-def receipt_passes(engine, results, contract, running_agent):
+def receipt_passes(engine, results, contract, running_agent, *, watcher_name="", started_at=None):
     """The locator's text and attribution are never execution evidence."""
     if not _admitted(contract, running_agent):
         return False
     fields = ("task_id", "run_id", "producer", "command_digest")
     db = getattr(engine, "_db", None) or engine.db
     try:
+        from superlocalmemory.loops.receipt_jobs import current_job
+
+        job = current_job(db, contract["job_id"], engine.profile_id, watcher_name)
+        if job is None or job["producer"] == running_agent:
+            return False
+        minimum = _time(job["registered_at"])
+        if not job["allow_prestart_evidence"]:
+            minimum = max(minimum, _time(started_at) if started_at else datetime.now(UTC))
         rows = db.execute(
             "SELECT * FROM loop_execution_receipts WHERE profile_id=? AND "
             + " AND ".join(field + "=?" for field in fields)
+            + " AND ?=(SELECT job_id FROM loop_gate_jobs WHERE profile_id=? "
+            "AND watcher_name=? ORDER BY rowid DESC LIMIT 1)"
             + " ORDER BY julianday(produced_at) DESC,rowid DESC LIMIT 1",
-            (engine.profile_id, *(contract[field] for field in fields)),
+            (engine.profile_id, *(job[field] for field in fields),
+             job["job_id"], engine.profile_id, watcher_name),
         )
-        return any(_valid(dict(row), contract) for row in rows)
-    except (sqlite3.Error, ValueError, TypeError, KeyError):
+        return any(_valid(dict(row), minimum) for row in rows) and bool(
+            current_job(db, job["job_id"], engine.profile_id, watcher_name)
+        )
+    except (sqlite3.Error, ValueError, TypeError, KeyError, OSError):
         return False

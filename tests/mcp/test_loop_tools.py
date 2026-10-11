@@ -383,20 +383,20 @@ def test_the_pool_path_honours_the_answer_check_too():
 def _execution_contract(engine, tmp_path):
     import sys
 
-    from superlocalmemory.loops.execution_receipts import run_check
+    from superlocalmemory.loops.receipt_jobs import register_job, run_registered_check
 
-    receipt = run_check(
+    artifact = tmp_path / "build"
+    artifact.write_text("current revision")
+    job = register_job(
         engine.db,
         profile_id=engine.profile_id,
         task_id="build",
-        run_id="external",
+        watcher_name="wait-real",
         producer="independent-checker",
         command=[sys.executable, "-I", "-c", "print('passed')"],
         cwd=tmp_path,
+        artifact_paths=[artifact],
+        allow_prestart_evidence=True,
     )
-    contract = {
-        key: receipt[key]
-        for key in ("task_id", "run_id", "producer", "command_digest", "evidence_digest")
-    }
-    contract["min_timestamp"] = receipt["produced_at"]
-    return contract
+    run_registered_check(engine.db, job["job_id"])
+    return {"job_id": job["job_id"]}

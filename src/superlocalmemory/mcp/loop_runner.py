@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import UTC, datetime
 
 from superlocalmemory.loops import (
     Bounds,
@@ -46,7 +47,7 @@ def _external_locator(result):
 
 
 class Watcher:
-    def __init__(self, engine, pool, query, minimum, require_support, contract, agent):
+    def __init__(self, engine, pool, query, minimum, require_support, contract, agent, name=""):
         self.engine, self.pool, self.query = engine, pool, query
         self.minimum, self.require_support, self.contract, self.agent = (
             minimum,
@@ -54,6 +55,7 @@ class Watcher:
             contract,
             agent,
         )
+        self.name, self.started_at = name, datetime.now(UTC).isoformat()
 
     def _read(self):
         if self.pool is not None:
@@ -91,7 +93,10 @@ class Watcher:
             and reason != "judged_insufficient"
             and best >= self.minimum
             and (not self.require_support or answerable[0] == SUPPORTED)
-            and receipt_passes(self.engine, results, self.contract, self.agent)
+            and receipt_passes(
+                self.engine, results, self.contract, self.agent,
+                watcher_name=self.name, started_at=self.started_at,
+            )
         )
         detail = (
             f"recall '{self.query[:48]}': hits={len(results)} top={best:.3f} floor={floor} "
@@ -144,6 +149,7 @@ async def run_loop(
             require_support,
             gate_contract,
             get_current_agent_id(),
+            name,
         )
         bounds, poll = _limits(
             max_iterations, max_wallclock_s, poll_interval_s, max_tokens, no_progress_window

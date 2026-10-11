@@ -120,10 +120,11 @@ def register_loop_tools(
     ) -> dict:
         """Wait under hard bounds for independently executed verification.
 
-        DONE requires gate_contract: task_id, run_id, producer, min_timestamp,
-        command_digest; evidence_digest optionally pins the expected output.
-        Receipts are produced by the
-        operator-side loops.execution_receipts.run_check, never by remember.
+        DONE requires gate_contract={"job_id": <operator registration nonce>}.
+        The operator registers the current task revision, watcher name, approved
+        check and freshness via loops.receipt_jobs.register_job, then executes
+        run_registered_check. Older caller-selected contracts fail closed.
+        Pre-start evidence requires explicit permission in that registration.
         Recall locates context; related text or support alone cannot pass.
         require_support additionally requires a supported answer check.
         Each lap recalls at most three memories and asks the answer check once;

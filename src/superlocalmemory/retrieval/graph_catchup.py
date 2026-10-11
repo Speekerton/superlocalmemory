@@ -154,10 +154,24 @@ def read_watermark(db: Any) -> tuple[int, int] | None:
     harmless (graph_delta), missing one is not.
     """
     try:
-        head = changes.log_bounds(db)[0]
+        head = _log_bounds(db)[0]
         return head, _max_edge_rowid(db)
     except Exception:  # noqa: BLE001 -- no log: the slot cannot follow writes
         return None
+
+
+def _log_bounds(db: Any) -> tuple[int, int | None]:
+    """Two primary-key seeks in ONE read snapshot, rather than an aggregate scan.
+
+    SQLite optimizes a lone MIN or MAX, but scans every retained row when
+    both appear in one aggregate. Scalar subqueries preserve the atomic view
+    of the bounds and let each extrema seek stop after one row.
+    """
+    rows = db.execute(f"SELECT (SELECT MAX(seq) FROM {changes.TABLE}) AS head, "
+                      f"(SELECT MIN(seq) FROM {changes.TABLE}) AS oldest")
+    row = dict(rows[0]) if rows else {}
+    oldest = row.get("oldest")
+    return int(row.get("head") or 0), (int(oldest) if oldest is not None else None)
 
 
 def stamp(channel: Any, slot: Any, scope_key: tuple, watermark: tuple[int, int] | None,
@@ -328,7 +342,7 @@ def catch_up(channel: Any, scope_key: tuple, slot: Any, *, now: float) -> Any | 
     if slot.store_id != _store_identity(db):
         return None  # the file was replaced (restore): its log is another log
     try:
-        head, oldest = changes.log_bounds(db)
+        head, oldest = _log_bounds(db)
         top = _max_edge_rowid(db)
         removed_from = slot.removed_seq if slot.removed_seq is not None else slot.seq
         if head < removed_from:

@@ -61,7 +61,8 @@ from pathlib import Path
 #: M055 is additive (one learning.db column with a partial unique index and one
 #: new learning.db table for learning attribution); the ceiling moves to it by
 #: the same convention, with ``DOWNGRADE_FLOOR`` 51.
-SUPPORTED_SCHEMA_VERSION: int = 55
+#: M056 adds recall indexes only; the ceiling follows the newest migration.
+SUPPORTED_SCHEMA_VERSION: int = 58
 
 
 class SchemaVersionError(RuntimeError):

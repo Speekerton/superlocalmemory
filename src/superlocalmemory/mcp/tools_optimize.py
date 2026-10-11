@@ -29,7 +29,7 @@ from superlocalmemory.core.operation_request import OperationKind
 from superlocalmemory.mcp.agent_context import get_current_agent_id
 from superlocalmemory.mcp.remote_caller import current_remote_key_id
 from superlocalmemory.optimize.compress.ccr import CCRStore, _UUID4_RE
-from superlocalmemory.optimize.compress.router import CompressRouter
+from superlocalmemory.optimize.compress.router import CompressRouter, CompressTextResult
 from superlocalmemory.optimize.storage.db import CacheDB, _normalize_tenant_id
 from superlocalmemory.optimize.storage.provenance import active_profile_id
 
@@ -109,13 +109,16 @@ def register_optimize_tools(server) -> None:
     ) -> dict:
         """Compress text or tool output to reduce context window usage.
 
-        Returns compressed text. If lossy and reversible=True, also returns a
-        ccr_id — pass it to slm_retrieve to recover the exact original.
+        Returns compressed text. Whenever the returned text differs from the
+        input by even one byte and reversible=True, the original is stored and
+        a ccr_id is returned — pass it to slm_retrieve to recover the exact
+        original. ``byte_exact`` says whether the output IS the input.
 
         Args:
             content: Text to compress (max 1MB).
-            mode: "normalize" (lossless whitespace) | "auto" | "aggressive".
-            reversible: Store original in CCR for later retrieval.
+            mode: "normalize" (collapse 3+ blank lines in prose; code and
+                fenced code pass through byte-for-byte) | "auto" | "aggressive".
+            reversible: Keep the original in CCR whenever bytes change.
             ttl_seconds: CCR lifetime in seconds (default 24h).
         """
         try:
@@ -133,27 +136,28 @@ def register_optimize_tools(server) -> None:
                 note_parts.append("content over 1MB: ccr skipped")
 
             if mode == "normalize":
-                # @staticmethod — lossless whitespace collapse, no config/daemon dep.
+                # Blank-line collapse of prose only; code is passed through.
+                # Not "lossless": it changes bytes, so the original is kept
+                # below whenever it did (audit BRN-04).
                 normalized = CompressRouter._normalize_whitespace(content)
-                tb = len(content.split())
-                ta = len(normalized.split())
-                ratio = round(ta / tb, 4) if tb else 1.0
-                return {
-                    "ok": True, "compressed": normalized, "strategy": "normalize",
-                    "tokens_before": tb, "tokens_after": ta, "ratio": ratio,
-                    "lossy": False, "ccr_id": None,
-                    "note": " | ".join(note_parts) or None,
-                }
-
-            if mode == "aggressive":
-                note_parts.append(
-                    "aggressive mode requires daemon compress_mode=aggressive in config"
+                strategy = "normalize" if normalized != content else "none"
+                res = CompressTextResult(
+                    compressed_text=normalized, strategy=strategy,
+                    tokens_before=len(content.split()),
+                    tokens_after=len(normalized.split()),
+                    lossy=normalized != content,
                 )
+            else:
+                if mode == "aggressive":
+                    note_parts.append(
+                        "aggressive mode requires daemon compress_mode=aggressive "
+                        "in config"
+                    )
+                res = CompressRouter.get_instance().compress_text(content)
 
-            res = CompressRouter.get_instance().compress_text(content)
-
+            byte_exact = res.compressed_text == content
             ccr_id = None
-            if res.lossy and reversible:
+            if not byte_exact and reversible:
                 stored = CCRStore.get_instance().store(
                     content.encode("utf-8"),
                     tenant_id=_tenant(),
@@ -163,6 +167,8 @@ def register_optimize_tools(server) -> None:
                 ccr_id = stored or None
                 if ccr_id:
                     note_parts.append("reversible: call slm_retrieve with this ccr_id")
+                else:
+                    note_parts.append("original NOT stored: output is not recoverable")
 
             ratio = (
                 round(res.tokens_after / res.tokens_before, 4)
@@ -171,8 +177,8 @@ def register_optimize_tools(server) -> None:
             return {
                 "ok": True, "compressed": res.compressed_text, "strategy": res.strategy,
                 "tokens_before": res.tokens_before, "tokens_after": res.tokens_after,
-                "ratio": ratio, "lossy": res.lossy, "ccr_id": ccr_id,
-                "note": " | ".join(note_parts) or None,
+                "ratio": ratio, "lossy": res.lossy, "byte_exact": byte_exact,
+                "ccr_id": ccr_id, "note": " | ".join(note_parts) or None,
             }
 
         except Exception as exc:

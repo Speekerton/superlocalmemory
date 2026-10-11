@@ -30,8 +30,9 @@ one-shot command has no warm-up to rely on. The long-running daemon instead
 calls ``prefer_background_builds()``: there a build never runs on a recall's
 clock -- it starts beside the recall, which reports ``warming`` -- because on a
 just-started, loaded machine the cold build took 3-11 s of the first recalls.
-A removed memory is still never shaped into an answer by a stale graph
-(retrieval/adjacency_refresh).
+Once built, a slot follows writes by their size (retrieval/graph_catchup), so
+this module runs again only for a first build, a slot evicted from the LRU, or
+a slot whose currency the change log cannot prove.
 """
 
 from __future__ import annotations
@@ -41,7 +42,7 @@ import logging
 import threading
 from typing import Any
 
-from superlocalmemory.retrieval import adjacency_refresh as _refresh
+from superlocalmemory.retrieval import graph_catchup as _catchup
 
 logger = logging.getLogger(__name__)
 
@@ -127,12 +128,13 @@ def build_slot(channel: Any, scope_key: tuple, *, current_count: int,
     owned = bool(getattr(lock, "_is_owned", lambda: False)())
     saved = lock._release_save() if owned else None
     try:
-        seq = _refresh.log_head(channel._db)
+        watermark = _catchup.read_watermark(channel._db)  # before the load, always
         shadow = copy.copy(channel)  # the loader writes only its own fields
         profile_id, include_global, include_shared = scope_key
         slot = shadow._load_adjacency_from_db(
             profile_id, include_global=include_global, include_shared=include_shared,
             current_count=current_count, current_fact_count=current_fact_count, now=now)
+        slot = _catchup.stamp(channel, slot, scope_key, watermark, now=now)
     finally:
         if owned:
             lock._acquire_restore(saved)
@@ -141,8 +143,6 @@ def build_slot(channel: Any, scope_key: tuple, *, current_count: int,
     # Lock held again: install. Replacing an existing key keeps its old LRU
     # position, so the caller's move_to_end also counts the reload as a use.
     channel._adj_slots[scope_key] = slot
-    if seq is not None:
-        _refresh.note_loaded(channel, scope_key, seq)
     return slot
 
 

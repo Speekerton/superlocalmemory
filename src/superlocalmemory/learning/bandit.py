@@ -215,6 +215,24 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _clamp_reward(reward: Any) -> float | None:
+    """Reward clamped to [0, 1]; None when it is not a number."""
+    try:
+        value = float(reward)
+    except (TypeError, ValueError):
+        return None
+    return min(1.0, max(0.0, value))
+
+
+def _positive_weight(weight: Any) -> float:
+    """A usable IPS weight: non-positive or non-numeric becomes 1.0."""
+    try:
+        value = float(weight)
+    except (TypeError, ValueError):
+        return 1.0
+    return value if value > 0.0 else 1.0
+
+
 # ---------------------------------------------------------------------------
 # ContextualBandit
 # ---------------------------------------------------------------------------
@@ -360,130 +378,125 @@ class ContextualBandit:
         reward: float,
         kind: str = "proxy_position",
         weight: float = 1.0,
+        *,
+        outcome_id: str | None = None,
     ) -> bool:
         """Apply the reward to the (profile, stratum, arm) posterior.
 
-        ``weight`` scales how much this one observation counts, and exists for
-        inverse-propensity correction: the policy chose what was shown, so an
-        arm it almost always shows produces weak evidence whatever happens to
-        it, while one it rarely shows produces strong evidence. Weighting by
-        the inverse of that probability is what keeps the posterior from
-        recording popularity the policy manufactured. See ``propensity.py``.
-
-        A weight of 1.0 is the uncorrected update and the default, so a caller
-        with no competitor posteriors to estimate against changes nothing.
-
-        Returns True on success. Never raises — DB failures logged at WARN.
-        Cache invalidated on success (B5).
+        ``weight``: inverse-propensity scale (``propensity.py``); 1.0 = plain.
+        ``outcome_id``: the reported outcome spent on this play, written in the
+        SAME transaction as the posterior change under a unique index (M055),
+        so one outcome settles one play across passes, restarts and concurrent
+        settlers (audit BRN-11); a second claim is refused and nothing moves.
+        Returns True on success. Never raises. Cache invalidated (B5).
         """
-        try:
-            reward_f = float(reward)
-        except (TypeError, ValueError):
+        reward_f = _clamp_reward(reward)
+        if reward_f is None:
             logger.warning("bandit.update: non-numeric reward, ignoring")
             return False
-        # Clamp reward ∈ [0, 1].
-        if reward_f < 0.0:
-            reward_f = 0.0
-        elif reward_f > 1.0:
-            reward_f = 1.0
-
-        try:
-            weight_f = float(weight)
-        except (TypeError, ValueError):
-            weight_f = 1.0
-        # A non-positive weight would either freeze the arm or subtract
-        # evidence; neither is a meaningful observation.
-        if weight_f <= 0.0:
-            weight_f = 1.0
-
+        weight_f = _positive_weight(weight)
         try:
             conn = _conn_for(self._db_path)
         except sqlite3.Error as exc:  # pragma: no cover — defensive
             logger.warning("bandit.update: cannot open db: %s", exc)
             return False
-
         try:
-            row = conn.execute(
-                "SELECT profile_id, stratum, arm_id, settled_at, settlement_type "
-                "FROM bandit_plays WHERE play_id = ?",
-                (int(play_id),),
-            ).fetchone()
-        except sqlite3.Error as exc:
-            logger.warning("bandit.update: lookup failed: %s", exc)
+            touched = self._transact(conn, int(play_id), reward_f, kind,
+                                     weight_f, outcome_id)
+        except sqlite3.IntegrityError:
+            logger.info("bandit.update: outcome %s already spent", outcome_id)
             return False
-
-        if row is None:
-            logger.warning("bandit.update: play_id %s not found", play_id)
+        except sqlite3.OperationalError as exc:
+            if outcome_id and "outcome_id" in str(exc):
+                # A store M055 has not reached: settle without the durable
+                # spend record rather than not at all, and say so.
+                logger.warning("bandit.update: no outcome ledger (M055 "
+                               "pending); spend is not durable")
+                return self.update(play_id, reward_f, kind, weight_f)
+            logger.warning("bandit.update: write failed: %s", exc)
             return False
-        if row["settled_at"] is not None:
-            # Idempotent no-op: already settled.
-            return False
-
-        profile_id = row["profile_id"]
-        stratum = row["stratum"]
-        arm_id = row["arm_id"]
-        now = _now_iso()
-        cap = self._alpha_cap
-
-        if row["settlement_type"] == ORDER_REPLACED:
-            return self._settle_without_arm(conn, int(play_id), reward_f, kind, now)
-
-        try:
-            # Ensure an arm row exists with prior (1,1). INSERT OR IGNORE is
-            # cheap — PK composite guarantees uniqueness.
-            conn.execute(
-                "INSERT OR IGNORE INTO bandit_arms "
-                "(profile_id, stratum, arm_id, alpha, beta, plays, "
-                " last_played_at) VALUES (?, ?, ?, 1.0, 1.0, 0, ?)",
-                (profile_id, stratum, arm_id, now),
-            )
-            # B2: MIN(cap, value) clamp.
-            conn.execute(
-                "UPDATE bandit_arms "
-                "SET alpha = MIN(?, alpha + ?), "
-                "    beta  = MIN(?, beta  + ?), "
-                "    plays = plays + 1, "
-                "    last_played_at = ? "
-                "WHERE profile_id = ? AND stratum = ? AND arm_id = ?",
-                (cap, weight_f * reward_f, cap, weight_f * (1.0 - reward_f),
-                 now, profile_id, stratum, arm_id),
-            )
-            conn.execute(
-                "UPDATE bandit_plays "
-                "SET reward = ?, settled_at = ?, settlement_type = ? "
-                "WHERE play_id = ?",
-                (reward_f, now, str(kind), int(play_id)),
-            )
         except sqlite3.Error as exc:
             logger.warning("bandit.update: write failed: %s", exc)
             return False
-
-        # B5: invalidate the (profile, stratum) cache entry.
-        try:
-            self._cache.invalidate(profile_id, stratum)
-        except Exception:  # pragma: no cover — defensive
-            pass
+        if touched is None:
+            return False
+        if touched:
+            try:
+                self._cache.invalidate(*touched)
+            except Exception:  # pragma: no cover — defensive
+                pass
         return True
 
-    @staticmethod
-    def _settle_without_arm(conn: sqlite3.Connection, play_id: int, reward: float,
-                            kind: str, now: str) -> bool:
-        """Close a play whose order was replaced: reward recorded, arm untouched.
-
-        Returns True so a caller still credits the memories the outcome named —
-        the person did see them; only the ORDER was not the arm's.
-        """
+    def _transact(self, conn: sqlite3.Connection, play_id: int,
+                  reward_f: float, kind: str, weight_f: float,
+                  outcome_id: str | None):
+        """``_apply_update`` inside BEGIN IMMEDIATE; rolls back on any error."""
+        conn.execute("BEGIN IMMEDIATE")
         try:
-            cur = conn.execute(
-                "UPDATE bandit_plays "
-                "SET reward = ?, settled_at = ?, settlement_type = ? "
-                "WHERE play_id = ? AND settled_at IS NULL",
-                (reward, now, f"{kind}:{ORDER_REPLACED}", play_id),
+            touched = self._apply_update(conn, play_id, reward_f, kind,
+                                         weight_f, outcome_id)
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        conn.execute("COMMIT")
+        return touched
+
+    def _apply_update(
+        self, conn: sqlite3.Connection, play_id: int, reward_f: float,
+        kind: str, weight_f: float, outcome_id: str | None,
+    ) -> tuple[str, str] | tuple[()] | None:
+        """The writes of one settlement, inside the caller's transaction.
+
+        Returns ``None`` when nothing was settled, ``()`` when the play closed
+        without touching an arm, else the (profile, stratum) to invalidate.
+        """
+        row = conn.execute(
+            "SELECT profile_id, stratum, arm_id, settled_at, settlement_type "
+            "FROM bandit_plays WHERE play_id = ?", (play_id,),
+        ).fetchone()
+        if row is None:
+            logger.warning("bandit.update: play_id %s not found", play_id)
+            return None
+        if row["settled_at"] is not None:
+            return None  # idempotent no-op: already settled
+        now = _now_iso()
+        if row["settlement_type"] == ORDER_REPLACED:
+            kind = f"{kind}:{ORDER_REPLACED}"
+        else:
+            self._bump_arm(conn, row, reward_f, weight_f, now)
+        if outcome_id:
+            conn.execute(
+                "UPDATE bandit_plays SET reward = ?, settled_at = ?, "
+                "settlement_type = ?, outcome_id = ? WHERE play_id = ?",
+                (reward_f, now, str(kind), str(outcome_id), play_id),
             )
-        except sqlite3.Error as exc:
-            logger.warning("bandit.update: write failed: %s", exc)
-            return False
-        return bool(cur.rowcount)
+        else:
+            conn.execute(
+                "UPDATE bandit_plays SET reward = ?, settled_at = ?, "
+                "settlement_type = ? WHERE play_id = ?",
+                (reward_f, now, str(kind), play_id),
+            )
+        if row["settlement_type"] == ORDER_REPLACED:
+            return ()
+        return (row["profile_id"], row["stratum"])
+
+    def _bump_arm(self, conn: sqlite3.Connection, row: sqlite3.Row,
+                  reward_f: float, weight_f: float, now: str) -> None:
+        """Fold one weighted reward into the play's arm (B2: capped)."""
+        cap = self._alpha_cap
+        conn.execute(
+            "INSERT OR IGNORE INTO bandit_arms "
+            "(profile_id, stratum, arm_id, alpha, beta, plays, "
+            " last_played_at) VALUES (?, ?, ?, 1.0, 1.0, 0, ?)",
+            (row["profile_id"], row["stratum"], row["arm_id"], now),
+        )
+        conn.execute(
+            "UPDATE bandit_arms SET alpha = MIN(?, alpha + ?), "
+            "beta = MIN(?, beta + ?), plays = plays + 1, last_played_at = ? "
+            "WHERE profile_id = ? AND stratum = ? AND arm_id = ?",
+            (cap, weight_f * reward_f, cap, weight_f * (1.0 - reward_f),
+             now, row["profile_id"], row["stratum"], row["arm_id"]),
+        )
 
     def mark_order_replaced(self, play_id: int) -> bool:
         """Say that what this play showed first was not the arm's order.

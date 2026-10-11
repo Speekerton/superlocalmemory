@@ -402,6 +402,8 @@ button { font-family: inherit; }
    ============================================================ */
 .grid { display: grid; gap: 16px; }
 .kpi-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+/* Five-card strips (health page: daemon, learning, DB, math, mesh) wrap by width. */
+.kpi-strip.kpi-5 { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
 .kpi {
   padding: 18px 20px; position: relative; overflow: hidden;
 }

@@ -1186,6 +1186,13 @@ class MemoryEngine:
 
         pid = profile_id or self._profile_id
 
+        # One identity for this recall, allocated before ranking so the bandit
+        # play, any shadow-test assignment and the outcome ticket all carry the
+        # id the caller gets back (audit BRN-13: they used to be two UUIDs).
+        import uuid as _uuid
+
+        answer_id = _uuid.uuid4().hex
+
         from superlocalmemory.core.recall_pipeline import run_recall
         try:
             response = run_recall(
@@ -1209,6 +1216,7 @@ class MemoryEngine:
                 include_unknown=include_unknown,
                 answer_check=answer_check,
                 facets=facets,
+                query_id=answer_id,
             )
         except Exception:
             # Diagnostics are intentionally not recorded here.  A recall is a
@@ -1233,21 +1241,18 @@ class MemoryEngine:
         # allowed to influence ranking stays a separate, explicit setting that
         # remains off unless an operator turns it on.
         try:
-            import uuid
-
             from superlocalmemory.learning.outcome_queue import (
                 RecallEvent,
                 enqueue_recall,
             )
 
-            # A fresh id per answer, put on the response as well as the
+            # The id allocated above, put on the response as well as the
             # ticket. `calibration_id` was the obvious candidate and is wrong:
             # it is None on most paths, and an empty join key is exactly the
             # state that made all 162 recorded outcomes unmatchable. Returning
             # it is what makes it useful -- until an answer carried its own
             # name, no caller could quote one back, so an outcome could only
             # ever be matched by guessing from overlapping memories.
-            answer_id = uuid.uuid4().hex
             try:
                 response.query_id = answer_id
             except Exception:  # noqa: BLE001 -- an older response shape

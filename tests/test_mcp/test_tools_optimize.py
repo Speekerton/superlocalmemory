@@ -63,49 +63,84 @@ def _reset_kv_counters():
 
 
 async def test_compress_lossless_no_ccr(tools, monkeypatch):
-    """ok:True, strategy in {normalize,none}, ccr_id is None when lossy=False."""
+    """Output identical to the input: byte_exact, nothing stored."""
     from superlocalmemory.optimize.compress.router import CompressTextResult
 
+    text = "some text to compress"
     mock_router = MagicMock()
     mock_router.compress_text.return_value = CompressTextResult(
-        compressed_text="short",
+        compressed_text=text,
         strategy="none",
-        tokens_before=10,
-        tokens_after=8,
+        tokens_before=4,
+        tokens_after=4,
         lossy=False,
     )
     mock_cr = MagicMock()
     mock_cr.get_instance.return_value = mock_router
     monkeypatch.setattr("superlocalmemory.mcp.tools_optimize.CompressRouter", mock_cr)
 
-    result = await tools["slm_compress"](content="some text to compress")
+    result = await tools["slm_compress"](content=text)
 
     assert result["ok"] is True
     assert result["strategy"] in {"normalize", "none"}
     assert result["ccr_id"] is None
     assert result["lossy"] is False
+    assert result["byte_exact"] is True
     assert "tokens_before" in result
     assert "tokens_after" in result
 
 
-# ─── Test 2: mode="normalize" always lossless, uses real _normalize_whitespace ─
+# ─── Test 2: mode="normalize" changes bytes → the original is kept (BRN-04) ─
 
 
-async def test_compress_normalize_mode_lossless(tools):
-    """mode=normalize → lossless, calls _normalize_whitespace directly (no engine).
+async def test_compress_normalize_mode_keeps_the_original(tools, monkeypatch):
+    """A byte-changing normalize is NOT reported lossless, and is recoverable."""
+    stored: dict[str, bytes] = {}
+    fake_id = str(uuid.uuid4())
 
-    _normalize_whitespace: collapses 3+ consecutive newlines to 2, strips trailing
-    spaces per line. It does NOT collapse inline spaces.
-    """
-    result = await tools["slm_compress"](
-        content="line1   \nline2  \n\n\nline3",  # trailing spaces + 3-newline run
-        mode="normalize",
-    )
+    class _Store:
+        def store(self, data, **kw):
+            stored[fake_id] = data
+            return fake_id
+
+    monkeypatch.setattr(
+        "superlocalmemory.mcp.tools_optimize.CCRStore.get_instance",
+        lambda: _Store())
+    content = "line1   \nline2  \n\n\nline3"  # prose with a 3-newline run
+    result = await tools["slm_compress"](content=content, mode="normalize")
     assert result["ok"] is True
     assert result["strategy"] == "normalize"
-    assert result["lossy"] is False
+    assert "\n\n\n" not in result["compressed"]
+    assert result["byte_exact"] is False
+    assert result["lossy"] is True
+    assert result["ccr_id"] == fake_id
+    assert stored[fake_id] == content.encode("utf-8")
+
+
+async def test_normalize_passes_executable_code_through_byte_for_byte(tools):
+    """The audit's fixture: a string literal holding newlines, then an assert."""
+    code = (
+        'payload = """first\n\n\nlast"""\n'
+        'assert payload.count("\\n") == 3\n'
+    )
+    namespace: dict = {}
+    exec(compile(code, "<fixture>", "exec"), namespace)  # original passes
+    result = await tools["slm_compress"](content=code, mode="normalize")
+    assert result["compressed"] == code
+    assert result["byte_exact"] is True and result["lossy"] is False
     assert result["ccr_id"] is None
-    assert "\n\n\n" not in result["compressed"]  # 3+ newlines collapsed
+    exec(compile(result["compressed"], "<fixture>", "exec"), {})
+
+
+async def test_normalize_leaves_fenced_code_byte_exact(tools, monkeypatch):
+    monkeypatch.setattr(
+        "superlocalmemory.mcp.tools_optimize.CCRStore.get_instance",
+        lambda: MagicMock(store=lambda *a, **k: str(uuid.uuid4())))
+    fence = "```python\ns = 1\n\n\n\nt = 2\n```"
+    content = f"Intro\n\n\n\nmore\n\n{fence}\n\n\n\nend"
+    result = await tools["slm_compress"](content=content, mode="normalize")
+    assert fence in result["compressed"]
+    assert result["compressed"].startswith("Intro\n\nmore")
 
 
 # ─── Test 3: lossy path → ccr_id is UUID4 ────────────────────────────────────

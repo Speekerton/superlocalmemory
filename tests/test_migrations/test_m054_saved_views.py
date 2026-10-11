@@ -57,7 +57,7 @@ def test_registered_eager_on_learning() -> None:
     assert m.db_target == "learning" == M054.DB_TARGET
     assert _MODULES[M054.NAME] is M054
     assert not [d for d in mr.DEFERRED_MIGRATIONS if d.name == M054.NAME]
-    assert sv.SUPPORTED_SCHEMA_VERSION == 54
+    assert sv.SUPPORTED_SCHEMA_VERSION >= 54  # 55 since M055 (learning attribution)
     assert M054.BREAKING_VERSION == 0
 
 

@@ -61,6 +61,15 @@ CREATE UNIQUE INDEX idx_model_active_one
     ON learning_model_state(profile_id) WHERE is_active = 1;
 CREATE UNIQUE INDEX idx_model_candidate_one
     ON learning_model_state(profile_id) WHERE is_candidate = 1;
+CREATE TABLE shadow_assignments (
+    candidate_id    INTEGER NOT NULL,
+    query_id        TEXT NOT NULL,
+    profile_id      TEXT NOT NULL,
+    arm             TEXT NOT NULL,
+    served_model_id INTEGER,
+    assigned_at     TEXT NOT NULL,
+    PRIMARY KEY (candidate_id, query_id)
+);
 """
 
 
@@ -241,7 +250,7 @@ def test_shadow_router_promote_on_decide_promote(
     class _FakeShadowTest:
         def __init__(self, *a, **kw):
             pass
-        def record_recall_pair(self, **kw):
+        def record_observation(self, **kw):
             called["n"] += 1
         def decide(self):
             return "promote", {"effect": 0.1}
@@ -251,9 +260,9 @@ def test_shadow_router_promote_on_decide_promote(
     router._shadow = _FakeShadowTest()
     router._candidate_id = cand_id
 
-    router.on_recall_settled(
-        query_id="q1", arm="candidate", ndcg_at_10=0.9,
-    )
+    # Only a recall SERVED under the test is credited (BRN-01).
+    assert router.assign("q1", active_model_id=None) is not None
+    router.on_recall_settled(query_id="q1", reward=0.9)
 
     # Promotion fired — candidate flag cleared on lineage_state row.
     with sqlite3.connect(learning_db) as conn:
@@ -452,7 +461,7 @@ def test_auto_rollback_after_promote_on_regression_window(
     # Force the shadow decide to 'promote' after any recorded pair.
     class _PromoteImmediately:
         def __init__(self, *a, **kw): pass
-        def record_recall_pair(self, **kw): pass
+        def record_observation(self, **kw): pass
         def decide(self): return "promote", {"effect": 0.2}
 
     monkeypatch.setattr(sr_mod, "ShadowTest", _PromoteImmediately)
@@ -460,9 +469,8 @@ def test_auto_rollback_after_promote_on_regression_window(
     router._candidate_id = cand_id
 
     # Step 1 — fire promotion.
-    router.on_recall_settled(
-        query_id="q-promote", arm="candidate", ndcg_at_10=0.9,
-    )
+    assert router.assign("q-promote", active_model_id=active_id) is not None
+    router.on_recall_settled(query_id="q-promote", reward=0.9)
 
     # After promotion, candidate flag should clear; cand_id is now active.
     with sqlite3.connect(learning_db) as conn:
@@ -525,16 +533,15 @@ def test_promote_then_clear_watch_window_on_success(
 
     class _PromoteImmediately:
         def __init__(self, *a, **kw): pass
-        def record_recall_pair(self, **kw): pass
+        def record_observation(self, **kw): pass
         def decide(self): return "promote", {"effect": 0.2}
 
     monkeypatch.setattr(sr_mod, "ShadowTest", _PromoteImmediately)
     router._shadow = _PromoteImmediately()
     router._candidate_id = cand_id
 
-    router.on_recall_settled(
-        query_id="q-promote", arm="candidate", ndcg_at_10=0.9,
-    )
+    assert router.assign("q-promote", active_model_id=active_id) is not None
+    router.on_recall_settled(query_id="q-promote", reward=0.9)
     router.arm_post_promotion_watch(baseline_ndcg=0.8)
     # 200 observations matching baseline — no regression.
     for i in range(200):
@@ -572,15 +579,14 @@ def test_watch_window_needs_200_observations_before_rollback(
 
     class _PromoteImmediately:
         def __init__(self, *a, **kw): pass
-        def record_recall_pair(self, **kw): pass
+        def record_observation(self, **kw): pass
         def decide(self): return "promote", {"effect": 0.2}
 
     monkeypatch.setattr(sr_mod, "ShadowTest", _PromoteImmediately)
     router._shadow = _PromoteImmediately()
     router._candidate_id = cand_id
-    router.on_recall_settled(
-        query_id="q-promote", arm="candidate", ndcg_at_10=0.9,
-    )
+    assert router.assign("q-promote", active_model_id=active_id) is not None
+    router.on_recall_settled(query_id="q-promote", reward=0.9)
     router.arm_post_promotion_watch(baseline_ndcg=0.8)
 
     # Feed 199 regressions — below watch window. Rollback must NOT fire.

@@ -9,7 +9,8 @@ import re
 from superlocalmemory.retrieval.source_assertions import affirmative_sentences
 
 RULE_ID = "requested-slot-v2"
-_STOP = frozenset("what which who is are the a an of for used called named employee person".split())
+_STOP = frozenset("what which who is are the a an of for to be do as with by in on from "
+                  "used called named employee person".split())
 _UNCERTAIN = re.compile(
     r"\b(not|never|no|unknown|if|unless|may|might|said|claims?|whether)\b", re.I
 )
@@ -29,13 +30,14 @@ def supports_slot(question: str, memory: str) -> bool:
     usage = _USAGE.fullmatch(question.strip())
     person = _PERSON.fullmatch(question.strip())
     for sentence in affirmative_sentences(memory):
-        if usage and re.search(
-            rf"^\s*{re.escape(usage[1])}\s+"
-            r"(?:exposes|provides|converts|serves|is used (?:for|to))\s+\w.+$",
-            sentence,
-            re.I,
-        ):
-            return True
+        if usage:
+            purpose = re.fullmatch(
+                rf"\s*{re.escape(usage[1])}\s+"
+                r"(?:exposes|provides|converts|serves|is used (?:for|to))\s+(?P<value>.+)",
+                sentence, re.I,
+            )
+            if purpose and _words(purpose["value"]):
+                return True
         if person and _words(person[1]) <= _words(sentence):
             # Require a named subject and the exact requested predicate.
             if re.fullmatch(

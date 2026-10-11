@@ -33,3 +33,24 @@ def test_ambiguous_document_context_preserves_the_classifier(question, memory):
     verdict = settle(question, [memory], SufficiencyVerdict((0.1,), 0.6, "fixture"))
     assert verdict.rule_support == ()
     assert verdict.insufficient
+
+
+INCOMPLETE_USES = [
+    "AgentAssay provides for.", "AgentAssay serves as.", "AgentAssay is used for the.",
+]
+
+
+@pytest.mark.parametrize("memory", INCOMPLETE_USES)
+def test_function_words_do_not_fill_a_usage_slot(memory):
+    verdict = settle("What is AgentAssay used for?", [memory],
+                     SufficiencyVerdict((0.1,), 0.6, "fixture"))
+    assert verdict.rule_support == ()
+    assert verdict.insufficient
+
+
+def test_negative_contraction_in_the_document_keeps_the_rejecting_classifier():
+    verdict = settle("Who approved the deployment?", [
+        "Alice Chen approved the deployment. Alice didn't approve the deployment.",
+    ], SufficiencyVerdict((0.1,), 0.6, "fixture"))
+    assert verdict.rule_support == ()
+    assert verdict.insufficient

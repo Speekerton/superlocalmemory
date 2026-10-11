@@ -4,7 +4,7 @@
 import re
 
 _UNCERTAIN = re.compile(
-    r"\b(not|never|no|neither|nor|without|unknown|if|unless|may|might|could|would|"
+    r"\b(not|never|no|none|nothing|cannot|neither|nor|without|unknown|if|unless|may|might|could|would|"
     r"said|says|claims?|whether|reportedly|false|denied|incorrect|suppose|"
     r"draft|rejected|proposal|proposed|example|quoted|read|wrote|pending|undecided)\b", re.I,
 )
@@ -29,7 +29,7 @@ def assertion_sentences(memory):
 
 
 def affirmative_sentences(memory):
-    if _UNCERTAIN.search(memory):
+    if _UNCERTAIN.search(memory) or re.search(r"\b\w+n['’]t\b", memory, re.I):
         return ()  # ambiguity or denial anywhere in the document defeats a source proof
     return tuple(sentence for sentence in assertion_sentences(memory)
                  if not _UNCERTAIN.search(sentence))

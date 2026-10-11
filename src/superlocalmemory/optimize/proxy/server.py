@@ -12,6 +12,7 @@ from fastapi.requests import Request
 from fastapi.responses import Response
 
 from superlocalmemory import __version__
+from superlocalmemory.core.outbound_http import GatedAsyncClient
 from superlocalmemory.optimize.config.schema import OptimizeConfig
 from superlocalmemory.optimize.proxy.lifecycle import HookChain
 
@@ -37,12 +38,12 @@ class ProxyApp:
     def __init__(self, config: OptimizeConfig) -> None:
         self.config = config
         self.hooks: HookChain = HookChain.empty()
-        self.http_client: httpx.AsyncClient | None = None
+        self.http_client: GatedAsyncClient | None = None
         self._request_counter: int = 0
         self._counter_lock = asyncio.Lock()
 
     async def startup(self) -> None:
-        self.http_client = httpx.AsyncClient(
+        self.http_client = GatedAsyncClient(
             timeout=httpx.Timeout(
                 connect=_CONNECT_TIMEOUT_S,
                 read=_REQUEST_TIMEOUT_S,
@@ -53,7 +54,6 @@ class ProxyApp:
                 max_connections=_MAX_CONNECTIONS,
                 max_keepalive_connections=_MAX_KEEPALIVE,
             ),
-            follow_redirects=False,
         )
         self.hooks = _load_hooks(self.config)
         logger.info(

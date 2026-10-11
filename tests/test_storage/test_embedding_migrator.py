@@ -15,7 +15,6 @@ import pytest
 
 from superlocalmemory.storage.embedding_migrator import (
     _NO_MODEL,
-    _REINDEX_BATCH_SIZE,
     EmbeddingMigrationAborted,
     _model_signature,
     _read_stored_signature,

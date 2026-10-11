@@ -27,8 +27,6 @@ from __future__ import annotations
 import threading
 import time
 
-import pytest
-
 from superlocalmemory.core.engine import _embedder_is_warm
 
 

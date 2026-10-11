@@ -25,13 +25,12 @@ the production write boundary -- that is ``unified_daemon.py``'s
 ``unified_daemon.py`` and must not be removed.
 """
 
-import json
 import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware

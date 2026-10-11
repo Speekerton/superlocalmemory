@@ -659,7 +659,6 @@ def run_wizard(auto: bool = False) -> None:
         print(f"  Invalid choice '{choice}', using Mode A.")
         choice = "a"
 
-    from superlocalmemory.core.config import SLMConfig
     from superlocalmemory.storage.models import Mode
 
     mode_map = {"a": Mode.A, "b": Mode.B, "c": Mode.C}

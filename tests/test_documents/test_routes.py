@@ -5,11 +5,9 @@ from __future__ import annotations
 import base64
 from types import SimpleNamespace
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from superlocalmemory.documents import status as status_mod
 from superlocalmemory.documents.submit import DocumentReceipt, submit_document
 from superlocalmemory.media import open_media_store
 from superlocalmemory.server import write_governance

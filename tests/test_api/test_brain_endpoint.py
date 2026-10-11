@@ -469,7 +469,6 @@ def test_real_preferences_loader(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
     """Exercise _load_raw_preferences real path via a fake behavioral module."""
-    import importlib
     from superlocalmemory.server.routes import brain as brain_mod
 
     # Create a learning DB file so the ``exists`` guard passes.

@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import json
-import os
 from argparse import Namespace
-from pathlib import Path
 
 import pytest
 
@@ -37,7 +35,6 @@ def test_connect_orchestrates_all_detected(tmp_path, fake_recall, monkeypatch,
 
     from superlocalmemory.cli.context_commands import (
         build_default_adapters,
-        cmd_connect_cross_platform,
     )
     from superlocalmemory.hooks.ide_connector import CrossPlatformConnector
 

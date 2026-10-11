@@ -16,7 +16,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -40,7 +40,6 @@ class TestFindOrphans:
             ReaperConfig,
             SlmProcessInfo,
             find_orphans,
-            find_slm_processes,
         )
 
         config = ReaperConfig(orphan_age_threshold_hours=0.0)

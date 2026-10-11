@@ -422,6 +422,19 @@ def build_evidence(
     }
 
 
+def _render_evidence(evidence: dict[str, Any]) -> str:
+    """Keep each client/check on one line so release diffs remain bounded."""
+    fields = []
+    for key, value in sorted(evidence.items()):
+        if isinstance(value, list):
+            rows = ["    " + json.dumps(row, sort_keys=True) for row in value]
+            rendered = "[\n" + ",\n".join(rows) + "\n  ]"
+        else:
+            rendered = json.dumps(value, indent=2, sort_keys=True).replace("\n", "\n  ")
+        fields.append(f"  {json.dumps(key)}: {rendered}")
+    return "{\n" + ",\n".join(fields) + "\n}\n"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[1])
@@ -431,7 +444,7 @@ def main() -> int:
     repo = args.repo.resolve()
     manifest = load_manifest(args.manifest or repo / "ide/integration-contracts.json")
     evidence = build_evidence(repo, manifest)
-    rendered = json.dumps(evidence, indent=2, sort_keys=True) + "\n"
+    rendered = _render_evidence(evidence)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(rendered, encoding="utf-8")

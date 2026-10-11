@@ -167,7 +167,9 @@ class SLMFastMCP(MCPServer):
         return [tool for tool in await super().list_tools() if self._tool_enabled(tool.name)]
 
     async def call_tool(self, name, arguments, context=None):
-        if not self._tool_enabled(name):
+        # Host selection is an invocation boundary. Feature availability only
+        # controls discovery: media handlers own actionable opt-in refusals.
+        if self._slm_allowed is not None and name not in self._slm_allowed:
             raise ValueError("This tool is not enabled for this connection")
         return await super().call_tool(name, arguments, context)
 

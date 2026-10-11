@@ -10,6 +10,7 @@ tracks them without rescanning the event table on each recall.
 from __future__ import annotations
 
 import sqlite3
+from contextlib import contextmanager
 
 NAME = "M057_temporal_retrieval_version"
 DB_TARGET = "memory"
@@ -26,6 +27,24 @@ def _unsafe(prefix: str = "") -> str:
             "'[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' THEN 1 ELSE 0 END")
 
 
+def _forget(prefix: str) -> str:
+    return f"""
+    UPDATE temporal_retrieval_version SET uncacheable=uncacheable-
+        EXISTS(SELECT 1 FROM temporal_uncacheable_events WHERE event_id={prefix}event_id)
+        WHERE id=1;
+    DELETE FROM temporal_uncacheable_events WHERE event_id={prefix}event_id;
+    """
+
+
+def _remember_new() -> str:
+    return f"""
+    UPDATE temporal_retrieval_version SET version=version+1,
+        uncacheable=uncacheable+({_unsafe('NEW.')}) WHERE id=1;
+    INSERT OR IGNORE INTO temporal_uncacheable_events
+        SELECT NEW.event_id WHERE ({_unsafe('NEW.')})=1;
+    """
+
+
 DDL = f"""
 CREATE INDEX IF NOT EXISTS idx_temporal_uncacheable ON temporal_events(event_id)
     WHERE ({_unsafe()})=1;
@@ -33,19 +52,20 @@ CREATE TABLE IF NOT EXISTS temporal_retrieval_version (
     id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL,
     uncacheable INTEGER NOT NULL
 );
-INSERT OR IGNORE INTO temporal_retrieval_version
-    SELECT 1,0,COALESCE(SUM({_unsafe()}),0) FROM temporal_events;
+INSERT OR IGNORE INTO temporal_retrieval_version VALUES (1,0,0);
+CREATE TABLE IF NOT EXISTS temporal_uncacheable_events (event_id TEXT PRIMARY KEY);
 CREATE TRIGGER IF NOT EXISTS trg_temporal_slice_insert AFTER INSERT ON temporal_events BEGIN
-    UPDATE temporal_retrieval_version SET version=version+1,
-        uncacheable=(SELECT COUNT(*) FROM temporal_events WHERE ({_unsafe()})=1) WHERE id=1;
+    {_forget('NEW.')}
+    {_remember_new()}
 END;
 CREATE TRIGGER IF NOT EXISTS trg_temporal_slice_delete AFTER DELETE ON temporal_events BEGIN
-    UPDATE temporal_retrieval_version SET version=version+1,
-        uncacheable=(SELECT COUNT(*) FROM temporal_events WHERE ({_unsafe()})=1) WHERE id=1;
+    {_forget('OLD.')}
+    UPDATE temporal_retrieval_version SET version=version+1 WHERE id=1;
 END;
 CREATE TRIGGER IF NOT EXISTS trg_temporal_slice_update AFTER UPDATE ON temporal_events BEGIN
-    UPDATE temporal_retrieval_version SET version=version+1,
-        uncacheable=(SELECT COUNT(*) FROM temporal_events WHERE ({_unsafe()})=1) WHERE id=1;
+    {_forget('OLD.')}
+    {_forget('NEW.')}
+    {_remember_new()}
 END;
 CREATE TRIGGER IF NOT EXISTS trg_temporal_slice_fact_delete AFTER DELETE ON atomic_facts BEGIN
     UPDATE temporal_retrieval_version SET version=version+1 WHERE id=1;
@@ -65,23 +85,64 @@ _TRIGGERS = tuple(f"trg_temporal_slice_{suffix}" for suffix in
                   ("insert", "delete", "update", "fact_delete", "fact_insert", "fact_update"))
 
 
+def _statements() -> list[str]:
+    statements, pending = [], ""
+    for line in DDL.splitlines(keepends=True):
+        pending += line
+        if sqlite3.complete_statement(pending):
+            statements.append(pending.strip())
+            pending = ""
+    return statements
+
+
+def _normal(sql: str) -> str:
+    return " ".join(sql.replace("IF NOT EXISTS ", "").split()).casefold().rstrip(";")
+
+
+def _recount(conn: sqlite3.Connection) -> None:
+    """Bootstrap / repair only. Row writes use indexed membership deltas.
+
+    Membership survives INSERT OR REPLACE's implicit delete even when SQLite
+    suppresses delete triggers (recursive_triggers=OFF, the product default).
+    It also handles UPDATE OR REPLACE, ignored inserts and rolled-back writes.
+    """
+    conn.execute("DELETE FROM temporal_uncacheable_events")
+    conn.execute("INSERT INTO temporal_uncacheable_events SELECT event_id "
+                 f"FROM temporal_events WHERE ({_unsafe()})=1")
+    conn.execute("UPDATE temporal_retrieval_version SET version=version+1,uncacheable="
+                 "(SELECT COUNT(*) FROM temporal_uncacheable_events) WHERE id=1")
+
+
+@contextmanager
+def _atomic(conn: sqlite3.Connection):
+    conn.execute("SAVEPOINT m057_setup")
+    try:
+        yield
+    except BaseException:
+        conn.execute("ROLLBACK TO m057_setup")
+        raise
+    finally:
+        conn.execute("RELEASE m057_setup")
+
+
 def apply(conn: sqlite3.Connection) -> None:
-    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    if {"temporal_events", "atomic_facts"} <= tables:
-        statement = ""
-        for line in DDL.splitlines(keepends=True):
-            statement += line
-            if sqlite3.complete_statement(statement):
+    with _atomic(conn):
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if {"temporal_events", "atomic_facts"} <= tables:
+            for statement in _statements():
                 conn.execute(statement)
-                statement = ""
+            if "temporal_uncacheable_events" not in tables:
+                _recount(conn)
 
 
 def verify(conn: sqlite3.Connection) -> bool:
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     if not {"temporal_events", "atomic_facts"} <= tables:
         return True
-    names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
-    return ("temporal_retrieval_version" in tables and set(_TRIGGERS) <= names
+    triggers = dict(conn.execute("SELECT name,sql FROM sqlite_master WHERE type='trigger'"))
+    expected = {s.split()[5]: _normal(s) for s in _statements() if s.startswith("CREATE TRIGGER")}
+    return ({"temporal_retrieval_version", "temporal_uncacheable_events"} <= tables
+            and all(_normal(triggers.get(name, "")) == sql for name, sql in expected.items())
             and bool(conn.execute("SELECT 1 FROM sqlite_master "
                                   "WHERE name='idx_temporal_uncacheable'").fetchone())
             and bool(conn.execute("SELECT 1 FROM temporal_retrieval_version WHERE id=1")
@@ -89,8 +150,10 @@ def verify(conn: sqlite3.Connection) -> bool:
 
 
 def repair(conn: sqlite3.Connection) -> None:
-    apply(conn)
-    exists = conn.execute("SELECT 1 FROM sqlite_master WHERE name='temporal_retrieval_version'")
-    if exists.fetchone():
-        conn.execute("UPDATE temporal_retrieval_version SET version=version+1,uncacheable="
-                     f"(SELECT COALESCE(SUM({_unsafe()}),0) FROM temporal_events) WHERE id=1")
+    with _atomic(conn):
+        for name in _TRIGGERS:
+            conn.execute(f"DROP TRIGGER IF EXISTS {name}")
+        apply(conn)
+        exists = conn.execute("SELECT 1 FROM sqlite_master WHERE name='temporal_retrieval_version'")
+        if exists.fetchone():
+            _recount(conn)

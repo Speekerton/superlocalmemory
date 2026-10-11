@@ -184,7 +184,7 @@ _EXPECTED_SCHEMA_VERSION: int = 58
 # 52 as of 4.1.20: +M053_answer_check_history (eager, learning.db, additive).
 # 53 as of 4.1.21: +M054_saved_views (eager, learning.db, additive).
 # 54 as of 4.1.25: +M055_learning_attribution (eager, learning.db, additive).
-# 57 as of WP-4b: +M056, M057, M058 (eager, memory.db, additive).
+# 57 as of WP-4b: +M056, M057, M058 (deferred, memory.db, additive).
 _EXPECTED_MIGRATION_COUNT: int = 57
 
 #: Path to an installed reference package's migrations directory, if one exists.

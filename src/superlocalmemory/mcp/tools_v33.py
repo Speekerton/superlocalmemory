@@ -164,6 +164,8 @@ def register_v33_tools(server, get_engine: Callable) -> None:
         Args:
             dry_run: If True, compute stats but don't apply changes.
         """
+        from dataclasses import replace
+
         try:
             engine = get_engine()
             pid = engine.profile_id
@@ -177,7 +179,8 @@ def register_v33_tools(server, get_engine: Callable) -> None:
             )
 
             ebbinghaus = EbbinghausCurve(engine._config.forgetting)
-            polar = PolarQuantEncoder(engine._config.quantization.polar)
+            polar = PolarQuantEncoder(replace(engine._config.quantization.polar,
+                                              dimension=engine._config.embedding.dimension))
             qjl = QJLEncoder(engine._config.quantization.qjl)
             qstore = QuantizedEmbeddingStore(
                 engine._db, polar, qjl, engine._config.quantization,

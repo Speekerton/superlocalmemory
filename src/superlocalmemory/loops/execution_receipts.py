@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import subprocess
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+
+from superlocalmemory.loops.private_workspace import execution_environment
 
 _SCHEMA = (
     "CREATE TABLE IF NOT EXISTS loop_execution_receipts ("
@@ -46,7 +47,8 @@ def _execution(command, cwd, timeout):
             cwd=cwd,
             timeout=timeout,
             shell=False,
-            env={"PATH": os.defpath, "HOME": str(Path(cwd).resolve())},
+            env=execution_environment(cwd),
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
         )
@@ -91,23 +93,41 @@ def run_check(
         if not isinstance(value, str) or not value.strip():
             raise ValueError("Execution identity fields must be nonempty strings")
     exit_code, stdout, stderr = _execution(command, cwd, min(max(float(timeout), 0.1), 60))
-    proof = validate_result() if validate_result is not None else None
-    measurement = {"exit_code": exit_code, "stdout": stdout, "stderr": stderr}
-    if proof is not None:
-        measurement["admission"] = proof
-    evidence = json.dumps(measurement, sort_keys=True)
+    if validate_result is not None:
+        validate_result()
+    receipt = _measurement(profile_id, task_id, run_id, producer,
+                           command_digest(command, cwd), exit_code, stdout, stderr)
+    _store(db, receipt)
+    return receipt
+
+
+def _measurement(profile_id, task_id, run_id, producer, digest, exit_code, stdout, stderr):
+    evidence = json.dumps(
+        {"exit_code": exit_code, "stdout": stdout, "stderr": stderr}, sort_keys=True)
     receipt = dict(
         receipt_id=uuid.uuid4().hex,
         profile_id=profile_id,
         task_id=task_id,
         run_id=run_id,
         producer=producer,
-        command_digest=command_digest(command, cwd),
+        command_digest=digest,
         verdict="PASS" if exit_code == 0 else "FAIL",
         exit_code=exit_code,
         produced_at=datetime.now(UTC).isoformat(),
         evidence_digest=hashlib.sha256(evidence.encode()).hexdigest(),
         evidence=evidence,
     )
+    return receipt
+
+
+def _run_registered(db, job, command, cwd, timeout, validate_result):
+    """Only this runner signs, after the complete validation callback returns."""
+    from superlocalmemory.loops.execution_guard import _sign_receipt
+
+    result = _execution(command, cwd, min(max(float(timeout), 0.1), 60))
+    validate_result()
+    receipt = _measurement(job["profile_id"], job["task_id"], job["run_id"], job["producer"],
+                           job["command_digest"], *result)
+    _sign_receipt(job, receipt)
     _store(db, receipt)
     return receipt

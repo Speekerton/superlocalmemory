@@ -6,6 +6,7 @@ import json
 import shutil
 from pathlib import Path
 
+from superlocalmemory.server.backup_restore_txn import IN_PROGRESS
 from superlocalmemory.server.config_file import read_config
 from superlocalmemory.storage._durable_json import read_json
 
@@ -32,7 +33,7 @@ def prune(root: Path) -> None:
     pending = read_json(root / "backup-recovery-outcome.json") or {}
     protected = (
         {pending.get("id"), pending.get("safety_id")}
-        if pending.get("state") in ("queued", "stopping", "restoring")
+        if pending.get("state") in IN_PROGRESS
         else set()
     )
     for record in points(root)[maximum:]:

@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.background import BackgroundTask
 
 from superlocalmemory.server import backup_bundle as bundles
+from superlocalmemory.server.backup_restore_txn import IN_PROGRESS
 from superlocalmemory.server.config_file import update_config
 from superlocalmemory.storage._durable_json import read_json, write_json_atomic
 
@@ -154,7 +155,7 @@ def recovery_restore(request: Request, body: PointBody):
     root = _root()
 
     def reserve(status):
-        if status.get("state") in ("queued", "stopping", "restoring"):
+        if status.get("state") in IN_PROGRESS:
             raise HTTPException(409, "A recovery is already in progress.")
         status.clear()
         status.update({"state": "queued", "id": body.id})

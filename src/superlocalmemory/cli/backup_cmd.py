@@ -7,6 +7,8 @@
   slm backup recovery-key            show this computer's recovery key
   slm backup recovery-key --import   put a recovery key on this computer
   slm backup decrypt FILE [-o OUT]   turn a downloaded backup into a .db file
+  slm backup restore-safety-copy     put back the safety copy a failed dashboard
+                                     restore left (service stopped)
 
 A recovery key is only ever read from stdin (or a hidden prompt), never from
 the command line, so it stays out of shell history and the process list.
@@ -49,16 +51,51 @@ def add_backup_parser(sub: Any) -> None:
     dec_p.add_argument("--force", action="store_true", help="Overwrite the output file")
     dec_p.add_argument("--json", action="store_true", help="Output JSON")
 
+    safe_p = backup_sub.add_parser(
+        "restore-safety-copy",
+        help="Put back the safety copy a failed dashboard restore kept (service stopped)",
+    )
+    safe_p.add_argument("--id", default=None,
+                        help="Recovery point to restore (default: the last restore's safety copy)")
+    safe_p.add_argument("--json", action="store_true", help="Output JSON")
+
 
 def cmd_backup(args: argparse.Namespace) -> None:
     from superlocalmemory.infra.backup_crypto import BackupCryptoError
+    from superlocalmemory.server.backup_restore_txn import RolledBack, StoreBusy
 
-    handlers = {"status": _status, "recovery-key": _recovery_key, "decrypt": _decrypt}
+    handlers = {"status": _status, "recovery-key": _recovery_key, "decrypt": _decrypt,
+                "restore-safety-copy": _restore_safety_copy}
     handler = handlers.get(getattr(args, "backup_command", None) or "status")
     try:
         handler(args)
-    except (BackupCryptoError, FileExistsError, FileNotFoundError) as exc:
+    except (BackupCryptoError, FileExistsError, FileNotFoundError, ValueError) as exc:
         _fail(args, str(exc))
+    except StoreBusy:
+        _fail(args, "SuperLocalMemory is running. Stop it with `slm serve stop`, then retry.")
+    except RolledBack:
+        _fail(args, "The safety copy could not be restored; nothing was changed.")
+
+
+def _data_root() -> Path:
+    from superlocalmemory.core.config import SLMConfig
+
+    return Path(SLMConfig.load().db_path).parent
+
+
+def _restore_safety_copy(args: argparse.Namespace) -> None:
+    from superlocalmemory.server.backup_restore_txn import OUTCOME_NAME, recover_safety_copy
+    from superlocalmemory.storage._durable_json import read_json
+
+    root = _data_root()
+    point_id = args.id or (read_json(root / OUTCOME_NAME) or {}).get("safety_id")
+    if not point_id:
+        raise ValueError("No safety copy is recorded. Pass --id with a recovery point.")
+    result = recover_safety_copy(root, str(point_id))
+    _emit(args, result, (
+        f"Safety copy {result['restored']} restored. The state just before this command "
+        f"was kept as recovery point {result['safety_id']}. Start the service with "
+        "`slm serve start`."))
 
 
 def _status(args: argparse.Namespace) -> None:

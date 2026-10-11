@@ -238,7 +238,12 @@ def _merge_settings(current, restored):
             current[key] = value
 
 
-def restore_point(root: Path, point_id: str) -> None:
+def restore_point(root: Path, point_id: str, *, settings: bool = True) -> None:
+    """Restore the stores (and, unless ``settings`` is False, the settings) of a point.
+
+    ``settings=False`` is the rollback path: the caller puts the settings
+    files back byte for byte instead of merging them.
+    """
     root = Path(root)
     manifest = verify_point(root, point_id)
     point = _point_dir(root, point_id)
@@ -260,6 +265,12 @@ def restore_point(root: Path, point_id: str) -> None:
         offline = BackupCoordinator(MANAGED_DATABASES, root, Path(isolated))
         offline.restore_from_manifest(native)
     carry_forward(root, accounts)
+    if settings:
+        _restore_settings(root, point)
+    _restore_surviving_originals(root, point, manifest)
+
+
+def _restore_settings(root: Path, point: Path) -> None:
     for name in SETTINGS:
         src = point / "settings" / name
         if src.is_file():
@@ -270,7 +281,6 @@ def restore_point(root: Path, point_id: str) -> None:
         from superlocalmemory.core.config import SLMConfig
 
         SLMConfig.write_current_mode(mode, root)
-    _restore_surviving_originals(root, point, manifest)
 
 
 def _restore_surviving_originals(root, point, manifest):

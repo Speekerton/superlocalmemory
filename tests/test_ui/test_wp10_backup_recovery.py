@@ -223,7 +223,9 @@ def test_recovery_worker_stops_before_restore_and_restarts_after(tmp_path, monke
     calls = []
     monkeypatch.setattr(worker, "control", lambda root, action: calls.append(action))
     monkeypatch.setattr(worker, "wait_stopped", lambda pid: calls.append("stopped"))
-    monkeypatch.setattr(worker, "restore_point", lambda root, point_id: calls.append("restore"))
+    monkeypatch.setattr(
+        worker, "restore_atomically", lambda root, point_id, safety: calls.append("restore")
+    )
     worker.run(tmp_path, point["id"], 123)
     assert calls == ["stop", "stopped", "restore", "start"]
     assert (
@@ -240,13 +242,17 @@ def test_recovery_worker_never_restores_if_stop_fails(tmp_path, monkeypatch):
         raise RuntimeError("stop refused")
 
     monkeypatch.setattr(worker, "control", refused)
-    monkeypatch.setattr(worker, "restore_point", lambda *args: calls.append("restore"))
+    monkeypatch.setattr(worker, "restore_atomically", lambda *args: calls.append("restore"))
     worker.run(tmp_path, "fixture", 123)
     assert "restore" not in calls
     assert json.loads((tmp_path / "backup-recovery-outcome.json").read_text())["state"] == "failed"
 
 
-def test_failed_erasure_replay_never_restarts_the_restored_store(tmp_path, monkeypatch):
+def test_failed_erasure_replay_never_restarts_a_store_it_could_not_roll_back(
+    tmp_path, monkeypatch
+):
+    from superlocalmemory.server.backup_restore_txn import RollbackFailed
+
     worker = importlib.import_module("superlocalmemory.server.backup_restore_worker")
     calls = []
     monkeypatch.setattr(worker, "verify_point", lambda *args: {})
@@ -255,8 +261,8 @@ def test_failed_erasure_replay_never_restarts_the_restored_store(tmp_path, monke
     monkeypatch.setattr(worker, "create_point", lambda root: {"id": "0123456789abcdef"})
 
     def replay_failed(*args):
-        raise RuntimeError("erasure replay failed")
+        raise RollbackFailed("erasure replay failed, then the rollback failed")
 
-    monkeypatch.setattr(worker, "restore_point", replay_failed)
+    monkeypatch.setattr(worker, "restore_atomically", replay_failed)
     worker.run(tmp_path, "fixture", 123)
     assert calls == ["stop"]

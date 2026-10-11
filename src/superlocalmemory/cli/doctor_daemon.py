@@ -57,6 +57,7 @@ def check_daemon() -> DaemonCheck:
 
 def _fetch_json(record: DaemonDescriptor, path: str, timeout: float) -> dict | None:
     """One direct loopback request, no redirects/proxies, capped and closed."""
+    import os
     import urllib.request
 
     from superlocalmemory.core import outbound_http
@@ -65,6 +66,9 @@ def _fetch_json(record: DaemonDescriptor, path: str, timeout: float) -> dict | N
     if path != "/health":
         headers = {"X-SLM-Daemon-Capability": record.capability,
                    "X-SLM-Target-Instance": record.instance_id}
+        user_session = os.environ.get("SLM_USER_SESSION", "").strip()
+        if user_session:
+            headers["X-SLM-User-Session"] = user_session
     request = urllib.request.Request(f"http://127.0.0.1:{record.port}{path}", headers=headers)
     try:
         with outbound_http.urlopen(request, timeout=max(0.001, timeout)) as response:

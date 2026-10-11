@@ -13,6 +13,28 @@ from superlocalmemory.cli.doctor_daemon import HEALTH_TIMEOUT, check_daemon
 from superlocalmemory.infra.daemon_identity import build_descriptor, write_descriptor
 
 
+def test_feature_probe_preserves_explicit_user_session(free_port, monkeypatch):
+    from unittest.mock import MagicMock
+
+    from superlocalmemory.cli.doctor_daemon import MAX_HEALTH_BYTES, _fetch_json
+    from superlocalmemory.core import outbound_http
+
+    record = build_descriptor(port=free_port, version="test")
+    monkeypatch.setenv("SLM_USER_SESSION", "synthetic-diagnostic-session")
+    response = MagicMock()
+    response.__enter__.return_value = response
+    response.read.return_value = b'{"media": {}}'
+    open_url = MagicMock(return_value=response)
+    monkeypatch.setattr(outbound_http, "urlopen", open_url)
+    assert _fetch_json(record, "/api/v3/features", 0.2) == {"media": {}}
+    headers = dict(open_url.call_args.args[0].header_items())
+    assert headers["X-slm-user-session"] == "synthetic-diagnostic-session"
+    assert headers["X-slm-daemon-capability"] == record.capability
+    assert headers["X-slm-target-instance"] == record.instance_id
+    response.read.assert_called_once_with(MAX_HEALTH_BYTES + 1)
+    response.__exit__.assert_called_once()
+
+
 @pytest.mark.parametrize("behavior", ["silent", "stream", "large", "features", "healthy"])
 def test_whole_diagnostic_has_one_deadline(free_port, behavior):
     record = build_descriptor(port=free_port, version="test", pid=os.getpid())

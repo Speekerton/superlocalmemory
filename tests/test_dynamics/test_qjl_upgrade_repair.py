@@ -171,3 +171,25 @@ def test_repair_uses_effective_codec_dimension(legacy_store):
     scheduler._config = replace(scheduler._config, polar=replace(
         scheduler._config.polar, dimension=768))
     assert scheduler.run_eap_cycle("default")["repaired"] == 1
+
+
+def test_doctor_classifies_prior_configuration_header_before_legacy_size(legacy_store):
+    from superlocalmemory.cli.doctor_quantization import qjl_finding
+    from superlocalmemory.math.qjl import QJLEncoder
+    from superlocalmemory.storage.qjl_repair import repair_status
+
+    db, _, scheduler, config = legacy_store
+    prior = QJLEncoder(replace(config.quantization.qjl, projection_dim=32))
+    payload = prior.encode_residual(np.ones(16))
+    assert payload.startswith(b"QJL1")
+    assert len(payload) == (config.quantization.qjl.projection_dim + 7) // 8
+    db.execute("UPDATE polar_embeddings SET qjl_bits=? WHERE fact_id='repairable'", (payload,))
+    assert repair_status(db, "default", config.quantization) == {
+        "repair_needed": 2, "legacy": 1, "incompatible": 1, "unrecoverable": 1,
+    }
+    with patch.object(SLMConfig, "load", return_value=config):
+        status, detail, fix = qjl_finding(db.db_path)
+    assert status == "WARN"
+    assert detail == "2 need repair (1 legacy, 1 incompatible); 1 need re-embedding"
+    assert "slm quantize --execute" in fix
+    assert scheduler.run_eap_cycle("default")["repaired"] == 1

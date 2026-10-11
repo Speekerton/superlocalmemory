@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from superlocalmemory.math.qjl import _unpack_payload
+from superlocalmemory.math.qjl import _HEADER, _VERSION, _unpack_payload
 from superlocalmemory.storage.embedding_codec import decode_embedding
 
 if TYPE_CHECKING:
@@ -25,7 +25,13 @@ logger = logging.getLogger(__name__)
 
 
 def _reason(payload: bytes | None, projection_dim: int) -> str:
-    if not payload or len(payload) == (projection_dim + 7) // 8:
+    if not payload:
+        return "legacy"
+    sign_size = (projection_dim + 7) // 8
+    if payload.startswith(_VERSION):
+        if len(payload) != _HEADER.size + sign_size:
+            return "incompatible"
+    elif len(payload) == sign_size:
         return "legacy"
     try:
         _unpack_payload(bytes(payload), projection_dim)

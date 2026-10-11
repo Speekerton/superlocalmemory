@@ -72,14 +72,18 @@ ANSWER_CHECK_DETAILS = frozenset({"settings_changed",
     DETAIL_BUDGET, DETAIL_REUSED, DETAIL_MEDIA_UNJUDGED,
 })
 
+_COMPLETE_BUDGET_NOTE = (
+    "Answer check did not run: retrieval used the recall's time budget, so "
+    "there was no time left to ask. The results are complete; only the verdict is missing."
+)
+
 #: One plain sentence per way the check can end without a verdict. A recall
 #: that was not checked must never read like one that was: ``abstained`` is
 #: False on both, so the note (and ``answer_check_ran``) is what tells them apart.
 _NOT_CHECKED = "Answer check did not run"
 _SKIP_NOTES = {
     DETAIL_BUDGET: (f"{_NOT_CHECKED}: retrieval used the recall's time budget, so "
-                    "there was no time left to ask. The results are complete; only "
-                    "the verdict is missing."),
+                    "there was no time left to ask. Returned matches were not checked."),
     DETAIL_NOT_A_QUESTION: f"{_NOT_CHECKED}: this recall loads context, it is not a question.",
     DETAIL_NO_RESULTS: f"{_NOT_CHECKED}: nothing was found to check.",
     DETAIL_OTHER_PROFILE: (f"{_NOT_CHECKED}: the online check would have read a memory "
@@ -148,13 +152,16 @@ class AnswerCheckTrace:
     total_ms: float          # pipeline start -> the response is returned
 
 
-def answer_check_note(status: object, detail: object = DETAIL_NONE) -> str:
+def answer_check_note(status: object, detail: object = DETAIL_NONE, *,
+                      retrieval_complete: bool = False) -> str:
     """The sentence a person reads when the check gave no verdict; "" otherwise.
 
     "" for ``judged`` (the verdict speaks) and ``off`` (nothing is configured,
     so nothing is missing).
     """
     if status == STATUS_SKIPPED:
+        if detail == DETAIL_BUDGET and retrieval_complete:
+            return _COMPLETE_BUDGET_NOTE
         return _SKIP_NOTES.get(detail, f"{_NOT_CHECKED}.")  # type: ignore[arg-type]
     if status == STATUS_BUSY:
         return (f"{_NOT_CHECKED}: the on-device check was answering another recall "

@@ -25,7 +25,7 @@ def test_lexical_fallback_explicitly_says_full_retrieval_was_unavailable():
 
 
 def test_true_check_only_skip_retains_complete_results_explanation():
-    assert "results are complete" in answer_check_note("skipped", "budget")
+    assert "results are complete" in answer_check_note("skipped", "budget", retrieval_complete=True)
 
 
 def test_completed_retrieval_survives_slow_source_context_assembly(monkeypatch):

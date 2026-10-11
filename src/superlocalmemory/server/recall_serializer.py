@@ -324,90 +324,59 @@ def serialize_recall_response(
 
 
 def recall_response_metadata(response: Any) -> dict:
-    """Return Score Contract v2 response metadata for transport envelopes."""
-    # T-inject: a one-line temporal frame anchoring the result set to "now"
-    # and its age span, so time-blind LLMs get an explicit recency signal.
-    _timestamps = [
-        getattr(getattr(r, "fact", None), "created_at", "") or ""
-        for r in (getattr(response, "results", None) or [])
-    ]
-    from superlocalmemory.retrieval.answer_check_status import (
-        ANSWER_CHECK_DETAILS,
-        answer_check_note,
-    )
-    _check_status = getattr(response, "answer_check_status", "skipped") or "skipped"
-    _check_detail = getattr(response, "answer_check_detail", "") or ""
-    if _check_detail not in ANSWER_CHECK_DETAILS:
-        _check_detail = ""
-    from superlocalmemory.retrieval.answerability import of_response as _answerable
+    """Shared score, retrieval and check metadata for every transport envelope."""
+    return {**_score_metadata(response), **_retrieval_metadata(response),
+            **_check_metadata(response),
+            "project_scope": getattr(response, "project_scope", None),
+            "tag_scope": getattr(response, "tag_scope", None)}
 
-    _answerability = _answerable(response)
+
+def _score_metadata(response):
+    timestamps = [getattr(getattr(r, "fact", None), "created_at", "") or ""
+                  for r in (getattr(response, "results", None) or [])]
     return {
         "score_contract_version": getattr(response, "score_contract_version", "2"),
         "calibration_status": getattr(response, "calibration_status", "uncalibrated"),
         "calibration_id": getattr(response, "calibration_id", None),
-        # The name of this answer. A caller that reports back how the answer
-        # went can quote it, and the report then joins to this exact recall
-        # instead of being matched by overlapping memory ids.
         "query_id": getattr(response, "query_id", "") or "",
         "answer_confidence": getattr(response, "answer_confidence", None),
         "abstained": bool(getattr(response, "abstained", False)),
         "abstention_reason": getattr(response, "abstention_reason", None),
-        "temporal_frame": temporal_frame(_timestamps),
-        # Q2b: thematic community summary (pure pass-through; computed upstream
-        # in the engine where DB access is available). None on most recalls.
+        "temporal_frame": temporal_frame(timestamps),
         "thematic_context": getattr(response, "community_context", None),
-        # Channels abandoned at the hang guard, so their candidates are absent
-        # from this answer. Empty on a healthy recall, which is the normal case.
-        # Non-empty is the one situation in which asking the same question twice
-        # may legitimately give different answers, so it has to travel with the
-        # response rather than living only in a server log — otherwise a caller
-        # comparing two runs has no way to tell an incomplete answer from a
-        # changed one. A list, because JSON has no tuple.
-        "incomplete_channels": list(
-            getattr(response, "incomplete_channels", ()) or ()
-        ),
-        # What became of every channel. Travels with the answer for the same
-        # reason as the field above: a caller comparing two runs, or an
-        # operator looking at a thin result set, otherwise cannot tell a store
-        # with nothing to say from a retrieval path that is partly down.
+    }
+
+
+def _retrieval_metadata(response):
+    return {
+        "incomplete_channels": list(getattr(response, "incomplete_channels", ()) or ()),
         "channel_status": dict(getattr(response, "channel_status", {}) or {}),
-        # 4.1.25 (N-11): seconds the entity graph was behind the store (0.0 =
-        # current; None = the graph did not run). A boost computed on a graph
-        # that is behind can differ from the next one, so it travels too.
         "graph_lag_s": getattr(response, "graph_lag_s", None),
-        # Who chose the final order. "jev_listwise" when the online answer
-        # check reordered it, which is not perfectly repeatable — so, like the
-        # two fields above, it travels with the answer. ``local_reranker_status``
-        # keeps what the local reranking step did; empty when nothing replaced it.
-        "reranker_status": getattr(response, "reranker_status", "not_configured")
-        or "not_configured",
+        "reranker_status": (getattr(response, "reranker_status", "not_configured")
+                            or "not_configured"),
         "local_reranker_status": getattr(response, "local_reranker_status", "") or "",
-        # What became of the answer check on this recall: judged / off /
-        # skipped / busy / warming / unavailable. A verdict that is absent
-        # because the check was busy or still loading is not "nothing
-        # answers", so — like the fields above — it travels with the answer.
-        "answer_check_status": _check_status,
-        # 4.1.20: a recall that was not checked must never read like one that
-        # was (``abstained`` is False on both). ``answer_check_ran`` says which;
-        # ``answer_check_reason`` is the closed-set why (or "reused" when the
-        # verdict repeats an identical earlier check); ``answer_check_note`` is
-        # the sentence to show a person, "" when there is nothing to explain.
-        "answer_check_ran": _check_status == "judged",
-        "answer_check_reason": _check_detail,
-        "answer_check_note": answer_check_note(_check_status, _check_detail),
-        # 4.1.22: supported / unsupported / unjudged, and why (retrieval/
-        # answerability). ``abstained: false`` never means "checked"; this does.
-        "answerability": _answerability[0],
-        "answerability_reason": _answerability[1],
-        # 4.1.21 (#150): what the recall's project did. ``filter.applied``
-        # False means ``project`` matched nothing found for the question and
-        # the results are NOT narrowed to it; ``note`` says so in words. None
-        # when the recall named no project.
-        "project_scope": getattr(response, "project_scope", None),
-        # 4.1.22: what the recall's ``tags`` filter did. ``applied`` is
-        # always True for tags (a hard filter that never falls back);
-        # ``reason``/``note`` are only present when ``matched`` is 0. None
-        # when the recall named no tags.
-        "tag_scope": getattr(response, "tag_scope", None),
+    }
+
+
+def _check_metadata(response):
+    from superlocalmemory.retrieval.answer_check_status import (
+        ANSWER_CHECK_DETAILS,
+        answer_check_note,
+    )
+    from superlocalmemory.retrieval.answerability import of_response
+    from superlocalmemory.retrieval.channel_status import is_fault
+
+    status = getattr(response, "answer_check_status", "skipped") or "skipped"
+    detail = getattr(response, "answer_check_detail", "") or ""
+    if detail not in ANSWER_CHECK_DETAILS:
+        detail = ""
+    answerability = of_response(response)
+    complete = (not getattr(response, "incomplete_channels", ()) and not any(
+        is_fault(state) for state in (getattr(response, "channel_status", {}) or {}).values()))
+    return {
+        "answer_check_status": status,
+        "answer_check_ran": status == "judged",
+        "answer_check_reason": detail,
+        "answer_check_note": answer_check_note(status, detail, retrieval_complete=complete),
+        "answerability": answerability[0], "answerability_reason": answerability[1],
     }

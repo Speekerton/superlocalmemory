@@ -32,6 +32,18 @@ def _targets(db: Any, profile_id: str, fact_ids: Sequence[str]) -> list[tuple[st
     return found
 
 
+def _contents(db: Any, profile_id: str, ids: Sequence[str]) -> list[str]:
+    """The words about to be erased, kept only to find cached copies of them."""
+    out: list[str] = []
+    for i in range(0, len(ids), _CHUNK):
+        chunk = list(ids[i:i + _CHUNK])
+        rows = db.execute(
+            "SELECT content FROM atomic_facts WHERE profile_id = ? "
+            f"AND fact_id IN ({','.join('?' * len(chunk))})", (profile_id, *chunk))
+        out.extend(str(dict(r).get("content") or "") for r in rows)
+    return out
+
+
 def erase_facts(gdpr: Any, fact_ids: Sequence[str], profile_id: str, subject_id: str) -> dict[str, Any]:
     """Erase these facts of one profile; ``counts["erasure_complete"]`` says whether every owner proved it."""
     from superlocalmemory.compliance.erased_cases import delete_erased_facts
@@ -47,6 +59,7 @@ def erase_facts(gdpr: Any, fact_ids: Sequence[str], profile_id: str, subject_id:
         counts["erasure_complete"] = 1
         return counts
     ids = [fid for fid, _ in targets]
+    texts = _contents(db, profile_id, ids)
     named = {fid: erasure_scrub.entities_of(db, profile_id, fid) for fid in ids}
     erasure_scrub.prepare(db)
     op_id = uuid.uuid4().hex
@@ -61,6 +74,7 @@ def erase_facts(gdpr: Any, fact_ids: Sequence[str], profile_id: str, subject_id:
     if not receipt.all_erased:
         counts["vector_store_failures"] = sum(1 for p in receipt.proofs if not p.erased)
     gdpr._erase_fact_keyed_tables_for(ids, counts)
+    gdpr._erase_cached_copies(profile_id, texts, counts)
     delete_erased_facts(db, targets, profile_id, erasure_id=op_id,
                         has_siblings=gdpr._memory_has_siblings, counts=counts)
     try:
@@ -69,6 +83,7 @@ def erase_facts(gdpr: Any, fact_ids: Sequence[str], profile_id: str, subject_id:
     except Exception as exc:  # noqa: BLE001 - reported in the counts
         logger.error("targeted erase: text scrub failed (%s)", type(exc).__name__)
         counts["text_scrub_failed"] = 1
-    failed = ("vector_store_failures", "text_scrub_failed", *(f"{t}_failed" for t, _ in gdpr._FACT_KEYED_TABLES))
-    counts["erasure_complete"] = 0 if any(counts.get(m) for m in failed) else 1
+    from superlocalmemory.compliance import erasure_outcome
+
+    counts["erasure_complete"] = 0 if erasure_outcome.remaining_markers(counts, data_only=True) else 1
     return counts

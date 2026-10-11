@@ -36,7 +36,7 @@ def tools(monkeypatch):
     rows: dict[tuple[str, str], bytes] = {}
     by_key: dict[str, str] = {}
 
-    def _set(cache_key, tenant_id, value_bytes, *, model, ttl_expires, tags):
+    def _set(cache_key, tenant_id, value_bytes, *, model, ttl_expires, tags, profile_id=""):
         rows[(cache_key, tenant_id)] = value_bytes
         by_key[cache_key] = tenant_id
 

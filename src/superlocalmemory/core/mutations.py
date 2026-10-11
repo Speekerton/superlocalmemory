@@ -138,7 +138,12 @@ def _sync_vector_ann(
     elif operation == "delete":
         if vector_store is not None:
             try:
-                vector_store.delete(fact_id)
+                from superlocalmemory.retrieval.vector_store import classify_delete
+
+                if classify_delete(vector_store.delete(fact_id)).failed:
+                    # The erasure receipt (VectorOwner) reports the residue; say so here too.
+                    logger.warning(
+                        "vector_store.delete failed for %s: a vector may remain", fact_id[:16])
             except Exception as exc:
                 logger.warning("vector_store.delete failed for %s: %s", fact_id[:16], exc)
         if ann_index is not None:

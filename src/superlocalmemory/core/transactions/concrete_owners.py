@@ -526,7 +526,12 @@ class VectorOwner(_FactScopedOwner):
 
     def _remove(self, context: OperationContext, fact_id: str) -> None:
         if self._vector_store is not None and hasattr(self._vector_store, "delete"):
-            self._vector_store.delete(fact_id)
+            from superlocalmemory.retrieval.vector_store import classify_delete
+
+            # A failed delete is an error of this owner, not "nothing to remove":
+            # the erasure receipt must not read as clean on the strength of it.
+            if classify_delete(self._vector_store.delete(fact_id)).failed:
+                raise RuntimeError(f"vector delete failed for {fact_id}")
         else:
             self._db.execute(
                 "DELETE FROM embedding_metadata WHERE fact_id = ?", (fact_id,)

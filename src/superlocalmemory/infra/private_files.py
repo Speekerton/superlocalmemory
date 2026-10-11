@@ -92,6 +92,32 @@ def create_private_file(path: Path) -> None:
     _restrict(path, _FILE_MODE)
 
 
+def open_private_new(path: Path) -> int:
+    """Create ``path`` as a NEW owner-only file and return its descriptor.
+
+    For a file that will hold personal data and is named by a person (an export).
+    Anything already at ``path`` is removed first, a symbolic link as the link
+    and not its target, so the new file never inherits broad permissions from an
+    old one and a planted link cannot redirect the write. The file is created
+    exclusively and without following links, then restricted again for
+    platforms where the creation mode is not enough.
+    """
+    path = Path(path)
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+    flags = (os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+             | getattr(os, "O_BINARY", 0))
+    fd = os.open(str(path), flags, _FILE_MODE)
+    try:
+        _restrict(path, _FILE_MODE)
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
 def make_private_dir(path: Path) -> None:
     """Create ``path`` (and parents); the folder itself is owner-only on POSIX."""
     path = Path(path)
@@ -235,6 +261,7 @@ __all__ = [
     "copy_private",
     "create_private_file",
     "make_private_dir",
+    "open_private_new",
     "tighten_private_files",
     "tighten_tree",
 ]

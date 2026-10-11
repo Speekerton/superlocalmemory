@@ -233,7 +233,7 @@ async def test_kv_set_get_hit_miss_and_tenant_isolation(tools, monkeypatch):
     """KV hit, miss, tenant isolation: agent_a key unreachable as agent_b."""
     store: dict = {}
 
-    def _set(cache_key, tenant_id, value_bytes, *, model, ttl_expires, tags):
+    def _set(cache_key, tenant_id, value_bytes, *, model, ttl_expires, tags, profile_id=""):
         store[(cache_key, tenant_id)] = value_bytes
 
     def _get_value(cache_key, tenant_id):
@@ -329,7 +329,7 @@ async def test_stats_after_kv_hit_increments_counter(tools, monkeypatch):
 
     store: dict = {}
 
-    def _set(cache_key, tenant_id, value_bytes, *, model, ttl_expires, tags):
+    def _set(cache_key, tenant_id, value_bytes, *, model, ttl_expires, tags, profile_id=""):
         store[(cache_key, tenant_id)] = value_bytes
 
     def _get_value(cache_key, tenant_id):

@@ -23,59 +23,6 @@ from superlocalmemory.core.derived_cache_policy import clears_derived_cache
 
 logger = logging.getLogger(__name__)
 
-# C1 — Backup residue obligations
-# Imported lazily inside methods to avoid circular-import risk at module load.
-# The sentinel guards against environments where infra.backup_obligations is
-# unavailable (e.g. minimal test installs); compliance logic degrades safely.
-_BACKUP_OBLIGATIONS_AVAILABLE: bool | None = None
-
-
-def _get_backup_obligations_module():
-    """Lazy import guard — returns module or None if unavailable."""
-    global _BACKUP_OBLIGATIONS_AVAILABLE
-    try:
-        import superlocalmemory.infra.backup_obligations as _m
-        _BACKUP_OBLIGATIONS_AVAILABLE = True
-        return _m
-    except Exception as exc:  # noqa: BLE001
-        if _BACKUP_OBLIGATIONS_AVAILABLE is None:
-            logger.warning("backup_obligations module unavailable: %s", exc)
-        _BACKUP_OBLIGATIONS_AVAILABLE = False
-        return None
-
-
-def _retention_days_from_config() -> int:
-    """Read the configured obligation retention window (default 90 days).
-
-    Consumes ``SLMConfig.backup_retention_days`` or any attribute matching
-    ('retention', 'retain') with numeric value on ``SLMConfig``.  The config
-    field is owned by another agent; we consume it here and fall back to 90.
-    """
-    try:
-        from superlocalmemory.core.config import SLMConfig
-        cfg = SLMConfig()
-        # Try the canonical field name first
-        for attr in ("backup_retention_days", "obligation_retention_days",
-                     "retention_window_days", "backup_obligation_retention_days"):
-            val = getattr(cfg, attr, None)
-            if isinstance(val, int) and val > 0:
-                return val
-        # Fallback: search nested sub-configs
-        for attr in dir(cfg):
-            if attr.startswith("_"):
-                continue
-            sub = getattr(cfg, attr, None)
-            if not hasattr(sub, "__dict__") and not hasattr(sub, "__dataclass_fields__"):
-                continue
-            for sub_attr in dir(sub):
-                if any(h in sub_attr.lower() for h in ("retention", "retain")):
-                    v = getattr(sub, sub_attr, None)
-                    if isinstance(v, int) and v > 0:
-                        return v
-    except Exception:  # noqa: BLE001
-        pass
-    return 90  # owner-set default
-
 def _unproject_entity(entity_id: str) -> bool:
     """Remove an entity node from the graph projection, if there is one.
 
@@ -125,6 +72,10 @@ class GDPRCompliance:
     # `erasure_receipts` — tamper-evident audit chain for Art.17 erasure events;
     #   must survive the profile wipe so operators can prove deletion occurred.
     _NON_MEMORY_SCOPED = frozenset({"profiles", "erasure_receipts"})
+
+    #: Tables a database trigger protects from the generic sweep; each has a
+    #: dedicated erasure in ``compliance/erasure_sidecars.py``.
+    _GOVERNED_ERASURE = frozenset({"write_commits"})
 
     def __init__(self, db, *, engine=None, data_root: str | Path | None = None) -> None:
         self._db = db
@@ -216,34 +167,64 @@ class GDPRCompliance:
                 purged += 1
             else:
                 failures += 1
+        failures += self._sweep_projection_profile(graph, vector, profile_id)
         return purged, failures
 
+    @staticmethod
+    def _sweep_projection_profile(graph, vector, profile_id: str) -> int:
+        """Whole-profile removal in the projections; returns the failures.
+
+        Per-fact removal leaves the graph's entity nodes (they carry names), and
+        a Lance table keeps the files of every earlier version until they are
+        cleaned up, so a deleted vector stayed readable in the table's history.
+        """
+        failures = 0
+        remove = getattr(graph, "remove_profile", None)
+        if remove is not None:
+            try:
+                remove(profile_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("GDPR erase: graph profile removal failed: %s", exc)
+                failures += 1
+        compact = getattr(vector, "compact", None)
+        if compact is not None:
+            from datetime import timedelta
+
+            try:
+                outcome = compact(retention=timedelta(0))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("GDPR erase: vector history cleanup failed: %s", exc)
+                return failures + 1
+            if isinstance(outcome, dict) and outcome.get("ok") is False:
+                logger.warning("GDPR erase: vector history not cleaned: %s", outcome.get("reason"))
+                failures += 1
+        return failures
+
     def _purge_vector_and_ann(self, profile_id: str) -> tuple[int, int]:
-        engine = self._engine
-        if engine is None:
+        """Remove a profile's vectors from the store, the ANN index and the vec0 file.
+
+        Returns ``(purged, failures)``. A vector that was already absent is
+        neither: it needs no removal. A delete that FAILED counts as a failure
+        (it used to read as "nothing to delete"), and so does a vector still in
+        the index when the sweep reads it back.
+        """
+        if self._db is None and self._engine is None:  # nothing to read or remove
             return 0, 0
+        engine = self._engine
         store = getattr(engine, "_vector_store", None)
         ann = getattr(engine, "_ann_index", None)
+        purged = failures = 0
 
-        purged = 0
-        failures = 0
-
-        try:
-            db_fact_ids = [
-                dict(r)["fact_id"]
-                for r in self._db.execute(
-                    "SELECT fact_id FROM atomic_facts WHERE profile_id = ?",
-                    (profile_id,),
-                )
-            ]
-        except Exception as exc:
-            logger.warning("GDPR erase: fact_id enumeration failed: %s", exc)
-            db_fact_ids = []
-            failures += 1
+        db_fact_ids = self._fact_ids_for(profile_id) if self._db is not None else []
+        if db_fact_ids is None:
+            logger.warning("GDPR erase: fact_id enumeration failed")
+            db_fact_ids, failures = [], failures + 1
 
         store_available = store is not None and getattr(store, "available", False)
         store_fact_ids: list[str] = []
         if store_available:
+            from superlocalmemory.retrieval.vector_store import classify_delete
+
             try:
                 store_fact_ids = list(store.indexed_fact_ids(profile_id))
             except Exception as exc:
@@ -252,30 +233,55 @@ class GDPRCompliance:
                 store_fact_ids = list(db_fact_ids)
             for fid in store_fact_ids:
                 try:
-                    if store.delete(fid):
-                        purged += 1
-                    else:
-                        failures += 1
+                    outcome = classify_delete(store.delete(fid))
                 except Exception as exc:
                     logger.warning("GDPR erase: vector delete failed for %s: %s", fid, exc)
                     failures += 1
-        else:
-            # No usable vector backend: raw vec0/map payload cannot be removed.
-            # Count residual raw vectors as failures so the receipt cannot claim
-            # a complete erasure while physical vectors survive.
+                    continue
+                if outcome.failed:
+                    failures += 1
+                elif outcome:
+                    purged += 1
+        elif store is not None:
+            # A store that is open but unusable cannot take the removal.
             residue = self._count_vector_residue(profile_id)
             if residue:
                 failures += residue
 
         if ann is not None and hasattr(ann, "remove"):
-            all_to_purge = set(store_fact_ids) | set(db_fact_ids)
-            for fid in all_to_purge:
+            for fid in set(store_fact_ids) | set(db_fact_ids):
                 try:
                     ann.remove(fid)
                 except Exception as exc:
                     logger.warning("GDPR erase: ANN remove failed for %s: %s", fid, exc)
 
-        return purged, failures
+        swept, sweep_failures = self._sweep_physical_vectors(profile_id)
+        return purged + swept, failures + sweep_failures
+
+    def _sweep_physical_vectors(self, profile_id: str) -> tuple[int, int]:
+        """Empty the profile's partition of the vec0 file itself and read it back.
+
+        This is the only removal an erasure made WITHOUT an engine (the command
+        line) gets, and for an engine it catches rows no per-fact delete reached
+        (unmapped ones). ``(removed, failures)``; a file that cannot be opened to
+        check counts as a failure, never as clean.
+        """
+        db_path = getattr(self._db, "db_path", None)
+        if db_path is None:
+            return 0, 0
+        from superlocalmemory.retrieval import vector_physical
+        from superlocalmemory.storage.write_lock import get_write_lock
+
+        try:
+            with get_write_lock(Path(db_path)):
+                outcome = vector_physical.purge_profile(db_path, profile_id)
+        except vector_physical.VectorIndexUnreadable as exc:
+            logger.warning("GDPR erase: the vector index could not be checked: %s", exc)
+            return 0, 1
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("GDPR erase: the vector sweep failed: %s", exc)
+            return 0, 1
+        return outcome.removed, outcome.remaining
 
     def _count_vector_residue(self, profile_id: str) -> int:
         total = 0
@@ -374,9 +380,18 @@ class GDPRCompliance:
         if root is None:
             db_path = getattr(self._db, "db_path", None)
             root = Path(db_path).resolve().parent if db_path is not None else None
+        # The code graph has no owner column; whose it is follows the same rule
+        # erasure uses (see _erase_code_graph): all of it if this is the only
+        # profile, otherwise what this profile's own memories link to.
+        shared_facts: list[str] | None = None
+        if not self._is_sole_profile(profile_id):
+            shared_facts = self._fact_ids_for(profile_id)
+            if shared_facts is None:  # could not tell which links are theirs: export none
+                shared_facts = []
         return ProfileExport(
             self._db, profile_id, self._profile_scoped_tables(), data_root=root,
             options=ExportOptions(include_embeddings=include_embeddings),
+            code_graph_facts=shared_facts,
         )
 
     # -- Right to Erasure (Art. 17) ----------------------------------------
@@ -562,6 +577,7 @@ class GDPRCompliance:
             from superlocalmemory.core.transactions.owners import OperationContext
 
             _erasure_svc = build_erasure_service_for_db(self._db, self._engine, data_root)
+            _requested_at = _time.time()
             _ctx = OperationContext(
                 operation_id=_uuid.uuid4().hex,
                 profile_id=profile_id,
@@ -575,7 +591,7 @@ class GDPRCompliance:
                 subject_type="profile",
                 subject_id=profile_id,
                 requested_by="gdpr",
-                requested_at=_time.time(),
+                requested_at=_requested_at,
                 remove_result=_remove_result,
             )
             if not _receipt.persisted:
@@ -661,12 +677,23 @@ class GDPRCompliance:
         counts["correction_cases_erased"] = erase_profile_cases(
             self._db, profile_id, erasure_id=_uuid.uuid4().hex)
 
+        # Stores outside memory.db that keep the person's words, and the receipt
+        # ledger whose rows the generic sweep below cannot delete (compliance/
+        # erasure_sidecars.py). Must run before the profile row goes.
+        if data_root is not None:
+            from superlocalmemory.compliance.erasure_sidecars import erase_profile_sidecars
+
+            erase_profile_sidecars(
+                data_root, getattr(self._db, "db_path", None), profile_id, counts)
+
         # Pass 2 — full-tenant wipe (every profile row in every table goes).
         # Each statement runs on its own connection with foreign keys ON (a
         # PRAGMA here would only reach a throwaway connection), so cascades
         # apply. FTS shadow rows are removed by the base-table delete triggers.
         table_delete_failures: list[str] = []
         for table in tables:
+            if table in self._GOVERNED_ERASURE:
+                continue  # removed above by its owner; a generic DELETE is refused
             try:
                 self._db.execute(f"DELETE FROM {table} WHERE profile_id = ?", (profile_id,))
             except Exception as exc:  # pragma: no cover — defensive per-table
@@ -763,41 +790,31 @@ class GDPRCompliance:
             logger.warning("GDPR erase: working-set discard failed: %s", exc)
             counts["working_sets_failed"] = 1
 
-        counts["erasure_complete"] = (
-            1
-            if (
-                residue_rows == 0
-                and not residue_recount_failed
-                and not table_delete_failures
-                and not counts.get("learning_db_failed")
-                and not counts.get("learning_db_skipped")
-                and not counts.get("vector_store_failures")
-                # A fact still in the graph is still recallable, so an erasure
-                # that could not reach the projection is not complete.
-                and not counts.get("graph_projection_failures")
-                and not counts.get("context_cache_failed")
-                and not counts.get("media_failed")
-                and not counts.get("owner_erasure_incomplete")
-                and not counts.get("backup_obligations_pending")
-                and not counts.get("backup_scan_failed")
-                and not counts.get("fts_residue_rows")
-                and not counts.get("working_sets_failed")
-                and not counts.get("code_graph_failed")
-                and not any(
-                    counts.get(f"{t}_failed") for t, _ in self._FACT_KEYED_TABLES
-                )
-            )
-            else 0
-        )
+        # Complete means nothing is marked as left. The markers are read by one
+        # function (compliance/erasure_outcome.py), the same one every surface
+        # uses, so this verdict cannot drift from what they report. Whether the
+        # tamper-evident receipt was written is the separate "provable" answer.
+        from superlocalmemory.compliance import erasure_outcome
+
+        leftovers = erasure_outcome.remaining_markers(counts, data_only=True)
+        if counts.get("learning_db_skipped"):
+            leftovers.append("learning_db_skipped")
+        counts["erasure_complete"] = 0 if leftovers else 1
+
+        # The receipt must state the FINAL outcome. The owner receipt written
+        # earlier (while the facts were still there to be proven absent) said
+        # COMPLETE before the sweep, the sidecars and the backups were checked;
+        # writing it once, early, is how a failed erasure came to show a
+        # COMPLETE receipt. Re-finalise under the same id with the aggregate as
+        # one more proof, so the stored receipt is the one a reader should trust.
+        self._finalize_aggregate_receipt(
+            _erasure_svc, _ctx, _remove_result, _requested_at, profile_id, leftovers, counts)
 
         # Whether the data is gone and whether we can PROVE it is gone are two
         # different questions, and one answer cannot carry both. Article 5(2) is
         # accountability: an erasure whose tamper-evident receipt was not
         # written really did delete the rows, and really cannot be demonstrated
-        # afterwards. Folding that into erasure_complete would report an
-        # erasure that happened as one that did not; leaving it out entirely —
-        # which is what happened until now — lets a caller reading one field
-        # believe it covers both.
+        # afterwards.
         counts["erasure_provable"] = (
             1
             if (
@@ -807,7 +824,6 @@ class GDPRCompliance:
             )
             else 0
         )
-
         try:
             from superlocalmemory.compliance.audit import AuditChain
             from superlocalmemory.infra.data_root import state_path
@@ -827,8 +843,51 @@ class GDPRCompliance:
             logger.error("GDPR erase: completion audit-chain log failed: %s", exc)
             counts["audit_completion_failed"] = 1
 
+        # The statement every surface shows: what was removed, what remains, how to retry.
+        counts["erasure_report"] = erasure_outcome.describe(counts)
         logger.info("GDPR erasure for '%s': %d tables, %s", profile_id, len(tables), counts)
         return counts
+
+    def _sidecar_root(self) -> Path | None:
+        """The data root whose side stores a targeted erasure must also clean."""
+        if self._data_root is not None:
+            return self._data_root
+        db_path = getattr(self._db, "db_path", None)
+        return Path(db_path).resolve().parent if db_path is not None else None
+
+    def _erase_cached_copies(self, profile_id: str, texts: list[str], counts: dict) -> None:
+        """Remove cached copies (MCP cache, compression originals) of just-erased words."""
+        from superlocalmemory.compliance.erasure_sidecars import erase_cached_text, needles_from
+
+        erase_cached_text(self._sidecar_root(), profile_id, needles_from(texts), counts)
+
+    def _finalize_aggregate_receipt(
+        self, service, context, remove_result, requested_at: float, profile_id: str,
+        leftovers: list[str], counts: dict,
+    ) -> None:
+        """Replace the early owner receipt with one that states the whole outcome."""
+        import hashlib
+
+        from superlocalmemory.core.transactions import ErasureProofRecord
+
+        residue = tuple(sorted(leftovers))
+        digest = hashlib.sha256(
+            ("profile-erasure:" + profile_id + ":" + ",".join(residue)).encode()).hexdigest()
+        try:
+            receipt = service.finalize(
+                self._db, context, subject_type="profile", subject_id=profile_id,
+                requested_by="gdpr", requested_at=requested_at,
+                extra_proofs=[ErasureProofRecord(
+                    owner="profile_erasure", erased=not residue, checksum=digest,
+                    residue=residue)],
+                remove_result=remove_result,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("GDPR erase: final receipt failed: %s", type(exc).__name__)
+            counts["receipt_persist_failed"] = 1
+            return
+        if not receipt.persisted:
+            counts["receipt_persist_failed"] = 1
 
     @clears_derived_cache
     def forget_entity(self, entity_name: str, profile_id: str) -> dict:
@@ -839,6 +898,11 @@ class GDPRCompliance:
         """
         import time
 
+        from superlocalmemory.compliance.erasure_outcome import subject_ref
+
+        # The receipt, the audit chain and the log say which erasure this was
+        # without keeping the name that was erased.
+        ref = subject_ref("entity", entity_name)
         requested_at = time.time()
         audit_request_ok = True
         try:
@@ -851,7 +915,7 @@ class GDPRCompliance:
                 profile_id=profile_id,
                 metadata={
                     "basis": "GDPR Art.17 right-to-erasure",
-                    "entity": entity_name,
+                    "entity": ref,
                 },
             )
         except Exception as exc:
@@ -860,7 +924,7 @@ class GDPRCompliance:
         self._audit(
             "delete",
             "entity",
-            entity_name,
+            ref,
             f"GDPR entity erasure in profile {profile_id}",
             profile_id=profile_id,
         )
@@ -878,11 +942,12 @@ class GDPRCompliance:
         # Delete facts mentioning this entity — use ErasureService for projection
         # erasure so the receipt captures real per-owner proofs (not proofs:[]).
         rows = self._db.execute(
-            "SELECT fact_id, memory_id FROM atomic_facts WHERE profile_id = ? "
+            "SELECT fact_id, memory_id, content FROM atomic_facts WHERE profile_id = ? "
             "AND canonical_entities_json LIKE ?",
             (profile_id, f'%"{eid}"%'),
         )
         targets = [(dict(r)["fact_id"], dict(r).get("memory_id")) for r in rows]
+        erased_texts = [str(dict(r).get("content") or "") for r in rows] + [entity_name]
         target_fact_ids = [fid for fid, _ in targets]
         counts["facts"] = len(targets)
         from superlocalmemory.core import erasure_scrub  # words outside projections
@@ -902,7 +967,7 @@ class GDPRCompliance:
             ctx = OperationContext(
                 operation_id=op_id,
                 profile_id=profile_id,
-                subject_id=entity_name,
+                subject_id=ref,
                 fact_ids=tuple(sorted(target_fact_ids)),
             )
             erasure_svc.remove(self._db, ctx)
@@ -910,7 +975,7 @@ class GDPRCompliance:
                 self._db,
                 ctx,
                 subject_type="entity",
-                subject_id=entity_name,
+                subject_id=ref,
                 requested_by="gdpr",
                 requested_at=requested_at,
             )
@@ -960,6 +1025,7 @@ class GDPRCompliance:
             "DELETE FROM canonical_entities WHERE entity_id = ? AND profile_id = ?",
             (eid, profile_id),
         )
+        self._erase_cached_copies(profile_id, erased_texts, counts)
         # The graph holds its own copy of this node, with the name in it.
         # Deleting the row above does not reach it.
         if not _unproject_entity(eid):
@@ -971,17 +1037,10 @@ class GDPRCompliance:
         # The same two questions the profile path answers. Their absence here
         # meant a caller could not tell a complete entity erasure from a partial
         # one at all — it just got a dict of counts.
+        from superlocalmemory.compliance import erasure_outcome
+
         counts["erasure_complete"] = (
-            0
-            if any(
-                counts.get(marker)
-                for marker in (
-                    "vector_store_failures",
-                    "audit_request_failed", "text_scrub_failed", "projection_failed",
-                    *(f"{table}_failed" for table, _ in self._FACT_KEYED_TABLES),
-                )
-            )
-            else 1
+            0 if erasure_outcome.remaining_markers(counts, data_only=True) else 1
         )
         counts["erasure_provable"] = (
             1
@@ -991,7 +1050,7 @@ class GDPRCompliance:
             else 0
         )
 
-        logger.info("Entity erasure '%s' in '%s': %s", entity_name, profile_id, counts)
+        logger.info("Entity erasure %s in '%s': %s", ref, profile_id, counts)
         return counts
 
     @clears_derived_cache
@@ -1212,78 +1271,20 @@ class GDPRCompliance:
         erasure_id: str,
         counts: dict,
     ) -> int:
-        """Scan backup snapshots and record any that contain *profile_id* data.
+        """Record snapshots that hold, or may hold, *profile_id*; see ``erasure_backups``.
 
-        Returns the total count of pending obligations after recording
-        (including those created in prior erasure passes for the same profile).
-        Fail-closed: any unhandled exception propagates to the caller who sets
-        ``backup_scan_failed`` to block the completeness claim.
+        Returns the pending obligation count (earlier erasures of the same
+        profile included). Fail-closed: any unhandled exception propagates to
+        the caller, who sets ``backup_scan_failed`` to block the completeness
+        claim.
         """
-        bom = _get_backup_obligations_module()
-        if bom is None:
-            logger.warning(
-                "GDPR erase: backup_obligations module unavailable — "
-                "backup residue will not be tracked for profile %r",
-                profile_id,
-            )
-            # Cannot track → treat as pending so completeness is blocked.
-            return 1
+        from superlocalmemory.compliance.erasure_backups import record_backup_obligations
 
-        backup_dir = data_root / "backups"
-        retention_days = _retention_days_from_config()
-        store = bom.BackupObligationStore(data_root)
-
-        # Scan all backup snapshots for this profile's data.
         try:
-            hits = bom.scan_backup_snapshots_for_profile(backup_dir, profile_id)
+            return record_backup_obligations(data_root, profile_id, erasure_id, counts)
         except Exception as exc:  # noqa: BLE001
-            logger.error(
-                "GDPR erase: backup snapshot scan raised: %s — "
-                "failing closed to block completeness",
-                exc,
-            )
-            counts["backup_scan_error"] = str(exc)
-            raise  # propagate so caller sets backup_scan_failed
-
-        snapshots_with_data = len(hits)
-        counts["backup_snapshots_scanned"] = snapshots_with_data
-        recorded = 0
-        for snap_path, snap_epoch in hits:
-            try:
-                store.record(
-                    profile_id=profile_id,
-                    erasure_id=erasure_id,
-                    snapshot_path=snap_path,
-                    snapshot_epoch=snap_epoch,
-                    retention_days=retention_days,
-                )
-                recorded += 1
-            except Exception as exc:  # noqa: BLE001
-                # Recording failure for a single snapshot must not silently
-                # skip the obligation — log and count so completeness is blocked.
-                logger.error(
-                    "GDPR erase: failed to record obligation for snapshot %r: %s",
-                    snap_path, exc,
-                )
-                counts["backup_record_errors"] = counts.get("backup_record_errors", 0) + 1
-                # Still include in pending count (fail-closed).
-                recorded += 1
-
-        # A restore's leftovers hold the same words: the deltas (memories written
-        # after a copy, verbatim) lose this profile's rows now, and every
-        # pre-restore copy that still holds it is registered like a backup.
-        # Raises on failure, which blocks the completeness claim (fail-closed).
-        from superlocalmemory.storage._restore_retention import cover_profile_erasure
-
-        covered = cover_profile_erasure(data_root, profile_id, erasure_id=erasure_id,
-                                        store=store, retention_days=retention_days)
-        counts.update(covered)
-        recorded += covered["pre_restore_copies_registered"]
-
-        counts["backup_obligations_recorded"] = recorded
-        # Return the authoritative pending count (includes obligations from prior
-        # erasure passes for the same profile that were not yet discharged).
-        return store.count_pending(profile_id)
+            counts["backup_scan_error"] = type(exc).__name__
+            raise
 
     # -- I7: post-erasure residue scanner ----------------------------------
 

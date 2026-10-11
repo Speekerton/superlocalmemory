@@ -1049,10 +1049,11 @@ def _replay_obligations_after_restore(
                     "data.  Manual remediation required."
                 ) from exc
 
-    # Discharge obligations for this specific snapshot so they do not block
-    # the completeness flag for future erasures of the same profile.
-    discharged = store.discharge_for_snapshot(snapshot_key, "replayed_on_restore")
+    # The obligation is NOT discharged: the live store is clean again, but the
+    # snapshot still holds the profile, and the next restore of it must replay
+    # this erasure too. It ends when the snapshot is removed or re-read clean.
+    noted = store.mark_replayed(snapshot_key)
     logger.info(
-        "Obligation replay: discharged %d obligations for snapshot %s",
-        discharged, snapshot_key,
+        "Obligation replay: re-erased the live store for %d obligation(s) of snapshot %s",
+        noted, snapshot_key,
     )

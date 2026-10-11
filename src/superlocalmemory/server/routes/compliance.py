@@ -159,36 +159,31 @@ async def query_audit_trail(
 def _erasure_succeeded(result: dict) -> bool:
     """One place that decides, so the surfaces cannot disagree.
 
-    The erasure reports two things, because they are two questions: whether the
-    data is gone, and whether that can be shown afterwards. This route used to
-    inline its own list of failure markers and the CLI used a different one, so
-    the API could say failure while the command line printed COMPLETE for the
-    same erasure.
-
-    Anything that leaves either question unanswered is a failure here. A caller
-    that wants the finer distinction reads ``erasure_complete`` and
-    ``erasure_provable`` from the body, which are both in it.
+    The verdict lives in ``compliance.erasure_outcome`` and is shared with the
+    command line: two questions (is the data gone; can that be shown afterwards)
+    and every ``*_failed`` / ``*_failures`` / residue marker the erasure leaves.
     """
-    markers = (
-        "vector_store_failures",
-        "audit_completion_failed",
-        "audit_request_failed",
-        "receipt_persist_failed",
-        "table_delete_failures",
-        "code_graph_failed",
-        "fact_expansion_fts_failed",
-        "working_sets_failed",
-        "residue_recount_failed",
-        "backup_scan_failed",
-    )
-    if any(result.get(marker) for marker in markers):
-        return False
-    # Present on the profile path; absent on the entity path, where its absence
-    # must not be read as a failure.
-    for verdict in ("erasure_complete", "erasure_provable"):
-        if verdict in result and not result.get(verdict):
-            return False
-    return True
+    from superlocalmemory.compliance.erasure_outcome import erasure_succeeded
+
+    return erasure_succeeded(result)
+
+
+def _erasure_response(profile_key: str, profile: str, result: dict, **extra) -> dict:
+    """The body every erasure route returns: the counts, plus a statement of the outcome.
+
+    ``erasure_report`` says what was removed and what remains and how to retry
+    it; ``error`` carries one sentence of the same when the erasure is not
+    complete, which is where the dashboard reads a failure from.
+    """
+    from superlocalmemory.compliance import erasure_outcome
+
+    result = dict(result or {})
+    ok = erasure_outcome.erasure_succeeded(result)
+    body = {"success": ok, profile_key: profile, **extra, **result,
+            "erasure_report": erasure_outcome.describe(result)}
+    if not ok:
+        body["error"] = erasure_outcome.failure_message(result) or "The erasure did not finish."
+    return body
 
 
 @router.post("/api/compliance/retention-policy")
@@ -399,9 +394,7 @@ async def gdpr_erase(request: Request, data: dict = {}):
         )
         result = GDPRCompliance(engine._db, engine=engine).forget_profile(profile)
         authorization.complete()
-        result = result or {}
-        success = _erasure_succeeded(result)
-        return {"success": success, "active_profile": profile, **result}
+        return _erasure_response("active_profile", profile, result)
     except Exception:
         logger.exception("gdpr_erase error")
         return {"success": False, "error": "Internal server error"}
@@ -452,12 +445,7 @@ async def gdpr_erase_entity(request: Request, data: dict = {}):
         )
         result = GDPRCompliance(engine._db, engine=engine).forget_entity(entity_name, profile)
         authorization.complete()
-        result = result or {}
-        success = _erasure_succeeded(result)
-        return {
-            "success": success, "active_profile": profile,
-            "entity_name": entity_name, **result,
-        }
+        return _erasure_response("active_profile", profile, result, entity_name=entity_name)
     except Exception:
         logger.exception("gdpr_erase_entity error")
         return {"success": False, "error": "Internal server error"}

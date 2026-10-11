@@ -1074,11 +1074,7 @@
         })
           .then(function (r) { return r.json(); })
           .then(function (d) {
-            if (summary) {
-              summary.textContent = d && d.success
-                ? ('Profile "' + profile + '" erased. Reloading…')
-                : ('Erase failed: ' + ((d && d.error) || 'unknown'));
-            }
+            if (summary) renderEraseOutcome(summary, profile, d);
             if (d && d.success) setTimeout(function () { window.location.reload(); }, 900);
           })
           .catch(function () { if (summary) summary.textContent = 'Erase failed. Check console.'; })
@@ -1283,5 +1279,41 @@
     var pane = document.getElementById('operations-pane');
     if (pane) odRenderOperations(pane);
   });
+
+
+  /**
+   * Say exactly what an erasure did: what is gone, what is left and how to retry it.
+   * The server's `erasure_report` is the statement; nothing here decides success.
+   */
+  function renderEraseOutcome(summary, profile, d) {
+    summary.textContent = '';
+    var report = (d && d.erasure_report) || {};
+    var remains = report.remains || [];
+    if (d && d.success) {
+      summary.textContent = 'Profile "' + profile + '" erased completely. Reloading…';
+      return;
+    }
+    var head = document.createElement('div');
+    head.textContent = d && d.erasure_report
+      ? 'Erase INCOMPLETE for profile "' + profile + '". What is listed below is still on this computer.'
+      : 'Erase failed: ' + ((d && d.error) || 'unknown');
+    summary.appendChild(head);
+    if (remains.length) {
+      var list = document.createElement('ul');
+      remains.forEach(function (item) {
+        var li = document.createElement('li');
+        li.textContent = item.what + ' ' + item.retry;
+        list.appendChild(li);
+      });
+      summary.appendChild(list);
+    }
+    var removed = report.removed || {};
+    var parts = Object.keys(removed).slice(0, 12).map(function (k) { return k + ': ' + removed[k]; });
+    if (parts.length) {
+      var gone = document.createElement('div');
+      gone.textContent = 'Removed so far: ' + parts.join(', ');
+      summary.appendChild(gone);
+    }
+  }
 
 }());

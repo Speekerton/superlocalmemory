@@ -640,14 +640,19 @@ def build_engine_ingestion_command(
             state["provenance"] = provenance_complete
         if state.get("post_hooks") is False:
             try:
+                from superlocalmemory.core.agent_attribution import audit_fields
+                from superlocalmemory.core.audit_record import content_hash
+
                 engine._hooks.run_post("store", {
                     "operation": "store",
                     "agent_id": operation.trusted_actor_id,
                     "profile_id": operation.profile_id,
                     "content_preview": operation.raw_content[:100],
+                    "content_hash": content_hash(operation.raw_content),
                     "ingestion_operation_id": operation.operation_id,
                     "fact_ids": list(operation.final_fact_ids),
                     "fact_count": len(operation.final_fact_ids),
+                    **audit_fields(operation.metadata),
                 })
             except Exception as exc:
                 return MaterializationResult(

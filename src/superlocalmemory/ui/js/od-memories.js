@@ -68,7 +68,21 @@
   }
 
   // Normalize /api/search result → memory shape (fact_id→id, score→importance)
-  function _normSearch(r) { return {id:r.fact_id||r.memory_id||'',content:r.content||'',category:r.category||'semantic',project_name:r.project_name||'',importance:r.score||r.confidence||0,created_at:r.created_at||'',access_count:r.access_count||0}; }
+  // UX-12: one memory shape for browse and search. Kind, kind label/state,
+  // scope, sharing and project are kept, never defaulted: a shared decision
+  // found by search must not open as "personal" with the Scope control preset.
+  function _normSearch(r) {
+    return {
+      id: r.fact_id || r.memory_id || '', memory_id: r.memory_id || '',
+      content: r.content || '', category: r.category || r.fact_type || 'semantic',
+      memory_kind: r.memory_kind || '', memory_kind_label: r.memory_kind_label || '',
+      memory_kind_state: r.memory_kind_state || '',
+      project_name: r.project_name || '', scope: r.scope || '',
+      shared_with: r.shared_with || [],
+      importance: r.score || r.confidence || 0, created_at: r.created_at || '',
+      access_count: r.access_count || 0
+    };
+  }
   // shared_with is stored as a JSON array string; show it comma-separated.
   function _sharedToStr(v) {
     if (!v) return '';

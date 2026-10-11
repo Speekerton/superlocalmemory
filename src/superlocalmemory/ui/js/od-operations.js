@@ -222,7 +222,7 @@
           '<div class="card-head">' +
             '<h3>Active retention policies</h3>' +
             '<div class="spacer"></div>' +
-            // New policy button — shows alert since write endpoint is not yet exposed
+            // New policy button: opens the retention-policy form
             '<button class="btn sm" id="od-new-policy-btn">' +
               safeIcon('plus') + ' New policy' +
             '</button>' +
@@ -783,7 +783,7 @@
     if (policies.length === 0) {
       retTbody.innerHTML =
         '<tr><td colspan="5" class="muted-info" style="text-align:center;padding:20px">' +
-        'No retention policies configured. Use the set_retention_policy MCP tool to add one.' +
+        'No retention policies yet. Use New policy to add one.' +
         '</td></tr>';
       return;
     }
@@ -985,8 +985,7 @@
   }
 
   /**
-   * Wire the "New policy" button.
-   * Informs user that the write endpoint is not yet exposed.
+   * Wire the "New policy" button to the retention-policy form.
    */
   function wireNewPolicyBtn() {
     var btn = document.getElementById('od-new-policy-btn');

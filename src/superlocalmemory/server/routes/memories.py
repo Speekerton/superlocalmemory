@@ -932,6 +932,17 @@ def get_graph(
         raise _internal_error("Graph error")
 
 
+def _presented(results: list) -> list:
+    """Search rows with the stored scope, sharing and project (UX-12)."""
+    from superlocalmemory.server.search_presentation import with_stored_fields
+
+    conn = get_db_connection()
+    try:
+        return with_stored_fields(conn, results)
+    finally:
+        conn.close()
+
+
 @router.post("/api/search")
 async def search_memories(request: Request, body: SearchRequest):
     """Semantic search using the daemon's in-process engine.
@@ -1065,6 +1076,7 @@ async def search_memories(request: Request, body: SearchRequest):
                 if parsed_kind:
                     results = [r for r in results
                               if r.get("memory_kind") == parsed_kind][:body.limit]
+                results = _presented(results)  # UX-12: scope, sharing, project
                 return {
                     "query": body.query,
                     "results": results,
@@ -1126,10 +1138,10 @@ async def search_memories(request: Request, body: SearchRequest):
             for row in rows:
                 row.update(kind_fields(row, display_min_confidence=_threshold))
 
-        results = [{
+        results = _presented([{
             **row, "score": None, "relevance_score": None, "ranking_score": None,
             "confidence": row.get("memory_confidence"), "rank_position": position,
-        } for position, row in enumerate(rows, start=1)]
+        } for position, row in enumerate(rows, start=1)])
 
         return {
             "query": body.query, "results": results, "total": len(results),

@@ -131,7 +131,10 @@ async def get_agent_memory_activity(
                 _tail = (
                     "COUNT(*) AS cnt, MAX(created_at) AS last_active, "
                     "GROUP_CONCAT(DISTINCT source_type) AS sources, "
-                    "COUNT(DISTINCT NULLIF(trusted_actor_id, '')) AS capabilities "
+                    "COUNT(DISTINCT NULLIF(trusted_actor_id, '')) AS capabilities, "
+                    # 4.1.25 L-15/G-M2: how many of these the connection vouched for.
+                    "SUM(CASE WHEN json_extract(raw_metadata_json, '$.agent_id_source')"
+                    " = 'connection' THEN 1 ELSE 0 END) AS verified "
                     "FROM ingestion_operations WHERE profile_id=? "
                     "GROUP BY agent_id ORDER BY cnt DESC, agent_id ASC "
                     "LIMIT 500"
@@ -148,7 +151,9 @@ async def get_agent_memory_activity(
                 except sqlite3.OperationalError:
                     rows = conn.execute(
                         "SELECT COALESCE(NULLIF(trusted_actor_id, ''), 'unknown')"
-                        " AS agent_id, " + _tail,
+                        " AS agent_id, " + _tail.replace(
+                            "SUM(CASE WHEN json_extract(raw_metadata_json, '$.agent_id_source')"
+                            " = 'connection' THEN 1 ELSE 0 END)", "0"),
                         (pid,),
                     ).fetchall()
                 for r in rows:
@@ -168,28 +173,17 @@ async def get_agent_memory_activity(
                         "identified": not str(name).startswith(
                             ("daemon-capability:", "local-capability:")
                         ) and name != "unknown",
+                        # Saved through a connection that named this agent, as
+                        # against a label the caller only claimed.
+                        "verified": int(r["verified"] or 0),
+                        "claimed": int(r["cnt"]) - int(r["verified"] or 0),
                     })
                     total += r["cnt"]
             except sqlite3.OperationalError:
                 pass
 
             try:
-                rows = conn.execute(
-                    "SELECT CASE WHEN trusted_actor_id='' THEN 'unknown' "
-                    "ELSE trusted_actor_id END AS agent_id, "
-                    "substr(raw_content, 1, 160) AS snippet, "
-                    "created_at, source_type, session_id "
-                    "FROM ingestion_operations WHERE profile_id=? "
-                    "ORDER BY created_at DESC, rowid DESC LIMIT ?",
-                    (pid, int(limit)),
-                ).fetchall()
-                recent = [{
-                    "agent_id": r["agent_id"],
-                    "content": r["snippet"],
-                    "created_at": r["created_at"],
-                    "source_type": r["source_type"],
-                    "session_id": r["session_id"],
-                } for r in rows]
+                recent = _recent_rows(conn, pid, limit)
             except sqlite3.OperationalError:
                 pass
         finally:
@@ -203,6 +197,46 @@ async def get_agent_memory_activity(
         "agents": agents,
         "recent": recent,
     }
+
+
+def _recent_rows(conn, pid: str, limit: int) -> list[dict]:
+    """Recent saves, named the same way as the cards above them (G-M2).
+
+    The table used to name every row by its capability digest while the cards
+    named the agent, so one screen disagreed with itself. Both now use the
+    agent name, say whether the connection vouched for it, and keep a short
+    fingerprint of the authenticated writer.
+    """
+    rows = conn.execute(
+        "SELECT COALESCE(NULLIF(json_extract(raw_metadata_json, '$.agent_id'), ''),"
+        " NULLIF(trusted_actor_id, ''), 'unknown') AS agent_id, "
+        "json_extract(raw_metadata_json, '$.agent_id_source') AS agent_id_source, "
+        "trusted_actor_id, substr(raw_content, 1, 160) AS snippet, "
+        "created_at, source_type, session_id "
+        "FROM ingestion_operations WHERE profile_id=? "
+        "ORDER BY created_at DESC, rowid DESC LIMIT ?",
+        (pid, int(limit)),
+    ).fetchall()
+    return [{
+        "agent_id": r["agent_id"],
+        "verified": r["agent_id_source"] == "connection",
+        "writer": _fingerprint(r["trusted_actor_id"]),
+        "content": r["snippet"],
+        "created_at": r["created_at"],
+        "source_type": r["source_type"],
+        "session_id": r["session_id"],
+    } for r in rows]
+
+
+def _fingerprint(actor: str | None) -> str:
+    """``kind:abcdef`` for a capability actor; the readable part otherwise."""
+    if not actor:
+        return ""
+    parts = str(actor).split(":")
+    for part in parts[1:]:
+        if len(part) >= 16 and all(c in "0123456789abcdef" for c in part.lower()):
+            return f"{parts[0]}:{part[:6]}"
+    return str(actor)[:40]
 
 
 @router.get("/api/trust/stats")

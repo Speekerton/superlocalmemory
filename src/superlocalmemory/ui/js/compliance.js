@@ -68,7 +68,7 @@ function renderCompliancePolicies(data) {
     if (policies.length === 0) {
         var empty = document.createElement('div');
         empty.className = 'text-center text-muted py-3';
-        empty.textContent = 'No retention policies configured. Create one above or use the set_retention_policy MCP tool.';
+        empty.textContent = 'No retention policies yet. Create one above.';
         container.appendChild(empty);
         return;
     }

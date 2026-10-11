@@ -724,6 +724,13 @@ def daemon_request(
         user_session = presented_session()
         if user_session:
             headers["X-SLM-User-Session"] = user_session
+        # The connection's agent name (/mcp/<agent> or SLM_AGENT_ID). The
+        # daemon believes it only alongside the capability (L-15).
+        from superlocalmemory.core.agent_attribution import CONNECTION_HEADER, connection_agent
+
+        agent = connection_agent()
+        if agent and capability is not None:
+            headers[CONNECTION_HEADER] = agent
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         from superlocalmemory.core import outbound_http  # never via a proxy
         resp = outbound_http.urlopen(req, timeout=timeout_seconds)

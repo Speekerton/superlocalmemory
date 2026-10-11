@@ -4815,6 +4815,16 @@ def _register_daemon_routes(application: FastAPI) -> None:
             getattr(application.state, "daemon_descriptor", None),
         )
 
+    def _trusted_connection_agent(request: Request, trusted_actor_id: str) -> str:
+        """The connection's agent name, believed only from a capability holder."""
+        from superlocalmemory.core.agent_attribution import CONNECTION_HEADER
+        from superlocalmemory.mcp.agent_context import sanitize_agent_id
+
+        if not str(trusted_actor_id or "").startswith("daemon-capability:"):
+            return ""
+        name = (request.headers.get(CONNECTION_HEADER, "") or "").strip()
+        return sanitize_agent_id(name) if name else ""
+
     def _require_write_actor(request: Request) -> str:
         """Authenticate a local write and return its trusted actor.
 
@@ -5380,6 +5390,11 @@ def _register_daemon_routes(application: FastAPI) -> None:
                 from superlocalmemory.core.metadata_guard import strip_reserved_metadata
 
                 meta.update(strip_reserved_metadata(extra))
+            # Who saved it: the connection's agent when a capability holder
+            # names it, else the claimed label, marked as claimed (L-15).
+            from superlocalmemory.core.agent_attribution import bind as _bind_agent
+
+            meta = _bind_agent(meta, _trusted_connection_agent(request, trusted_actor_id))
             if "project" in meta:
                 # #150: one rule for what a project is (core.project_identity);
                 # a value that names none ("/", "  ") is not saved as one.

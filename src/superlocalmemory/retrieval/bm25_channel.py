@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 
 from rank_bm25 import BM25Plus
 
+from superlocalmemory.retrieval.fact_cover import fact_table
 from superlocalmemory.storage.database import _scope_where
 from superlocalmemory.storage.fts_terms import version_match_phrases, version_terms
 
@@ -286,21 +287,7 @@ class BM25Channel:
         include_shared: bool | None = None,
         extra_where: tuple[str, list] | None = None,
     ) -> list[tuple[str, float]]:
-        """v3.5.0: SQLite FTS5 keyword search (C-level indexed, scales to millions).
-
-        ``extra_where``: an ``(" AND ...", params)`` clause on ``af`` that
-        narrows BOTH the content and the expansion query (kind-scoped recall,
-        retrieval/kind_scope). None: unchanged.
-
-        Uses the ``atomic_facts_fts`` external-content FTS5 table (kept in sync
-        by INSERT/DELETE/UPDATE triggers). Joins ``atomic_facts`` for profile
-        scoping (FTS table has no profile_id). ``bm25()`` returns a negative
-        score (lower = better match); we negate it to the channel's
-        "higher = better" convention. Returns [] on no matches.
-
-        Raises (OperationalError) if the FTS5 table is absent — the caller
-        then falls back to the legacy in-memory rank_bm25 path.
-        """
+        """Rank visible FTS hits before loading their content; preserve expansion scoring."""
         if include_global is None:
             include_global = bool(getattr(self, "include_global", False))
         if include_shared is None:
@@ -310,16 +297,9 @@ class BM25Channel:
         phrases = version_match_phrases(query)
         if not tokens and not phrases:
             return []
-        # Quote each token so query punctuation can't break FTS5 MATCH syntax;
-        # OR-join for high recall (any token may match). A dotted version is
-        # also offered whole, as a phrase (see storage.fts_terms): its single
-        # numbers are too common to tell one release from another.
         match_expr = " OR ".join([
             *('"' + t.replace('"', "") + '"' for t in tokens), *phrases,
         ])
-        # Rows that only matched a version phrase inside a longer number lose
-        # that share below and can fall out of the top_k, so fetch room for
-        # the rows that move up into their place.
         fetch_k = int(top_k) * 2 if versions else int(top_k)
         where, params = _scope_where(
             profile_id,
@@ -327,22 +307,12 @@ class BM25Channel:
             include_shared=include_shared,
             prefix="af",
         )
-        # Soft-deleted and withheld rows are not live. Filtered HERE rather
-        # than only at hydration so neither spends one of this channel's top_k
-        # slots; the shared clause keeps the definition in one place.
         archive_clause = self._db.visible_fact_clause("af")
         if extra_where is not None:
             archive_clause += extra_where[0]
             params = [*params, *extra_where[1]]
-        sql = (
-            "SELECT af.fact_id AS fact_id, bm25(atomic_facts_fts) AS rank, "
-            "af.rowid AS fts_rowid, af.content AS content "
-            "FROM atomic_facts_fts "
-            "JOIN atomic_facts af ON af.rowid = atomic_facts_fts.rowid "
-            f"WHERE atomic_facts_fts MATCH ? AND {where}{archive_clause} "
-            "ORDER BY rank LIMIT ?"
-        )
-        rows = [dict(r) for r in self._db.execute(sql, (match_expr, *params, fetch_k))]
+        table = fact_table(self._db)
+        rows = self._content_rows(match_expr, where, archive_clause, params, fetch_k)
         out: list[tuple[str, float]] = []
         for d in rows:
             fid = d.get("fact_id")
@@ -352,17 +322,55 @@ class BM25Channel:
         if versions:
             out = self._without_partial_version_credit(out, rows, versions, phrases)
 
-        # T3b: UNION fact-expansion (alias / paraphrase) matches so a query for
-        # a synonym matches a fact that only used the canonical term. Additive —
-        # direct content hits stay primary; an alias-only hit is added at a
-        # discount so it ranks below content matches. Fail-open if the expansion
-        # FTS is absent (legacy DB).
-        content_ids = {fid for fid, _ in out}
+        out.extend(self._expansion_hits(match_expr, table, where, archive_clause, params,
+                                        top_k, {fid for fid, _ in out}))
+
+        out.sort(key=lambda x: (-x[1], x[0]))
+        return out[:top_k]
+
+
+    def _content_rows(self, match_expr: str, where: str, archive_clause: str,
+                      params: list, fetch_k: int) -> list[dict]:
+        if not self._default_fts_rank():
+            sql = (
+                "SELECT af.fact_id,bm25(atomic_facts_fts) AS rank,af.rowid AS fts_rowid,af.content "
+                "FROM atomic_facts_fts JOIN atomic_facts af ON af.rowid=atomic_facts_fts.rowid "
+                f"WHERE atomic_facts_fts MATCH ? AND {where}{archive_clause} "
+                "ORDER BY rank LIMIT ?"
+            )
+            return [dict(r) for r in self._db.execute(sql, (match_expr, *params, fetch_k))]
+        sql = (
+            "WITH hits AS MATERIALIZED ("
+            "SELECT af.fact_id AS fact_id, bm25(atomic_facts_fts) AS rank, "
+            "atomic_facts_fts.rowid AS fts_rowid "
+            "FROM atomic_facts_fts "
+            "CROSS JOIN atomic_facts af "
+            "WHERE af.rowid = atomic_facts_fts.rowid "
+            f"AND atomic_facts_fts MATCH ? AND {where}{archive_clause} "
+            "ORDER BY atomic_facts_fts.rank LIMIT ?"
+            ") SELECT hits.fact_id, hits.rank, hits.fts_rowid, af.content "
+            "FROM hits JOIN atomic_facts af ON af.fact_id = hits.fact_id "
+            "ORDER BY hits.rank"
+        )
+        return [dict(r) for r in self._db.execute(sql, (match_expr, *params, fetch_k))]
+
+    def _default_fts_rank(self) -> bool:
+        """Native rank matches bm25() only under FTS5's default rank mapping."""
+        try:
+            rows = self._db.execute("SELECT v FROM atomic_facts_fts_config WHERE k='rank'")
+            return not rows or (isinstance(rows, list) and dict(rows[0]).get("v") == "bm25()")
+        except Exception:
+            return False
+
+
+    def _expansion_hits(self, match_expr: str, table: str, where: str, archive_clause: str,
+                        params: list, top_k: int, content_ids: set[str]) -> list[tuple[str, float]]:
+        out: list[tuple[str, float]] = []
         try:
             exp_sql = (
                 "SELECT af.fact_id AS fact_id, bm25(fact_expansion_fts) AS rank "
                 "FROM fact_expansion_fts "
-                "JOIN atomic_facts af ON af.fact_id = fact_expansion_fts.fact_id "
+                f"JOIN {table} ON af.fact_id = fact_expansion_fts.fact_id "
                 f"WHERE fact_expansion_fts MATCH ? AND {where}{archive_clause} "
                 "ORDER BY rank LIMIT ?"
             )
@@ -374,8 +382,7 @@ class BM25Channel:
         except Exception as exc:  # pragma: no cover — legacy/missing expansion FTS
             logger.debug("Expansion FTS search skipped: %s", exc)
 
-        out.sort(key=lambda x: (-x[1], x[0]))
-        return out[:top_k]
+        return out
 
     def _without_partial_version_credit(
         self,

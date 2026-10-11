@@ -24,7 +24,6 @@ from superlocalmemory.core.transactions.owners import (
 from superlocalmemory.core.transactions.tombstones import (
     TOMBSTONE_ABSENT,
     TOMBSTONE_CONFLICT,
-    TOMBSTONE_ERROR,
     TOMBSTONE_WRITTEN,
     _err,
     _table_exists,

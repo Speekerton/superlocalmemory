@@ -19,7 +19,6 @@ import logging
 import math
 import random
 import sqlite3
-import time
 from typing import Any
 
 logger = logging.getLogger("superlocalmemory.mesh.outbox_remote")

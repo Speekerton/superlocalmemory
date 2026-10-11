@@ -11,7 +11,7 @@ Uses V3 compliance modules: ABACEngine, AuditChain, RetentionEngine.
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
 from superlocalmemory.server.route_mutations import authorize_route_mutation
@@ -396,6 +396,9 @@ async def gdpr_erase(request: Request, data: dict = {}):
         result = result or {}
         success = _erasure_succeeded(result)
         return {"success": success, "active_profile": profile, **result}
+    except HTTPException:
+        # A refusal (401/403) is the answer, not a failure of the erase.
+        raise
     except Exception:
         logger.exception("gdpr_erase error")
         return {"success": False, "error": "Internal server error"}
@@ -452,6 +455,9 @@ async def gdpr_erase_entity(request: Request, data: dict = {}):
             "success": success, "active_profile": profile,
             "entity_name": entity_name, **result,
         }
+    except HTTPException:
+        # A refusal (401/403) is the answer, not a failure of the erase.
+        raise
     except Exception:
         logger.exception("gdpr_erase_entity error")
         return {"success": False, "error": "Internal server error"}

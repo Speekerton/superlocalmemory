@@ -27,6 +27,16 @@ computer by the user who runs SLM (see below), which cannot be reached over the
 network. What company mode removes is the operator's *unattributed access to
 data*.
 
+Every change to the workspace follows the same rule, not only the memory
+routes. Saving a memory, recording an observation, locking a file in the mesh,
+compacting, re-tiering, switching the active workspace and starting a repair
+need a signed-in person whose role allows writing. Changing settings (Optimize,
+providers, embeddings, restart) needs `admin`. A `viewer` can search, read and
+chat with memory, and nothing else; a refusal says which it was (401 sign in,
+403 your role does not allow it) and is never reported as a server error. The
+computer's own agents on the mesh, which present the daemon capability or the
+mesh secret, are the one exception, as they are for reading the mesh.
+
 ## Setting it up
 
 Use the dashboard: **Settings → Access**. Add users, grant each a role on the

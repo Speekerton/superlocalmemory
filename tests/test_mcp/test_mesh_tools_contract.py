@@ -19,15 +19,7 @@ class _ToolCollector:
         return decorate
 
 
-def test_mesh_mcp_tools_use_one_broker_identity_and_unread_delivery(monkeypatch) -> None:
-    """Every exposed Mesh tool uses the broker identity minted at registration."""
-    import superlocalmemory.mcp.tools_mesh as mesh_tools
-
-    collector = _ToolCollector()
-    mesh_tools.register_mesh_tools(collector, lambda: None)
-
-    calls: list[tuple[str, str, dict | None]] = []
-
+def _broker_request(calls):
     def request(method: str, path: str, body: dict | None = None) -> dict:
         calls.append((method, path, body))
         if path == "/register":
@@ -51,10 +43,27 @@ def test_mesh_mcp_tools_use_one_broker_identity_and_unread_delivery(monkeypatch)
             return {"key": "release", "value": "v3.7"}
         return {"ok": True}
 
+    return request
+
+
+def test_mesh_mcp_tools_use_one_broker_identity_and_unread_delivery(monkeypatch) -> None:
+    """Every exposed Mesh tool uses the broker identity minted at registration."""
+    import superlocalmemory.mcp.tools_mesh as mesh_tools
+
+    collector = _ToolCollector()
+    mesh_tools.register_mesh_tools(collector, lambda: None)
+
+    calls: list[tuple[str, str, dict | None]] = []
+
+    request = _broker_request(calls)
+
     monkeypatch.setattr(mesh_tools, "_mesh_request", request)
     monkeypatch.setattr(mesh_tools, "_start_heartbeat", lambda: None)
     monkeypatch.setattr(mesh_tools, "_REGISTERED", False)
     monkeypatch.setattr(mesh_tools, "_PEER_ID", "local-provisional")
+    monkeypatch.setattr(mesh_tools, "_MESH_SESSION_ID", "")
+    for key in ("SLM_SESSION_ID", "CLAUDE_SESSION_ID", "CLAUDE_CODE_SESSION_ID"):
+        monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr(mesh_tools, "_HEARTBEAT_THREAD", None)
     monkeypatch.setattr(mesh_tools, "_PROJECT_PATH", "/sandbox/project")
     # `_detect_project_path()` deliberately prefers CLAUDE_PROJECT_DIR. Clear
@@ -78,29 +87,42 @@ def test_mesh_mcp_tools_use_one_broker_identity_and_unread_delivery(monkeypatch)
 
     asyncio.run(exercise())
 
+    _assert_broker_calls(calls)
+
+
+def _assert_broker_calls(calls):
     assert calls[0] == (
         "POST",
         "/register",
         {
-            "peer_id": "local-provisional",
             "session_id": "local-provisional",
             "summary": "audit mesh",
             "project_path": "/sandbox/project",
-            "agent_type": "claude_code",
+            "agent_type": "mcp_client",
         },
     )
-    assert ("POST", "/send", {"from_peer": "broker-peer", "to_peer": "other-peer", "content": "ready"}) in calls
+    assert (
+        "POST",
+        "/send",
+        {"from_peer": "broker-peer", "to_peer": "other-peer", "content": "ready"},
+    ) in calls
     assert ("POST", "/inbox/broker-peer/read", {"message_ids": [7]}) in calls
     assert ("POST", "/state", {"key": "release", "value": "v3.7", "set_by": "broker-peer"}) in calls
-    assert ("POST", "/lock", {"file_path": "/sandbox/file.py", "action": "acquire", "locked_by": "broker-peer"}) in calls
+    assert (
+        "POST",
+        "/lock",
+        {"file_path": "/sandbox/file.py", "action": "acquire", "locked_by": "broker-peer"},
+    ) in calls
 
 
 # ---------------------------------------------------------------------------
 # M03: Circuit-breaker tests for mesh_send
 # ---------------------------------------------------------------------------
 
+
 class _CollectorWithAnnotations:
     """Collector that also accepts ToolAnnotations keyword from @server.tool."""
+
     def __init__(self) -> None:
         self.tools: dict[str, object] = {}
 
@@ -108,13 +130,14 @@ class _CollectorWithAnnotations:
         def decorate(func):
             self.tools[func.__name__] = func
             return func
+
         return decorate
 
 
 def _make_mesh_send_tool(monkeypatch):
     """Return the mesh_send coroutine with a fresh module-level circuit state."""
-    import importlib
     import superlocalmemory.mcp.tools_mesh as mesh_tools
+
     # Force fresh module state
     monkeypatch.setattr(mesh_tools, "_REGISTERED", True)
     monkeypatch.setattr(mesh_tools, "_PEER_ID", "cb-peer")
@@ -237,9 +260,9 @@ def test_circuit_breaker_success_resets_failure_count(monkeypatch) -> None:
     monkeypatch.setattr(mesh_tools, "_mesh_request", varying_request)
 
     async def run():
-        await send_fn("p", "fail-1")   # failure 1
-        await send_fn("p", "fail-2")   # failure 2
-        r = await send_fn("p", "ok")   # success → resets counter
+        await send_fn("p", "fail-1")  # failure 1
+        await send_fn("p", "fail-2")  # failure 2
+        r = await send_fn("p", "ok")  # success → resets counter
         assert r.get("ok") is True
         # One more failure — counter should be 1, not tripping the breaker at 3
         r2 = await send_fn("p", "fail-again")

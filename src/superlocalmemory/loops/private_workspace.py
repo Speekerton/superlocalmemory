@@ -62,7 +62,11 @@ def private_file(path):
 @contextmanager
 def temporary(parent=None):
     if parent is not None:
-        private_dir(parent)
+        parent = private_dir(parent)
+    else:
+        parent = Path(tempfile.gettempdir()).resolve()
+        with directory_handle(parent):
+            pass
     with tempfile.TemporaryDirectory(prefix='slm-check-', dir=parent) as name:
         path = private_dir(name)
         yield path

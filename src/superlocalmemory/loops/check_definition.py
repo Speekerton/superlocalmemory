@@ -14,12 +14,7 @@ from superlocalmemory.loops.private_workspace import private_dir, temporary
 def relocated(command, cwd, destination):
     root = Path(cwd)
     argv = []
-    literal = False
     for arg in command:
-        if literal:
-            argv.append(arg)
-            literal = False
-            continue
         prefix, value = ('', arg)
         if arg.startswith('-') and '=' in arg:
             option, value = arg.split('=', 1)
@@ -30,7 +25,6 @@ def relocated(command, cwd, destination):
         if path.is_absolute() and path.is_relative_to(root):
             value = str(Path(destination) / path.relative_to(root))
         argv.append(prefix + value)
-        literal = arg == '-c'
     return argv
 
 

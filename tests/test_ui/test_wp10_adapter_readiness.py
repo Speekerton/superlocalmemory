@@ -60,7 +60,8 @@ def test_zombie_pid_is_not_running(tmp_path, monkeypatch):
 
 
 def test_exited_dashboard_child_cannot_hide_a_new_external_worker(tmp_path, monkeypatch):
-    manager._save_config({"transcript": {"enabled": True, "watch_dir": str(tmp_path)}})
+    (tmp_path / "imports").mkdir(exist_ok=True)  # transcripts are read from an import folder
+    manager._save_config({"transcript": {"enabled": True, "watch_dir": str(tmp_path / "imports")}})
     monkeypatch.setattr(
         manager, "_CHILDREN", {"transcript": SimpleNamespace(pid=123, poll=lambda: 0)}
     )
@@ -71,8 +72,9 @@ def test_exited_dashboard_child_cannot_hide_a_new_external_worker(tmp_path, monk
 
 
 def test_process_that_exits_immediately_is_failed_with_retry(tmp_path, monkeypatch):
+    (tmp_path / "imports").mkdir(exist_ok=True)
     manager._save_config(
-        {"transcript": {"enabled": True, "tier": "auto", "watch_dir": str(tmp_path)}}
+        {"transcript": {"enabled": True, "tier": "auto", "watch_dir": str(tmp_path / "imports")}}
     )
     monkeypatch.setattr(
         manager.subprocess, "Popen", lambda *a, **k: SimpleNamespace(pid=12345, poll=lambda: 1)

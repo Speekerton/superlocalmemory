@@ -911,8 +911,11 @@ slm adapters allow-folder ~/Meetings    # approve one more folder (this computer
 ```
 
 The dashboard's Configure button only accepts a file or folder inside an import
-folder: `imports/` in the data folder, or a folder approved here. Symlinks out of
-those folders, hidden folders and the rest of the data folder are refused.
+folder: `imports/` (or the older `import/` drop folder) in the data folder, or a
+folder approved here. Symlinks out of those folders, hidden folders and the rest
+of the data folder are refused. A path saved earlier, or edited by hand in
+`adapters.json`, is checked again on Start and by the importer itself; one that
+fails the check is not read, and the adapter says what to do.
 
 ### `slm ingest [--source ecc|jsonl]`
 

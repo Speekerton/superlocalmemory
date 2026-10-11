@@ -53,6 +53,13 @@ def _adapter_log_dir() -> Path:
     return _slm_home() / "logs"
 
 
+def _path_error(name: str, adapter_config: dict) -> str:
+    """A saved path outside the import folders refuses the adapter (see import_roots)."""
+    from superlocalmemory.ingestion.import_roots import saved_path_error
+
+    return saved_path_error(name, adapter_config, _slm_home())
+
+
 def _load_config() -> dict:
     config_path = _adapters_config_path()
     if config_path.exists():
@@ -115,7 +122,7 @@ def list_adapters() -> list[dict]:
     for name in _VALID_ADAPTERS:
         ac = config.get(name, {})
         running, pid = _is_running(name)
-        error = setup_error(name, ac)
+        error = _path_error(name, ac) or setup_error(name, ac)
         child = _CHILDREN.get(name)
         if child is not None and ((pid is not None and child.pid != pid) or not ac.get("enabled")):
             _CHILDREN.pop(name, None)
@@ -170,7 +177,7 @@ def start_adapter(name: str) -> dict:
     config = _load_config()
     if not config.get(name, {}).get("enabled"):
         return {"ok": False, "error": f"{name} not enabled. Run `slm adapters enable {name}` first."}
-    error = setup_error(name, config.get(name, {}))
+    error = _path_error(name, config.get(name, {})) or setup_error(name, config.get(name, {}))
     if error:
         return {"ok": False, "error": error}
 

@@ -169,5 +169,13 @@ if __name__ == "__main__":
         print('  {"transcript": {"enabled": true, "watch_dir": "/path/to/transcripts"}}')
         sys.exit(1)
 
+    from superlocalmemory.infra.data_root import canonical_data_root
+    from superlocalmemory.ingestion.import_roots import saved_path_error
+
+    refused = saved_path_error("transcript", {"watch_dir": watch_dir}, canonical_data_root())
+    if refused:
+        print(refused)
+        sys.exit(1)
+
     adapter = TranscriptAdapter(watch_dir=watch_dir)
     adapter.run()

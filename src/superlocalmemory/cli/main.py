@@ -87,6 +87,8 @@ _NO_DAEMON_COMMANDS = {
     # v4.0.2 receipt summary is a direct read-only learning.db query.
     "brain",
     "diagnostics",
+    # Doctor must observe a stopped/crashed daemon without recovering it first.
+    "doctor",
     # LLD-06 — agents launched through wrap start the daemon on demand.
     "wrap",
     # V3.6 Optimize commands that are config read/write only.

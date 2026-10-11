@@ -19,7 +19,7 @@ async def test_media_tools_refresh_while_the_same_server_is_running(media_enable
 
     @server.tool()
     def get_media():
-        return {"error": "Turn images on with slm features enable media."}
+        return {"error": "Turn images on with slm media enable."}
 
     assert [t.name for t in await server.list_tools()] == ["recall"]
     features.enable_media(source="api", start_install=False)
@@ -27,7 +27,7 @@ async def test_media_tools_refresh_while_the_same_server_is_running(media_enable
     features.disable_media()
     assert [t.name for t in await server.list_tools()] == ["recall"]
     result = await server.call_tool("get_media", {})
-    assert "slm features enable media" in result.content[0].text
+    assert "slm media enable" in result.content[0].text
 
 
 @pytest.mark.asyncio

@@ -79,7 +79,9 @@ def test_no_media_db_is_a_no_op_and_creates_nothing(tmp_path):
     receipt = _erase(db, "p1", ["f1"], root)
     assert receipt.proofs[0].owner == "media" and receipt.proofs[0].erased
     assert not media_db_path(root).exists()
-    assert sorted(p.name for p in root.rglob("*")) == before
+    # The only new file is the erasure journal that lives outside every backup.
+    created = set(p.name for p in root.rglob("*")) - set(before)
+    assert all(name.startswith("backup_obligations.db") for name in created), created
 
 
 def test_unknown_data_root_is_a_no_op(tmp_path):

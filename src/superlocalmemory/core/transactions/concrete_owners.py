@@ -534,6 +534,8 @@ class VectorOwner(_FactScopedOwner):
                 raise RuntimeError(f"vector delete failed for {fact_id}")
         else:
             self._remove_without_store(fact_id)
+        if self._ann_index is not None and hasattr(self._ann_index, "remove"):
+            self._ann_index.remove(fact_id)
 
     def _remove_without_store(self, fact_id: str) -> None:
         """No ``VectorStore`` here (a command-line erasure): remove the vector itself.
@@ -551,8 +553,6 @@ class VectorOwner(_FactScopedOwner):
                 raise RuntimeError(f"vector of {fact_id} is still in the index")
             return
         self._db.execute("DELETE FROM embedding_metadata WHERE fact_id = ?", (fact_id,))
-        if self._ann_index is not None and hasattr(self._ann_index, "remove"):
-            self._ann_index.remove(fact_id)
 
 
 def _admission_owners(engine: Any) -> dict[str, Any]:

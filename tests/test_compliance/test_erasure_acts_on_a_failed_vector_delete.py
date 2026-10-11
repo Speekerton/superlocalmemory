@@ -95,3 +95,21 @@ def test_a_failed_memory_delete_warns(caplog) -> None:
         _sync_vector_ann(retrieval, "f1", "p", None, operation="delete")
 
     assert any("a vector may remain" in r.message for r in caplog.records)
+
+
+def test_the_ann_index_loses_the_fact_in_both_paths() -> None:
+    """With a store and without one, the in-memory index must not keep the erased fact."""
+    class Ann:
+        def __init__(self) -> None:
+            self.gone: list[str] = []
+
+        def remove(self, fact_id: str) -> None:
+            self.gone.append(fact_id)
+
+    ctx = OperationContext(operation_id="o", profile_id="p", subject_id="f1", fact_ids=("f1",))
+    for store in (_Store({"f1": VectorDelete.DELETED}), None):
+        ann = Ann()
+        owner = VectorOwner(db=type("D", (), {"db_path": None, "execute": lambda *a, **k: []})(),
+                            vector_store=store, ann_index=ann)
+        assert owner._delete_all(ctx, phase="erase").ok
+        assert ann.gone == ["f1"], store

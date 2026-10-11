@@ -136,7 +136,11 @@ def test_an_admin_of_sales_only_cannot_read_default(matrix):
     app, client, who, _ = matrix
     _company(app)
     for path in ("/api/memories", "/api/v3/timeline", "/api/tiers/stats"):
-        assert client.get(path, headers=who["admin_b"]).status_code == 403, path
+        for key in ("profile", "profile_id"):
+            r = client.get(path, params={key: "default"}, headers=who["admin_b"])
+            assert r.status_code == 403, (path, key, r.status_code)
+        # Naming nothing reads their own workspace (finding 2), never default.
+        assert client.get(path, headers=who["admin_b"]).status_code == 200, path
 
 
 # -- OPS-09: the workspace list ------------------------------------------------------
@@ -152,7 +156,8 @@ def test_the_workspace_list_names_only_the_callers_workspaces(matrix):
     seen = {name: names(name) for name in ("viewer_a", "admin_b", "dual")}
     assert seen == {"viewer_a": {"default"}, "admin_b": {"sales"}, "dual": {"default", "sales"}}
     body = client.get("/api/profiles", headers=who["admin_b"]).json()
-    assert body["active_profile"] == ""  # the active workspace is not theirs to name
+    # Their own active workspace (bound to their session), never the owner's.
+    assert body["active_profile"] == "sales"
 
 
 def test_the_owner_still_sees_every_workspace_in_personal_mode(matrix):

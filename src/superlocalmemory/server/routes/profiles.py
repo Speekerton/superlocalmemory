@@ -24,7 +24,7 @@ from .helpers import (
     ProfileSwitch, DB_PATH,
     sync_profiles, ensure_profile_in_db, ensure_profile_in_json,
     delete_profile_from_db, PICTURES_PENDING,
-    _load_profiles_json, _save_profiles_json,
+    _load_profiles_json, _save_profiles_json, get_active_profile,
 )
 from superlocalmemory.server.profile_runtime import (
     commit_daemon_profile_switch,
@@ -91,7 +91,7 @@ async def list_profiles(request: Request):
     try:
         visible = _visible_profile_ids(request)
         merged = sync_profiles()
-        active = get_profile_runtime(request.app.state).snapshot.profile_id
+        active = get_active_profile()  # the caller's own (pinned for this request)
 
         profiles = []
         for p in merged:
@@ -119,6 +119,23 @@ async def list_profiles(request: Request):
         raise
     except Exception:
         raise _internal_error("Profile list error")
+
+
+def _switch_session_workspace(request: Request, name: str, authorization) -> dict:
+    """Bind ``name`` to the caller's session; nobody else's workspace moves."""
+    from superlocalmemory.server.caller_workspace import session_workspaces
+    from superlocalmemory.server.rbac_enforce import _session_token
+
+    previous = get_active_profile()
+    session_workspaces(request.app.state).bind(_session_token(request), name)
+    count = _get_memory_count(name)
+    authorization.complete()
+    return {
+        "success": True, "active_profile": name,
+        "previous_profile": previous, "memory_count": count,
+        "scope": "session",
+        "message": f"Switched to profile '{name}' ({count} memories).",
+    }
 
 
 @router.post("/api/profiles/{name}/switch")
@@ -164,6 +181,9 @@ async def switch_profile(name: str, request: Request):
                     status_code=403,
                     detail="You are not a member of this workspace.",
                 )
+            # A signed-in person moves only themselves (PR 248 review,
+            # finding 2): the daemon-wide workspace is the machine owner's.
+            return _switch_session_workspace(request, name, authorization)
         runtime = get_profile_runtime(request.app.state)
         previous = runtime.snapshot.profile_id
         try:

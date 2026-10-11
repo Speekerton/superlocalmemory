@@ -4542,6 +4542,12 @@ def _register_dashboard_routes(application: FastAPI) -> None:
                 )
             return await call_next(request)
 
+    # The caller's workspace, resolved once and pinned before any gate runs:
+    # a signed-in person has their own active workspace, and the gates and the
+    # handler read the same value (PR 248 review, finding 2).
+    from superlocalmemory.server.caller_workspace import CallerWorkspaceMiddleware
+    application.add_middleware(CallerWorkspaceMiddleware, app_state=application.state)
+
     # Migration-readiness gate — outermost middleware; runs before auth and
     # rate-limiting.  When required schema migrations are in a failed state every
     # feature route receives a 503 so callers see one consistent "not ready"
@@ -5106,7 +5112,9 @@ def _register_daemon_routes(application: FastAPI) -> None:
         if not isinstance(window, str):
             return window
         engine = _get_engine_or_503()
-        req_profile = (profile_id or "").strip()
+        from superlocalmemory.server.caller_workspace import route_to_bound
+        # A signed-in person's own workspace when they name none (finding 2).
+        req_profile = (profile_id or "").strip() or route_to_bound(engine._profile_id)
         # 4.1.14 audit: permission before existence on the read path, the
         # same order the write path enforces. Existence-first lets a caller
         # without READ probe which profile ids exist (404 vs data); READ on
@@ -5268,7 +5276,9 @@ def _register_daemon_routes(application: FastAPI) -> None:
         # requests (the daemon is no longer single-profile for them); the
         # guard keeps its legacy slot below for an empty profile_id, where it
         # is trivially satisfied and unreachable for routed requests.
-        req_profile = (req.profile_id or "").strip()
+        from superlocalmemory.server.caller_workspace import route_to_bound
+        # A signed-in person's own workspace when they name none (finding 2).
+        req_profile = (req.profile_id or "").strip() or route_to_bound(engine._profile_id)
         if not req_profile:
             # Pass the STRIPPED value: whitespace-only input normalizes to
             # the empty legacy shape, so the guard stays a no-op for it

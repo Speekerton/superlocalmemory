@@ -18,7 +18,7 @@ from tests.test_server.test_rbac_company_mode_credential import app_and_engine  
     "/api/compliance/status", "/api/optimize/config",
 ])
 def test_an_ignored_query_hint_cannot_replace_the_workspace_actually_read(
-    matrix, company, key, path,
+    matrix, company, key, path, monkeypatch,
 ):
     app, client, who, _ = matrix
     app.state.rbac.set_require_login(company)
@@ -30,6 +30,14 @@ def test_an_ignored_query_hint_cannot_replace_the_workspace_actually_read(
         fact_id="private-default", profile_id="default", memory_id=memory_id,
         content="DEFAULT_PRIVATE_SENTINEL",
     ))
+    # admin_b's own active workspace is ``sales`` (bound to the session, PR 248
+    # finding 2), so a hint naming sales is honest here; the sentinel in
+    # ``default`` must never be served. Pin the caller to the owner's
+    # workspace to keep the decoy shape: hint = sales, read = default.
+    from superlocalmemory.server import caller_workspace
+
+    monkeypatch.setattr(caller_workspace, "resolve_caller_workspace",
+                        lambda scope, state: caller_workspace.CallerWorkspace("default", False))
     response = client.get(path, params={key: "sales"}, headers=who["admin_b"])
     assert response.status_code == 403, (path, key, response.status_code, response.text)
     assert "DEFAULT_PRIVATE_SENTINEL" not in response.text

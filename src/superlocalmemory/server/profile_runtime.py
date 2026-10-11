@@ -46,9 +46,29 @@ class TransitionDrainTimeout(Exception):
     """
 
 
+_REQUEST_PIN: ContextVar[object | None] = ContextVar("slm_request_pin", default=None)
+
+
 def current_request_profile() -> str | None:
     """Return the immutable profile snapshot admitted for this request."""
     return _REQUEST_PROFILE.get()
+
+
+def current_request_pin():
+    """The caller workspace pinned for this request (see ``caller_workspace``)."""
+    return _REQUEST_PIN.get()
+
+
+@contextmanager
+def pin_request_workspace(pin) -> Iterator[None]:
+    """Make ``pin`` this request's workspace for every gate and the handler."""
+    pin_token = _REQUEST_PIN.set(pin)
+    profile_token = _REQUEST_PROFILE.set(pin.profile_id)
+    try:
+        yield
+    finally:
+        _REQUEST_PROFILE.reset(profile_token)
+        _REQUEST_PIN.reset(pin_token)
 
 
 @dataclass(frozen=True, slots=True)
@@ -542,7 +562,14 @@ class ProfileRuntimeMiddleware:
             runtime.release_operation()
             raise
         scope.setdefault("state", {})["profile_snapshot"] = snapshot
-        token = _REQUEST_PROFILE.set(snapshot.profile_id)
+        # A signed-in caller's workspace was pinned before the gates ran and is
+        # theirs alone: a daemon switch landing now cannot change what they act
+        # on (PR 248 review, finding 2). A caller without a binding (the machine
+        # owner) is authorized independently of the workspace, so it acts on
+        # the generation it was admitted under, as before.
+        pin = scope["state"].get("caller_workspace")
+        bound = pin is not None and pin.bound
+        token = _REQUEST_PROFILE.set(pin.profile_id if bound else snapshot.profile_id)
 
         # The operation lease guards the SYNCHRONOUS route work that produces
         # the response — not the streaming of its body. A long-lived SSE body
@@ -591,8 +618,10 @@ __all__ = [
     "TransitionDrainTimeout",
     "bind_profile_runtime",
     "commit_daemon_profile_switch",
+    "current_request_pin",
     "current_request_profile",
     "get_profile_runtime",
     "persist_active_profile",
+    "pin_request_workspace",
     "reconfigure_daemon_engine",
 ]

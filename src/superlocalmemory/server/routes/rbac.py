@@ -232,6 +232,9 @@ async def logout(request: Request, response: Response):
     if token:
         user = rbac.resolve_session(token)
         rbac.revoke_session(token)
+        from superlocalmemory.server.caller_workspace import session_workspaces
+
+        session_workspaces(request.app.state).forget(token)
         if user:
             record(rbac, "logout", actor=f"user:{user['user_id']}", outcome="ok",
                    session="revoked")

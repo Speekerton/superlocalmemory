@@ -64,8 +64,8 @@ VEC     fact_embeddings, reembed_next_vec, reembed_prev_vec, reembed_trash_vec
 DELETE  activation_cache, backup_destinations, behavioral_assertions,
         behavioral_patterns, community_summaries, compliance_audit,
         core_memory_blocks, cross_platform_sync_log, entity_communities,
-        graph_generation, memory_kind_runs, mesh_events, mesh_locks,
-        mesh_messages, mesh_peers, mesh_state, pending_outcomes,
+        entity_link_repair_undo, graph_generation, memory_kind_runs,
+        mesh_events, mesh_locks, mesh_messages, mesh_peers, mesh_state, pending_outcomes,
         persona_summary, rbac_memberships, soft_prompt_templates
 KEEP    erasure_receipts, fact_search_changes, profiles, write_commits
 
@@ -164,6 +164,8 @@ DECISIONS: dict[str, tuple[str, str]] = {
     "mesh_messages": (DELETE, "live coordination"),
     "mesh_peers": (DELETE, "live coordination"),
     "mesh_state": (DELETE, "live coordination"),
+    "entity_link_repair_undo": (DELETE, "undo record of an entity link repair; it names "
+                                        "the deleted profile's rows and cannot apply after"),
     # deliberately kept
     "write_commits": (KEEP, "immutable write receipts (a trigger forbids changes)"),
     "erasure_receipts": (KEEP, "Art. 17 receipts of erasures made in that profile"),

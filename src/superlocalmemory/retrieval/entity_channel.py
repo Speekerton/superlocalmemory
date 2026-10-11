@@ -16,14 +16,22 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import threading
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from superlocalmemory.encoding.entity_match import alias_in_use as _alias_in_use
 from superlocalmemory.retrieval import adjacency_rcu as _rcu
-from superlocalmemory.retrieval import adjacency_refresh as _refresh, spreading
+from superlocalmemory.retrieval import adjacency_refresh as _refresh
+from superlocalmemory.retrieval import spreading
+
+# Question-side names (retrieval/query_entities, the rules a save uses);
+# extract_query_entities stays importable from here for its callers.
+from superlocalmemory.retrieval.query_entities import (
+    extract_query_entities,
+    query_plain_words,
+)
 from superlocalmemory.retrieval.scope_policy import (
     authorized_fact_ids,
     filter_authorized_results,
@@ -95,158 +103,6 @@ class _AdjSlot:
     graph_metrics_profile: str
     adjacency_source_name: str
     snapshot: Any  # graph_adjacency view; typed loosely to avoid an import cycle
-
-
-_PROPER_NOUN_RE = re.compile(r"\b[A-Z][a-z]{1,}\b")
-
-_ENTITY_STOP: frozenset[str] = frozenset(
-    {
-        # Expanded stop list for query entity extraction
-        "what",
-        "when",
-        "where",
-        "who",
-        "which",
-        "how",
-        "does",
-        "did",
-        "the",
-        "that",
-        "this",
-        "there",
-        "then",
-        "than",
-        "they",
-        "them",
-        "have",
-        "has",
-        "had",
-        "been",
-        "being",
-        "about",
-        "after",
-        "before",
-        "from",
-        "into",
-        "with",
-        "some",
-        "other",
-        "would",
-        "could",
-        "should",
-        "will",
-        "because",
-        "also",
-        "just",
-        "like",
-        "know",
-        "think",
-        "feel",
-        "want",
-        "need",
-        "make",
-        "take",
-        "give",
-        "tell",
-        "said",
-        "wow",
-        "gonna",
-        "got",
-        "by",
-        "thanks",
-        "thank",
-        "hey",
-        "hi",
-        "hello",
-        "bye",
-        "good",
-        "great",
-        "nice",
-        "cool",
-        "right",
-        "let",
-        "can",
-        "might",
-        "much",
-        "many",
-        "more",
-        "most",
-        "something",
-        "anything",
-        "everything",
-        "nothing",
-        "someone",
-        "it",
-        "my",
-        "your",
-        "our",
-        "their",
-        "me",
-        "you",
-        "we",
-        "us",
-        "do",
-        "if",
-        "or",
-        "no",
-        "to",
-        "at",
-        "on",
-        "in",
-        "so",
-        "go",
-        "come",
-        "see",
-        "look",
-        "say",
-        "ask",
-        "try",
-        "keep",
-        "yes",
-        "yeah",
-        "sure",
-        "okay",
-        "ok",
-        "really",
-        "actually",
-        "maybe",
-        "well",
-        "still",
-        "even",
-        "very",
-    }
-)
-
-
-def extract_query_entities(query: str) -> list[str]:
-    """Extract entity candidates from query (handles both cases).
-
-    Strategy: find proper nouns in original + title-cased text,
-    plus quoted phrases. Deduplicates case-insensitively.
-    """
-    candidates: list[str] = []
-    seen: set[str] = set()
-
-    def _add(name: str) -> None:
-        lo = name.lower()
-        if lo not in seen and lo not in _ENTITY_STOP and len(name) >= 2:
-            seen.add(lo)
-            candidates.append(name)
-
-    for m in _PROPER_NOUN_RE.finditer(query):
-        _add(m.group(0))
-    for m in _PROPER_NOUN_RE.finditer(query.title()):
-        _add(m.group(0))
-    for m in re.finditer(r'"([^"]+)"', query):
-        _add(m.group(1).strip())
-    # Also extract multi-word capitalized sequences (e.g. "New York", "San Francisco")
-    for m in re.finditer(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b", query):
-        _add(m.group(1))
-    # Extract all-caps abbreviations (e.g. NYU, MIT, UCLA) — min 2 chars
-    for m in re.finditer(r"\b([A-Z]{2,})\b", query):
-        _add(m.group(1))
-
-    return candidates
 
 
 class EntityGraphChannel:
@@ -738,9 +594,8 @@ class EntityGraphChannel:
         """
         include_global = bool(getattr(self, "include_global", False))
         include_shared = bool(getattr(self, "include_shared", False))
-        raw_entities = extract_query_entities(query)
-
-        if not raw_entities:
+        raw_entities, plain_words = extract_query_entities(query), query_plain_words(query)
+        if not raw_entities and not plain_words:
             return []
 
         # Load the visible fact/entity map before resolution. Canonical entity
@@ -752,7 +607,7 @@ class EntityGraphChannel:
             include_shared=include_shared,
         )
 
-        canonical_ids = self._resolve_entities(raw_entities, profile_id)
+        canonical_ids = self._resolve_entities(raw_entities, profile_id, plain_words)
         if not canonical_ids:
             return []
 
@@ -953,8 +808,8 @@ class EntityGraphChannel:
         if not allowed_candidates:
             return {}
 
-        raw_entities = extract_query_entities(query)
-        if not raw_entities:
+        raw_entities, plain_words = extract_query_entities(query), query_plain_words(query)
+        if not raw_entities and not plain_words:
             return {}
 
         self._ensure_adjacency(
@@ -962,7 +817,7 @@ class EntityGraphChannel:
             include_global=include_global,
             include_shared=include_shared,
         )
-        canonical_ids = self._resolve_entities(raw_entities, profile_id)
+        canonical_ids = self._resolve_entities(raw_entities, profile_id, plain_words)
         if not canonical_ids:
             return {}
 
@@ -1065,7 +920,8 @@ class EntityGraphChannel:
         except Exception as exc:
             logger.debug("Contradiction suppression failed: %s", exc)
 
-    def _resolve_entities(self, raw: list[str], profile_id: str) -> list[str]:
+    def _resolve_entities(self, raw: list[str], profile_id: str,
+                          plain_words: list[str] | None = None) -> list[str]:
         """Resolve local and visible cross-profile canonical entity IDs."""
         ids: list[str] = []
         seen: set[str] = set()
@@ -1073,7 +929,11 @@ class EntityGraphChannel:
         # aliases, or asks the language model (resolve() is for saving).
         lookup = getattr(self._resolver, "lookup", None)
         if lookup is not None:
-            for eid in lookup(raw, profile_id).values():
+            found = list(lookup(raw, profile_id).values())
+            plain = getattr(self._resolver, "lookup_plain_words", None)
+            if plain is not None and plain_words:
+                found += list(plain(plain_words, profile_id).values())
+            for eid in found:
                 if eid not in seen:
                     seen.add(eid)
                     ids.append(eid)
@@ -1091,12 +951,15 @@ class EntityGraphChannel:
             placeholders = ",".join("?" for _ in names)
             try:
                 rows = self._db.execute(
-                    "SELECT entity_id FROM canonical_entities "
-                    f"WHERE LOWER(canonical_name) IN ({placeholders}) "
-                    "UNION SELECT entity_id FROM entity_aliases "
-                    f"WHERE LOWER(alias) IN ({placeholders})",
+                    "SELECT entity_id, '' AS source, '' AS alias, '' AS canonical_name "
+                    f"FROM canonical_entities WHERE LOWER(canonical_name) IN ({placeholders}) "
+                    "UNION SELECT ea.entity_id, ea.source, ea.alias, ce.canonical_name "
+                    "FROM entity_aliases ea JOIN canonical_entities ce USING (entity_id) "
+                    f"WHERE LOWER(ea.alias) IN ({placeholders})",
                     (*names, *names),
                 )
+                rows = [r for r in map(dict, rows) if _alias_in_use(
+                    r["source"], r["alias"], r["canonical_name"])]
             except Exception:
                 rows = []
             visible_entity_ids = set(self._entity_to_facts)

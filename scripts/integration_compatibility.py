@@ -271,11 +271,43 @@ def _plugin_package(repo: Path, _client_id: str, _work: Path) -> str:
     return launcher.relative_to(repo).as_posix()
 
 
+def _hermes_package(repo: Path, _client_id: str, _work: Path) -> str:
+    """Validate the native package locally without launching a Hermes host."""
+    package = repo / "hermes-plugin"
+    manifest = _parse_config(package / "plugin.yaml", "yaml")
+    if manifest.get("name") != "superlocalmemory" or manifest.get("api_version") != 1:
+        raise AssertionError("invalid Hermes native plugin manifest")
+    inventory = _parse_config(package / "command-inventory.json", "json")
+    if not {"remember", "recall", "update", "forget"} <= set(inventory["primary_commands"]):
+        raise AssertionError("Hermes command inventory lacks the memory surface")
+    tree = ast.parse((package / "__init__.py").read_text(encoding="utf-8"))
+    functions = {node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
+    if "register" not in functions:
+        raise AssertionError("Hermes package lacks its native register entry point")
+    hooks = manifest.get("provides_hooks", [])
+    if not hooks or not set(hooks) <= functions:
+        raise AssertionError("Hermes manifest declares an unimplemented lifecycle hook")
+    tools = {
+        node.args[0].value for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "register_tool" and node.args
+        and isinstance(node.args[0], ast.Constant)
+    }
+    if set(manifest.get("provides_tools", [])) != tools:
+        raise AssertionError("Hermes manifest and native tool registrations disagree")
+    for skill in inventory["skills"]:
+        if not (package / "skills" / skill / "SKILL.md").is_file():
+            raise AssertionError(f"Hermes package is missing skill: {skill}")
+    ast.parse((package / "remote.py").read_text(encoding="utf-8"))
+    return "hermes-plugin/plugin.yaml"
+
+
 CHECKERS: dict[str, Callable[[Path, str, Path], str]] = {
     "portable_config": _portable_config,
     "mcp_surface": _mcp_surface,
     "active_adapter": _active_adapter,
     "plugin_package": _plugin_package,
+    "hermes_package": _hermes_package,
 }
 
 

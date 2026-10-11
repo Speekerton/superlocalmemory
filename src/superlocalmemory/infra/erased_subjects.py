@@ -69,8 +69,12 @@ class Subject:
 
 def _connect(data_root: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(Path(data_root) / _LEDGER), timeout=30)
-    conn.row_factory = sqlite3.Row
-    conn.executescript(_DDL)
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.executescript(_DDL)
+    except BaseException:
+        conn.close()
+        raise
     return conn
 
 

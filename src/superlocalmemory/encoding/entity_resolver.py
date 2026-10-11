@@ -542,7 +542,26 @@ class EntityResolver:
         Reassigns aliases, updates canonical_entities_json in atomic_facts,
         and removes the merged entity record.
         """
-        # Move aliases from merge -> keep
+        self._merge_aliases(entity_id_keep, entity_id_merge, profile_id)
+        self._merge_fact_memberships(entity_id_keep, entity_id_merge, profile_id)
+
+        # Delete the merged entity (tenant-scoped). Its index rows cascade.
+        self._db.execute(
+            "DELETE FROM entity_aliases WHERE entity_id = ? AND profile_id = ?",
+            (entity_id_merge, profile_id),
+        )
+        self._db.execute(
+            "DELETE FROM canonical_entities WHERE entity_id = ? AND profile_id = ?",
+            (entity_id_merge, profile_id),
+        )
+        _unproject_entity(entity_id_merge)
+        logger.info(
+            "Merged entity %s into %s (profile=%s)",
+            entity_id_merge, entity_id_keep, profile_id,
+        )
+
+    def _merge_aliases(self, entity_id_keep, entity_id_merge, profile_id):
+        """Move aliases and the old canonical name to the kept entity."""
         aliases = self._db.get_aliases_for_entity(entity_id_merge, profile_id)
         for alias in aliases:
             new_alias = EntityAlias(
@@ -563,64 +582,19 @@ class EntityResolver:
             merged_name = str(dict(rows[0])["canonical_name"])
             self._persist_alias(entity_id_keep, merged_name, 1.0, "merge", profile_id)
 
-        # Update atomic_facts: replace entity_id_merge with entity_id_keep
-        # in canonical_entities_json column
-        fact_rows = self._db.execute(
-            "SELECT fact_id, canonical_entities_json FROM atomic_facts "
-            "WHERE profile_id = ? AND canonical_entities_json LIKE ?",
-            (profile_id, f'%"{entity_id_merge}"%'),
-        )
-        for row in fact_rows:
-            d = dict(row)
-            try:
-                entities = json.loads(d["canonical_entities_json"])
-                updated = [
-                    entity_id_keep if eid == entity_id_merge else eid
-                    for eid in entities
-                ]
-                # Deduplicate while preserving order
-                seen: set[str] = set()
-                deduped = []
-                for eid in updated:
-                    if eid not in seen:
-                        seen.add(eid)
-                        deduped.append(eid)
-                self._db.execute(
-                    "UPDATE atomic_facts SET canonical_entities_json = ? "
-                    "WHERE fact_id = ?",
-                    (json.dumps(deduped), d["fact_id"]),
-                )
-                # The fact now names the kept entity; index it under that id
-                # (storage/entity_index.py). The merged id's rows go with the
-                # entity row below, by its foreign key.
-                from superlocalmemory.storage.entity_index import (
-                    record_fact_entities,
-                )
+    def _merge_fact_memberships(self, entity_id_keep, entity_id_merge, profile_id):
+        """Rewrite every indexed member, deduplicating in stable order."""
+        from superlocalmemory.encoding.entity_fact_lookup import entity_facts
+        from superlocalmemory.storage.entity_index import record_fact_entities
 
-                record_fact_entities(
-                    self._db, d["fact_id"], profile_id, [entity_id_keep],
-                )
-            except (json.JSONDecodeError, TypeError):
-                continue
-
-        # Delete the merged entity (tenant-scoped)
-        self._db.execute(
-            "DELETE FROM entity_aliases WHERE entity_id = ? AND profile_id = ?",
-            (entity_id_merge, profile_id),
-        )
-        self._db.execute(
-            "DELETE FROM canonical_entities WHERE entity_id = ? AND profile_id = ?",
-            (entity_id_merge, profile_id),
-        )
-        # The merged-away node has its own copy in the graph projection, and
-        # deleting the row above does not reach it. Left there it keeps its own
-        # name and its own edges, so the two halves of a merged entity stay
-        # visible to a graph query as two entities.
-        _unproject_entity(entity_id_merge)
-        logger.info(
-            "Merged entity %s into %s (profile=%s)",
-            entity_id_merge, entity_id_keep, profile_id,
-        )
+        for fact_id, entities in entity_facts(self._db, entity_id_merge, profile_id):
+            updated = [entity_id_keep if eid == entity_id_merge else eid for eid in entities]
+            deduped = list(dict.fromkeys(updated))
+            self._db.execute(
+                "UPDATE atomic_facts SET canonical_entities_json = ? WHERE fact_id = ?",
+                (json.dumps(deduped), fact_id),
+            )
+            record_fact_entities(self._db, fact_id, profile_id, deduped)
 
     # -- Internal: lookups --------------------------------------------------
 

@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+import numpy as np
 from numpy.typing import NDArray
 
 from superlocalmemory.core.config import QuantizationConfig
@@ -160,7 +161,16 @@ class QuantizedEmbeddingStore:
         Returns [(fact_id, similarity)] sorted descending.
         """
         rows = self._search_rows(profile_id, bit_widths)
-        results = [self._score_row(query_embedding, dict(row)) for row in rows]
+        results = []
+        for row in rows:
+            try:
+                result = self._score_row(query_embedding, dict(row))
+                if not np.isfinite(result[1]):
+                    raise ValueError("non-finite quantized score")
+                results.append(result)
+            except (ValueError, TypeError, IndexError, KeyError) as exc:
+                logger.warning("Quantized fact_id=%s skipped; repair base embedding: %s",
+                               row["fact_id"], exc)
         results.sort(key=lambda x: (-x[1], x[0]))
         return results[:top_k]
 
@@ -209,7 +219,16 @@ class QuantizedEmbeddingStore:
         if denominator < 1e-12:
             return qe.fact_id, 0.0
         inner_product = float(np.dot(query_embedding, self._polar.decode(qe)))
-        correction = self._qjl.estimate_correction(query_embedding, qe.qjl_bits)
+        try:
+            if len(qe.qjl_bits) == (self._config.qjl.projection_dim + 7) // 8:
+                raise ValueError("legacy signs lack residual magnitude")
+            correction = self._qjl.estimate_correction(query_embedding, qe.qjl_bits)
+            if not np.isfinite(correction):
+                raise ValueError("non-finite QJL correction")
+        except (ValueError, TypeError) as exc:
+            logger.warning("QJL fact_id=%s unavailable; using base score; repair with "
+                           "slm quantize --execute: %s", qe.fact_id, exc)
+            return qe.fact_id, self._polar.approximate_similarity(query_embedding, qe)
         return qe.fact_id, (inner_product + correction) / denominator
 
     # -- Compression helpers -----------------------------------------------

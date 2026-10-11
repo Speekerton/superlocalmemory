@@ -84,3 +84,42 @@ def test_unavailable_candidate_backend_is_visible(wired, caplog):
                return_value=None):
         assert _init_quantization_aware_search(vector_store, db, config) is None
     assert "quantized tiers unavailable" in caplog.text.lower()
+
+
+@pytest.mark.parametrize("bit_width", [2, 4])
+@pytest.mark.parametrize("damage", ["header", "prior_projection", "base", "legacy"])
+def test_bad_row_never_hides_healthy_quantized_only_fact(wired, caplog, bit_width, damage):
+    from superlocalmemory.core.config import QJLConfig
+    from superlocalmemory.math.qjl import QJLEncoder
+
+    config, db, _, retrievals = wired
+    retrieval = init_retrieval(config, db, None, None, None, vector_store=None)
+    retrievals.append(retrieval)
+    qas = retrieval._semantic._qas
+    store = qas._quantized_store
+    query = np.random.default_rng(44).standard_normal(16)
+    memory = MemoryRecord(content="Persisted quantized-only facts")
+    db.store_memory(memory)
+    for fid in ("healthy", "bad"):
+        db.store_fact(AtomicFact(fact_id=fid, memory_id=memory.memory_id, content=fid))
+        db.execute("INSERT INTO fact_retention (fact_id, profile_id) VALUES (?, ?)",
+                   (fid, "default"))
+        assert store.compress_fact(fid, "default", query, bit_width)
+    qe = store.load("bad", "default")
+    if damage == "base":
+        db.execute("UPDATE polar_embeddings SET angle_indices=? WHERE fact_id='bad'", (b"TQ",))
+    else:
+        payload = b"QJL1broken"
+        if damage == "prior_projection":
+            payload = QJLEncoder(QJLConfig(projection_dim=64)).encode_residual(
+                query - store._polar.decode(qe))
+        elif damage == "legacy":
+            payload = qe.qjl_bits[12:]
+        db.execute("UPDATE polar_embeddings SET qjl_bits=? WHERE fact_id='bad'", (payload,))
+    expected = {"healthy"} if damage == "base" else {"healthy", "bad"}
+    assert {fid for fid, _ in qas.search(query, "default")} == expected
+    assert {fid for fid, _ in retrieval._semantic.search(query.tolist(), "default")} == expected
+    if damage != "base":
+        scores = dict(store.search(query, "default"))
+        assert scores["bad"] == pytest.approx(store._polar.approximate_similarity(query, qe))
+    assert "bad" in caplog.text and "repair" in caplog.text.lower()

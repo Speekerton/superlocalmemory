@@ -1133,6 +1133,11 @@ def _wait_for_daemon(timeout: int = 60, *, proc: Popen | None = None) -> bool:
             # Its live record wins even when the child we spawned lost the race.
             winner = read_descriptor()
             if winner is None or not _descriptor_process_is_alive(winner):
+                # Another starter can own the namespace before it publishes
+                # daemon.json. A kernel-held instance lock is live ownership
+                # evidence; our exited child does not invalidate that winner.
+                if instance_lock_is_held():
+                    continue
                 return False
             continue
         if (

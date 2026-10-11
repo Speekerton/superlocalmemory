@@ -19,7 +19,6 @@ from __future__ import annotations
 import json
 import logging
 import sys
-import time
 from pathlib import Path
 
 from superlocalmemory.ingestion.base_adapter import BaseAdapter, AdapterConfig, IngestItem

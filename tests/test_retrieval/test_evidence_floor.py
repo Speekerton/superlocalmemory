@@ -9,14 +9,12 @@ TDD RED suite: all tests MUST fail before the feature is implemented.
 
 from __future__ import annotations
 
-import os
 from unittest.mock import MagicMock
 
 import pytest
 
-from superlocalmemory.core.config import ChannelWeights, RetrievalConfig
+from superlocalmemory.core.config import RetrievalConfig
 from superlocalmemory.retrieval.engine import RetrievalEngine
-from superlocalmemory.retrieval.fusion import FusionResult
 from superlocalmemory.storage.models import AtomicFact, Mode
 
 # Every RetrievalEngine a test builds is closed when the test ends.

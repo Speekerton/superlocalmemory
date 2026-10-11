@@ -6,11 +6,11 @@ import pytest
 
 from superlocalmemory.core.config import ChannelWeights, RetrievalConfig
 from superlocalmemory.retrieval import channel_status as chstat
-from superlocalmemory.retrieval.engine import RetrievalEngine, apply_channel_weights
+from superlocalmemory.retrieval.engine import apply_channel_weights
 from superlocalmemory.retrieval.media_channel import MediaChannel
 from superlocalmemory.storage.models import Mode
 
-from ._media_support import FakeClient, MemoryDb, blend, make_store, mid, unit
+from ._media_support import FakeClient, MemoryDb, make_store, mid, unit
 from .test_evidence_floor import _build_engine, _make_fact
 
 pytestmark = pytest.mark.usefixtures("closes_retrieval_engines")

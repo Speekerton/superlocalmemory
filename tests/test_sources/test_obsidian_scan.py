@@ -6,7 +6,6 @@ import json
 
 from superlocalmemory import sources
 from superlocalmemory.core.metadata_guard import strip_reserved_metadata
-from superlocalmemory.sources.store import SourceStore
 
 
 def vault(env):

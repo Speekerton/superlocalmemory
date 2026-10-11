@@ -19,8 +19,6 @@ there is, and identical wherever it appears.
 
 from __future__ import annotations
 
-import pytest
-
 from superlocalmemory.core.config import Mode, SLMConfig
 from superlocalmemory.core.mode_capability import llm_capability
 

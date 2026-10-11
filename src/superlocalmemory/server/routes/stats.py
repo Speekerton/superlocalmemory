@@ -8,7 +8,7 @@ Routes: /api/stats, /api/timeline
 """
 import logging
 import sqlite3
-from typing import Annotated, Optional
+from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
 

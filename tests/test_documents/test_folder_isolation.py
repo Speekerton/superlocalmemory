@@ -9,7 +9,6 @@ import pytest
 from superlocalmemory.documents.status import remove_document
 from superlocalmemory.documents.submit import submit_document
 from superlocalmemory.media import open_media_store
-from tests.test_documents.pdfs import make_pdf
 from tests.test_documents.support import pdf_input
 
 CFG = SimpleNamespace(pii_redaction=False)

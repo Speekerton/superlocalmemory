@@ -7,8 +7,6 @@ import os
 import shutil
 from types import SimpleNamespace
 
-import pytest
-
 from superlocalmemory.sources import walk as walk_mod
 
 

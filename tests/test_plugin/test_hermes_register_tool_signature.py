@@ -8,7 +8,6 @@ the 5th positional argument, so Hermes called a string: "TypeError: 'str' object
 from __future__ import annotations
 
 import importlib.util
-import inspect
 from pathlib import Path
 
 import pytest

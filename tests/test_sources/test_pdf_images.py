@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
-
 PDF = b"%PDF-1.4\n" + b"0" * 100
 PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 100
 

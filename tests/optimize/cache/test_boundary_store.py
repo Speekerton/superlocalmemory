@@ -6,8 +6,6 @@ arXiv:2502.03771 is implemented, NOT a fabricated step-based heuristic.
 
 from __future__ import annotations
 
-import pytest
-
 from superlocalmemory.optimize.cache.boundary_store import (
     BoundaryStore,
     PerItemBoundaryRecord,

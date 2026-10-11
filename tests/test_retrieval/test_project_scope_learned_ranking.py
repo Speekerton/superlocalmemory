@@ -24,13 +24,17 @@ import numpy as np
 import pytest
 
 from tests.test_retrieval.test_project_scope_ranking import (  # noqa: F401 - fixture
-    PROJECT_PATH,
     _PROJECT,
+    PROJECT_PATH,
     _contents,
     _is_project,
     _recall,
-    store,
+    store as project_store,
 )
+
+# Register the borrowed fixture under its requested name without an unused
+# import that Ruff mistakes for redefinition at every fixture argument.
+store = project_store
 
 QUERY = "what happens to an invoice"
 MODES = ("off", "v1", "v2", "v2-ensemble")
@@ -147,14 +151,20 @@ def _trained_model(store) -> tuple[bytes, list[str]]:
 
 
 @pytest.fixture()
-def learning(store, tmp_path, monkeypatch):
+def learning(store, monkeypatch):
     """A learning store past the phase-3 gate, with an active, verified model."""
-    from superlocalmemory.learning import model_cache
+    from superlocalmemory.learning import bandit_draw, model_cache
+    from superlocalmemory.learning.bandit_cache import get_shared_cache
     from superlocalmemory.learning.database import LearningDatabase
     from superlocalmemory.storage.migrations import M002_model_state_history as m002
 
-    monkeypatch.setenv("SLM_DATA_DIR", str(tmp_path))
-    path = tmp_path / "learning.db"
+    # Recall is bound to this engine's store, independently of the env root.
+    monkeypatch.setenv("SLM_DATA_DIR", str(store._config.base_dir))
+    path = store._config.base_dir / "learning.db"
+    # The production draw depends on an install secret. Pin the test key so
+    # different temporary installs exercise the same arm and ranking bound.
+    monkeypatch.setattr(bandit_draw, "_draw_key", lambda: b"project-ranking-fixture")
+    get_shared_cache().clear()
     db = LearningDatabase(path)
     conn = sqlite3.connect(str(path))
     try:
@@ -171,6 +181,7 @@ def learning(store, tmp_path, monkeypatch):
     model_cache.invalidate()
     yield path
     model_cache.invalidate()
+    get_shared_cache().clear()
 
 
 def _top(store, monkeypatch, mode: str, **facets) -> list:
@@ -234,3 +245,9 @@ def test_the_bound_holds_on_the_final_score(store, learning, monkeypatch, mode) 
 
 def _contents_of(results) -> list[str]:
     return [r.fact.content for r in results]
+
+
+def test_learning_fixture_seeds_the_store_recall_actually_uses(store, learning):
+    from superlocalmemory.core.recall_pipeline import _engine_learning_db
+
+    assert learning == _engine_learning_db(store._config)

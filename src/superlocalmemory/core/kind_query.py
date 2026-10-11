@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from superlocalmemory.retrieval.kind_filter import filter_items_by_kind, overfetch_limit
+from superlocalmemory.retrieval.kind_filter import overfetch_limit
 from superlocalmemory.storage.memory_kinds import MemoryKind, kind_fields, parse_kind
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle avoidance only

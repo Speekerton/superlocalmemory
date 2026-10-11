@@ -3,28 +3,20 @@
 from __future__ import annotations
 
 import json
-import os
-import subprocess
-import sys
 from pathlib import Path
-from typing import Any
 
-import pytest
 
 from superlocalmemory.optimize.adapters import withSLM
 from superlocalmemory.optimize.adapters._agent_registry import AGENT_REGISTRY
 from superlocalmemory.optimize.adapters.wrap import (
     _atomic_write_text,
     _vscode_user_dir,
-    list_agents,
     wrap_agent,
 )
 from superlocalmemory.optimize.config import (
     _reset_config_store,
     _set_config_store,
 )
-from superlocalmemory.optimize.config.defaults import DEFAULT_OPTIMIZE_CONFIG
-from superlocalmemory.optimize.config.schema import OptimizeConfig
 from superlocalmemory.optimize.config.store import ConfigStore
 
 

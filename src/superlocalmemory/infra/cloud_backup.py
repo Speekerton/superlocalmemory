@@ -332,7 +332,7 @@ def connect_google_drive(auth_code: str, redirect_uri: str) -> dict[str, Any]:
         Dict with destination_id, user_email, and status.
     """
     try:
-        from google.oauth2.credentials import Credentials
+        from google.oauth2.credentials import Credentials  # noqa: F401
         from google_auth_oauthlib.flow import Flow
     except ImportError:
         return {"error": "google-auth-oauthlib not installed. Run: pip install google-auth-oauthlib google-api-python-client"}

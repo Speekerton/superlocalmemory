@@ -7,7 +7,6 @@ import threading
 
 from superlocalmemory import sources
 from superlocalmemory.sources import locks
-from superlocalmemory.sources.store import SourceStore
 
 
 def test_a_root_swapped_for_a_link_to_a_sibling_is_offline_as_root_moved(env, tmp_path):

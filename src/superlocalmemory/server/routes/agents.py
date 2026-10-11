@@ -28,7 +28,7 @@ def _internal_error(detail: str = "Internal server error") -> HTTPException:
 # Feature flag: V3 trust scorer
 TRUST_AVAILABLE = False
 try:
-    from superlocalmemory.trust.scorer import TrustScorer
+    from superlocalmemory.trust.scorer import TrustScorer  # noqa: F401 (availability probe)
     TRUST_AVAILABLE = True
 except ImportError:
     pass

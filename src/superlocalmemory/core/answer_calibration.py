@@ -9,6 +9,7 @@ import os
 import tempfile
 import threading
 import time
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -126,25 +127,15 @@ class CalibrationJob:
                 measured = measure_examples(engine, judge, examples, stop, self._progress)
             if stop.is_set():
                 raise ValueError("Calibration cancelled")
-            stamp = datetime.now(timezone.utc).isoformat()
-            entry = {
-                "backend": "laya",
-                "recipe_id": "sufficiency-set-v2",
-                "threshold": measured["judge"]["threshold"],
-                "answered": measured["answered"],
-                "unanswered": measured["unanswered"],
-                "measured_at": stamp,
-                "model": judge._model,
-                "top_k": judge.top_k,
-                "metrics": measured["judge"],
-                "labels": "local_model_silver",
-            }
+            entry = _entry(judge, measured)
             semantic = measured.get("semantic")
             if semantic is not None and not semantic.get("usable", True):
                 semantic = None  # retain a working floor when the holdout is poor
-            with stop.operation(), self._lock:
+            with stop.operation(), self._lock, getattr(judge, "_lock", nullcontext()):
                 if stop.is_set():
                     raise ValueError("Calibration cancelled")
+                from superlocalmemory.core.calibration_guard import require_comparison
+                require_comparison(measured, judge)
                 write_calibration(engine._config.base_dir, entry, semantic)
             from superlocalmemory.retrieval.embedding_calibration import apply_to
             from superlocalmemory.retrieval.laya_set_recipe import refresh
@@ -163,3 +154,14 @@ class CalibrationJob:
             self._progress(state="failed", detail=str(exc)[:200])
         finally:
             self._progress(finished_at=time.time())
+
+
+def _entry(judge, measured):
+    return {
+        "backend": "laya", "recipe_id": "sufficiency-set-v2",
+        "threshold": measured["judge"]["threshold"],
+        "answered": measured["answered"], "unanswered": measured["unanswered"],
+        "measured_at": datetime.now(timezone.utc).isoformat(),
+        "model": judge._model, "top_k": judge.top_k,
+        "metrics": measured["judge"], "labels": "local_model_silver",
+    }

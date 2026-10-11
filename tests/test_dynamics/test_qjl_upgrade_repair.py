@@ -216,3 +216,99 @@ def test_nonbinary_sketch_does_not_abort_diagnostics_or_other_repairs(
     assert result["repaired"] == 1 and result["unrecoverable"] == 1
     assert result["repair_errors"] == 0
     assert store.load("repairable", "default").qjl_bits.startswith(b"QJL1")
+
+
+@pytest.mark.parametrize(("payload", "storage_type"), [
+    ("QJL1broken", "text"), ("x" * 16, "text"), (16.0, "real"),
+])
+def test_nonbinary_sketch_with_original_repairs_and_is_idempotent(
+    legacy_store, payload, storage_type,
+):
+    from superlocalmemory.storage.qjl_repair import original_vector
+
+    db, store, scheduler, _ = legacy_store
+    base_sql = ("SELECT radius, angle_indices, bit_width FROM polar_embeddings "
+                "WHERE fact_id='repairable'")
+    source_sql = "SELECT embedding FROM atomic_facts WHERE fact_id='repairable'"
+    size_sql = ("SELECT compressed_size_bytes FROM embedding_quantization_metadata "
+                "WHERE fact_id='repairable'")
+    base_before = tuple(db.execute(base_sql)[0])
+    source_before = db.execute(source_sql)[0][0]
+    db.execute("UPDATE polar_embeddings SET qjl_bits=? WHERE fact_id='repairable'", (payload,))
+    assert db.execute("SELECT typeof(qjl_bits) FROM polar_embeddings "
+                      "WHERE fact_id='repairable'")[0][0] == storage_type
+    db.execute("UPDATE embedding_quantization_metadata SET compressed_size_bytes=17 "
+               "WHERE fact_id='repairable'")
+
+    result = scheduler.run_eap_cycle("default")
+    assert result["repaired"] == 1 and result["repair_errors"] == 0
+    assert result["unrecoverable"] == 1
+    qe = store.load("repairable", "default")
+    vector = original_vector(db, "repairable", "default", 16)
+    assert qe.qjl_bits.startswith(b"QJL1")
+    assert qe.qjl_bits == store._qjl.encode_residual(vector - store._polar.decode(qe))
+    size = len(qe.angle_indices) + len(qe.qjl_bits)
+    assert db.execute(size_sql)[0][0] == size
+    assert tuple(db.execute(base_sql)[0]) == base_before
+    assert db.execute(source_sql)[0][0] == source_before
+
+    next_cycle = scheduler.run_eap_cycle("default")
+    assert next_cycle["repaired"] == 0 and next_cycle["repair_errors"] == 0
+    assert next_cycle["repair_needed"] == 1
+    assert store.load("repairable", "default").qjl_bits == qe.qjl_bits
+    assert db.execute(size_sql)[0][0] == size
+
+
+@pytest.mark.parametrize("payload", ["QJL1broken", "x" * 16, 16.0])
+def test_nonbinary_sketch_writer_conflict_preserves_value_and_metadata(legacy_store, payload):
+    import sqlite3
+
+    db, store, scheduler, _ = legacy_store
+    db.execute("UPDATE polar_embeddings SET qjl_bits=? WHERE fact_id='repairable'", (payload,))
+    size_sql = ("SELECT compressed_size_bytes FROM embedding_quantization_metadata "
+                "WHERE fact_id='repairable'")
+    db.execute("UPDATE embedding_quantization_metadata SET compressed_size_bytes=17 "
+               "WHERE fact_id='repairable'")
+    execute = db.execute
+    raced = False
+    replacement = "new corrupt sketch"
+
+    def race(sql, params=()):
+        nonlocal raced
+        if sql.startswith("UPDATE polar_embeddings SET qjl_bits"):
+            assert not raced
+            with closing(sqlite3.connect(db.db_path)) as other, other:
+                other.execute("UPDATE polar_embeddings SET qjl_bits=? "
+                              "WHERE fact_id='repairable'", (replacement,))
+            raced = True
+        return execute(sql, params)
+
+    with patch.object(db, "execute", side_effect=race):
+        result = scheduler.run_eap_cycle("default")
+    assert raced and result["repaired"] == 0 and result["repair_errors"] == 1
+    assert db.execute("SELECT qjl_bits FROM polar_embeddings "
+                      "WHERE fact_id='repairable'")[0][0] == replacement
+    assert db.execute(size_sql)[0][0] == 17
+    assert scheduler.run_eap_cycle("default")["repaired"] == 1
+    qe = store.load("repairable", "default")
+    assert db.execute(size_sql)[0][0] == len(qe.angle_indices) + len(qe.qjl_bits)
+    assert scheduler.run_eap_cycle("default")["repaired"] == 0
+
+
+@pytest.mark.parametrize(("column", "value"), [
+    ("angle_indices", b""), ("radius", float("inf")), ("radius", "broken"),
+])
+def test_nonbinary_sketch_does_not_hide_invalid_base(legacy_store, column, value):
+    db, _, scheduler, _ = legacy_store
+    payload = "QJL1broken"
+    db.execute("UPDATE polar_embeddings SET qjl_bits=? WHERE fact_id='repairable'", (payload,))
+    # Column names are fixed test parameters; persisted values remain bound.
+    db.execute(f"UPDATE polar_embeddings SET {column}=? WHERE fact_id='repairable'", (value,))
+    size_sql = ("SELECT compressed_size_bytes FROM embedding_quantization_metadata "
+                "WHERE fact_id='repairable'")
+    before = db.execute(size_sql)[0][0]
+    result = scheduler.run_eap_cycle("default")
+    assert result["repaired"] == 0 and result["repair_errors"] == 1
+    assert db.execute("SELECT qjl_bits FROM polar_embeddings "
+                      "WHERE fact_id='repairable'")[0][0] == payload
+    assert db.execute(size_sql)[0][0] == before

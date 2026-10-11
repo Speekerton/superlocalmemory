@@ -100,10 +100,13 @@ def repair_status(db: DatabaseManager | sqlite3.Connection, profile_id: str,
 def _repair_one(db: DatabaseManager, store: QuantizedEmbeddingStore,
                 row: dict[str, Any], profile_id: str, vector: np.ndarray,
                 source: bytes | str) -> None:
-    qe = store.load(row["fact_id"], profile_id)
+    qe = store.load(row["fact_id"], profile_id, include_qjl=False)
     if qe is None:
         raise ValueError("base embedding unavailable")
-    payload = store._qjl.encode_residual(vector - store._polar.decode(qe))
+    base = store._polar.decode(qe)
+    if base.shape != vector.shape or not np.isfinite(base).all():
+        raise ValueError("invalid base embedding geometry")
+    payload = store._qjl.encode_residual(vector - base)
     with db.transaction():
         # Validate both reads in one write statement: the source and base used
         # to encode the residual must coexist unchanged at this linearization

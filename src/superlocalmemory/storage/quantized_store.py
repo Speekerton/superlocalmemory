@@ -117,11 +117,12 @@ class QuantizedEmbeddingStore:
             return False
 
     def load(
-        self, fact_id: str, profile_id: str,
+        self, fact_id: str, profile_id: str, *, include_qjl: bool = True,
     ) -> QuantizedEmbedding | None:
         """Load a quantized embedding by fact_id and profile_id.
 
-        Returns None if not found.
+        Returns None if not found. Repair can skip the optional sketch with
+        ``include_qjl=False`` so corrupt sketches do not hide valid base data.
         """
         try:
             rows = self._db.execute(
@@ -139,7 +140,7 @@ class QuantizedEmbeddingStore:
                 radius=float(row["radius"]),
                 angle_indices=bytes(row["angle_indices"]),
                 bit_width=int(row["bit_width"]),
-                qjl_bits=bytes(row["qjl_bits"]) if row["qjl_bits"] else None,
+                qjl_bits=bytes(row["qjl_bits"]) if include_qjl and row["qjl_bits"] else None,
             )
         except Exception as exc:
             logger.error("load failed for fact_id=%s: %s", fact_id, exc)

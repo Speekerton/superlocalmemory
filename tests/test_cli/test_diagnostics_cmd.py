@@ -14,7 +14,6 @@ import pytest
 from superlocalmemory.cli.main import _command_requires_daemon
 from superlocalmemory.infra.local_diagnostics import LocalDiagnostics
 
-
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -33,6 +32,8 @@ def test_successful_ide_connection_records_only_aggregate_activation(
         portable_kit,
         "connect_ide",
         lambda *_args, **_kwargs: {
+            # The merged installer always returns its canonical host id.
+            "ide": "cursor",
             "error": None,
             "mcp_config": "wrote",
             "mcp_path": "/private/config.json",

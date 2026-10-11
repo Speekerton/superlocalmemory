@@ -15,11 +15,10 @@ import sys
 import tempfile
 import tomllib
 from collections.abc import Callable
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 import yaml
-
 
 SCHEMA = "superlocalmemory.integration-compatibility/v1"
 REQUIRED_MEMORY_TOOLS = {"remember", "recall", "update_memory", "forget"}
@@ -63,12 +62,39 @@ def _extract_slm_block(data: dict[str, Any], descriptor: Any) -> dict[str, Any]:
     if descriptor.fmt == "yaml":
         matches = [
             item for item in container
-            if item.get("params", {}).get("serverName") == "superlocalmemory"
+            if isinstance(item, dict) and item.get("name") == "superlocalmemory"
         ]
         if len(matches) != 1:
             raise ValueError("Continue config must contain exactly one SLM provider")
-        return matches[0]["params"]
+        return matches[0]
     return container["superlocalmemory"]
+
+
+def _validate_start_command(block: dict[str, Any]) -> None:
+    """Accept only a pinned SLM entry point or Python module argv, never a shell.
+
+    Do not resolve symlinks: a venv interpreter must retain its venv identity.
+    This checks launch shape, not whether an external host executed the file.
+    """
+    command = block.get("command")
+    args = block.get("args", [])
+    if isinstance(command, list) and command and args == []:
+        command, args = command[0], command[1:]
+    if not isinstance(command, str) or not isinstance(args, list):
+        raise AssertionError("unsafe start command: expected executable and argv")
+    if any(ord(char) < 32 or char in ";&|`$<>" for char in command):
+        raise AssertionError("unsafe start command: shell syntax or control characters")
+    posix, windows = PurePosixPath(command), PureWindowsPath(command)
+    path = windows if windows.is_absolute() else posix
+    if not path.is_absolute() or ".." in path.parts:
+        raise AssertionError("unsafe start command: executable must be absolute")
+    name = path.name.lower()
+    expected = ["mcp"] if name in {"slm", "slm.exe"} else [
+        "-m", "superlocalmemory.cli", "mcp"
+    ]
+    if (name not in {"slm", "slm.exe"}
+            and not re.fullmatch(r"python(?:\d+(?:\.\d+)*)?(?:\.exe)?", name)) or args != expected:
+        raise AssertionError("unsafe start command: expected pinned SLM MCP argv")
 
 
 def _portable_config(repo: Path, client_id: str, work: Path) -> str:
@@ -89,8 +115,7 @@ def _portable_config(repo: Path, client_id: str, work: Path) -> str:
     path = Path(first["mcp_path"])
     data = _parse_config(path, descriptor.fmt)
     block = _extract_slm_block(data, descriptor)
-    if block.get("command") != "slm" or block.get("args") != ["mcp"]:
-        raise AssertionError(f"unsafe start command for {client_id}: {block!r}")
+    _validate_start_command(block)
     # The generated path is host-dependent for clients such as Claude Desktop
     # (macOS Application Support vs Linux .config). Release evidence records
     # the portable contract that was executed, not a host-specific temp path.

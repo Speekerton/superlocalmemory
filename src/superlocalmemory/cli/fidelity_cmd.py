@@ -10,9 +10,9 @@
 
 The listing is read-only and safe while the daemon runs. It shows two groups:
 
-* **withheld** — derived facts the write path kept out of answers because a
-  source number was turned into a date ("2004.6 ms" stored as June 2004);
-* **to review** — facts still in answers that fail the check today: an unstated
+* **withheld** — derived facts the write path kept out of answers because they
+  changed numbers, dates, attribution, negation, order or status;
+* **to review** — older live facts that fail the check today: an unstated
   date or measurement, a dropped "never", a reversed order, a lost
   "previously". Recall marks each one ``source_fidelity_unverified:<reasons>``
   in its ``evidence_chain``. Older facts, written before the check existed,
@@ -92,11 +92,19 @@ def _to_review(conn: sqlite3.Connection, profile: str, limit: int) -> tuple[int,
     live = "COALESCE(f.quarantined, 0) = 0" if "quarantined" in _columns(conn, "atomic_facts") \
         else "1 = 1"
     sql = (
-        "SELECT f.fact_id, f.profile_id, f.content, m.content AS source "
+        "SELECT f.fact_id, f.profile_id, f.content, f.observation_date, "
+        "m.content AS source, m.speaker, m.role "
         "FROM atomic_facts f JOIN memories m ON m.memory_id = f.memory_id "
         f"WHERE {live}"
     )
     params: list[Any] = []
+    if "derivation_lineage" in {
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }:
+        sql += (" AND NOT EXISTS (SELECT 1 FROM derivation_lineage l "
+                "WHERE l.object_type='fact' AND l.object_id=f.fact_id "
+                "AND l.profile_id=f.profile_id AND l.unresolved_reason LIKE ?)")
+        params.append(RELEASED_PREFIX + "%")
     if profile:
         sql += " AND f.profile_id = ?"
         params.append(profile)
@@ -104,9 +112,14 @@ def _to_review(conn: sqlite3.Connection, profile: str, limit: int) -> tuple[int,
     total = 0
     for row in conn.execute(sql + " ORDER BY f.created_at", params):
         fact, source = row["content"] or "", row["source"] or ""
-        if not fact or not source or fact.strip() in source:
+        if not fact or not source:
             continue
-        report = check_fact_against_source(fact, source)
+        from superlocalmemory.encoding.speaker_spans import with_actor
+
+        report = check_fact_against_source(
+            fact, with_actor(source, row["speaker"] or "", row["role"] or "user"),
+            reference_date=row["observation_date"],
+        )
         if report.ok:
             continue
         total += 1

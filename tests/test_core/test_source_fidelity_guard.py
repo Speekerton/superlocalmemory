@@ -219,7 +219,7 @@ def test_deterministic_fidelity_findings_withhold_derived_facts(tmp_path: Path, 
     assert _state(db)["f"][0] == 1, "unsupported derived facts must stay out of answers"
 
 
-def test_recall_marks_unverified_results_and_leaves_the_rest(tmp_path: Path) -> None:
+def test_recall_excludes_unverified_results_and_leaves_the_rest(tmp_path: Path) -> None:
     from superlocalmemory.retrieval.source_fidelity_flags import flag_unverified
     from superlocalmemory.storage.models import AtomicFact, RetrievalResult
 
@@ -229,9 +229,9 @@ def test_recall_marks_unverified_results_and_leaves_the_rest(tmp_path: Path) -> 
     results = [RetrievalResult(fact=AtomicFact(fact_id=i, content=""), score=1.0,
                                evidence_chain=["bm25"]) for i in ("f", "v")]
     out = flag_unverified(results, db, "default")
-    assert out[0].evidence_chain == ["bm25", "source_fidelity_unverified:negation_lost"]
-    assert out[1].evidence_chain == ["bm25"], "the verbatim memory is never marked"
-    assert [r.score for r in out] == [1.0, 1.0] and results[0].evidence_chain == ["bm25"]
+    assert [r.fact.fact_id for r in out] == ["v"], "known damage is outside answers"
+    assert out[0].evidence_chain == ["bm25"], "the verbatim memory is never marked"
+    assert [r.score for r in out] == [1.0] and results[0].evidence_chain == ["bm25"]
     # a released fact is not marked, and an error never costs the recall
     db.execute("INSERT INTO derivation_lineage (lineage_id,profile_id,object_type,object_id,"
                "operation_id,source_status,unresolved_reason) VALUES "

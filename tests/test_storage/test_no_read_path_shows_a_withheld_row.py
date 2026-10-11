@@ -257,9 +257,11 @@ class TestChannelsDoNotSpendTheirBudgetOnWithheldRows:
         """
         import inspect
 
-        from superlocalmemory.retrieval import entity_channel
+        from superlocalmemory.retrieval import adjacency_load, entity_channel
 
-        src = inspect.getsource(entity_channel)
+        wrapper = inspect.getsource(entity_channel.EntityGraphChannel._load_entity_maps)
+        assert "_load.load_entity_maps" in wrapper
+        src = inspect.getsource(adjacency_load.load_entity_maps)
         assert "visible_fact_clause" in src
 
     def test_temporal_recency_fallback_excludes_them(self) -> None:

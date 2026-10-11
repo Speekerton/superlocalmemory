@@ -392,9 +392,10 @@ class AuditChain:
             ).fetchall()]
         finally:
             self._release_conn(conn)
-        legacy = sum(1 for r in rows if int(r.get("hash_version") or 1) < 2)
+        legacy = sum(1 for r in rows if r.get("hash_version", 1) == 1)
+        covered = sum(1 for r in rows if r.get("hash_version") == HASH_VERSION)
         report: dict[str, Any] = {
-            "ok": True, "entries": len(rows), "fully_covered": len(rows) - legacy,
+            "ok": True, "entries": len(rows), "fully_covered": covered,
             "legacy": legacy, "failed_at": None, "reason": "",
         }
         failure = self._anchor_failure(rows) or self._link_failure(rows)
@@ -420,7 +421,9 @@ class AuditChain:
         expected_prev = _GENESIS_HASH
         seen_v2 = False
         for row in rows:
-            version = int(row.get("hash_version") or 1)
+            version = row.get("hash_version", 1)
+            if version not in (1, HASH_VERSION):
+                return row["id"], "unsupported hash version"
             if version < 2 and seen_v2:
                 return row["id"], "a version-1 entry follows a version-2 entry (downgrade)"
             seen_v2 = seen_v2 or version >= 2

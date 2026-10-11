@@ -22,6 +22,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from superlocalmemory.compliance.audit import HASH_VERSION
+
 
 def _metadata(event: dict) -> dict:
     try:
@@ -72,7 +74,7 @@ def present_event(event: dict) -> dict:
         "target": _target(event, meta),
         "result": str(outcome or "recorded"),
         "content_bound": bool(event.get("content_hash")),
-        "fully_covered": int(event.get("hash_version") or 1) >= 2,
+        "fully_covered": event.get("hash_version") == HASH_VERSION,
     }
 
 

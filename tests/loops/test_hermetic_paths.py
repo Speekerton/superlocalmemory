@@ -176,7 +176,8 @@ def test_aliased_project_command_cannot_escape_the_pinned_check(receipt_db, tmp_
     assert receipt_jobs.run_registered_check(receipt_db, job['job_id'])['verdict'] == 'FAIL'
 
 
-def test_project_executable_is_refused_at_registration(receipt_db, tmp_path):
+@pytest.mark.parametrize('relative', [False, True])
+def test_project_executable_is_refused_at_registration(receipt_db, tmp_path, relative):
     work = tmp_path / 'work'
     work.mkdir()
     tool = work / 'tool'
@@ -186,6 +187,7 @@ def test_project_executable_is_refused_at_registration(receipt_db, tmp_path):
     with pytest.raises(ValueError, match='executable.*outside'):
         receipt_jobs.register_job(
             receipt_db, profile_id='default', task_id='build', watcher_name='build',
-            producer='checker', command=[str(tool)], cwd=work, check_paths=[],
+            producer='checker', command=['./tool' if relative else str(tool)],
+            cwd=work, check_paths=[],
             artifact_paths=['state'], data_root=tmp_path / 'slm',
         )

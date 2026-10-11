@@ -145,7 +145,6 @@ async def query_audit_trail(
                                 actor_kind="audit-read")
     try:
         from superlocalmemory.server.audit_view import integrity_summary, present_event
-
         from superlocalmemory.server.rbac_enforce import has_global_manage
 
         profile = get_active_profile()

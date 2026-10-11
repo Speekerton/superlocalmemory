@@ -13,8 +13,6 @@ from __future__ import annotations
 import importlib
 import logging
 import sys
-import types
-from typing import Callable
 
 
 # ---------------------------------------------------------------------------

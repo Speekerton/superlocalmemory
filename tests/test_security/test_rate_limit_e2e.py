@@ -23,8 +23,7 @@ All env vars MUST be set before create_app() is called.
 
 from __future__ import annotations
 
-import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -60,7 +59,6 @@ def _make_client(app, client_host: str) -> TestClient:
     """
     from starlette.middleware.base import BaseHTTPMiddleware
     from starlette.requests import Request as StarletteRequest
-    from starlette.responses import Response
 
     class _HostSpoofMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: StarletteRequest, call_next):

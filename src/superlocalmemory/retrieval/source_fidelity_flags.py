@@ -94,7 +94,10 @@ def flag_unverified(results: list, db: Any, profile_id: str, *, response: Any = 
 
     ``response`` receives a per-recall status for every transport, including
     when withholding leaves no results. Direct list callers also get a warning
-    on degraded fidelity. No source text or exception message is logged.
+    on degraded fidelity. A missing store is unavailable, not a failed check.
+    Availability depends on the read interface, not a filesystem path (an
+    in-memory store can check sources too). Neither state admits unchecked
+    derivatives. No source text or exception message is logged.
     """
     status = "checked"
     try:
@@ -102,6 +105,10 @@ def flag_unverified(results: list, db: Any, profile_id: str, *, response: Any = 
         if not fact_ids:
             status = "not_checked"
             return results
+        if not callable(getattr(db, "execute", None)):
+            status = "unavailable"
+            logger.warning("No source store available; unchecked derivatives withheld")
+            return []
         flags = _unverified(db, profile_id, fact_ids)
     except Exception as exc:  # noqa: BLE001 - withhold unchecked derivatives
         status = "degraded"

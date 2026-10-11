@@ -112,12 +112,31 @@ def test_healthy_fidelity_check_reports_checked(tmp_path, mode_a_config, monkeyp
     assert recall_response_metadata(response)["source_fidelity_note"] is None
 
 
-@pytest.mark.parametrize("db", [None, object()])
+@pytest.mark.parametrize("db", [None, object(), SimpleNamespace(db_path=None)])
 def test_missing_database_cannot_admit_an_unchecked_fact(db):
     results = [RetrievalResult(fact=AtomicFact(memory_id="missing", content=DAMAGED))]
     response = RecallResponse(results=results)
     assert source_fidelity_flags.flag_unverified(results, db, "default", response=response) == []
-    assert response.source_fidelity_status == "degraded"
+    assert response.source_fidelity_status == "unavailable"
+    metadata = recall_response_metadata(response)
+    assert metadata["source_fidelity_status"] == "unavailable"
+    assert metadata["source_fidelity_note"] == (
+        "No source store available; unchecked derivatives withheld."
+    )
+
+
+def test_in_memory_store_without_db_path_can_check_fidelity(tmp_path):
+    db, results = _candidates(tmp_path)
+    with sqlite3.connect(":memory:") as memory:
+        memory.row_factory = sqlite3.Row
+        with db.raw_connection() as disk:
+            disk.backup(memory)
+        response = RecallResponse(results=results)
+        assert source_fidelity_flags.flag_unverified(
+            results, memory, "default", response=response,
+        ) == results[1:]
+        assert response.source_fidelity_status == "checked"
+    db.close()
 
 
 def test_source_fallback_checks_owner_and_excerpt_bytes(tmp_path):

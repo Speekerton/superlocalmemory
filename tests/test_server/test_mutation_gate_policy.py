@@ -334,16 +334,24 @@ def test_personal_mode_the_gate_refuses_nothing_on_any_route(personal):
 
 
 def test_personal_mode_the_operator_still_changes_settings_and_restarts(personal, monkeypatch):
+    import traceback
+
     app, client, who, refused = personal
     spawned = []
-    monkeypatch.setattr("subprocess.Popen", lambda *a, **k: spawned.append(a))
+    callers = []
+
+    def record_spawn(*args, **kwargs):
+        spawned.append(args)
+        callers.append([(Path(f.filename).name, f.name) for f in traceback.extract_stack(limit=6)])
+
+    monkeypatch.setattr("subprocess.Popen", record_spawn)
 
     restart = client.post("/api/daemon/restart", headers=who["token"])
     optimize = client.put("/api/optimize/config", json={"cache_enabled": True},
                           headers=who["token"])
     switch = client.post("/api/profiles/default/switch", headers=who["token"])
 
-    assert restart.status_code == 200 and len(spawned) == 1
+    assert restart.status_code == 200 and len(spawned) == 1, callers
     assert optimize.status_code == 200, optimize.text
     assert switch.status_code == 200, switch.text
     assert refused == []

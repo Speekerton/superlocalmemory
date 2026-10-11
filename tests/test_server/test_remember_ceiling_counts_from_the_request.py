@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import time as real_time
-from types import SimpleNamespace
 
 from tests.test_server.test_canonical_remember_route import _client
 

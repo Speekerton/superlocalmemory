@@ -19,8 +19,6 @@ from __future__ import annotations
 
 import sqlite3
 
-import pytest
-
 from superlocalmemory.server.routes.insights import _action_changed_this_week
 
 

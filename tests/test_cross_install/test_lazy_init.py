@@ -18,13 +18,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import stat
-import sys
 from pathlib import Path
-from unittest.mock import patch
 
-import pytest
 
 
 # ---------------------------------------------------------------------------
@@ -49,7 +45,7 @@ def test_ensure_initialized_creates_dirs_on_fresh_home(tmp_path, monkeypatch):
     monkeypatch.delenv("SLM_HOME", raising=False)
 
     # Module must be imported AFTER env is set so slm_home() picks it up
-    from superlocalmemory.cli._lazy_init import _ensure_initialized, slm_home
+    from superlocalmemory.cli._lazy_init import _ensure_initialized
 
     assert not new_home.exists(), "precondition: home must not exist yet"
 

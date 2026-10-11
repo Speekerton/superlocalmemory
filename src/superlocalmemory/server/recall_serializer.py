@@ -20,7 +20,6 @@ Pure functions — no side effects, no DB access. Stdlib-only at import
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from superlocalmemory.core.config import CANONICAL_RECALL_LIMIT
@@ -370,10 +369,10 @@ def recall_response_metadata(response: Any) -> dict:
         # with nothing to say from a retrieval path that is partly down.
         "channel_status": dict(getattr(response, "channel_status", {}) or {}),
         "source_fidelity_status": getattr(response, "source_fidelity_status", "not_checked"),
-        "source_fidelity_note": (
-            "Source fidelity check unavailable; unchecked derivatives withheld."
-            if getattr(response, "source_fidelity_status", None) == "degraded" else None
-        ),
+        "source_fidelity_note": {
+            "degraded": "Source fidelity check unavailable; unchecked derivatives withheld.",
+            "unavailable": "No source store available; unchecked derivatives withheld.",
+        }.get(getattr(response, "source_fidelity_status", None)),
         # 4.1.25 (N-11): seconds the entity graph was behind the store (0.0 =
         # current; None = the graph did not run). A boost computed on a graph
         # that is behind can differ from the next one, so it travels too.

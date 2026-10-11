@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 
 from rank_bm25 import BM25Plus
 
+from superlocalmemory.retrieval.fact_cover import fact_table
 from superlocalmemory.storage.database import _scope_where
 from superlocalmemory.storage.fts_terms import version_match_phrases, version_terms
 
@@ -137,6 +138,7 @@ class BM25Channel:
 
     def __init__(self, db: DatabaseManager) -> None:
         self._db = db
+        self._legacy_requested = False
         self._corpus: list[list[str]] = []
         self._fact_ids: list[str] = []
         self._fact_id_set: set[str] = set()
@@ -156,16 +158,10 @@ class BM25Channel:
         include_global: bool | None = None,
         include_shared: bool | None = None,
     ) -> None:
-        """Cold-load BM25 tokens from DB for a profile (once).
-
-        Idempotent: subsequent calls for the same profile/scope are no-ops.
-
-        Args:
-            profile_id: Profile to load.
-            include_global: Include global-scope facts. Falls back to the
-                instance attribute when not supplied.
-            include_shared: Include shared-scope facts. Same fallback.
-        """
+        """Load one visibility-specific legacy corpus; successful FTS reads skip this."""
+        # Sticky once requested: even a failed/cold legacy load owns a live
+        # corpus. Writers must retain the historical append behaviour then.
+        self._legacy_requested = True
         if include_global is None:
             include_global = bool(getattr(self, "include_global", False))
         if include_shared is None:
@@ -188,43 +184,9 @@ class BM25Channel:
             include_shared=include_shared,
         )
         if not token_map:
-            # Fallback: tokenize facts directly if no pre-stored tokens
-            facts = self._db.get_all_facts(
-                profile_id,
-                include_global=include_global,
-                include_shared=include_shared,
-            )
-            for fact in facts:
-                if fact.fact_id in self._fact_id_set:
-                    continue
-                tokens = tokenize(fact.content)
-                if tokens:
-                    self._corpus.append(_with_version_terms(tokens, fact.content))
-                    self._fact_ids.append(fact.fact_id)
-                    self._fact_id_set.add(fact.fact_id)
-                    self._raw_texts.append(fact.content)
-                    # Persist for next cold start
-                    self._db.store_bm25_tokens(fact.fact_id, profile_id, tokens)
+            self._load_fact_tokens(profile_id, include_global, include_shared)
         else:
-            # Load raw texts for phrase matching (V3.3.12)
-            fact_content_map = {}
-            try:
-                facts = self._db.get_all_facts(
-                    profile_id,
-                    include_global=include_global,
-                    include_shared=include_shared,
-                )
-                fact_content_map = {f.fact_id: f.content for f in facts}
-            except Exception:
-                pass
-            for fid, tokens in token_map.items():
-                if fid in self._fact_id_set:
-                    continue
-                raw_text = fact_content_map.get(fid, "")
-                self._corpus.append(_with_version_terms(tokens, raw_text))
-                self._fact_ids.append(fid)
-                self._fact_id_set.add(fid)
-                self._raw_texts.append(raw_text)
+            self._load_persisted_tokens(token_map, profile_id, include_global, include_shared)
 
         self._dirty = True
         self._loaded_profiles.add(profile_id)
@@ -233,6 +195,49 @@ class BM25Channel:
             "BM25 cold-loaded %d documents for profile=%s",
             len(token_map) if token_map else 0, profile_id,
         )
+
+    def _load_fact_tokens(self, profile_id: str, include_global: bool,
+                          include_shared: bool) -> None:
+        # Fallback: tokenize facts directly if no pre-stored tokens
+        facts = self._db.get_all_facts(
+            profile_id,
+            include_global=include_global,
+            include_shared=include_shared,
+        )
+        for fact in facts:
+            if fact.fact_id in self._fact_id_set:
+                continue
+            tokens = tokenize(fact.content)
+            if tokens:
+                self._corpus.append(_with_version_terms(tokens, fact.content))
+                self._fact_ids.append(fact.fact_id)
+                self._fact_id_set.add(fact.fact_id)
+                self._raw_texts.append(fact.content)
+                # Persist for next cold start
+                self._db.store_bm25_tokens(fact.fact_id, profile_id, tokens)
+
+    def _load_persisted_tokens(self, token_map: dict, profile_id: str,
+                               include_global: bool, include_shared: bool) -> None:
+        # Load raw texts for phrase matching (V3.3.12)
+        fact_content_map = {}
+        try:
+            facts = self._db.get_all_facts(
+                profile_id,
+                include_global=include_global,
+                include_shared=include_shared,
+            )
+            fact_content_map = {f.fact_id: f.content for f in facts}
+        except Exception:
+            pass
+        for fid, tokens in token_map.items():
+            if fid in self._fact_id_set:
+                continue
+            raw_text = fact_content_map.get(fid, "")
+            self._corpus.append(_with_version_terms(tokens, raw_text))
+            self._fact_ids.append(fid)
+            self._fact_id_set.add(fid)
+            self._raw_texts.append(raw_text)
+
 
     def add(self, fact_id: str, content: str, profile_id: str) -> None:
         """Add a single fact to the index and persist tokens.
@@ -246,6 +251,14 @@ class BM25Channel:
         if not tokens:
             return
 
+        # Preserve durable tokens for legacy stores. Successful FTS readers
+        # never load the Python corpus, so their writes need no second copy.
+        # Once a legacy reader has loaded a scope, retain the original append
+        # behaviour: do not dispose structures another reader may be scoring.
+        self._db.store_bm25_tokens(fact_id, profile_id, tokens)
+        if not self._legacy_requested and self._fts_available():
+            return
+
         self._corpus.append(_with_version_terms(tokens, content))
         self._fact_ids.append(fact_id)
         self._fact_id_set.add(fact_id)
@@ -254,8 +267,16 @@ class BM25Channel:
         self._raw_texts.append(content)
         self._dirty = True
 
-        # Persist for cold start
-        self._db.store_bm25_tokens(fact_id, profile_id, tokens)
+    def _fts_available(self) -> bool:
+        """Unknown/lightweight stores retain the original legacy behaviour."""
+        try:
+            rows = self._db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='atomic_facts_fts'"
+            )
+            return isinstance(rows, list) and bool(rows) and (
+                dict(rows[0]).get("name") == "atomic_facts_fts")
+        except Exception:
+            return False
 
     def _fts5_search(
         self,
@@ -266,21 +287,7 @@ class BM25Channel:
         include_shared: bool | None = None,
         extra_where: tuple[str, list] | None = None,
     ) -> list[tuple[str, float]]:
-        """v3.5.0: SQLite FTS5 keyword search (C-level indexed, scales to millions).
-
-        ``extra_where``: an ``(" AND ...", params)`` clause on ``af`` that
-        narrows BOTH the content and the expansion query (kind-scoped recall,
-        retrieval/kind_scope). None: unchanged.
-
-        Uses the ``atomic_facts_fts`` external-content FTS5 table (kept in sync
-        by INSERT/DELETE/UPDATE triggers). Joins ``atomic_facts`` for profile
-        scoping (FTS table has no profile_id). ``bm25()`` returns a negative
-        score (lower = better match); we negate it to the channel's
-        "higher = better" convention. Returns [] on no matches.
-
-        Raises (OperationalError) if the FTS5 table is absent — the caller
-        then falls back to the legacy in-memory rank_bm25 path.
-        """
+        """Rank visible FTS hits before loading their content; preserve expansion scoring."""
         if include_global is None:
             include_global = bool(getattr(self, "include_global", False))
         if include_shared is None:
@@ -290,16 +297,9 @@ class BM25Channel:
         phrases = version_match_phrases(query)
         if not tokens and not phrases:
             return []
-        # Quote each token so query punctuation can't break FTS5 MATCH syntax;
-        # OR-join for high recall (any token may match). A dotted version is
-        # also offered whole, as a phrase (see storage.fts_terms): its single
-        # numbers are too common to tell one release from another.
         match_expr = " OR ".join([
             *('"' + t.replace('"', "") + '"' for t in tokens), *phrases,
         ])
-        # Rows that only matched a version phrase inside a longer number lose
-        # that share below and can fall out of the top_k, so fetch room for
-        # the rows that move up into their place.
         fetch_k = int(top_k) * 2 if versions else int(top_k)
         where, params = _scope_where(
             profile_id,
@@ -307,22 +307,12 @@ class BM25Channel:
             include_shared=include_shared,
             prefix="af",
         )
-        # Soft-deleted and withheld rows are not live. Filtered HERE rather
-        # than only at hydration so neither spends one of this channel's top_k
-        # slots; the shared clause keeps the definition in one place.
         archive_clause = self._db.visible_fact_clause("af")
         if extra_where is not None:
             archive_clause += extra_where[0]
             params = [*params, *extra_where[1]]
-        sql = (
-            "SELECT af.fact_id AS fact_id, bm25(atomic_facts_fts) AS rank, "
-            "af.rowid AS fts_rowid, af.content AS content "
-            "FROM atomic_facts_fts "
-            "JOIN atomic_facts af ON af.rowid = atomic_facts_fts.rowid "
-            f"WHERE atomic_facts_fts MATCH ? AND {where}{archive_clause} "
-            "ORDER BY rank LIMIT ?"
-        )
-        rows = [dict(r) for r in self._db.execute(sql, (match_expr, *params, fetch_k))]
+        table = fact_table(self._db)
+        rows = self._content_rows(match_expr, where, archive_clause, params, fetch_k)
         out: list[tuple[str, float]] = []
         for d in rows:
             fid = d.get("fact_id")
@@ -332,17 +322,55 @@ class BM25Channel:
         if versions:
             out = self._without_partial_version_credit(out, rows, versions, phrases)
 
-        # T3b: UNION fact-expansion (alias / paraphrase) matches so a query for
-        # a synonym matches a fact that only used the canonical term. Additive —
-        # direct content hits stay primary; an alias-only hit is added at a
-        # discount so it ranks below content matches. Fail-open if the expansion
-        # FTS is absent (legacy DB).
-        content_ids = {fid for fid, _ in out}
+        out.extend(self._expansion_hits(match_expr, table, where, archive_clause, params,
+                                        top_k, {fid for fid, _ in out}))
+
+        out.sort(key=lambda x: (-x[1], x[0]))
+        return out[:top_k]
+
+
+    def _content_rows(self, match_expr: str, where: str, archive_clause: str,
+                      params: list, fetch_k: int) -> list[dict]:
+        if not self._default_fts_rank():
+            sql = (
+                "SELECT af.fact_id,bm25(atomic_facts_fts) AS rank,af.rowid AS fts_rowid,af.content "
+                "FROM atomic_facts_fts JOIN atomic_facts af ON af.rowid=atomic_facts_fts.rowid "
+                f"WHERE atomic_facts_fts MATCH ? AND {where}{archive_clause} "
+                "ORDER BY rank LIMIT ?"
+            )
+            return [dict(r) for r in self._db.execute(sql, (match_expr, *params, fetch_k))]
+        sql = (
+            "WITH hits AS MATERIALIZED ("
+            "SELECT af.fact_id AS fact_id, bm25(atomic_facts_fts) AS rank, "
+            "atomic_facts_fts.rowid AS fts_rowid "
+            "FROM atomic_facts_fts "
+            "CROSS JOIN atomic_facts af "
+            "WHERE af.rowid = atomic_facts_fts.rowid "
+            f"AND atomic_facts_fts MATCH ? AND {where}{archive_clause} "
+            "ORDER BY atomic_facts_fts.rank LIMIT ?"
+            ") SELECT hits.fact_id, hits.rank, hits.fts_rowid, af.content "
+            "FROM hits JOIN atomic_facts af ON af.fact_id = hits.fact_id "
+            "ORDER BY hits.rank"
+        )
+        return [dict(r) for r in self._db.execute(sql, (match_expr, *params, fetch_k))]
+
+    def _default_fts_rank(self) -> bool:
+        """Native rank matches bm25() only under FTS5's default rank mapping."""
+        try:
+            rows = self._db.execute("SELECT v FROM atomic_facts_fts_config WHERE k='rank'")
+            return not rows or (isinstance(rows, list) and dict(rows[0]).get("v") == "bm25()")
+        except Exception:
+            return False
+
+
+    def _expansion_hits(self, match_expr: str, table: str, where: str, archive_clause: str,
+                        params: list, top_k: int, content_ids: set[str]) -> list[tuple[str, float]]:
+        out: list[tuple[str, float]] = []
         try:
             exp_sql = (
                 "SELECT af.fact_id AS fact_id, bm25(fact_expansion_fts) AS rank "
                 "FROM fact_expansion_fts "
-                "JOIN atomic_facts af ON af.fact_id = fact_expansion_fts.fact_id "
+                f"JOIN {table} ON af.fact_id = fact_expansion_fts.fact_id "
                 f"WHERE fact_expansion_fts MATCH ? AND {where}{archive_clause} "
                 "ORDER BY rank LIMIT ?"
             )
@@ -354,8 +382,7 @@ class BM25Channel:
         except Exception as exc:  # pragma: no cover — legacy/missing expansion FTS
             logger.debug("Expansion FTS search skipped: %s", exc)
 
-        out.sort(key=lambda x: (-x[1], x[0]))
-        return out[:top_k]
+        return out
 
     def _without_partial_version_credit(
         self,

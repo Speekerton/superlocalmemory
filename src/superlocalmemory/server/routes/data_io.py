@@ -20,7 +20,6 @@ from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, File
 from .export_delivery import export_response
 from .export_memories import write_memories_export
 from .helpers import (
-    DB_PATH,
     get_active_profile,
     get_db_connection,
     require_engine,

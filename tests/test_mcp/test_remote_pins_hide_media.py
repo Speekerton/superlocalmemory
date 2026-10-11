@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
 
 from tests.test_mcp.test_remote_more_reads_hide_media import (  # noqa: F401  (fixture and helpers)
     CASES, _as, _daemon, _relay, _Server, world)
@@ -35,7 +34,6 @@ def test_core_memory_list(world, who, key, media, expect) -> None:
 
 @CASES
 def test_session_init_pins_standing_rules_and_schedule(world, monkeypatch, who, key, media, expect) -> None:
-    import datetime
 
     from superlocalmemory.core import standing_rules
     from superlocalmemory.mcp import tools_active

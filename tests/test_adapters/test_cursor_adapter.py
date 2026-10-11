@@ -12,16 +12,11 @@ import pytest
 from superlocalmemory.core.security_primitives import PathTraversalError
 from superlocalmemory.hooks.adapter_base import (
     HARD_BYTES_CAP,
-    path_sha256,
-    sync_log_last_content_sha256,
 )
 from superlocalmemory.hooks.cursor_adapter import (
     CursorAdapter,
-    GLOBAL_REL,
-    PROJECT_REL,
     render_cursor,
 )
-from superlocalmemory.hooks.context_payload import ContextPayload
 
 
 def _parse_frontmatter(text: str) -> dict:

@@ -292,7 +292,6 @@ def test_http_switch_returns_503_when_drain_times_out(engine_with_mock_deps) -> 
     from superlocalmemory.server.unified_daemon import create_app
     from superlocalmemory.server.profile_runtime import (
         bind_profile_runtime,
-        TransitionDrainTimeout,
     )
 
     engine = engine_with_mock_deps

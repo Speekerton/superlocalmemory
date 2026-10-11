@@ -21,12 +21,10 @@ import math
 import os
 import re
 import secrets as _secrets
-import stat
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 from superlocalmemory.core import credential_shapes
 

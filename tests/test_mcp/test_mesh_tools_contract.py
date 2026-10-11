@@ -113,7 +113,6 @@ class _CollectorWithAnnotations:
 
 def _make_mesh_send_tool(monkeypatch):
     """Return the mesh_send coroutine with a fresh module-level circuit state."""
-    import importlib
     import superlocalmemory.mcp.tools_mesh as mesh_tools
     # Force fresh module state
     monkeypatch.setattr(mesh_tools, "_REGISTERED", True)

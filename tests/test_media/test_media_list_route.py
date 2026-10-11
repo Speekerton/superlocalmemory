@@ -8,7 +8,7 @@ import pytest
 
 from superlocalmemory.media import open_media_store
 
-from .test_media_routes import LOCAL, REMOTE, make
+from .test_media_routes import REMOTE, make
 
 STAMP = "2026-01-01T00:00:0%d.000000Z"
 

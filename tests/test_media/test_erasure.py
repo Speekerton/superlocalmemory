@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sqlite3
 
 from superlocalmemory.core.transactions.concrete_owners import build_erasure_service_for_db
 from superlocalmemory.core.transactions.erasure import ErasureService

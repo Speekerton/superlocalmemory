@@ -15,7 +15,6 @@ Coverage:
 
 from __future__ import annotations
 
-import copy
 import json
 import sys
 from pathlib import Path
@@ -29,7 +28,6 @@ sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 from superlocalmemory.hooks.portable_kit import (  # noqa: E402
     IDE_MATRIX,
     connect_many,
-    connect_ide,
 )
 
 # ---------------------------------------------------------------------------

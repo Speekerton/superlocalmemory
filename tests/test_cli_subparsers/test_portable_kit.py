@@ -635,7 +635,6 @@ def test_codex_dry_run_fails_when_packaged_agents_asset_is_missing(fake_home: Pa
 
 def test_yaml_load_config_none_result(fake_home: Path, tmp_path: Path):
     """YAML file that parses to None (empty file) is treated as empty dict."""
-    import yaml as _yaml
     from superlocalmemory.hooks.portable_kit import _load_config
 
     empty_yaml = tmp_path / "config.yaml"
@@ -647,7 +646,6 @@ def test_yaml_load_config_none_result(fake_home: Path, tmp_path: Path):
 
 def test_yaml_load_config_non_dict_result(tmp_path: Path):
     """YAML file that parses to a scalar returns empty dict."""
-    import yaml as _yaml
     from superlocalmemory.hooks.portable_kit import _load_config
 
     scalar_yaml = tmp_path / "scalar.yaml"

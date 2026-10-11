@@ -25,7 +25,6 @@ from superlocalmemory.code_graph.graph_engine import GraphEngine
 from superlocalmemory.code_graph.graph_store import GraphStore
 from superlocalmemory.code_graph.incremental import (
     IncrementalUpdater,
-    ParserProtocol,
     UpdateResult,
 )
 from superlocalmemory.code_graph.models import (

@@ -26,7 +26,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -272,10 +272,8 @@ def test_connect_many_propagates_transport(fake_home: Path) -> None:
 
 def test_cli_connect_transport_flag_declared() -> None:
     """The 'connect' subparser must expose --transport and --port flags."""
-    import argparse
     # Re-import to get a clean parser; we're just inspecting the parser structure
     # We run the parse logic without actually dispatching.
-    import superlocalmemory.cli.main as slm_main
 
     # Build a parser the same way main() does but only run the argparse part
     # We do a minimal re-create by parsing known-good args

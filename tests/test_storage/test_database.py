@@ -23,12 +23,8 @@ to schema.py table names in S17.
 
 from __future__ import annotations
 
-import json
-import sqlite3
 import threading
 from pathlib import Path
-from types import ModuleType
-from typing import Any
 
 import pytest
 

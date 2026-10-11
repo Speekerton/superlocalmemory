@@ -403,7 +403,6 @@ def test_ensure_daemon_starts_when_ownership_ends_during_the_wait(
 
 
 def test_start_server_failure_after_publish_still_cleans_up(root, monkeypatch):
-    from unittest.mock import patch
 
     from superlocalmemory.infra.instance_lock import get_instance_lock
     from superlocalmemory.server import unified_daemon

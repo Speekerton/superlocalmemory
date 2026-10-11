@@ -10,7 +10,6 @@ folder failed with WinError 32 and the command errored after its work was done.
 from __future__ import annotations
 
 import sys
-import tempfile
 from argparse import Namespace
 from pathlib import Path
 

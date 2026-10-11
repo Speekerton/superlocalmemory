@@ -50,7 +50,6 @@ from typing import Any, Optional
 os.environ.setdefault("SLM_MCP_EMBEDDED", "1")
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, field_validator
 
@@ -3909,6 +3908,7 @@ def create_app() -> FastAPI:
 
     # -- Middleware --
     from superlocalmemory.server.profile_runtime import ProfileRuntimeMiddleware
+    from superlocalmemory.server.daemon_cors import DaemonCORSMiddleware
     from superlocalmemory.server.security_middleware import SecurityHeadersMiddleware
     application.add_middleware(
         ProfileRuntimeMiddleware,
@@ -3917,13 +3917,12 @@ def create_app() -> FastAPI:
     application.add_middleware(SecurityHeadersMiddleware)
     application.add_middleware(GZipMiddleware, minimum_size=1000)
     application.add_middleware(
-        CORSMiddleware,
+        DaemonCORSMiddleware,
         allow_origins=[
-            "http://localhost:8765", "http://127.0.0.1:8765",
-            "http://localhost:8767", "http://127.0.0.1:8767",  # legacy compat
-            # M-04 (3.7.9): removed the undocumented port 8417 origin — it had
-            # no known consumer and let any local service on 8417 make
-            # credentialed cross-origin requests to the API.
+            # start_server resolves getsockname() before constructing the app.
+            # The legacy TCP redirect is never a dashboard browser origin.
+            f"http://{host}:{identity_port}" for host in ("localhost", "127.0.0.1")
+            if identity_port != 8767
         ],
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],

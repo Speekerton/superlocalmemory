@@ -37,15 +37,27 @@ SETTINGS = (
 )
 
 
+#: A setting name that holds a secret: the whole name, or its last ``_`` part(s).
+#: Matching substrings dropped ``max_tokens``, ``token_budget`` and ``cache_key``
+#: from every recovery point (PR 251 review, finding 9).
+_SECRET_NAME = re.compile(
+    r"(?:^|_)(?:api_?key|secret|password|passphrase|credentials?|token|"
+    r"recovery_key|backup_key|private_key|access_key|signing_key|embedding_key)$"
+    r"|^key$",
+    re.IGNORECASE,
+)
+
+
+def _is_secret(name: str, value) -> bool:
+    """A value under a secret name, unless it is a flag or a number (never a secret)."""
+    if value is None or isinstance(value, (bool, int, float)):
+        return False
+    return bool(_SECRET_NAME.search(name))
+
+
 def _safe_settings(value):
     if isinstance(value, dict):
-        return {
-            k: _safe_settings(v)
-            for k, v in value.items()
-            if not any(
-                part in k.lower() for part in ("key", "token", "password", "secret", "credential")
-            )
-        }
+        return {k: _safe_settings(v) for k, v in value.items() if not _is_secret(k, v)}
     if isinstance(value, str) and value.startswith(("http://", "https://")):
         from urllib.parse import urlsplit, urlunsplit
 
@@ -219,9 +231,7 @@ def _merge_settings(current, restored):
     new_destination = tuple(restored.get(k, current.get(k)) for k in fields)
     if old_destination != new_destination:
         for key in list(current):
-            if any(
-                part in key.lower() for part in ("key", "token", "password", "secret", "credential")
-            ):
+            if _is_secret(key, current[key]):
                 current[key] = ""
     for key, value in restored.items():
         if key in (

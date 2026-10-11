@@ -25,6 +25,14 @@ logger = logging.getLogger(__name__)
 
 
 def _reason(payload: bytes | None, projection_dim: int) -> str:
+    if payload is None:
+        return "legacy"
+    if not isinstance(payload, (bytes, bytearray, memoryview)):
+        return "incompatible"
+    try:
+        payload = bytes(payload)
+    except (ValueError, TypeError):
+        return "incompatible"
     if not payload:
         return "legacy"
     sign_size = (projection_dim + 7) // 8
@@ -34,7 +42,7 @@ def _reason(payload: bytes | None, projection_dim: int) -> str:
     elif len(payload) == sign_size:
         return "legacy"
     try:
-        _unpack_payload(bytes(payload), projection_dim)
+        _unpack_payload(payload, projection_dim)
     except (ValueError, TypeError):
         return "incompatible"
     return ""

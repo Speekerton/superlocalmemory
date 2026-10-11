@@ -1,5 +1,6 @@
 """Legacy sketches need repair even when EAP retains the same precision."""
 
+from contextlib import closing
 from dataclasses import replace
 from unittest.mock import MagicMock, patch
 
@@ -127,7 +128,7 @@ def test_concurrent_base_change_does_not_write_stale_correction(legacy_store):
     execute = db.execute
     def race(sql, params=()):
         if sql.startswith("UPDATE polar_embeddings SET qjl_bits"):
-            with sqlite3.connect(db.db_path) as other:
+            with closing(sqlite3.connect(db.db_path)) as other, other:
                 other.execute("UPDATE polar_embeddings SET radius=radius+1 "
                               "WHERE fact_id='repairable'")
         return execute(sql, params)
@@ -193,3 +194,25 @@ def test_doctor_classifies_prior_configuration_header_before_legacy_size(legacy_
     assert detail == "2 need repair (1 legacy, 1 incompatible); 1 need re-embedding"
     assert "slm quantize --execute" in fix
     assert scheduler.run_eap_cycle("default")["repaired"] == 1
+
+
+@pytest.mark.parametrize(("payload", "storage_type"), [
+    ("QJL1broken", "text"), ("x" * 16, "text"), ("", "text"),
+    (16, "integer"), (0, "integer"), (16.0, "real"),
+])
+def test_nonbinary_sketch_does_not_abort_diagnostics_or_other_repairs(
+    legacy_store, payload, storage_type,
+):
+    from superlocalmemory.storage.qjl_repair import repair_status
+
+    db, store, scheduler, config = legacy_store
+    db.execute("UPDATE polar_embeddings SET qjl_bits=? WHERE fact_id='no-original'", (payload,))
+    assert db.execute("SELECT typeof(qjl_bits) FROM polar_embeddings "
+                      "WHERE fact_id='no-original'")[0][0] == storage_type
+    assert repair_status(db, "default", config.quantization) == {
+        "repair_needed": 2, "legacy": 1, "incompatible": 1, "unrecoverable": 1,
+    }
+    result = scheduler.run_eap_cycle("default")
+    assert result["repaired"] == 1 and result["unrecoverable"] == 1
+    assert result["repair_errors"] == 0
+    assert store.load("repairable", "default").qjl_bits.startswith(b"QJL1")

@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+from contextlib import closing
 from unittest.mock import patch
 
 import numpy as np
@@ -11,7 +12,7 @@ from tests.test_dynamics.test_qjl_upgrade_repair import legacy_store  # noqa: F4
 
 
 def _commit_writer(db_path, source, change_base):
-    with sqlite3.connect(db_path) as other:
+    with closing(sqlite3.connect(db_path)) as other, other:
         other.execute("UPDATE atomic_facts SET embedding=? WHERE fact_id='repairable'",
                       (source,))
         if change_base:

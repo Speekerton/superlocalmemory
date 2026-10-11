@@ -1,8 +1,9 @@
-# CLI Reference — V4.0.5
+# CLI Reference
 
 The installed CLI is the command source of truth. Use `slm --help` and
 `slm <command> --help`; commands that advertise `--json` provide structured
-output. This page describes **V4.0.5**; the installed `--help` wins if prose drifts.
+output. Most of this page was written for V4.0.5; the "New in 4.1.25" section is
+current for 4.1.25. The installed `--help` wins if prose drifts.
 
 ## Setup & Status
 
@@ -243,6 +244,37 @@ slm proxy --port 8765 --provider anthropic            # Optimization proxy
 ```
 
 Run `slm --help` and `slm <command> --help` for the full surface — this page is an orientation map, not the complete parser.
+
+## New in 4.1.25
+
+Commands and flags that 4.1.25 adds over 4.1.24, taken from the parser and checked with `--help`. The full descriptions are in the repository's `docs/cli-reference.md`.
+
+| Command | What it does |
+|---------|-------------|
+| `slm features [--json]` | What is on and what you can turn on: images and documents, folder sources, bot messages |
+| `slm media enable [--yes] [--json]` | Turn images and documents on (downloads models; shows the size and asks first) |
+| `slm media disable [--remove-files] [--json]` | Turn them off; memories are kept. `--remove-files` also deletes the downloaded models |
+| `slm media status [--json]` | What is on and how set-up is going |
+| `slm media gc [--apply] [--json]` | Find picture leftovers (records without a memory, stray files); `--apply` removes them (owner or admin) |
+| `slm media repair [--dry-run] [--json]` | Make pictures findable by what they show (re-embeds them; owner or admin) |
+| `slm sources add <path> [--kind folder\|obsidian] [--yes]` | Check a folder, show what would be read, and connect it (read-only source) |
+| `slm sources list` | Connected folders |
+| `slm sources report <id>` | What a folder skipped, held back or failed on |
+| `slm sources rescan <id>` | Scan a folder now |
+| `slm sources remove <id> [--purge] [--yes]` | Disconnect a folder; `--purge` also erases the memories it gave |
+| `slm sources forget-empty <id> [--yes]` | Forget the files of a folder you emptied on purpose |
+| `slm team status` / `slm team policy --require-login on\|off` | Whether login is required and how many users exist; turn required login on or off |
+| `slm token show` | Print the SuperLocalMemory key the dashboard asks for (readable only by you) |
+| `slm remote keys allow\|disallow <key> mesh\|media [--json]` | Let a remote key use bot messages (mesh) or images and documents (media), or stop it |
+| `slm embedder upgrade [--yes] [--no-wait] [--json]` | Move your memories to the newer memory engine (preview; rolls back) |
+| `slm outcome success\|partial\|failure <fact_id>... [--query-id ID] [--note TEXT] [--agent NAME] [--report-id KEY] [--json]` | Report whether recalled memories helped; this trains the ranking (reward 1.0 / 0.5 / 0.0). Quote the `query_id` from `slm recall --json` |
+| `slm db repair-entities [--json]` | Preview (read-only) of the repair of entity links left by the old fuzzy name merge |
+| `slm db repair-entities --apply --root <data folder>` | Back up the store (to `backups/`, labelled `pre-entity-repair`), then repair; prints the undo command |
+| `slm db repair-entities --undo <run_id> --root <data folder>` | Put back everything that run changed |
+| `slm doctor --refile-hidden [--yes]` | List memories hidden (archive/forgotten) although their retention score is above 0.8; `--yes` moves exactly those back to active |
+| `slm gdpr export --include-embeddings` | Include embeddings and other binary columns (base64) in the export; omitted by default |
+
+`--apply` and `--undo` on `slm db repair-entities` refuse to run unless `--root` names the data folder the command resolves to.
 
 ## Examples
 

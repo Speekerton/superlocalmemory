@@ -674,7 +674,7 @@ def main() -> None:
     doctor_p.add_argument("--json", action="store_true", help="Output structured JSON (agent-native)")
     doctor_p.add_argument(
         "--quick", action="store_true",
-        help="Run only the fast checks (deps + config); skip daemon/embedding probes",
+        help="Run fast checks, including daemon health; skip embedding worker and Ollama probes",
     )
     doctor_p.add_argument(
         "--deep", action="store_true",

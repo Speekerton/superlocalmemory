@@ -460,11 +460,16 @@ configuration. Run it after any install or upgrade.
 
 ```bash
 slm doctor
-slm doctor --quick   # dependencies and configuration only
+slm doctor --quick   # fast checks, including daemon health
 slm doctor --deep    # read every database page (slow on a large store)
 slm doctor --fix     # re-download missing models and install sqlite-vec first
 slm doctor --json
 ```
+
+Every mode checks the daemon descriptor and makes at most one short `/health`
+probe (0.5-second timeout). Doctor never starts the daemon. A missing descriptor
+warns with `slm serve start`; a dead recorded process, invalid descriptor or
+unhealthy daemon fails with `slm restart`. The check appears in JSON output too.
 
 Doctor also reads the same failure counts as `slm ops status`: a "Failed saves"
 row warns when saves were given up on after repeated attempts (dead-lettered, so

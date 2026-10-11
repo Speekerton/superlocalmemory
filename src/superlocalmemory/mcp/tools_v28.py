@@ -271,11 +271,9 @@ def register_v28_tools(server, get_engine: Callable) -> None:
                     mutation_source="mcp-compact-memories",
                     profile_id=pid,
                 )
-                for c in candidates:
-                    engine._db.update_fact(
-                        c["fact_id"],
-                        {"lifecycle": c["proposed"]},
-                    )
+                from superlocalmemory.storage.retention_lifecycle import compact_facts
+
+                candidates = compact_facts(engine._db, candidates, pid)
                 authorization.complete()
             return {
                 "success": True,

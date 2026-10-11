@@ -159,9 +159,10 @@ async def trigger_compaction(request: Request, data: dict = {}):
                 source_agent_id="http-lifecycle-compact",
                 profile_id=profile,
             )
-            for c in candidates:
-                engine._db.update_fact(c["fact_id"], {"lifecycle": c["proposed"]})
-                applied += 1
+            from superlocalmemory.storage.retention_lifecycle import compact_facts
+
+            candidates = compact_facts(engine._db, candidates, profile)
+            applied = len(candidates)
             authorization.complete()
 
         return {

@@ -4651,7 +4651,7 @@ def _register_dashboard_routes(application: FastAPI) -> None:
             pass
 
     # Optional routers
-    for _mod_name in ("learning", "lifecycle", "behavioral", "compliance", "insights", "timeline", "abstraction", "integrity", "overtaken"):
+    for _mod_name in ("learning", "learning_readiness", "lifecycle", "behavioral", "compliance", "insights", "timeline", "abstraction", "integrity", "overtaken"):
         try:
             _mod = __import__(
                 f"superlocalmemory.server.routes.{_mod_name}", fromlist=["router"],

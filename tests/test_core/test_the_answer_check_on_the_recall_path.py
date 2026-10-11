@@ -73,6 +73,17 @@ def _response(n: int) -> RecallResponse:
 
 def _run(judge, config, monkeypatch, *, n: int = 5, delay: float = 0.0, **kw):
     response = _response(n)
+    from superlocalmemory.storage.models import MemoryRecord
+    from tests.test_core.test_source_fidelity_guard import _db
+
+    # These tests exercise the downstream answer check. Give its candidates
+    # real sources instead of depending on the fidelity guard failing open.
+    db = _db(config.base_dir / "answer-check-sources.db")
+    for result in response.results:
+        record = MemoryRecord(content=result.fact.content)
+        db.store_memory(record)
+        result.fact.memory_id = record.memory_id
+        db.store_fact(result.fact)
 
     def recall(*_a, **_kw):
         if delay:
@@ -81,10 +92,12 @@ def _run(judge, config, monkeypatch, *, n: int = 5, delay: float = 0.0, **kw):
 
     engine = SimpleNamespace(_sufficiency_judge=judge, recall=recall)
     monkeypatch.setattr(recall_pipeline, "apply_ranking", lambda resp, *a, **k: resp)
-    return recall_pipeline.run_recall(
-        "which one?", "default", fast=True, config=config, retrieval_engine=engine,
-        trust_scorer=None, embedder=None, db=SimpleNamespace(db_path=None), llm=None,
-        hooks=None, **kw)
+    try:
+        return recall_pipeline.run_recall(
+            "which one?", "default", fast=True, config=config, retrieval_engine=engine,
+            trust_scorer=None, embedder=None, db=db, llm=None, hooks=None, **kw)
+    finally:
+        db.close()
 
 
 def _ids(response) -> list[str]:

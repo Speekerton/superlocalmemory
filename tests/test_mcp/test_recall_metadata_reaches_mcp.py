@@ -52,6 +52,7 @@ def _engine_response():
         community_context="Team decisions about auth",
         incomplete_channels=("hopfield",),
         channel_status={"semantic": "ok", "hopfield": "timed_out"},
+        source_fidelity_status="degraded",
         reranker_status="jev_listwise",
         local_reranker_status="cross_encoder",
     )

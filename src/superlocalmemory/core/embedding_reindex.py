@@ -356,18 +356,22 @@ class ReindexRunner:
                 steps.close_embedder(embedder)
 
     def _load_embedder(self, target: Any) -> Any | None:
-        """Start the model, and ask it one question so it is really in memory, under the RAM reservation.
+        """Probe under one load reservation; managed workers own theirs.
 
-        Only one heavy job runs at a time across the daemon, the picture worker and the
-        command line: a second one waits here. The reservation covers the load only, so a
-        long re-index does not shut other model loads out for hours.
+        A cold managed worker acquires the same file lock while serving the probe.
+        Holding it here too deadlocks resumed jobs whose prebuilt model is gone.
         """
+        from contextlib import nullcontext
+
         from superlocalmemory.core.ram_lock import ram_reservation
+        from superlocalmemory.core.text_provider import PROVIDER
         from superlocalmemory.runtimes.media_models import load_mb_for
 
         try:
-            with ram_reservation("embedding-reindex-load", required_mb=load_mb_for(target.model_name),
-                                 timeout_s=LOAD_WAIT_S):
+            reservation = (nullcontext() if target.provider == PROVIDER else ram_reservation(
+                "embedding-reindex-load", required_mb=load_mb_for(target.model_name),
+                timeout_s=LOAD_WAIT_S))
+            with reservation:
                 embedder = steps.build_embedder(target)
                 if embedder is not None:
                     steps.probe(embedder, target.dimension)

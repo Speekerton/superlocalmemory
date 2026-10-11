@@ -76,11 +76,16 @@ def _store(db, receipt):
     )
 
 
-def run_check(db, *, profile_id, task_id, run_id, producer, command, cwd, timeout=30):
+def run_check(
+    db, *, profile_id, task_id, run_id, producer, command, cwd, timeout=30,
+    validate_result=None,
+):
     """Run the operator's pinned check and persist its independently measured result.
 
     There are deliberately no verdict, status, digest or output input parameters.
     A waiting MCP agent has no tool that can call this writer with its own claims.
+    Registered executions supply an operator validation callback. Measurement
+    stays private until that callback succeeds; a refusal inserts no receipt.
     """
     for value in (profile_id, task_id, run_id, producer):
         if not isinstance(value, str) or not value.strip():
@@ -102,5 +107,7 @@ def run_check(db, *, profile_id, task_id, run_id, producer, command, cwd, timeou
         evidence_digest=hashlib.sha256(evidence.encode()).hexdigest(),
         evidence=evidence,
     )
+    if validate_result is not None:
+        validate_result()
     _store(db, receipt)
     return receipt

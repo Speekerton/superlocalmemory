@@ -102,11 +102,16 @@ def run_registered_check(db, job_id, *, timeout=30):
     job = dict(rows[0])
     if not current_job(db, job_id, job["profile_id"], job["watcher_name"]):
         raise ValueError("Gate job expired, superseded or its artifacts changed")
-    receipt = run_check(
+    return run_check(
         db, profile_id=job["profile_id"], task_id=job["task_id"], run_id=job["run_id"],
         producer=job["producer"], command=json.loads(job["command_json"]), cwd=job["cwd"],
-        timeout=timeout,
+        timeout=timeout, validate_result=lambda: _validate_execution(db, job),
     )
+
+
+def _validate_execution(db, job):
+    """Finish admission before the measurement becomes visible to watchers."""
     if not matches(job):
         raise ValueError("Checked artifacts changed during verification")
-    return receipt
+    if not current_job(db, job["job_id"], job["profile_id"], job["watcher_name"]):
+        raise ValueError("Gate job expired or superseded during verification")

@@ -695,11 +695,20 @@ class CognitiveConsolidator:
         fact_id: str,
         profile_id: str,
     ) -> tuple[int, int]:
-        """Compress one fact's embedding. Returns (bytes_before, bytes_after).
+        """Measure one source embedding. Returns (bytes_before, bytes_after).
 
-        PolarQuant is optional (HR-10). When unavailable, records the
-        uncompressed byte count so the pipeline can still report metrics.
-        Does NOT write invalid values to embedding_quantization_metadata.
+        This step does NOT quantize, and since 4.1.25 it no longer says it
+        does (audit BRN-10). It used to import PolarQuantEncoder, never call
+        it, write ``quantization_level='polar2', bit_width=2`` and report an
+        estimated 2-bit size: the stored embedding kept every byte (identical
+        SHA-256), and the fake ``bit_width=2`` made the EAP scheduler — which
+        does real quantization through ``QuantizedStore`` — treat the fact as
+        already compressed and skip it.
+
+        Physical quantization of a consolidated (archived) source belongs to
+        the EAP lifecycle scheduler, which reads the retention zone this
+        pipeline sets. So this measures the float32 payload and reports it
+        unchanged: bytes_after == bytes_before, a compression ratio of 1.0.
         """
         meta = self._db.execute(
             "SELECT vec_rowid, dimension FROM embedding_metadata "
@@ -708,11 +717,7 @@ class CognitiveConsolidator:
         )
         if not meta:
             return (0, 0)
-
-        d = dict(meta[0])
-        dim = d.get("dimension", 768)
-
-        # Check existing quantization status
+        dim = dict(meta[0]).get("dimension", 768)
         eq_meta = self._db.execute(
             "SELECT quantization_level FROM embedding_quantization_metadata "
             "WHERE fact_id = ? AND profile_id = ?",
@@ -721,30 +726,9 @@ class CognitiveConsolidator:
         if eq_meta:
             level = dict(eq_meta[0]).get("quantization_level", "float32")
             if level in ("polar2", "polar4", "deleted"):
-                return (0, 0)  # Already compressed
-
-        bytes_before = dim * 4  # float32
-
-        # Try PolarQuant (Phase B) — optional dependency (HR-10)
-        try:
-            from superlocalmemory.math.polar_quant import PolarQuantEncoder
-            # Phase B exists. Mark as polar2 for the scheduler to actually
-            # perform the quantization with the raw embedding data.
-            self._db.execute(
-                "INSERT OR REPLACE INTO embedding_quantization_metadata "
-                "(fact_id, profile_id, quantization_level, bit_width) "
-                "VALUES (?, ?, 'polar2', 2)",
-                (fact_id, profile_id),
-            )
-            # Estimated compressed size: radius(4 bytes) + packed angles
-            bytes_after = 4 + (dim * self._config.target_bit_width + 7) // 8
-            return (bytes_before, bytes_after)
-        except ImportError:
-            pass
-
-        # PolarQuant not available: no compression, no metadata change.
-        # The bytes are uncompressed but we track them for metrics.
-        return (bytes_before, bytes_before)
+                return (0, 0)  # quantized by EAP already; nothing to measure
+        bytes_now = int(dim) * 4  # float32, as stored
+        return (bytes_now, bytes_now)
 
     # ------------------------------------------------------------------
     # Step 5: Store block + archive source facts
@@ -777,9 +761,13 @@ class CognitiveConsolidator:
         # integration lands, the rowid write must move INSIDE the transaction
         # below so a rollback removes the embedding row together with the block.
         gist_embedding_rowid: int | None = None
+        gist_embedding: list[float] | None = None
         if self._embedder is not None:
             try:
-                self._embedder.encode(gist.gist_text)
+                # Kept, not discarded (audit BRN-10: the result was thrown
+                # away and the gist stored with embedding=NULL).
+                vec = self._embedder.encode(gist.gist_text)
+                gist_embedding = [float(x) for x in vec] if vec is not None else None
             except Exception as exc:
                 logger.warning("Gist embedding generation failed: %s", exc)
 
@@ -812,6 +800,7 @@ class CognitiveConsolidator:
                     importance=0.8,
                     confidence=1.0,
                     session_id="ccq",
+                    embedding=gist_embedding,
                 )
             )
 

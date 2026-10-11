@@ -70,7 +70,11 @@ def test_after_the_upgrade_doctor_reports_the_refreshed_version(home) -> None:
 
 def test_the_older_cache_copy_is_named_not_counted_as_stale(home) -> None:
     _stale_plugin_cache(home)
-    _refresh(home)
+    result = _refresh(home)
+    assert result["status"] == "updated", result
+    found = doctor_hosts.installed_plugin_versions()
+    note = doctor_hosts.codex_cache_note(found, home)
+    assert note, (found, codex_assets.read_version_stamp(home))
     note = doctor_hosts.codex_cache_note(doctor_hosts.installed_plugin_versions(), home)
     assert "4.1.24" in note and "upgrade-hosts" in note and _package_version() in note
 

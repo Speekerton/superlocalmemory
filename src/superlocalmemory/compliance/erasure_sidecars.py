@@ -101,7 +101,8 @@ def erase_profile_sidecars(
             return
         conn = sqlite3.connect(str(path), timeout=30)
         try:
-            has = conn.execute("SELECT 1 FROM sqlite_master WHERE name='recall_requests'").fetchone()
+            has = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE name='recall_requests'").fetchone()
             if has:
                 counts["recall_queue"] = conn.execute("DELETE FROM recall_requests").rowcount
                 conn.commit()

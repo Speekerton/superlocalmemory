@@ -145,6 +145,60 @@ def purge_profile(db_path: str | Path, profile_id: str) -> VectorPurge:
         conn.close()
 
 
+def purge_facts(db_path: str | Path, fact_ids: list[str]) -> VectorPurge:
+    """Remove the vectors of these facts from the index and their bookkeeping rows.
+
+    For erasure made without an engine (no ``VectorStore``) and for replaying an
+    erasure into a restored database. Reads the index back; raises
+    :class:`VectorIndexUnreadable` when an index exists that cannot be opened.
+    """
+    path = Path(db_path)
+    ids = sorted({str(f) for f in fact_ids if f})
+    if not ids or not path.exists():
+        return VectorPurge(no_index=not path.exists())
+    probe = sqlite3.connect(str(path), timeout=10)
+    try:
+        has_index = _has_table(probe, "fact_embeddings")
+        has_map = _has_table(probe, "vector_row_map") or _has_table(probe, "embedding_metadata")
+    finally:
+        probe.close()
+    if not has_index and not has_map:
+        return VectorPurge(no_index=True)
+    conn = open_vec(path) if has_index else sqlite3.connect(str(path), timeout=10)
+    try:
+        rowids: set[int] = set()
+        for start in range(0, len(ids), _CHUNK):
+            chunk = ids[start:start + _CHUNK]
+            marks = ",".join("?" * len(chunk))
+            for table in ("embedding_metadata", "vector_row_map"):
+                if _has_table(conn, table):
+                    rowids |= {int(r[0]) for r in conn.execute(
+                        f"SELECT vec_rowid FROM {table} WHERE fact_id IN ({marks})", chunk)}
+        ordered = sorted(rowids)
+        if has_index:
+            for start in range(0, len(ordered), _CHUNK):
+                part = ordered[start:start + _CHUNK]
+                conn.execute(
+                    f"DELETE FROM fact_embeddings WHERE rowid IN ({','.join('?' * len(part))})",
+                    part)
+        for start in range(0, len(ids), _CHUNK):
+            chunk = ids[start:start + _CHUNK]
+            marks = ",".join("?" * len(chunk))
+            for table in ("embedding_metadata", "vector_row_map"):
+                if _has_table(conn, table):
+                    conn.execute(f"DELETE FROM {table} WHERE fact_id IN ({marks})", chunk)
+        conn.commit()
+        left = 0
+        if has_index and ordered:
+            marks = ",".join("?" * len(ordered))
+            left = int(conn.execute(
+                f"SELECT COUNT(*) FROM fact_embeddings WHERE rowid IN ({marks})",
+                ordered).fetchone()[0])
+        return VectorPurge(removed=len(ordered), remaining=left)
+    finally:
+        conn.close()
+
+
 def _purge_bookkeeping_only(path: Path, profile_id: str) -> VectorPurge:
     conn = sqlite3.connect(str(path), timeout=10)
     try:
@@ -165,5 +219,6 @@ __all__ = [
     "indexed_fact_ids",
     "open_vec",
     "physical_rowids",
+    "purge_facts",
     "purge_profile",
 ]

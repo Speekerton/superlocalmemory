@@ -54,6 +54,9 @@ _REMAINING: dict[str, tuple[str, str]] = {
         "cannot be erased selectively.", "Delete optimize_capture.jsonl if you do not need it."),
     "event_previews_failed": ("Previews of the profile's memories remain in the event log.",
                               "Run the erasure again."),
+    "restore_journal_failed": (
+        "The erasure could not be journalled outside the backups, so restoring a backup could "
+        "bring the erased memories back.", "Run the erasure again."),
     "recall_queue_failed": ("Queued recall requests could not be cleared.",
                             "Run the erasure again."),
     "admission_journal_failed": ("Saved requests of this profile could not be removed.",
@@ -81,6 +84,28 @@ _REMAINING: dict[str, tuple[str, str]] = {
 
 #: Markers that mean the erasure cannot be SHOWN afterwards, not that data is left.
 PROVABILITY_ONLY = frozenset({"receipt_persist_failed", "audit_completion_failed"})
+
+
+def apply_proofs(counts: dict, proofs: Any) -> None:
+    """Turn the unproven owners of a targeted erasure into named markers.
+
+    A snapshot still holding the facts is an outstanding obligation, a journal
+    that could not be written is a failure, and anything else is an owner that
+    could not prove its projection gone. (These were all counted as
+    ``vector_store_failures``, which named none of them.)
+    """
+    other = 0
+    for proof in proofs:
+        if proof.erased:
+            continue
+        if proof.owner == "backup_copies":
+            counts["backup_obligations_pending"] = len(proof.residue)
+        elif proof.owner == "restore_journal":
+            counts["restore_journal_failed"] = 1
+        else:
+            other += 1
+    if other:
+        counts["vector_store_failures"] = other
 
 
 def subject_ref(kind: str, name: str) -> str:

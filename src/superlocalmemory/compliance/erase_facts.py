@@ -72,7 +72,9 @@ def erase_facts(gdpr: Any, fact_ids: Sequence[str], profile_id: str, subject_id:
     if not receipt.persisted:
         counts["receipt_persist_failed"] = 1
     if not receipt.all_erased:
-        counts["vector_store_failures"] = sum(1 for p in receipt.proofs if not p.erased)
+        from superlocalmemory.compliance.erasure_outcome import apply_proofs
+
+        apply_proofs(counts, receipt.proofs)
     gdpr._erase_fact_keyed_tables_for(ids, counts)
     gdpr._erase_cached_copies(profile_id, texts, counts)
     delete_erased_facts(db, targets, profile_id, erasure_id=op_id,

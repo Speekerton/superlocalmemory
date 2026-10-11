@@ -81,7 +81,7 @@ async def compliance_status(request: Request):
             audit = AuditChain(str(AUDIT_DB))
             recent_audit_events = audit.query(profile_id=profile, limit=30)
             # get_stats() is global; count this profile's rows for the header.
-            audit_events_count = len(audit.query(profile_id=profile, limit=100000))
+            audit_events_count = audit.count(profile_id=profile)
         except Exception as exc:
             logger.debug("audit chain: %s", exc)
 
@@ -123,8 +123,13 @@ async def query_audit_trail(
     limit: int = Query(default=50, ge=1, le=500),
     event_type: Optional[str] = Query(default=None),
     since: Optional[str] = Query(default=None),
+    offset: int = Query(default=0, ge=0),
 ):
-    """Query audit trail events with optional filters."""
+    """Query audit trail events with optional filters, a page at a time.
+
+    ``total`` is how many events match (counted by the database); ``events`` is
+    the page of at most ``limit`` starting at ``offset``, newest first.
+    """
     if not COMPLIANCE_AVAILABLE:
         return {"available": False, "error": "Compliance engine not available"}
     # The audit trail reveals operations, actors, and fact_ids. This GET is not
@@ -139,15 +144,18 @@ async def query_audit_trail(
         audit = AuditChain(str(AUDIT_DB))
         events = audit.query(
             profile_id=profile, operation=event_type, start_date=since,
-            limit=limit,
+            limit=limit, offset=offset,
         )
+        matching = audit.count(profile_id=profile, operation=event_type, start_date=since)
         chain_ok = True
         try:
             chain_ok = audit.verify_integrity()
         except Exception:
             pass
         return {
-            "available": True, "events": events, "total": len(events),
+            "available": True, "events": events, "total": matching,
+            "returned": len(events), "offset": offset,
+            "has_more": offset + len(events) < matching,
             "chain_verified": chain_ok, "active_profile": profile,
             "filters": {"event_type": event_type, "since": since, "limit": limit},
         }

@@ -13,9 +13,7 @@ Part of Qualixar | Author: Varun Pratap Bhardwaj
 
 from __future__ import annotations
 
-import json
 import logging
-import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -853,7 +851,7 @@ class GDPRCompliance:
     def _scrub_profile_events(
         self, profile_id: str, fact_ids: tuple[str, ...], counts: dict,
     ) -> None:
-        """Blank event previews of the profile; they are filed under ``default`` by the HTTP path."""
+        """Blank the profile's event previews (the HTTP path files events under ``default``)."""
         from superlocalmemory.core import erasure_scrub
 
         try:
@@ -869,6 +867,24 @@ class GDPRCompliance:
         except Exception as exc:  # noqa: BLE001
             logger.warning("GDPR erase: event preview scrub failed: %s", type(exc).__name__)
             counts["event_previews_failed"] = 1
+
+    def _journal_entity_erasure(
+        self, profile_id: str, entity_id: str, erasure_id: str | None, counts: dict,
+    ) -> None:
+        """Journal the erased entity outside every backup, so a restore erases it again."""
+        root = self._sidecar_root()
+        if root is None:
+            return
+        import uuid
+
+        from superlocalmemory.infra import erased_subjects
+
+        try:
+            erased_subjects.record(root, profile_id, "entity", [entity_id],
+                                   erasure_id or uuid.uuid4().hex)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("entity erasure journal not written: %s", type(exc).__name__)
+            counts["restore_journal_failed"] = 1
 
     def _sidecar_root(self) -> Path | None:
         """The data root whose side stores a targeted erasure must also clean."""
@@ -1004,7 +1020,9 @@ class GDPRCompliance:
             if not receipt.persisted:
                 counts["receipt_persist_failed"] = 1
             if not receipt.all_erased:
-                counts["vector_store_failures"] = sum(1 for p in receipt.proofs if not p.erased)
+                from superlocalmemory.compliance.erasure_outcome import apply_proofs
+
+                apply_proofs(counts, receipt.proofs)
 
         # The same residue the profile wipe had: the search-expansion index is
         # keyed on a fact, not a profile, and ``delete_fact`` does not touch it.
@@ -1053,6 +1071,7 @@ class GDPRCompliance:
         if not _unproject_entity(eid):
             counts["projection_failed"] = 1
         counts["entity"] = 1
+        self._journal_entity_erasure(profile_id, eid, op_id if targets else None, counts)
         if not audit_request_ok:
             counts["audit_request_failed"] = 1
 
@@ -1077,7 +1096,7 @@ class GDPRCompliance:
 
     @clears_derived_cache
     def forget_facts(self, fact_ids, profile_id: str, *, subject_id: str) -> dict:
-        """Erase a chosen set of facts of one profile, with a receipt. See ``compliance.erase_facts``."""
+        """Erase chosen facts of one profile, with a receipt (``compliance.erase_facts``)."""
         from superlocalmemory.compliance.erase_facts import erase_facts
 
         return erase_facts(self, list(fact_ids), profile_id, subject_id)

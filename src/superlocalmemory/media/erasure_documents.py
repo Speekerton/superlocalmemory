@@ -58,6 +58,42 @@ def erase_document_rows(store: Any, root: Path, document_ids: Iterable[str]) -> 
     return out
 
 
+def erase_sources_of_touched(store: Any, root: Path, touched: Iterable[str]) -> dict[str, Any]:
+    """Remove the stored PDF of every document that lost a page but still exists.
+
+    The original holds ALL its pages: removing the erased page's picture, text and
+    memory left the page readable in the PDF kept beside the rest (the operation
+    reported complete, with the original's checksum unchanged). A document that
+    keeps other pages keeps their pictures and text, but not a source that still
+    contains the erased one; a stored original is never sanitised in place, because
+    a rewritten file could still carry the page in its structure.
+
+    Returns ``{"sources": [(sha, relpath)], "files", "residue"}``.
+    """
+    out: dict[str, Any] = {"sources": [], "files": 0, "residue": []}
+    surviving = [d for d in touched if store.get_document(d)]
+    if not surviving:
+        return out
+    for source in store.detach_document_sources(surviving):
+        sha, rel = source["sha256"] or "", source["source_relpath"]
+        out["sources"].append((sha, rel))
+        if (files.media_root(root) / rel).exists():
+            files.remove_original(root, rel)
+        if (files.media_root(root) / rel).exists():
+            out["residue"].append(f"source:{sha[:12]}")
+            continue
+        out["files"] += 1
+        if sha:
+            try:
+                from superlocalmemory.cache.factory import invalidate_content
+
+                invalidate_content(sha, root)
+            except Exception as exc:  # noqa: BLE001 - reported: the cached text is a copy too
+                logger.warning("cached text could not be cleared (%s)", type(exc).__name__)
+                out["residue"].append(f"cache:{sha[:12]}")
+    return out
+
+
 def erase_pages_of_memories(store: Any, root: Path, profile_id: str, memory_ids: Iterable[str],
                             fact_ids: Iterable[str], anchor_ids: Iterable[str] = ()) -> dict[str, Any]:
     """Erase the page pictures of erased memories, and any document left with no page memory.
@@ -72,10 +108,12 @@ def erase_pages_of_memories(store: Any, root: Path, profile_id: str, memory_ids:
     touched = store.drop_page_memories(profile_id, memories, list(fact_ids))
     out = erase_document_rows(store, root, store.documents_left_empty(touched)) if touched else {
         "documents": 0, "items": 0, "files": 0, "residue": []}
+    sources = erase_sources_of_touched(store, root, touched)
     out["items"] += pictures["items"]
-    out["files"] += pictures["files"]
-    out["residue"] = [*pictures["residue"], *out["residue"]]
+    out["files"] += pictures["files"] + sources["files"]
+    out["residue"] = [*pictures["residue"], *out["residue"], *sources["residue"]]
     out["touched"], out["picture_ids"] = touched, picture_ids
+    out["sources"] = sources["sources"]
     if touched:
         forget_cached_index(root)
     return out

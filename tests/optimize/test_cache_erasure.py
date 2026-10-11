@@ -85,7 +85,7 @@ def test_no_needles_means_nothing_to_do_not_everything(cache) -> None:
     assert result.entries == 0 and cache.get_value(kept, TENANT) is not None
 
 
-def test_the_file_is_rewritten_so_deleted_values_are_not_left_in_free_pages(cache, tmp_path) -> None:
+def test_the_file_is_rewritten_so_deleted_values_leave_free_pages(cache, tmp_path) -> None:
     marker = "ZQXCACHE-" + "x" * 40
     key = _put(cache, "g", marker, "alice")
     # Plaintext copies are what a free page would leak: store the marker where SQLite can see it.

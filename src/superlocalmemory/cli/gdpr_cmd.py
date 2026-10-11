@@ -109,7 +109,7 @@ def _cmd_gdpr_status(args: Namespace) -> None:
             chain = AuditChain(str(_audit_chain_path()))
             scope_filter = {"profile_id": profile} if profile else {}
             audit_recent = chain.query(limit=10, **scope_filter)
-            audit_count = len(chain.query(limit=100_000, **scope_filter))
+            audit_count = chain.count(**scope_filter)
         except Exception:
             pass
 

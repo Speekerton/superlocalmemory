@@ -137,10 +137,11 @@ def test_erasing_a_whole_profile_takes_rows_with_no_anchor_too(tmp_path):
 
 
 def test_erasing_the_image_also_removes_its_copy_in_the_backup_mirror(tmp_path):
-    """The backup folder mirrors the originals until its next sync; erasure used to leave that copy."""
+    """The backup folder mirrors the originals until its next sync; erasure left that copy."""
     root, db, store = make_root(tmp_path)
     db.add_memory("m1", fact_id="f1")
-    _, rel = add_image(root, store, media_id="a" * 32, memory_id="m1", data=b"private picture bytes")
+    _, rel = add_image(root, store, media_id="a" * 32, memory_id="m1",
+                       data=b"private picture bytes")
     mirrored = root / "backups" / "media-originals" / rel
     mirrored.parent.mkdir(parents=True)
     mirrored.write_bytes(b"private picture bytes")

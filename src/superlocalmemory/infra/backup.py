@@ -85,6 +85,21 @@ MANAGED_DATABASES: tuple[str, ...] = (
 # ---------------------------------------------------------------------------
 
 
+def _as_utc(value: object) -> Optional[datetime]:
+    """A saved instant as an aware UTC datetime, or ``None`` when it is not a date.
+
+    ``create_backup`` saves an aware UTC time; comparing it to the naive local
+    ``datetime.now()`` raised, and the handler took "cannot compare" to mean
+    "overdue", so every scheduler check took another full backup. An older,
+    naive value is read as local time, as the code that wrote it meant it.
+    """
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except (ValueError, TypeError):
+        return None
+    return parsed.astimezone(timezone.utc)  # a naive value is taken as local time
+
+
 class BackupVerificationError(Exception):
     """Raised when a backup set fails checksum re-verification."""
 
@@ -646,12 +661,12 @@ class BackupManager:
         last = self.config.get("last_backup")
         if not last:
             return True
-        try:
-            last_dt = datetime.fromisoformat(last)
-            interval = timedelta(hours=self.config.get("interval_hours", DEFAULT_INTERVAL_HOURS))
-            return datetime.now() >= last_dt + interval
-        except (ValueError, TypeError):
+        last_dt = _as_utc(last)
+        if last_dt is None:
+            logger.warning("backup_config.last_backup %r is not a date; a backup is due", last)
             return True
+        interval = timedelta(hours=self.config.get("interval_hours", DEFAULT_INTERVAL_HOURS))
+        return datetime.now(timezone.utc) >= last_dt + interval
 
     def check_and_backup(self) -> Optional[str]:
         """Create a backup only when one is due. Returns filename or ``None``."""
@@ -923,13 +938,13 @@ class BackupManager:
         next_backup = None
 
         if self.config.get("enabled") and self.config.get("last_backup"):
-            try:
-                last_dt = datetime.fromisoformat(self.config["last_backup"])
-                interval = timedelta(hours=self.config.get("interval_hours", DEFAULT_INTERVAL_HOURS))
-                nxt = last_dt + interval
-                next_backup = nxt.isoformat() if nxt > datetime.now() else "overdue"
-            except (ValueError, TypeError):
+            last_dt = _as_utc(self.config["last_backup"])
+            if last_dt is None:
                 next_backup = "unknown"
+            else:
+                hours = self.config.get("interval_hours", DEFAULT_INTERVAL_HOURS)
+                nxt = last_dt + timedelta(hours=hours)
+                next_backup = nxt.isoformat() if nxt > datetime.now(timezone.utc) else "overdue"
 
         hours = self.config.get("interval_hours", DEFAULT_INTERVAL_HOURS)
         if hours >= 168:
@@ -981,6 +996,22 @@ def _replay_obligations_after_restore(
         BackupRestoreError: if any obligation cannot be replayed.  The caller
             must treat the restore as failed and surface this to the operator.
     """
+    # Targeted erasures (one memory, one person's mentions) are journalled outside
+    # every backup; whatever snapshot is being restored, they are erased again.
+    try:
+        from superlocalmemory.infra.erased_subjects import replay_all
+
+        replayed = replay_all(data_root, restored_db_paths)
+    except Exception as exc:  # noqa: BLE001
+        raise BackupRestoreError(
+            f"Replaying targeted erasures into the restored store failed: {exc}.  "
+            "The restored database may contain memories that were erased on request.  "
+            "Manual remediation required."
+        ) from exc
+    if replayed["facts"] or replayed["entities"]:
+        logger.info("Restore replay: re-erased %d row(s) of targeted erasures",
+                    sum(replayed.values()))
+
     store = BackupObligationStore(data_root)
     obligations = store.list_pending_for_snapshot(snapshot_key)
 

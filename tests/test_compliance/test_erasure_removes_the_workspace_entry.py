@@ -63,7 +63,7 @@ def test_an_erased_workspace_is_not_brought_back_by_the_dashboard_listing(store)
 
 
 def test_the_leftover_entry_of_an_older_erasure_is_dropped_not_resurrected(store) -> None:
-    """profiles.json written back after the erasure (a stale writer) is cleaned on the next listing."""
+    """A profiles.json written back after the erasure is cleaned on the next listing."""
     engine, root, _ = store
     _erase(engine, root)
     (root / "profiles.json").write_text(json.dumps({

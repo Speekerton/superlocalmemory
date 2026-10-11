@@ -22,7 +22,7 @@ from superlocalmemory.storage.write_receipts_erasure import (
     erase_profile_receipts,
 )
 from tests.conftest import force_sync_enrichment
-from tests.test_compliance.erasure_universe import OTHER, PROFILE, _seed_receipts, Universe
+from tests.test_compliance.erasure_universe import OTHER, PROFILE, Universe, _seed_receipts
 
 
 @pytest.fixture

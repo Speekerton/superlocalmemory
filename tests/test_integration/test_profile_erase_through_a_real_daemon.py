@@ -26,10 +26,12 @@ from tests.test_integration.test_erasure_integrity_e2e import (  # noqa: F401
 )
 
 
-def test_a_real_profile_erases_completely_and_every_surface_agrees(daemon) -> None:
+def test_a_real_profile_erases_completely_and_every_surface_agrees(
+        daemon) -> None:  # noqa: F811 - the fixture, imported above
     tag = uuid.uuid4().hex[:6]
     marker = f"zorvexa{tag}"
-    _remember_complete(daemon, f"{marker} Haverlin audits the Quillmarsh depot ledger.", ERASE_PROFILE)
+    _remember_complete(
+        daemon, f"{marker} Haverlin audits the Quillmarsh depot ledger.", ERASE_PROFILE)
     assert _count(daemon, "SELECT COUNT(*) FROM write_commits WHERE profile_id = ?",
                   (ERASE_PROFILE,)) >= 1, "precondition: the daemon left write receipts"
     assert _text_copies(daemon, marker), "precondition: the words are stored"
@@ -49,7 +51,7 @@ def test_a_real_profile_erases_completely_and_every_surface_agrees(daemon) -> No
     assert body["success"] is True and stored_complete, said
     assert body["active_profile"] == ERASE_PROFILE
     code, status = daemon.request("GET", "/api/profiles")
-    assert status["active_profile"] != ERASE_PROFILE, "the service still works on the erased profile"
+    assert status["active_profile"] != ERASE_PROFILE, "still working on the erased profile"
 
     assert not body.get("table_delete_failures"), body
     assert body["residue_rows"] == 0 and body["write_receipts"] >= 1, body

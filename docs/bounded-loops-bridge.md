@@ -56,8 +56,24 @@ contention rather than delaying a memory answer.
 
 This bridge is unaffected by [Answer check](answer-check.md) — it observes
 Bounded Loops' own graph receipts, not SLM recall. The `slm_loop_run` MCP
-tool is different: its gate is an ordinary SLM recall against `gate_query`,
-so when Answer check is turned on, a recall the check judges
-`judged_insufficient` can never pass that gate, even if its relevance score
-alone would have looked like a match. With the check off (the default),
-gate behavior is unchanged.
+tool also verifies an independently executed receipt. Recall supplies context;
+its relevance and answerability cannot establish a passing execution.
+
+The MCP watcher requires a `gate_contract` for `DONE`: `task_id`, `run_id`,
+`producer`, `min_timestamp` (UTC ISO), and `command_digest`. An optional
+`evidence_digest` pins one output digest. Ordinary memories, including a related
+"build passed" claim, cannot create execution evidence.
+
+An operator-side checker calls
+`superlocalmemory.loops.execution_receipts.run_check(db, profile_id=...,
+ task_id=..., run_id=..., producer=..., command=[...], cwd=...)`.
+It executes the command without a shell and derives the verdict from its exit
+status. `command_digest(command, cwd)` supplies the command identity before a
+check starts; output may arrive later. The watcher validates the stored output
+hash and the newest matching execution. A newer failure supersedes an older
+pass for the same run. Give each verification job its own run ID.
+
+Receipt rows are append-only and cannot be populated through `remember`.
+Missing, self-authored, failed, stale, wrong-run or mismatched evidence cannot
+produce `DONE`; the watcher halts at its configured bound. `require_support`
+also requires the answer check to support the recalled context.

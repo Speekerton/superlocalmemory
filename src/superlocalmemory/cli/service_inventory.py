@@ -17,8 +17,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from superlocalmemory.cli.deployment import service_identity
+from superlocalmemory.cli.service_live import verified_live
 from superlocalmemory.infra.data_root import canonical_data_root
 from superlocalmemory.infra.service_files import ServiceFiles
+from superlocalmemory.infra.service_mutation import check_lock, serialized
 
 LEGACY_NAMES = {"macos": "com.qualixar.superlocalmemory", "linux": "superlocalmemory",
                 "windows": "SuperLocalMemory"}
@@ -31,13 +33,9 @@ class ServiceDefinition:
     path: Path
     port: int
     content: str
+    revision: tuple
+    manager_definition: str = ""
 
-
-def _read(path: Path, base: Path) -> str:
-    if path.parent != base:
-        raise OSError("Service definition is outside its directory")
-    with ServiceFiles(base) as files:
-        return files.read(path.name)
 
 
 def write(path: Path, content: str) -> bool:
@@ -159,11 +157,12 @@ def _windows_definition(name: str) -> ServiceDefinition | None:
     root = canonical_data_root()
     if path is None or path.parent != root:
         return None  # never read the wrapper of another installation
-    content = _read(path, root)
+    with ServiceFiles(root) as files:
+        content, revision = files.snapshot(path.name)
     port = _windows_port(content)
     if port is None or not _valid_name(name, "windows", port):
         return None
-    return ServiceDefinition(name, path, port, content)
+    return ServiceDefinition(name, path, port, content, revision, result.stdout)
 
 
 def _linux_effective(path: Path) -> bool:
@@ -180,14 +179,15 @@ def _linux_effective(path: Path) -> bool:
 
 def _file_definition(path: Path, platform: str) -> ServiceDefinition | None:
     try:
-        content = _read(path, path.parent)
+        with ServiceFiles(path.parent) as files:
+            content, revision = files.snapshot(path.name)
         parser = _macos_port if platform == "macos" else _linux_port
         port = parser(content, path.stem)
         if port is None or not _valid_name(path.stem, platform, port):
             return None
         if platform == "linux" and not _linux_effective(path):
             return None
-        return ServiceDefinition(path.stem, path, port, content)
+        return ServiceDefinition(path.stem, path, port, content, revision)
     except (OSError, ValueError, TypeError, AttributeError, subprocess.SubprocessError):
         return None
 
@@ -224,32 +224,48 @@ def _run(argv: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(argv, capture_output=True, text=True, timeout=10)
 
 
+@serialized
 def remove(platform: str, row: ServiceDefinition) -> bool:
-    """Recheck ownership before asking the OS to remove this exact service."""
-    if row not in definitions(platform):
-        return False
+    """Bind authorization to one open file and verify before every OS mutation."""
     try:
-        if platform == "macos":
-            loaded = _run(["launchctl", "list", row.name]).returncode == 0
-            if loaded and _run(["launchctl", "unload", str(row.path)]).returncode:
-                return False
-        elif platform == "linux":
-            for action in ("stop", "disable"):
-                if _run(["systemctl", "--user", action, row.name]).returncode:
-                    return False
-        else:
-            _run(["schtasks", "/End", "/TN", row.name])
-            if _run(["schtasks", "/Delete", "/TN", row.name, "/F"]).returncode:
-                return False
         with ServiceFiles(row.path.parent) as files:
-            if files.read(row.path.name) != row.content:
-                return False
-            files.remove(row.path.name)
+            with files.verified(row.path.name, row.content, row.revision) as bound:
+                if not _bound_owned(platform, row):
+                    return False
+                commands = _removal_commands(platform, row)
+                for argv, required in commands:
+                    loaded = verified_live(platform, row)
+                    # The manager query itself can race an older installer.
+                    check_lock()
+                    bound.check()
+                    if loaded and _run(argv).returncode and required:
+                        return False
+                    bound.check()
+                check_lock()
+                bound.remove()
         if platform == "linux" and _run(["systemctl", "--user", "daemon-reload"]).returncode:
             return False
         return True
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, ValueError, TypeError, AttributeError, ET.ParseError,
+            subprocess.SubprocessError):
         return False
+
+
+def _bound_owned(platform: str, row: ServiceDefinition) -> bool:
+    # Parse the bytes of the already-open object, never reopen a Windows leaf
+    # held without write/delete sharing. Live manager identity is checked next.
+    port = (_windows_port(row.content) if platform == "windows" else
+            (_macos_port if platform == "macos" else _linux_port)(row.content, row.name))
+    return port == row.port and _valid_name(row.name, platform, row.port)
+
+
+def _removal_commands(platform: str, row: ServiceDefinition) -> list[tuple[list[str], bool]]:
+    if platform == "macos":
+        return [(["launchctl", "unload", str(row.path)], True)]
+    if platform == "linux":
+        return [(["systemctl", "--user", action, row.name], True) for action in ("stop", "disable")]
+    return [(["schtasks", "/End", "/TN", row.name], False),
+            (["schtasks", "/Delete", "/TN", row.name, "/F"], True)]
 
 
 def _prepare_windows(path: Path, rows: list[ServiceDefinition]) -> bool:
@@ -259,14 +275,16 @@ def _prepare_windows(path: Path, rows: list[ServiceDefinition]) -> bool:
     if (path.exists() or path.is_symlink()) and not any(row.path == path for row in rows):
         # A killed/failed task creation can leave an owned wrapper without a task.
         with ServiceFiles(path.parent) as files:
-            content = files.read(path.name)
-            port = _windows_port(content)
-            if port is None or not _valid_name(service_identity(), "windows", port):
-                return False
-            files.remove(path.name)
+            with files.verified(path.name) as bound:
+                port = _windows_port(bound.content)
+                if port is None or not _valid_name(service_identity(), "windows", port):
+                    return False
+                check_lock()
+                bound.remove()
     return True
 
 
+@serialized
 def prepare_install(platform: str, path: Path) -> bool:
     try:
         if path.parent.resolve() != path.parent.absolute():
@@ -283,6 +301,7 @@ def prepare_install(platform: str, path: Path) -> bool:
         return False
 
 
+@serialized
 def uninstall(platform: str) -> bool:
     return all(remove(platform, row) for row in definitions(platform))
 

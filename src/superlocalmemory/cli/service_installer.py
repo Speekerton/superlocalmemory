@@ -31,6 +31,7 @@ from superlocalmemory.cli.deployment import (
     windows_security_lines,
 )
 from superlocalmemory.infra.data_root import canonical_data_root, state_path
+from superlocalmemory.infra.service_mutation import serialized
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +93,7 @@ def _macos_plist_content() -> str:
     return plistlib.dumps(payload, fmt=plistlib.FMT_XML, sort_keys=False).decode()
 
 
+@serialized
 def install_macos() -> bool:
     plist = _macos_plist_path()
     if not service_inventory.prepare_install("macos", plist):
@@ -99,15 +101,6 @@ def install_macos() -> bool:
     if not service_inventory.write(plist, _macos_plist_content()):
         return False
     logger.info("Wrote LaunchAgent plist: %s", plist)
-
-    # Load the service
-    try:
-        subprocess.run(
-            ["launchctl", "unload", str(plist)],
-            capture_output=True, timeout=10,
-        )
-    except Exception:
-        pass
 
     result = subprocess.run(
         ["launchctl", "load", str(plist)],
@@ -167,6 +160,7 @@ WantedBy=default.target
 """
 
 
+@serialized
 def install_linux() -> bool:
     service = _linux_service_path()
     if not service_inventory.prepare_install("linux", service):
@@ -226,6 +220,7 @@ def _windows_vbs_content() -> str:
     )
 
 
+@serialized
 def install_windows() -> bool:
     # Create a VBS wrapper to run Python without console window
     vbs_path = state_path(f"start-daemon-{service_identity()}.vbs")

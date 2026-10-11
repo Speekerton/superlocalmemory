@@ -1,7 +1,9 @@
 """PR-245 #2: old service names remain managed, scoped by recorded root."""
 
 import plistlib
+import shlex
 import xml.etree.ElementTree as ET
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -20,6 +22,54 @@ def task_xml(path):
     return ET.tostring(task, encoding="unicode")
 
 
+def _systemd_show(home, live, argv):
+    name = argv[argv.index("show") + 1]
+    path = home / ".config" / "systemd" / "user" / f"{name}.service"
+    if "--property=Environment" in argv:
+        env, command = [], ""
+        for line in live.get(name, "").splitlines():
+            if line.startswith("Environment="):
+                env.extend(shlex.split(line.split("=", 1)[1]))
+            if line.startswith("ExecStart="):
+                command = line.split("=", 1)[1]
+        output = (f"Environment={shlex.join(env)}\n"
+                  f"ExecStart={{ path={shlex.split(command)[0]} ; argv[]={command} ; "
+                  "ignore_errors=no ; pid=123 ; status=0 }\n")
+        return SimpleNamespace(returncode=0, stdout=output, stderr="")
+    return SimpleNamespace(returncode=0, stdout=f"FragmentPath={path}\nDropInPaths=\n",
+                           stderr="")
+
+
+def _manager_run(home, calls, tasks, live, argv):
+    calls.append(argv)
+    if argv[0] == "launchctl" and "list" in argv:
+        name = argv[-1]
+        return SimpleNamespace(returncode=0 if name in live else 3,
+                               stdout=live.get(name, ""), stderr="")
+    if argv[0] == "launchctl" and argv[1] == "load":
+        content = Path(argv[-1]).read_text()
+        live[plistlib.loads(content.encode())["Label"]] = content
+    if argv[0] == "launchctl" and argv[1] == "unload":
+        live.pop(Path(argv[-1]).stem, None)
+    if argv[0] == "systemctl" and "start" in argv:
+        name = argv[-1]
+        path = home / ".config" / "systemd" / "user" / f"{name}.service"
+        live[name] = path.read_text()
+    if argv[0] == "systemctl" and "show" in argv:
+        return _systemd_show(home, live, argv)
+    if argv[0] == "schtasks" and argv[1] == "/Query":
+        name = argv[argv.index("/TN") + 1]
+        return SimpleNamespace(returncode=0 if name in tasks else 1,
+                               stdout=tasks.get(name, ""), stderr="")
+    if argv[0] == "schtasks" and argv[1] == "/Delete":
+        tasks.pop(argv[argv.index("/TN") + 1], None)
+    if argv[0] == "schtasks" and argv[1] == "/Create":
+        name = argv[argv.index("/TN") + 1]
+        wrapper = argv[argv.index("/TR") + 1].split('"')[1]
+        tasks[name] = task_xml(wrapper)
+    return SimpleNamespace(returncode=0, stdout="active", stderr="")
+
+
 @pytest.fixture
 def sandbox(monkeypatch, tmp_path):
     home, root = tmp_path / "home", tmp_path / "root with spaces"
@@ -30,29 +80,10 @@ def sandbox(monkeypatch, tmp_path):
     monkeypatch.setenv("SLM_DATA_DIR", str(root))
     monkeypatch.setenv("SLM_DAEMON_PORT", "19291")
     monkeypatch.delenv("SLM_SERVICE_LABEL", raising=False)
-    calls, tasks = [], {}
-
-    def run(argv, **kwargs):
-        calls.append(argv)
-        if argv[0] == "systemctl" and "show" in argv:
-            name = argv[argv.index("show") + 1]
-            path = home / ".config" / "systemd" / "user" / f"{name}.service"
-            return SimpleNamespace(returncode=0, stdout=f"FragmentPath={path}\nDropInPaths=\n",
-                                   stderr="")
-        if argv[0] == "schtasks" and argv[1] == "/Query":
-            name = argv[argv.index("/TN") + 1]
-            return SimpleNamespace(returncode=0 if name in tasks else 1,
-                                   stdout=tasks.get(name, ""), stderr="")
-        if argv[0] == "schtasks" and argv[1] == "/Delete":
-            tasks.pop(argv[argv.index("/TN") + 1], None)
-        if argv[0] == "schtasks" and argv[1] == "/Create":
-            name = argv[argv.index("/TN") + 1]
-            wrapper = argv[argv.index("/TR") + 1].split('"')[1]
-            tasks[name] = task_xml(wrapper)
-        return SimpleNamespace(returncode=0, stdout="active", stderr="")
-
-    monkeypatch.setattr(service.subprocess, "run", run)
-    return SimpleNamespace(home=home, root=root, calls=calls, tasks=tasks)
+    calls, tasks, live = [], {}, {}
+    monkeypatch.setattr(service.subprocess, "run",
+                        lambda argv, **kwargs: _manager_run(home, calls, tasks, live, argv))
+    return SimpleNamespace(home=home, root=root, calls=calls, tasks=tasks, live=live)
 
 
 def write_definition(sandbox, platform, *, legacy=True):
@@ -71,6 +102,7 @@ def write_definition(sandbox, platform, *, legacy=True):
         sandbox.tasks[name] = task_xml(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
+    sandbox.live[name] = content
     sandbox.calls.clear()
     return name, path
 

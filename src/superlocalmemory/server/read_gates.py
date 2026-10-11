@@ -135,12 +135,13 @@ def requested_profiles(request) -> tuple[str, ...]:
 
 def rbac_read_gate(request, app_state, *, profile: str | None = None,
                    machine_principal: bool = False):
-    """READ on ``profile``, else on every workspace the query names, else on
-    the active one. ``None`` allows; else the refusal response.
+    """READ on an explicit target, else the handler's actual workspace and all
+    named query hints. ``None`` allows; else the refusal response.
 
     Before 4.1.25 (audit OPS-25) the check always ran against the active
     workspace while the route honoured ``?profile=`` / ``?profile_id=``, so a
     viewer of ``default`` read another workspace's timeline and insights.
+    An unused query hint must not replace an active-workspace read either.
 
     ``machine_principal`` is a caller that proved it is one of this computer's
     own agents (the daemon capability) or a mesh node (the shared secret):
@@ -173,10 +174,9 @@ def rbac_read_gate(request, app_state, *, profile: str | None = None,
     if request.url.path in AUTHENTICATED_ONLY_READS:
         return None  # the route answers for this user only (see the set's notes)
     from superlocalmemory.access.rbac import Permission
-    from superlocalmemory.server.routes.helpers import get_active_profile
+    from superlocalmemory.server.read_targets import read_profiles
 
-    targets = (profile,) if profile else (requested_profiles(request)
-                                          or (get_active_profile(),))
+    targets = read_profiles(request, explicit_profile=profile)
     if all(rbac.has_permission(user["user_id"], target, Permission.READ)
            for target in targets):
         return None

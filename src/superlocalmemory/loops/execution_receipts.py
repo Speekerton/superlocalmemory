@@ -91,9 +91,11 @@ def run_check(
         if not isinstance(value, str) or not value.strip():
             raise ValueError("Execution identity fields must be nonempty strings")
     exit_code, stdout, stderr = _execution(command, cwd, min(max(float(timeout), 0.1), 60))
-    evidence = json.dumps(
-        {"exit_code": exit_code, "stdout": stdout, "stderr": stderr}, sort_keys=True
-    )
+    proof = validate_result() if validate_result is not None else None
+    measurement = {"exit_code": exit_code, "stdout": stdout, "stderr": stderr}
+    if proof is not None:
+        measurement["admission"] = proof
+    evidence = json.dumps(measurement, sort_keys=True)
     receipt = dict(
         receipt_id=uuid.uuid4().hex,
         profile_id=profile_id,
@@ -107,7 +109,5 @@ def run_check(
         evidence_digest=hashlib.sha256(evidence.encode()).hexdigest(),
         evidence=evidence,
     )
-    if validate_result is not None:
-        validate_result()
     _store(db, receipt)
     return receipt

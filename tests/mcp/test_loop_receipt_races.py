@@ -178,3 +178,71 @@ print('passed')
         thread.join(6)
     assert not errors and not thread.is_alive()
     assert not receipts(receipt_db)
+
+
+@pytest.mark.asyncio
+async def test_changed_and_restored_bytes_cannot_certify_failing_revision(receipt_db, tmp_path):
+    state, job = race_job(receipt_db, tmp_path)
+    thread, errors = writer(tmp_path, state, restore=True)
+    try:
+        with pytest.raises(ValueError, match="changed during verification"):
+            run_registered_check(receipt_db, job["job_id"])
+    finally:
+        thread.join(6)
+    assert not errors and not thread.is_alive()
+    assert state.read_text() == "fail"
+    assert not receipts(receipt_db)
+    result = await harness(receipt_db)(
+        "build", "build", max_iterations=1, gate_contract={"job_id": job["job_id"]},
+    )
+    assert result["status"] == "HALT" and not result["passed"], result
+
+
+@pytest.mark.asyncio
+async def test_legacy_unvalidated_registered_pass_is_ineligible(receipt_db, tmp_path):
+    import json
+
+    from superlocalmemory.loops.execution_receipts import run_check
+
+    state, job = race_job(receipt_db, tmp_path)
+    thread, errors = writer(tmp_path, state, restore=True)
+    try:
+        receipt = run_check(
+            receipt_db, profile_id=job["profile_id"], task_id=job["task_id"],
+            run_id=job["run_id"], producer=job["producer"],
+            command=json.loads(job["command_json"]), cwd=job["cwd"],
+        )
+    finally:
+        thread.join(6)
+    assert not errors and not thread.is_alive()
+    assert receipt["verdict"] == "PASS" and state.read_text() == "fail"
+    result = await harness(receipt_db)(
+        "build", "build", max_iterations=1, gate_contract={"job_id": job["job_id"]},
+    )
+    assert result["status"] == "HALT" and not result["passed"], result
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("verdict", ["PASS", "FAIL"])
+async def test_stable_inputs_publish_admitted_receipt_with_outputs(receipt_db, tmp_path, verdict):
+    import json
+
+    state, script = tmp_path / "state", tmp_path / "check.py"
+    state.write_text("pass" if verdict == "PASS" else "fail")
+    (tmp_path / "outputs").mkdir()
+    script.write_text("""from pathlib import Path
+passed = Path('state').read_text() == 'pass'
+Path('outputs/result').write_text(str(passed))
+raise SystemExit(0 if passed else 1)
+""")
+    job = register(receipt_db, tmp_path, script, [state, script])
+    receipt = run_registered_check(receipt_db, job["job_id"])
+    assert receipt["verdict"] == verdict
+    assert json.loads(receipt["evidence"])["admission"] == {
+        "job_id": job["job_id"], "revision_digest": job["revision_digest"],
+        "validation": "posix-identity-ctime-v1",
+    }
+    result = await harness(receipt_db)(
+        "build", "build", max_iterations=1, gate_contract={"job_id": job["job_id"]},
+    )
+    assert result["status"] == ("DONE" if verdict == "PASS" else "HALT"), result

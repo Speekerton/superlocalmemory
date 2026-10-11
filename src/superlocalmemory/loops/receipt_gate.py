@@ -9,9 +9,12 @@ Ordinary remember/metadata writes cannot populate the execution-receipt store.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import sqlite3
 from datetime import UTC, datetime
+
+from superlocalmemory.loops.execution_guard import admission
 
 
 def _time(value):
@@ -27,14 +30,17 @@ def _admitted(contract, running_agent):
     )
 
 
-def _valid(receipt, minimum):
+def _valid(receipt, minimum, job):
     now = datetime.now(UTC)
+    evidence = json.loads(receipt["evidence"])
     return (
         receipt["verdict"] == "PASS"
         and type(receipt["exit_code"]) is int
         and receipt["exit_code"] == 0
         and minimum <= _time(receipt["produced_at"]) <= now
         and hashlib.sha256(receipt["evidence"].encode()).hexdigest() == receipt["evidence_digest"]
+        and isinstance(evidence, dict)
+        and evidence.get("admission") == admission(job)
     )
 
 
@@ -62,7 +68,7 @@ def receipt_passes(engine, results, contract, running_agent, *, watcher_name="",
             (engine.profile_id, *(job[field] for field in fields),
              job["job_id"], engine.profile_id, watcher_name),
         )
-        return any(_valid(dict(row), minimum) for row in rows) and bool(
+        return any(_valid(dict(row), minimum, job) for row in rows) and bool(
             current_job(db, job["job_id"], engine.profile_id, watcher_name)
         )
     except (sqlite3.Error, ValueError, TypeError, KeyError, OSError):

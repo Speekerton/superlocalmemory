@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from superlocalmemory.loops.artifact_revision import matches, snapshot
+from superlocalmemory.loops.execution_guard import admission, execution_guard
 from superlocalmemory.loops.execution_receipts import command_digest, run_check
 
 _SCHEMA = (
@@ -102,16 +103,20 @@ def run_registered_check(db, job_id, *, timeout=30):
     job = dict(rows[0])
     if not current_job(db, job_id, job["profile_id"], job["watcher_name"]):
         raise ValueError("Gate job expired, superseded or its artifacts changed")
-    return run_check(
-        db, profile_id=job["profile_id"], task_id=job["task_id"], run_id=job["run_id"],
-        producer=job["producer"], command=json.loads(job["command_json"]), cwd=job["cwd"],
-        timeout=timeout, validate_result=lambda: _validate_execution(db, job),
-    )
+    with execution_guard(job) as validate_artifacts:
+        return run_check(
+            db, profile_id=job["profile_id"], task_id=job["task_id"], run_id=job["run_id"],
+            producer=job["producer"], command=json.loads(job["command_json"]), cwd=job["cwd"],
+            timeout=timeout,
+            validate_result=lambda: _validate_execution(db, job, validate_artifacts),
+        )
 
 
-def _validate_execution(db, job):
+def _validate_execution(db, job, validate_artifacts):
     """Finish admission before the measurement becomes visible to watchers."""
     if not matches(job):
         raise ValueError("Checked artifacts changed during verification")
     if not current_job(db, job["job_id"], job["profile_id"], job["watcher_name"]):
         raise ValueError("Gate job expired or superseded during verification")
+    validate_artifacts()
+    return admission(job)

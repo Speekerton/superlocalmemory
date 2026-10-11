@@ -9,13 +9,16 @@
 process could claim to be any agent, and the dashboard showed those claims next
 to capability digests as if both were facts.
 
-The connection is the better witness. An agent host is connected once, by
-configuration: ``/mcp/<agent>`` in its MCP URL, or ``SLM_AGENT_ID`` in the
-stdio server's environment. That name rides on the daemon request in
-:data:`CONNECTION_HEADER`, and the daemon believes it only from a caller holding
-the daemon capability (a file only this computer's user can read; the MCP
-server and the command line hold it, a web page does not). The saved memory
-then records:
+The connection is the better witness, when something vouches for it. The stdio
+server's ``SLM_AGENT_ID`` is set by whoever configured the agent host. A name
+in an HTTP MCP URL (``/mcp/<agent>``) is chosen by the caller on every request,
+so it is only a claim unless that request also presents the daemon capability
+(PR 248 review, finding 3: ``POST /mcp/claude-code/`` with no credential was
+recorded as the "claude-code" connection). A vouched name rides on the daemon
+request in :data:`CONNECTION_HEADER`, and the daemon believes it only from a
+caller holding the daemon capability (a file only this computer's user can
+read; the MCP server and the command line hold it, a web page does not). The
+saved memory then records:
 
 * ``agent_id``: the connection's name when there is one, else the claimed name;
 * ``agent_id_source``: ``connection`` or ``claimed``;
@@ -32,11 +35,27 @@ UNNAMED = "mcp_client"
 
 
 def connection_agent() -> str:
-    """This process's (or this HTTP MCP request's) connection name, or ``""``."""
-    from superlocalmemory.mcp.agent_context import get_current_agent_id, sanitize_agent_id
+    """This process's (or this HTTP MCP request's) vouched connection name, or ``""``.
+
+    An unvouched URL name is not returned here; tools still pass it on as the
+    claimed ``agent_id``, so it is recorded as ``claimed``.
+    """
+    from superlocalmemory.mcp.agent_context import (
+        current_agent_is_vouched,
+        get_current_agent_id,
+        sanitize_agent_id,
+    )
 
     name = get_current_agent_id()
-    return "" if not name or name == UNNAMED else sanitize_agent_id(name)
+    if not name or name == UNNAMED or not current_agent_is_vouched():
+        return ""
+    return sanitize_agent_id(name)
+
+
+def forwarded_headers(capability: str | None) -> dict[str, str]:
+    """The connection header a daemon request carries (only with the capability)."""
+    agent = connection_agent()
+    return {CONNECTION_HEADER: agent} if agent and capability is not None else {}
 
 
 def bind(metadata: dict[str, Any], connection: str) -> dict[str, Any]:
@@ -70,4 +89,7 @@ def audit_fields(metadata: dict[str, Any] | None) -> dict[str, str]:
     return {"claimed_agent_id": agent}
 
 
-__all__ = ["CONNECTION_HEADER", "UNNAMED", "audit_fields", "bind", "connection_agent"]
+__all__ = [
+    "CONNECTION_HEADER", "UNNAMED", "audit_fields", "bind", "connection_agent",
+    "forwarded_headers",
+]

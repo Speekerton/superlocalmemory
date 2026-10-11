@@ -11,7 +11,9 @@ from superlocalmemory.core.calibration_control import await_idle
 from superlocalmemory.core.calibration_guard import (
     baseline_rates,
     current_kept,
+    file_stamp,
     judge_identity,
+    live_floor,
     nonregressing,
 )
 from superlocalmemory.core.recall_gate import background_work
@@ -106,8 +108,7 @@ def measure_examples(engine, judge, examples, stop, progress):
     skipped = 0
     initial_judge = judge_identity(judge)
     kept_p, kept_n = [], []
-    from superlocalmemory.retrieval.text_floor import text_semantic_floor
-    floor = text_semantic_floor(engine._embedder, engine._config.retrieval.min_semantic_evidence)
+    floor, stamp = live_floor(engine), file_stamp(engine._config.base_dir)
     for index, example in enumerate(examples):
         if stop.is_set():
             break
@@ -134,5 +135,5 @@ def measure_examples(engine, judge, examples, stop, progress):
     result = _fit(identity, positive, negative, semantic_p, semantic_n, skipped,
                   current_threshold=initial_judge[1], semantic_floor=floor,
                   kept=(kept_p, kept_n))
-    result["baseline"]["judge_identity"] = initial_judge
+    result["baseline"].update(judge_identity=initial_judge, semantic_floor=floor, file_stamp=stamp)
     return result

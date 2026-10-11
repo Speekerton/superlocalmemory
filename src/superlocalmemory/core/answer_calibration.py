@@ -19,10 +19,14 @@ from superlocalmemory.retrieval.judge_calibration_file import FILE_NAME, SCHEMA,
 _WRITE_LOCK = threading.Lock()
 
 
-def write_calibration(root: Path, entry: dict, semantic: dict | None = None) -> None:
+def write_calibration(root: Path, entry: dict, semantic: dict | None = None, *,
+                      expected_stamp: str | None = None) -> None:
     """Validate then replace; failed/partial jobs never disturb previous calibration."""
     path = root / FILE_NAME
     with _WRITE_LOCK:
+        from superlocalmemory.core.calibration_guard import file_stamp
+        if expected_stamp is not None and file_stamp(root) != expected_stamp:
+            raise ValueError("Calibration file changed during measurement; newer settings kept")
         previous = (
             json.loads(path.read_text()) if path.exists() else {"schema": SCHEMA, "entries": []}
         )
@@ -145,8 +149,10 @@ class CalibrationJob:
                 if stop.is_set():
                     raise ValueError("Calibration cancelled")
                 from superlocalmemory.core.calibration_guard import require_comparison
-                require_comparison(measured, judge)
-                write_calibration(engine._config.base_dir, entry, semantic)
+                require_comparison(measured, judge, engine)
+                write_calibration(engine._config.base_dir, entry, semantic,
+                                  expected_stamp=measured["baseline"]["file_stamp"])
+                self._status = {**self._status, "state": "complete", "detail": "Calibration saved"}
             from superlocalmemory.retrieval.embedding_calibration import apply_to
             from superlocalmemory.retrieval.laya_set_recipe import refresh
 

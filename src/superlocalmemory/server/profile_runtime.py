@@ -525,6 +525,9 @@ class ProfileRuntimeMiddleware:
             "/api/v3/mode/set",
             "/api/v3/embedding/config",
             "/api/v3/scope/config",
+            # Per-run cancellation revokes a background token and needs no
+            # profile lease; waiting here would make a transition uninterruptible.
+            "/api/v3/answer-check/calibration/cancel",
             # Erasing the active profile moves the service to another one first,
             # which drains every lease, this request's own included.
             "/api/compliance/gdpr/erase",

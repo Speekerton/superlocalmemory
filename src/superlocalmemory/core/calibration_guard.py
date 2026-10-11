@@ -43,11 +43,28 @@ def nonregressing(candidate, baseline):
     return True
 
 
-def require_comparison(measured, judge):
+def require_comparison(measured, judge, engine):
     baseline = measured.get("baseline")
     if not baseline or tuple(baseline["judge_identity"]) != judge_identity(judge):
         raise ValueError("Active calibration changed or held-out comparison missing")
+    if baseline.get("semantic_floor") != live_floor(engine) or not baseline.get("file_stamp"):
+        raise ValueError("Active embedding floor changed or comparison missing; nothing replaced")
     if not nonregressing(measured["judge"]["held_out"], baseline["judge"]):
         raise ValueError("Held-out regression; previous calibration kept")
     if measured["judge"].get("recipe_id", RECIPE_SET_V2.recipe_id) != RECIPE_SET_V2.recipe_id:
         raise ValueError("Candidate recipe changed; nothing replaced")
+
+
+def file_stamp(root):
+    import hashlib
+
+    from superlocalmemory.retrieval.judge_calibration_file import FILE_NAME
+    try:
+        return hashlib.sha256((root / FILE_NAME).read_bytes()).hexdigest()
+    except FileNotFoundError:
+        return "missing"
+
+
+def live_floor(engine):
+    from superlocalmemory.retrieval.text_floor import text_semantic_floor
+    return text_semantic_floor(engine._embedder, engine._config.retrieval.min_semantic_evidence)

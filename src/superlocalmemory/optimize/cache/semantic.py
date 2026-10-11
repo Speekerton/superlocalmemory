@@ -250,7 +250,6 @@ class VCacheSemantic(SemanticTier):
         cfg = self._config
         max_turns = int(getattr(cfg, "semantic_max_turns_for_semantic", _DEFAULT_MAX_TURNS))
         messages = _extract_messages(req)
-
         if bool(getattr(cfg, "semantic_multiturn_guard", True)):
             turn_count = self._context_key_builder.turn_count(messages)
             if turn_count > max_turns:
@@ -259,24 +258,20 @@ class VCacheSemantic(SemanticTier):
                     turn_count, max_turns,
                 )
                 return None
-
         with self._index_lock:
             is_warm = tenant_id in self._index
         if not is_warm:
             self._lazy_warm_tenant(tenant_id)
-
         if bool(getattr(cfg, "semantic_centroid_defense", True)):
             distance_floor = float(
                 getattr(cfg, "semantic_centroid_distance_floor", _DEFAULT_CENTROID_FLOOR)
             )
             if self._centroid_store.is_adversarial(tenant_id, vec, distance_floor):
                 return None
-
         context_fp = self._context_key_builder.build(messages, tenant_id)
         best_entry_id, best_score = self._ann_search(tenant_id, vec, context_fp)
         if best_entry_id is None:
             return None
-
         record = self._boundary_store.get(best_entry_id)
         delta = float(getattr(cfg, "semantic_error_target", _DEFAULT_ERROR_TARGET))
         sem_return_threshold = float(getattr(
@@ -287,7 +282,6 @@ class VCacheSemantic(SemanticTier):
                 best_score, best_entry_id, record.t_hat,
             )
             return None
-
         return self._dual_threshold_decision(
             best_entry_id, best_score, cfg,
         )

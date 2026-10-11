@@ -115,7 +115,6 @@ def activate_job(runner: Any, job: dict, embedder: Any, target: Any) -> dict:
     """One activation attempt. Returns the job as it stands afterwards."""
     from superlocalmemory.server.profile_runtime import (
         TransitionDrainTimeout,
-        get_profile_runtime,
     )
     conn = sp.connect(runner.db_path)
     outcome: dict[str, Any] = {}
@@ -138,11 +137,7 @@ def activate_job(runner: Any, job: dict, embedder: Any, target: Any) -> dict:
             outcome["publish_ms"] = round((time.perf_counter() - published) * 1000, 1)
         held = time.perf_counter()
         try:
-            if runner.app_state is not None:
-                get_profile_runtime(runner.app_state).reconfigure(
-                    _commit, drain_timeout=ACTIVATION_DRAIN_S)
-            else:
-                _commit(None)
+            _activation_window(runner, _commit)
         except NotCaughtUp as exc:
             logger.info("re-index job %s caught new writes at the swap (%s); catching up",
                         job["job_id"], exc)
@@ -163,6 +158,14 @@ def activate_job(runner: Any, job: dict, embedder: Any, target: Any) -> dict:
         return get_job(conn, job["job_id"])
     finally:
         conn.close()
+
+
+def _activation_window(runner, commit):
+    from superlocalmemory.server.profile_runtime import get_profile_runtime
+    if runner.app_state is not None:
+        get_profile_runtime(runner.app_state).reconfigure(commit, drain_timeout=ACTIVATION_DRAIN_S)
+    else:
+        commit(None)
 
 
 def _record(runner: Any, conn: Any, job: dict, outcome: dict) -> None:

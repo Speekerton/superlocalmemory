@@ -91,3 +91,35 @@ def test_check_descendants_are_stopped_on_timeout(receipt_db, tmp_path):
     assert time.monotonic() - start < 2
     time.sleep(.8)
     assert not marker.exists()
+
+
+def test_aliased_system_temp_parent_is_canonicalized(tmp_path, monkeypatch):
+    import tempfile
+
+    from superlocalmemory.loops.private_workspace import temporary
+
+    actual = tmp_path / 'actual'
+    actual.mkdir()
+    before = actual.stat().st_mode
+    alias = tmp_path / 'alias'
+    alias.symlink_to(actual, target_is_directory=True)
+    monkeypatch.setattr(tempfile, 'tempdir', str(alias))
+    with temporary() as run:
+        assert run.is_relative_to(actual) and run.stat().st_mode & 0o777 == 0o700
+    assert actual.stat().st_mode == before  # never chmod the shared temp parent
+
+
+def test_pytest_c_option_uses_pinned_config(receipt_db, tmp_path):
+    work = tmp_path / 'work'
+    work.mkdir()
+    config = work / 'pytest.ini'
+    config.write_text('[pytest]\naddopts = -k failing\n')
+    test = work / 'test_verdict.py'
+    test.write_text('def test_failing():\n    assert False\n\ndef test_passing():\n    pass\n')
+    job = receipt_jobs.register_job(
+        receipt_db, profile_id='default', task_id='build', watcher_name='build', producer='checker',
+        command=[sys.executable, '-m', 'pytest', '-q', '-c', str(config), 'test_verdict.py'],
+        cwd=work, check_paths=[test, config], artifact_paths=[], data_root=tmp_path / 'slm',
+    )
+    config.write_text('[pytest]\naddopts = -k passing\n')
+    assert receipt_jobs.run_registered_check(receipt_db, job['job_id'])['verdict'] == 'FAIL'

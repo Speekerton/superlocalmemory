@@ -49,7 +49,7 @@ def test_ux25_framework_quickstarts(tmp_path, index):
     )
     snippet = blocks("docs/framework-adapters.md", "python")[index]
     # Top-level await in notebooks is the only mechanical transformation.
-    from tests.wp7.offline_agents import BOOTSTRAP
+    from tests.test_host_and_framework_adapters.offline_agents import BOOTSTRAP
 
     bootstrap = BOOTSTRAP if index == 8 else ""
     code = (

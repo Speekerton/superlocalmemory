@@ -21,7 +21,7 @@ The SDK and six embedded-framework smoke cases also need the native SDKs availab
 Example module command (enable native cases explicitly):
 
 ```bash
-uv run --frozen pytest tests/wp7/test_sdk_contracts.py -m 'slow or not slow' -q -o tmp_path_retention_policy=none -p no:cacheprovider --basetemp="$TMPDIR/pt-sdk"
+uv run --frozen pytest tests/test_host_and_framework_adapters/test_sdk_contracts.py -m 'slow or not slow' -q -o tmp_path_retention_policy=none -p no:cacheprovider --basetemp="$TMPDIR/pt-sdk"
 ```
 
 Adapter directories reuse the package name `tests`, so run their modules with `-c pyproject.toml --import-mode=importlib` to retain the root isolation plugin without module-name collisions.

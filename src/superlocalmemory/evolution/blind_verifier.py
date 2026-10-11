@@ -23,7 +23,6 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +30,7 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class VerificationResult:
     """Result of blind verification."""
+
     passed: bool
     confidence: float  # 0.0-1.0
     issues: tuple[str, ...] = ()
@@ -90,7 +90,7 @@ def parse_verification_response(response: str) -> VerificationResult:
         try:
             data = json.loads(json_match.group(0))
             return VerificationResult(
-                passed=bool(data.get("passed", False)),
+                passed=data.get("passed") is True,
                 confidence=float(data.get("confidence", 0.5)),
                 issues=tuple(data.get("issues", [])),
                 reasoning=str(data.get("reasoning", "")),
@@ -103,14 +103,20 @@ def parse_verification_response(response: str) -> VerificationResult:
     # "cannot approve" or "not approved" are never mistakenly matched by the
     # positive keyword "approve".
     lower = response.lower()
-    if any(kw in lower for kw in (
-        "\"passed\": false", "passed: false",
-        "reject", "fail",
-        "cannot approve", "not approve",
-    )):
+    if any(
+        kw in lower
+        for kw in (
+            '"passed": false',
+            "passed: false",
+            "reject",
+            "fail",
+            "cannot approve",
+            "not approve",
+        )
+    ):
         return VerificationResult(passed=False, confidence=0.6, reasoning="keyword match")
 
-    if any(kw in lower for kw in ("\"passed\": true", "passed: true", "approve", "looks good")):
+    if any(kw in lower for kw in ('"passed": true', "passed: true", "approve", "looks good")):
         return VerificationResult(passed=True, confidence=0.6, reasoning="keyword match")
 
     # Default: reject if can't parse (conservative)

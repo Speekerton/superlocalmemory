@@ -8,6 +8,7 @@
 //   GET /api/agents           → {agents: [{agent_id, profile_id, registered_at}], count, stats}
 //   GET /api/trust/stats      → {avg_trust_score, total_signals, enforcement, by_signal_type}
 //   GET /api/events/stats     → {total_events, events_last_24h, "memory.stored", "memory.recalled", ...}
+//   GET /api/learning/readiness → {status, learning_demonstrated, settled_from_outcomes, labelled_outcomes, active_model, ...}
 //
 // JSON key mapping for events/stats: top-level dot-notation keys e.g. data["memory.stored"]
 // JSON key mapping for agents: data.stats.total_agents, data.agents[].{agent_id, profile_id, registered_at}
@@ -98,11 +99,12 @@
       '<div class="page-head">' +
         '<h2>System health</h2>' +
         '<p>Math layers, the connected-agent stream and daemon status — ' +
-        'click any card to drill down. All green means your memory is learning correctly.</p>' +
+        'click any card to drill down. A running daemon is not evidence of learning: ' +
+        'the Learning card reports what reported outcomes have actually changed.</p>' +
       '</div>' +
 
       // KPI strip: 4 status cards (Daemon, Memory DB, Math layers, Mesh broker)
-      '<section class="kpi-strip" style="margin-bottom:16px" id="od-h-status">' +
+      '<section class="kpi-strip kpi-5" style="margin-bottom:16px" id="od-h-status">' +
         '<div class="card kpi"><div class="muted-info" style="font-size:12px;padding:20px">Loading status…</div></div>' +
       '</section>' +
 
@@ -227,7 +229,29 @@
    * @param {Object|null} statsData   /api/stats response
    * @param {Object|null} mathData    /api/v3/math/health response
    */
-  function populateKpiStrip(healthData, statsData, mathData) {
+  /**
+   * Learning card from /api/learning/readiness. Separate from liveness: a
+   * healthy daemon with no settled outcome says "Not demonstrated".
+   */
+  function learningCard(d) {
+    if (!d || d.available === false) {
+      return { cls: 'neutral', value: 'Unknown', detail: 'learning state unavailable' };
+    }
+    var settled = Number(d.settled_from_outcomes || 0);
+    var labelled = Number(d.labelled_outcomes || 0);
+    var status = String(d.status || 'collecting');
+    var model = d.active_model ? 'model active' : 'no trained model';
+    if (status === 'testing') model = 'candidate model under live test';
+    var detail = esc(String(settled)) + ' outcome-settled recall(s) · ' +
+      esc(String(labelled)) + ' labelled outcome(s) · ' + esc(model);
+    if (!d.learning_demonstrated) {
+      return { cls: 'warn', value: 'Not demonstrated',
+               detail: detail + ' · report outcomes with the recall query_id' };
+    }
+    return { cls: 'ok', value: 'Demonstrated', detail: detail };
+  }
+
+  function populateKpiStrip(healthData, statsData, mathData, learningData) {
     var strip = document.getElementById('od-h-status');
     if (!strip) return;
 
@@ -248,8 +272,12 @@
         : (runtime === 'warming' ? 'neutral' : 'warn'));
     var daemonVal = !healthData ? 'Unreachable'
       : (RUNTIME_LABELS[runtime] || (healthData.status === 'ok' ? 'Healthy' : 'Degraded'));
+    // The dashboard is served BY the daemon, so the page's own port is the
+    // daemon's real port (it was hard-coded to 8765 — audit BRN-21).
+    var livePort = (window.location && window.location.port) || '';
     var daemonDetail = healthData
-      ? 'port 8765 · v' + esc(String(healthData.version || '?'))
+      ? (livePort ? 'port ' + esc(livePort) + ' · ' : '') +
+        'v' + esc(String(healthData.version || '?'))
       : 'daemon unreachable';
     if (healthData && healthData.projection && healthData.projection.behind) {
       // The graph copy being behind is not a daemon fault, and it does change
@@ -281,8 +309,11 @@
     var meshVal = 'Not set up';
     var meshDetail = 'coordinating several machines is not configured here';
 
+    var learn = learningCard(learningData);
+
     var CARDS = [
       { label: 'Daemon',       cls: daemonCls, value: daemonVal, detail: daemonDetail },
+      { label: 'Learning',     cls: learn.cls, value: learn.value, detail: learn.detail },
       { label: 'Memory DB',    cls: dbCls,     value: dbVal,     detail: dbDetail },
       { label: 'Math layers',  cls: mathCls,   value: mathVal,   detail: mathDetail },
       { label: 'Mesh broker',  cls: meshCls,   value: meshVal,   detail: meshDetail },
@@ -549,6 +580,7 @@
       fetch('/api/agents').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
       fetch('/api/trust/stats').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
       fetch('/api/events/stats').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
+      fetch('/api/learning/readiness').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
     ]).then(function (results) {
       var healthData  = results[0];
       var statsData   = results[1];
@@ -556,12 +588,13 @@
       var agentsData  = results[3];
       var trustStats  = results[4];
       var eventsStats = results[5];
+      var learningData = results[6];
 
       // Inject static skeleton — no API data inside
       container.innerHTML = buildSkeleton();
 
       // Populate each section with real API data
-      populateKpiStrip(healthData, statsData, mathData);
+      populateKpiStrip(healthData, statsData, mathData, learningData);
       populateMathHealth(mathData);
       populateTrustSignals(trustStats);
       populateAgentSummary(agentsData, eventsStats);
@@ -575,7 +608,7 @@
     }).catch(function (err) {
       container.innerHTML =
         '<div style="color:var(--danger);text-align:center;padding:48px 0">' +
-        'Failed to load health data. Check the daemon is running on port 8765.</div>';
+        'Failed to load health data. Check the daemon is running (slm status).</div>';
       if (typeof console !== 'undefined') {
         console.error('[od-health] render error:', err);
       }

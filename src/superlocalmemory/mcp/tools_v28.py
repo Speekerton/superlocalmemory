@@ -39,6 +39,8 @@ def register_v28_tools(server, get_engine: Callable) -> None:
         context: str = "",
         recall_query_id: str = "",
         profile_id: str = "",
+        agent_id: str = "",
+        report_id: str = "",
     ) -> dict:
         """Report outcome of using recalled memories.
 
@@ -55,6 +57,13 @@ def register_v28_tools(server, get_engine: Callable) -> None:
                 overlap, within a time window.
             profile_id: The profile the recall was made in (empty = the active
                 one).
+            agent_id: Optional name of the reporting agent (provenance).
+            report_id: Optional idempotency key; re-sending a report with the
+                same key records nothing new.
+
+        Returns ``reward`` (success 1.0 / partial 0.5 / failure 0.0),
+        ``duplicate`` when the same report was already recorded, and
+        ``attributed`` when it is tied to one recall by ``recall_query_id``.
         """
         try:
             engine = get_engine()
@@ -67,10 +76,7 @@ def register_v28_tools(server, get_engine: Callable) -> None:
                 mutation_source="mcp-report-outcome",
                 profile_id=pid,
             )
-            from superlocalmemory.learning.outcomes import (
-                VALID_OUTCOMES,
-                OutcomeTracker,
-            )
+            from superlocalmemory.learning.outcomes import VALID_OUTCOMES
             if outcome not in VALID_OUTCOMES:
                 # Answered here rather than as a stack trace: the caller is an
                 # assistant that can correct itself if told what is allowed.
@@ -81,7 +87,6 @@ def register_v28_tools(server, get_engine: Callable) -> None:
                         f"not {outcome!r}"
                     ),
                 }
-            tracker = OutcomeTracker(engine._db)
             ids = [mid.strip() for mid in memory_ids.split(",") if mid.strip()]
             # A remote app reports on memories it can see; the rest are left out, and if
             # none are left the answer is the one for an id that is not there.
@@ -90,41 +95,37 @@ def register_v28_tools(server, get_engine: Callable) -> None:
             unseen = unseen_ids(engine._db, pid, ids)
             if unseen:
                 ids = [mid for mid in ids if mid not in unseen]
-                if not ids:
-                    return {"success": False, "error": "Memory not found."}
-            ctx = {"note": context} if context else None
-            ao = tracker.record_outcome(
-                query="[mcp_feedback]",
-                fact_ids=ids,
-                outcome=outcome,
-                profile_id=pid,
-                context=ctx,
-                recall_query_id=str(recall_query_id or "").strip(),
+            if not ids:
+                return {"success": False, "error": "Memory not found."}
+            from pathlib import Path as _Path
+
+            from superlocalmemory.learning.outcome_events import (
+                OutcomeReport,
+                UnknownMemories,
+                write_outcome,
             )
-
-            # v3.4.7: Bridge outcomes → learning signals for two-way learning.
-            # Previously, outcomes were stored but never created learning signals.
+            # The one writer every surface shares (audit BRN-05): reward,
+            # settlement fields, attribution, provenance and idempotence.
             try:
-                from superlocalmemory.learning.feedback import FeedbackCollector
-                from superlocalmemory.infra.data_root import state_path
-                learning_db = state_path("learning.db")
-                collector = FeedbackCollector(learning_db)
-                signal_map = {"success": ("user_positive", 1.0),
-                              "failure": ("user_negative", 0.0),
-                              "partial": ("user_correction", 0.5)}
-                sig_type, sig_val = signal_map.get(outcome, ("user_correction", 0.5))
-                for fid in ids:
-                    collector.record_explicit(
-                        profile_id=pid,
-                        fact_id=fid,
-                        signal_type=sig_type,
-                        value=sig_val,
-                    )
-            except Exception as exc2:
-                logger.debug("Outcome→signal bridge: %s", exc2)
-
+                written = write_outcome(
+                    OutcomeReport(
+                        profile_id=pid, fact_ids=tuple(ids), outcome=outcome,
+                        surface="mcp", recall_query_id=recall_query_id or "",
+                        agent_id=agent_id or "", note=context or "",
+                        idempotency_key=report_id or "", query="[mcp_feedback]",
+                    ),
+                    memory_db_path=_Path(engine._db.db_path),
+                    learning_db_path=_Path(engine._config.base_dir) / "learning.db",
+                )
+            except UnknownMemories:
+                return {"success": False, "error": "Memory not found."}
             authorization.complete()
-            return {"success": True, "outcome_id": ao.outcome_id, "outcome": outcome}
+            return {
+                "success": True, "outcome_id": written.outcome_id,
+                "outcome": outcome, "reward": written.reward,
+                "duplicate": not written.created,
+                "attributed": written.attributed,
+            }
         except Exception as exc:
             logger.exception("report_outcome failed")
             return {"success": False, "error": str(exc)}

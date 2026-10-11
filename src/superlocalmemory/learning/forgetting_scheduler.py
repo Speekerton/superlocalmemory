@@ -38,6 +38,28 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+#: Access rows written by SLM's own maintenance, not by anyone using a memory.
+#: Consolidation logs one per source it archives; counting it as a use raised
+#: the source's strength and the next decay pass reactivated every source the
+#: consolidation had just archived (audit BRN-25).
+_INTERNAL_ACCESS_SQL = "('consolidation')"
+
+#: A source a consolidation archived stays out of the decay pass — its
+#: archive is a decision, not a score — until a GENUINE access after the
+#: consolidation (a recall or search that reached it) brings it back.
+_CONSOLIDATED_SOURCE_SQL = (
+    " AND NOT EXISTS ("
+    "  SELECT 1 FROM ccq_consolidated_blocks ccb, "
+    "       json_each(ccb.source_fact_ids) je"
+    "  WHERE ccb.profile_id = ? AND je.value = f.fact_id"
+    "    AND NOT EXISTS ("
+    "      SELECT 1 FROM fact_access_log a"
+    "      WHERE a.fact_id = f.fact_id AND a.profile_id = ?"
+    f"       AND a.access_type NOT IN {_INTERNAL_ACCESS_SQL}"
+    "        AND a.accessed_at > ccb.created_at))"
+)
+
+
 class ForgettingScheduler:
     """Periodic forgetting scheduler for memory lifecycle management.
 
@@ -211,6 +233,8 @@ class ForgettingScheduler:
         # the agent that created each fact. Falls back to 1.0 if trust_scores
         # table or created_by column is unavailable.
         trust_available = self._has_trust_tables()
+        consolidated = (_CONSOLIDATED_SOURCE_SQL
+                        if self._has_table("ccq_consolidated_blocks") else "")
         if trust_available:
             sql = (
                 "SELECT f.fact_id, "
@@ -224,7 +248,9 @@ class ForgettingScheduler:
                 "FROM atomic_facts f "
                 "LEFT JOIN ("
                 "  SELECT fact_id, COUNT(*) as access_count "
-                "  FROM fact_access_log WHERE profile_id = ? GROUP BY fact_id"
+                "  FROM fact_access_log WHERE profile_id = ? "
+                f"  AND access_type NOT IN {_INTERNAL_ACCESS_SQL} "
+                "  GROUP BY fact_id"
                 ") al ON f.fact_id = al.fact_id "
                 "LEFT JOIN fact_importance fi "
                 "  ON f.fact_id = fi.fact_id AND fi.profile_id = ? "
@@ -240,8 +266,9 @@ class ForgettingScheduler:
                 "  FROM core_memory_blocks, json_each(core_memory_blocks.source_fact_ids) "
                 "  WHERE core_memory_blocks.profile_id = ?"
                 ")"
+                + consolidated
             )
-            params = (profile_id,) * 6
+            params = (profile_id,) * (8 if consolidated else 6)
         else:
             sql = (
                 "SELECT f.fact_id, "
@@ -254,7 +281,9 @@ class ForgettingScheduler:
                 "FROM atomic_facts f "
                 "LEFT JOIN ("
                 "  SELECT fact_id, COUNT(*) as access_count "
-                "  FROM fact_access_log WHERE profile_id = ? GROUP BY fact_id"
+                "  FROM fact_access_log WHERE profile_id = ? "
+                f"  AND access_type NOT IN {_INTERNAL_ACCESS_SQL} "
+                "  GROUP BY fact_id"
                 ") al ON f.fact_id = al.fact_id "
                 "LEFT JOIN fact_importance fi "
                 "  ON f.fact_id = fi.fact_id AND fi.profile_id = ? "
@@ -266,8 +295,9 @@ class ForgettingScheduler:
                 "  FROM core_memory_blocks, json_each(core_memory_blocks.source_fact_ids) "
                 "  WHERE core_memory_blocks.profile_id = ?"
                 ")"
+                + consolidated
             )
-            params = (profile_id,) * 5
+            params = (profile_id,) * (7 if consolidated else 5)
 
         rows = self._db.execute(sql, params)
 
@@ -294,6 +324,15 @@ class ForgettingScheduler:
             return {}
         retention_rows = self._db.batch_get_retention(fact_ids, profile_id)
         return {r["fact_id"]: r["lifecycle_zone"] for r in retention_rows}
+
+    def _has_table(self, name: str) -> bool:
+        """Whether ``name`` exists (an old store may predate it)."""
+        try:
+            return bool(self._db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                (name,)))
+        except Exception:
+            return False
 
     def _has_trust_tables(self) -> bool:
         """Check if trust_scores table and created_by column exist."""

@@ -4,9 +4,10 @@
 
 Every recall counted every edge and fact of its scope to decide whether the
 cached entity graph was still current: 44 ms per recall on a 481,000-edge
-store, almost always to learn that nothing had changed. While nothing has been
-committed since the last count (storage/store_signature) the counts are reused;
-any commit, from any connection, makes them be counted again.
+store, almost always to learn that nothing had changed. The store's change log
+(storage/fact_search_changes) and the edge rowid now say what changed, if
+anything, so a recall counts nothing -- and any commit, from any connection, is
+still seen (retrieval/graph_catchup).
 """
 
 from __future__ import annotations
@@ -52,7 +53,7 @@ def test_an_unchanged_store_is_not_counted_again(store, monkeypatch) -> None:
     assert calls == {"edges": 0, "facts": 0}
 
 
-def test_any_commit_from_another_connection_is_counted(store, monkeypatch) -> None:
+def test_any_commit_from_another_connection_is_seen_without_counting(store, monkeypatch) -> None:
     ch = EntityGraphChannel(store.db, None)
     ch._ensure_adjacency(REQ)
     calls = _counting(ch, monkeypatch)
@@ -62,7 +63,8 @@ def test_any_commit_from_another_connection_is_counted(store, monkeypatch) -> No
     _add_fact(store, "LNEW2")  # a real commit through the store's own connections
     other.close()
     ch._ensure_adjacency(REQ)
-    assert calls["edges"] == 1 and calls["facts"] == 1
+    assert calls == {"edges": 0, "facts": 0}
+    assert "LNEW2" in ch._visible_fact_ids
 
 
 def test_an_unreadable_store_path_is_never_trusted(tmp_path) -> None:

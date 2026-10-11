@@ -112,7 +112,7 @@ A vector store answers "what is similar". AI agent memory must also answer: is t
 
 **3. It says "I don't have that."** The [answer check](docs/answer-check.md) decides whether the top results answer the question, on your Mac (Laya) or online (Jev), and recall reports `abstained` instead of a confident wrong answer.
 
-**4. Memory that learns, and cannot quietly get worse (opt-in).** With `SLM_RANKING` set, a Thompson-sampling bandit tunes channel weights and a LightGBM ranker learns from reported outcomes. A retrained ranker is promoted only after a shadow A/B test on live recalls, and rolled back automatically if NDCG@10 drops 2% or more over a 200-recall watch window. Off by default, so a fresh install ranks the same way every time. Code: `learning/shadow_test.py`, `learning/model_rollback.py`.
+**4. Memory that learns, and cannot quietly get worse (opt-in).** With `SLM_RANKING` set, a Thompson-sampling bandit tunes channel weights and a LightGBM ranker learns from reported outcomes. A retrained ranker is served to half of live recalls and promoted only when an always-valid sequential test (mSPRT, α = 0.05) shows a higher reward from reported outcomes; after promotion it is rolled back automatically if mean settled reward drops 2% or more over a 200-recall watch window. That watch measures outcome reward, not NDCG. Off by default, so a fresh install ranks the same way every time. Code: `learning/shadow_test.py`, `learning/model_rollback.py`.
 
 **5. Memory with a sense of time.** Every fact records when it happened and when SLM learned it. Ask what was true last month (`--valid-at`) or what SLM knew before a date (`--known-as-of`). Unused memories fade and lose vector precision ([lifecycle paper](https://arxiv.org/abs/2604.04514)).
 
@@ -262,7 +262,7 @@ The picture model is EmbeddingGemma 2, running on your computer. On a 24 GB Appl
 ### Learning in memory
 
 - **Adaptive ranking.** A contextual Thompson-sampling bandit picks channel weights per query type; a LightGBM learning-to-rank model trains on `report_outcome` and `report_feedback`. The same question on an unchanged store gets the same ranking.
-- **Guarded promotion.** A candidate ranker runs in shadow and is promoted only on a measured win; a later NDCG@10 drop of 2% or more restores the previous model automatically.
+- **Guarded promotion.** A candidate ranker serves half of live recalls and is promoted only on a statistically valid win in reported-outcome reward; a later 2% drop in mean settled reward restores the previous model automatically.
 - **Soft prompts.** Consolidation mines behavioural patterns and turns stable ones into soft prompts for new sessions.
 - **Forgetting.** An Ebbinghaus retention cycle and a Langevin lifecycle move neglected memories toward archive and pull used ones back.
 - **Skill evolution (opt-in).** Measures agent skills, proposes revisions and keeps lineage, under a budget and blind verification. [Skill evolution](docs/skill-evolution.md)

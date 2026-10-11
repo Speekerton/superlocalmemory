@@ -30,9 +30,10 @@ import json
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
+from superlocalmemory.encoding.ccq_dates import _parse_date, _temporal_midpoint
 from superlocalmemory.storage.models import _new_id
 
 if TYPE_CHECKING:
@@ -140,30 +141,8 @@ class _UnionFind:
 # ---------------------------------------------------------------------------
 
 
-def _parse_date(raw: str | None) -> datetime | None:
-    """Parse ISO-8601 dates with multiple format fallbacks."""
-    if not raw:
-        return None
-    for fmt in (
-        "%Y-%m-%dT%H:%M:%S.%f",
-        "%Y-%m-%dT%H:%M:%S",
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%d",
-    ):
-        try:
-            return datetime.strptime(raw, fmt)
-        except ValueError:
-            continue
-    return None
-
-
-def _temporal_midpoint(dates: list[datetime]) -> str:
-    """Compute ISO-8601 midpoint of a list of datetimes."""
-    if not dates:
-        return datetime.now(timezone.utc).isoformat()
-    ts = [d.timestamp() for d in dates]
-    mid = sum(ts) / len(ts)
-    return datetime.fromtimestamp(mid).isoformat()
+# _parse_date / _temporal_midpoint live in encoding/ccq_dates.py and are
+# imported at the top of this module (tests import them from here).
 
 
 # ---------------------------------------------------------------------------
@@ -323,6 +302,10 @@ class CognitiveConsolidator:
           - Facts above retention threshold
           - Facts already in ccq_consolidated_blocks (HR-01, HR-08)
         """
+        # Only facts the store still believes are consolidated: a fact a
+        # correction retired must never be copied into a fresh, current gist
+        # (audit BRN-31 — the retired rule came back under a new id).
+        current = self._db.current_fact_clause("f")
         rows = self._db.execute(
             """
             SELECT f.fact_id, f.content, f.canonical_entities_json,
@@ -347,6 +330,7 @@ class CognitiveConsolidator:
               -- Exactly the damage this release exists to stop, on a path the
               -- release did not otherwise touch.
               AND COALESCE(f.quarantined, 0) = 0
+              {current}
               AND f.fact_id NOT IN (
                   SELECT je.value
                   FROM ccq_consolidated_blocks ccb,
@@ -355,7 +339,7 @@ class CognitiveConsolidator:
               )
             ORDER BY r.retention_score ASC
             LIMIT ?
-            """,
+            """.replace("{current}", current),
             (
                 profile_id,
                 profile_id,
@@ -475,16 +459,17 @@ class CognitiveConsolidator:
             )
             dated.append((fid, _parse_date(raw)))
 
-        dated.sort(key=lambda t: t[1] or datetime.min)
+        # A fact whose date is unknown cannot be shown to fall inside the
+        # window, so it joins nothing (audit BRN-32: it used to join whatever
+        # cluster was open, which merged facts months apart).
+        dated = [(fid, dt) for fid, dt in dated if dt is not None]
+        dated.sort(key=lambda t: t[1])
 
         sub_clusters: list[list[str]] = [[]]
         prev_dt: datetime | None = None
         window_seconds = self._config.temporal_window_days * 86400
 
         for fid, dt in dated:
-            if dt is None:
-                sub_clusters[-1].append(fid)
-                continue
             if (
                 prev_dt is not None
                 and (dt - prev_dt).total_seconds() > window_seconds
@@ -679,11 +664,20 @@ class CognitiveConsolidator:
         fact_id: str,
         profile_id: str,
     ) -> tuple[int, int]:
-        """Compress one fact's embedding. Returns (bytes_before, bytes_after).
+        """Measure one source embedding. Returns (bytes_before, bytes_after).
 
-        PolarQuant is optional (HR-10). When unavailable, records the
-        uncompressed byte count so the pipeline can still report metrics.
-        Does NOT write invalid values to embedding_quantization_metadata.
+        This step does NOT quantize, and since 4.1.25 it no longer says it
+        does (audit BRN-10). It used to import PolarQuantEncoder, never call
+        it, write ``quantization_level='polar2', bit_width=2`` and report an
+        estimated 2-bit size: the stored embedding kept every byte (identical
+        SHA-256), and the fake ``bit_width=2`` made the EAP scheduler — which
+        does real quantization through ``QuantizedStore`` — treat the fact as
+        already compressed and skip it.
+
+        Physical quantization of a consolidated (archived) source belongs to
+        the EAP lifecycle scheduler, which reads the retention zone this
+        pipeline sets. So this measures the float32 payload and reports it
+        unchanged: bytes_after == bytes_before, a compression ratio of 1.0.
         """
         meta = self._db.execute(
             "SELECT vec_rowid, dimension FROM embedding_metadata "
@@ -692,11 +686,7 @@ class CognitiveConsolidator:
         )
         if not meta:
             return (0, 0)
-
-        d = dict(meta[0])
-        dim = d.get("dimension", 768)
-
-        # Check existing quantization status
+        dim = dict(meta[0]).get("dimension", 768)
         eq_meta = self._db.execute(
             "SELECT quantization_level FROM embedding_quantization_metadata "
             "WHERE fact_id = ? AND profile_id = ?",
@@ -705,30 +695,9 @@ class CognitiveConsolidator:
         if eq_meta:
             level = dict(eq_meta[0]).get("quantization_level", "float32")
             if level in ("polar2", "polar4", "deleted"):
-                return (0, 0)  # Already compressed
-
-        bytes_before = dim * 4  # float32
-
-        # Try PolarQuant (Phase B) — optional dependency (HR-10)
-        try:
-            from superlocalmemory.math.polar_quant import PolarQuantEncoder
-            # Phase B exists. Mark as polar2 for the scheduler to actually
-            # perform the quantization with the raw embedding data.
-            self._db.execute(
-                "INSERT OR REPLACE INTO embedding_quantization_metadata "
-                "(fact_id, profile_id, quantization_level, bit_width) "
-                "VALUES (?, ?, 'polar2', 2)",
-                (fact_id, profile_id),
-            )
-            # Estimated compressed size: radius(4 bytes) + packed angles
-            bytes_after = 4 + (dim * self._config.target_bit_width + 7) // 8
-            return (bytes_before, bytes_after)
-        except ImportError:
-            pass
-
-        # PolarQuant not available: no compression, no metadata change.
-        # The bytes are uncompressed but we track them for metrics.
-        return (bytes_before, bytes_before)
+                return (0, 0)  # quantized by EAP already; nothing to measure
+        bytes_now = int(dim) * 4  # float32, as stored
+        return (bytes_now, bytes_now)
 
     # ------------------------------------------------------------------
     # Step 5: Store block + archive source facts
@@ -742,7 +711,23 @@ class CognitiveConsolidator:
     ) -> str:
         """Atomically persist the replacement before soft-archiving its sources."""
         from superlocalmemory.encoding.gist_store import store_block
-        return store_block(self._db, self._embedder, cluster, gist, profile_id, _new_id)
+        return store_block(self._db, self._embedder, cluster, gist, profile_id, _new_id,
+                           lambda ids: self._still_current_confidence(ids, profile_id))
+
+    def _still_current_confidence(self, fact_ids: tuple[str, ...],
+                                  profile_id: str) -> float:
+        """Min confidence of the sources; raises if any is no longer current."""
+        marks = ",".join("?" for _ in fact_ids)
+        rows = self._db.execute(
+            f"SELECT confidence FROM atomic_facts f WHERE f.profile_id = ? "
+            f"AND f.fact_id IN ({marks}){self._db.current_fact_clause('f')}",
+            (profile_id, *fact_ids),
+        )
+        if len(rows or []) != len(fact_ids):
+            raise RuntimeError(
+                "a source was retired or removed after selection; "
+                "cluster abandoned")
+        return min(float(dict(r).get("confidence") or 0.0) for r in rows)
 
     # ------------------------------------------------------------------
     # Step 6: Audit trail

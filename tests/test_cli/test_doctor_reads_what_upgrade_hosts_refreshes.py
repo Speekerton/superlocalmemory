@@ -38,7 +38,12 @@ def home(tmp_path, monkeypatch):
     return fake
 
 
-def _stale_plugin_cache(home: Path, version: str = "4.1.24") -> None:
+#: Never equal to any real release, so the cache copy is always the older one,
+#: even in a dev environment whose installed metadata lags the source tree.
+STALE = "0.0.1"
+
+
+def _stale_plugin_cache(home: Path, version: str = STALE) -> None:
     folder = home / ".codex" / "plugins" / "cache" / "qualixar" / "superlocalmemory-codex" / version
     (folder / ".codex-plugin").mkdir(parents=True)
     (folder / ".codex-plugin" / "plugin.json").write_text(
@@ -51,7 +56,7 @@ def _refresh(home: Path) -> dict:
 
 def test_before_the_upgrade_doctor_sees_the_old_plugin_cache(home) -> None:
     _stale_plugin_cache(home)
-    assert doctor_hosts.installed_plugin_versions() == {"superlocalmemory-codex": "4.1.24"}
+    assert doctor_hosts.installed_plugin_versions() == {"superlocalmemory-codex": STALE}
 
 
 def test_the_upgrade_records_the_version_it_wrote(home) -> None:
@@ -76,7 +81,7 @@ def test_the_older_cache_copy_is_named_not_counted_as_stale(home) -> None:
     note = doctor_hosts.codex_cache_note(found, home)
     assert note, (found, codex_assets.read_version_stamp(home))
     note = doctor_hosts.codex_cache_note(doctor_hosts.installed_plugin_versions(), home)
-    assert "4.1.24" in note and "upgrade-hosts" in note and _package_version() in note
+    assert STALE in note and "upgrade-hosts" in note and _package_version() in note
 
 
 def test_no_note_when_the_cache_matches_or_is_absent(home) -> None:
@@ -125,10 +130,10 @@ def test_slm_doctor_warns_before_and_passes_after(home, monkeypatch, tmp_path) -
     monkeypatch.setenv("SLM_DATA_DIR", str(tmp_path / "data"))
     _stale_plugin_cache(home)
     before = _plugin_row(monkeypatch)
-    assert before["status"] == "WARN" and "superlocalmemory-codex=4.1.24" in before["detail"]
+    assert before["status"] == "WARN" and f"superlocalmemory-codex={STALE}" in before["detail"]
     assert before["fix"] == "slm upgrade-hosts --host codex --apply"
 
     _refresh(home)
     after = _plugin_row(monkeypatch)
     assert after["status"] == "PASS", after
-    assert "4.1.24" in after["detail"]  # named as a note, not counted
+    assert STALE in after["detail"]  # named as a note, not counted

@@ -605,20 +605,20 @@ class EntityGraphChannel:
             try:
                 rows = self._db.execute(
                     "SELECT entity_id, '' AS source, '' AS alias, '' AS canonical_name "
-                    f"FROM canonical_entities WHERE LOWER(canonical_name) IN ({placeholders}) "
+                    "FROM canonical_entities "
+                    f"WHERE canonical_name COLLATE NOCASE IN ({placeholders}) "
                     "UNION SELECT ea.entity_id, ea.source, ea.alias, ce.canonical_name "
                     "FROM entity_aliases ea JOIN canonical_entities ce USING (entity_id) "
-                    f"WHERE LOWER(ea.alias) IN ({placeholders})",
+                    f"WHERE ea.alias COLLATE NOCASE IN ({placeholders})",
                     (*names, *names),
                 )
                 rows = [r for r in map(dict, rows) if _alias_in_use(
                     r["source"], r["alias"], r["canonical_name"])]
             except Exception:
                 rows = []
-            visible_entity_ids = set(self._entity_to_facts)
             for row in rows:
                 entity_id = str(dict(row)["entity_id"])
-                if entity_id in visible_entity_ids and entity_id not in seen:
+                if entity_id in self._entity_to_facts and entity_id not in seen:
                     seen.add(entity_id)
                     ids.append(entity_id)
         return ids

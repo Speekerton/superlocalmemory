@@ -161,16 +161,39 @@ from superlocalmemory.storage.migrations import (
 )
 from superlocalmemory.storage.migrations import (
     M045_fact_outcome_score as _M045,
+)
+from superlocalmemory.storage.migrations import (
     M046_prospective_memory_has_its_own_name as _M046,
+)
+from superlocalmemory.storage.migrations import (
     M047_fisher_vectors_are_stored_like_every_other_vector as _M047,
+)
+from superlocalmemory.storage.migrations import (
     M048_upcoming_holds_only_what_is_upcoming as _M048,
+)
+from superlocalmemory.storage.migrations import (
     M049_a_schema_version_marker_is_one_row as _M049,
+)
+from superlocalmemory.storage.migrations import (
     M050_execution_learning_v2 as _M050,
+)
+from superlocalmemory.storage.migrations import (
     M051_lifecycle_is_recomputed_not_resampled as _M051,
+)
+from superlocalmemory.storage.migrations import (
     M052_memory_kinds as _M052,
+)
+from superlocalmemory.storage.migrations import (
     M053_answer_check_history as _M053,
+)
+from superlocalmemory.storage.migrations import (
     M054_saved_views as _M054,
+)
+from superlocalmemory.storage.migrations import (
     M055_learning_attribution as _M055,
+)
+from superlocalmemory.storage.migrations import (
+    M056_recall_channel_indexes as _M056,
 )
 
 # Emit under the runner's logger name so operational log filters that key on
@@ -235,6 +258,7 @@ _MODULES = {
     _M053.NAME: _M053,
     _M054.NAME: _M054,
     _M055.NAME: _M055,
+    _M056.NAME: _M056,
 }
 
 # Exact historical DDL fingerprints whose resulting schema is intentionally

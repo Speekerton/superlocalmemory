@@ -17,7 +17,8 @@ import math
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from dateutil.parser import ParserError, parse as dateutil_parse
+from dateutil.parser import ParserError
+from dateutil.parser import parse as dateutil_parse
 
 from superlocalmemory.encoding.temporal_parser import TemporalParser
 from superlocalmemory.storage.database import _scope_where
@@ -247,7 +248,7 @@ class TemporalChannel:
                 "SELECT te.fact_id FROM temporal_events AS te "
                 "JOIN canonical_entities AS ce ON ce.entity_id = te.entity_id "
                 "JOIN atomic_facts AS af ON af.fact_id = te.fact_id "
-                f"WHERE {where} AND LOWER(ce.canonical_name) = LOWER(?) "
+                f"WHERE {where} AND ce.canonical_name COLLATE NOCASE = ? "
                 # The score below is derived from each row's POSITION in this
                 # result. Position must reflect temporal order so that the comment
                 # "first events more likely relevant" holds: oldest fact first,

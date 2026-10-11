@@ -158,3 +158,34 @@ def test_pytest_c_option_uses_pinned_config(receipt_db, tmp_path):
     )
     config.write_text("[pytest]\naddopts = -k passing\n")
     assert receipt_jobs.run_registered_check(receipt_db, job["job_id"])["verdict"] == "FAIL"
+
+
+def test_aliased_project_command_cannot_escape_the_pinned_check(receipt_db, tmp_path):
+    work, alias = tmp_path / 'work', tmp_path / 'alias'
+    work.mkdir()
+    alias.symlink_to(work, target_is_directory=True)
+    script = work / 'check.py'
+    script.write_text('raise SystemExit(1)')
+    (work / 'state').write_text('fail')
+    job = receipt_jobs.register_job(
+        receipt_db, profile_id='default', task_id='build', watcher_name='build', producer='checker',
+        command=[sys.executable, str(alias / 'check.py')], cwd=alias,
+        check_paths=['check.py'], artifact_paths=['state'], data_root=tmp_path / 'slm',
+    )
+    script.write_text('raise SystemExit(0)')
+    assert receipt_jobs.run_registered_check(receipt_db, job['job_id'])['verdict'] == 'FAIL'
+
+
+def test_project_executable_is_refused_at_registration(receipt_db, tmp_path):
+    work = tmp_path / 'work'
+    work.mkdir()
+    tool = work / 'tool'
+    tool.write_text('#!/bin/sh\nexit 0\n')
+    tool.chmod(0o700)
+    (work / 'state').write_text('pass')
+    with pytest.raises(ValueError, match='executable.*outside'):
+        receipt_jobs.register_job(
+            receipt_db, profile_id='default', task_id='build', watcher_name='build',
+            producer='checker', command=[str(tool)], cwd=work, check_paths=[],
+            artifact_paths=['state'], data_root=tmp_path / 'slm',
+        )

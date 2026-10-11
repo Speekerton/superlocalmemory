@@ -1671,155 +1671,10 @@ def _agents_md_source_factory():
 
 
 def cmd_connect(args: Namespace) -> None:
-    """Configure IDE integrations.
+    """Configure/discover hosts through the canonical portable registry."""
+    from superlocalmemory.cli.connect_cmd import cmd_connect as connect
 
-    Dispatch priority:
-    1. ``slm connect <ide>`` where ide ∈ IDE_MATRIX → portable_kit.connect_ide
-       (MCP-wiring + AGENTS.md; claude-code short-circuits to the plugin pointer).
-    2. ``--cross-platform`` / ``--disable`` → LLD-05 CrossPlatformConnector.
-    3. Bare ``slm connect`` / ``--list`` → legacy IDEConnector (markdown-rules).
-    """
-    ide_arg = getattr(args, "ide", None)
-
-    # Intercept known IDE_MATRIX ids before legacy branches (critical: must run first)
-    if ide_arg is not None:
-        from superlocalmemory.hooks.portable_kit import (
-            IDE_MATRIX,
-            connect_ide,
-            supported_ides,
-        )
-
-        if ide_arg in IDE_MATRIX:
-            here = getattr(args, "here", False)
-            profile = getattr(args, "profile", None)
-            transport = getattr(args, "transport", "stdio")
-            daemon_port = getattr(args, "daemon_port", 8765)
-            verify = getattr(args, "verify", False)
-            project = None
-            if here:
-                import pathlib
-                project = pathlib.Path.cwd()
-
-            result = connect_ide(
-                ide_arg,
-                home=None,
-                project=project,
-                here=here,
-                profile=profile,
-                agents_md_source=_agents_md_source_factory(),
-                dry_run=getattr(args, "dry_run", False),
-                transport=transport,
-                daemon_port=daemon_port,
-            )
-
-            # --verify: probe daemon health after writing
-            if verify and transport in ("http", "http-mcp-remote") and not result.get("error"):
-                from superlocalmemory.hooks.portable_kit import _check_daemon_health
-                reachable = _check_daemon_health(daemon_port)
-                if reachable:
-                    print(f"[verify] Daemon reachable at http://127.0.0.1:{daemon_port}/api/v3/health")
-                else:
-                    print(
-                        f"[verify] Warning: daemon NOT reachable at "
-                        f"http://127.0.0.1:{daemon_port}/api/v3/health. "
-                        f"Run `slm serve start` to start it.",
-                        file=sys.stderr,
-                    )
-
-            if not result.get("error") and not getattr(args, "dry_run", False):
-                from superlocalmemory.infra.local_diagnostics import record_operation
-
-                record_operation("activation", client=ide_arg)
-
-            if getattr(args, "json", False):
-                from superlocalmemory.cli.json_output import json_print
-                json_print("connect", data=result)
-                return
-
-            if result["error"]:
-                print(f"Error: {result['error']}", file=sys.stderr)
-                print(
-                    f"Supported IDEs: {', '.join(supported_ides())}",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-
-            status_sym = {"wrote": "[+]", "merged": "[~]", "unchanged": "[=]",
-                          "would_write": "[~]",
-                          "skipped": "[s]", "error": "[!]"}.get(
-                result["mcp_config"], "[?]"
-            )
-            print(
-                f"{status_sym} {ide_arg}: mcp_config={result['mcp_config']} "
-                f"path={result['mcp_path']}"
-            )
-            print(f"    agents_md={result['agents_md']}")
-            return
-
-        # Unknown ide — list supported and exit non-zero
-        from superlocalmemory.hooks.portable_kit import supported_ides
-        print(
-            f"Unknown IDE '{ide_arg}'.\nSupported: {', '.join(supported_ides())}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    # Route --disable <name> and --cross-platform to the LLD-05 orchestrator.
-    if getattr(args, "disable", None) or getattr(args, "cross_platform", False):
-        from superlocalmemory.cli.context_commands import (
-            cmd_connect_cross_platform,
-        )
-        cmd_connect_cross_platform(args)
-        return
-    from superlocalmemory.hooks.ide_connector import IDEConnector
-
-    connector = IDEConnector()
-    dry_run = bool(getattr(args, "dry_run", False))
-
-    if getattr(args, 'json', False):
-        from superlocalmemory.cli.json_output import json_print
-        if getattr(args, "list", False):
-            json_print("connect", data={"ides": connector.get_status()},
-                       next_actions=[
-                           {"command": "slm connect --json", "description": "Auto-configure all IDEs"},
-                       ])
-        elif getattr(args, "ide", None):
-            success = connector.connect(args.ide)
-            json_print("connect", data={"ide": args.ide, "connected": success})
-        elif dry_run:
-            json_print(
-                "connect",
-                data={
-                    "dry_run": True,
-                    "would_configure": connector.get_status(),
-                },
-            )
-        else:
-            json_print("connect", data={"results": connector.connect_all()},
-                       next_actions=[
-                           {"command": "slm status --json", "description": "Check system status"},
-                       ])
-        return
-
-    if getattr(args, "list", False):
-        status = connector.get_status()
-        for s in status:
-            mark = "[+]" if s["installed"] else "[-]"
-            print(f"  {mark} {s['name']:20s} {s['config_path']}")
-        return
-    if dry_run:
-        status = connector.get_status()
-        print("Dry run — no IDE, hook, config, or SLM data files were written.")
-        for item in status:
-            print(f"  would inspect/configure: {item['name']} ({item['config_path']})")
-        return
-    if getattr(args, "ide", None):
-        success = connector.connect(args.ide)
-        print(f"{'Connected' if success else 'Failed'}: {args.ide}")
-    else:
-        results = connector.connect_all()
-        for ide_id, ide_status in results.items():
-            print(f"  {ide_id}: {ide_status}")
+    connect(args)
 
 
 def _without_answer_check(config):
@@ -4821,14 +4676,16 @@ def cmd_hooks(args: Namespace) -> None:
 
 def cmd_codex(args: Namespace) -> None:
     """Manage explicit, SLM-owned Codex skills, agents, and lifecycle hooks."""
-    from superlocalmemory.hooks.codex_assets import install_assets, remove_assets, status_assets
+    from superlocalmemory.hooks.codex_assets import (
+        AGENTS, SKILLS, install_assets, remove_assets, status_assets,
+    )
     from superlocalmemory.hooks.codex_hooks import install_hooks, remove_hooks, check_status
 
     action, dry_run = getattr(args, "action", "status"), getattr(args, "dry_run", False)
     if action == "install":
         assets, hooks = install_assets(dry_run=dry_run), install_hooks(dry_run=dry_run)
         if assets.get("success") and hooks.get("success"):
-            print(f"SLM Codex add-ons {'would be installed' if dry_run else 'installed'}: 7 skills, 2 subagents, 4 lifecycle hooks.")
+            print(f"SLM Codex add-ons {'would be installed' if dry_run else 'installed'}: {len(SKILLS)} skills, {len(AGENTS)} subagents, 4 lifecycle hooks.")
             print("MCP wiring remains explicit: run `slm connect codex` if it is not already configured.")
             print("Review and trust newly installed hooks in Codex with /hooks.")
         else:
@@ -4843,7 +4700,7 @@ def cmd_codex(args: Namespace) -> None:
         return
     assets, hooks = status_assets(), check_status()
     print(f"SLM Codex add-ons: {'INSTALLED' if assets['installed'] and hooks['installed'] else 'NOT INSTALLED'}")
-    print(f"  Skills: {len(assets['skills'])}/7; subagents: {len(assets['agents'])}/2")
+    print(f"  Skills: {len(assets['skills'])}/{len(SKILLS)}; subagents: {len(assets['agents'])}/{len(AGENTS)}")
     print(f"  Hooks: {', '.join(hooks.get('hook_types', [])) or 'none'}")
 
 

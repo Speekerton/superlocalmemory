@@ -235,11 +235,11 @@ slm wrap --dry-run                    # Preview without executing
 **SDK adapters (Python) — manual wrap:**
 
 ```python
-from superlocalmemory.optimize.adapters.openai_adapter import withSLM
+from superlocalmemory.optimize.adapters import withSLM
 from openai import OpenAI
 client = withSLM(OpenAI())        # Same interface — zero API change
 
-from superlocalmemory.optimize.adapters.anthropic_adapter import withSLM
+from superlocalmemory.optimize.adapters import withSLM
 from anthropic import Anthropic
 client = withSLM(Anthropic())
 ```

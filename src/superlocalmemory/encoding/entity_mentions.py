@@ -58,6 +58,7 @@ april may june july august september october november december morning evening
 night week month year mr mrs ms dr prof sir madam st decision rule status summary
 todo action context goal result reason question answer problem issue fix outcome
 lesson takeaway warning tip idea step owner deadline priority task update reminder
+configure configured reconfigure refactor refactored rerun reran restarted summarised
 """.split())
 
 #: Lower-case nouns that make the word before them a system name.
@@ -84,9 +85,10 @@ _VOWELS = frozenset("aeiouy")
 _NAME_WORD = (r"(?:[A-Z][a-z0-9]*(?:[A-Z][a-z0-9]*)*|[a-z]+[A-Z][A-Za-z0-9]*)"
               r"(?:-[A-Za-z0-9]+)*")
 _VERSION = r"v?\d+(?:\.\d+)+|\d+"
-_RUN = re.compile(rf"(?<![\w.-])({_NAME_WORD}(?:[ ](?:{_NAME_WORD}|{_VERSION}))*)(?![\w-])")
-_LOWER_TECH = re.compile(r"(?<![\w.:-])([a-z][a-z0-9]*(?:[_:.][a-z0-9]+|\d[a-z0-9.]*)+"
-                         r"|[a-z]{4,})(?![\w-])")
+_RUN = re.compile(rf"(?<![\w./~\\-])({_NAME_WORD}(?:[ ](?:{_NAME_WORD}|{_VERSION}))*)"
+                  r"(?![\w/\\-]|\.\w)")
+_LOWER_TECH = re.compile(r"(?<![\w.:/~\\-])([a-z][a-z0-9]*(?:[_:.][a-z0-9]+|\d[a-z0-9.]*)+"
+                         r"|[a-z]{4,})(?![\w/\\-])")
 _LETTER_AFTER = re.compile(r"\b([a-z]{3,}) ([A-Z])(?![\w-])")
 _SYSTEM_PHRASE = re.compile(r"(?<![\w-])([a-z]{3,}) (" + "|".join(sorted(_SYSTEM_NOUNS)) + r")\b")
 _QUOTED = re.compile(r"\"([^\"]{2,60})\"")
@@ -98,19 +100,31 @@ def _is_stop(word: str) -> bool:
     return word.lower().rstrip(".") in STOP_WORDS
 
 
-def _split_run(words: list[str], out: set[str]) -> None:
-    """Add the stop-free spans of a run, and each span's name before a version."""
+class _Found(dict):
+    """name -> whether some occurrence was capitalised mid-sentence."""
+
+    def add(self, name: str, evidence: bool = True) -> None:
+        self[name] = self.get(name, False) or evidence
+
+
+def _split_run(words: list[str], out: _Found, initial: bool) -> None:
+    """Add the stop-free spans of a run, and each span's name before a version.
+
+    Only a span that opens the run can sit where a sentence starts."""
     span: list[str] = []
-    for word in [*words, ""]:
+    span_initial = initial
+    for i, word in enumerate([*words, ""]):
         if word and not _is_stop(word) and not (not span and _IS_VERSION.match(word)):
+            if not span:
+                span_initial = initial and i == 0
             span.append(word)
             continue
         if span:
-            _add_span(span, out)
+            _add_span(span, out, not span_initial)
         span = []
 
 
-def _add_span(span: list[str], out: set[str]) -> None:
+def _add_span(span: list[str], out: _Found, evidence: bool) -> None:
     if len(span) > 5:
         span = span[:5]
     names = [w for w in span if not _IS_VERSION.match(w)]
@@ -118,29 +132,33 @@ def _add_span(span: list[str], out: set[str]) -> None:
         return
     text = " ".join(span)
     if len(text) >= 2 and not (len(span) == 1 and len(text) == 1):
-        out.add(text)
+        out.add(text, evidence)
     first_version = next((i for i, w in enumerate(span) if _IS_VERSION.match(w)), None)
-    if first_version:
-        out.add(" ".join(span[:first_version]))
+    if first_version:  # a name with a version is a product's ("Python 3.12")
+        out.add(" ".join(span[:first_version]), True)
+        out.add(text, True)
     caps = [_is_caps(w) for w in names]
     if len(names) > 1 and any(caps) and not all(caps):
-        _add_kind_groups(names, caps, out)
+        _add_kind_groups(names, caps, out, evidence)
 
 
 def _is_caps(word: str) -> bool:
     return len(word) >= 2 and word.isupper()
 
 
-def _add_kind_groups(names: list[str], caps: list[bool], out: set[str]) -> None:
+def _add_kind_groups(names: list[str], caps: list[bool], out: _Found,
+                     evidence: bool) -> None:
     """'Google HQ' also names 'Google' and 'HQ': a run mixing ALL-CAPS and
-    other words is often two names side by side."""
+    other words is often two names side by side. Only the first group can
+    open a sentence."""
     group = [names[0]]
+    first = True
     for word, kind, prev in zip(names[1:], caps[1:], caps[:-1]):
         if kind != prev:
-            out.add(" ".join(group))
-            group = []
+            out.add(" ".join(group), evidence or not first)
+            group, first = [], False
         group.append(word)
-    out.add(" ".join(group))
+    out.add(" ".join(group), evidence or not first)
 
 
 def _coined(word: str) -> bool:
@@ -157,7 +175,7 @@ def _technical(word: str) -> bool:
     return any(len(part) >= 3 and part.isalpha() for part in re.split(r"[_:.\d]+", word))
 
 
-def _lower_mentions(text: str, out: set[str]) -> None:
+def _lower_mentions(text: str, out: _Found) -> None:
     for m in _LOWER_TECH.finditer(text):
         word = m.group(1)
         if word.isalpha():
@@ -175,21 +193,29 @@ def _lower_mentions(text: str, out: set[str]) -> None:
             out.add(f"{modifier} {noun}")
 
 
-def extract_mentions(text: str) -> list[str]:
-    """Entity mentions in ``text``, sorted and without duplicates."""
+def extract_mentions(text: str, *, question: bool = False) -> list[str]:
+    """Entity mentions in ``text``, sorted and without duplicates.
+
+    Every candidate passes ``entity_validity.valid_name``; a single
+    Capitalised everyday word counts only where no sentence starts. A
+    ``question`` ("Scope of the audit?") gets the benefit of the doubt there:
+    it only looks up entities that exist, and it creates none."""
     if not text:
         return []
-    out: set[str] = set()
+    from superlocalmemory.encoding.entity_validity import opens_sentence, valid_name
+
+    out = _Found()
     labels = {m.group(1) for m in _LABEL.finditer(text)}
     for m in _RUN.finditer(text):
         words = [w for w in m.group(1).split(" ") if w not in labels]
-        _split_run(words, out)
+        _split_run(words, out, opens_sentence(text, m.start()))
     _lower_mentions(text, out)
     for m in _QUOTED.finditer(text):
         quoted = m.group(1).strip()
         if len(quoted) >= 2:
             out.add(quoted)
-    return sorted(out)
+    return sorted(n for n, evidence in out.items()
+                  if valid_name(n, capital_evidence=evidence or question))
 
 
 __all__ = ["STOP_WORDS", "extract_mentions"]

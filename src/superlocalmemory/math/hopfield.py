@@ -30,38 +30,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from superlocalmemory.core.hopfield_config import HopfieldConfig
+
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Configuration (local definition; Delivery Lead moves to core/config.py)
-# ---------------------------------------------------------------------------
-
-@dataclass(frozen=True)
-class HopfieldConfig:
-    """Modern Continuous Hopfield Network configuration.
-
-    Based on Ramsauer et al. (2020): "Hopfield Networks is All You Need"
-    Energy: E(xi) = -log(sum_i exp(B * xi' * x_i)) + B/2 * ||xi||^2
-    Update: xi_new = X' @ softmax(B * X @ xi)
-    Beta:   B = sqrt(d) for unit-norm patterns; configurable.
-
-    Storage capacity: O(e^{d/2}) -- exponential in dimension.
-    For d=768: theoretical capacity >> millions of patterns.
-    """
-
-    enabled: bool = True
-    dimension: int = 768
-    max_iterations: int = 1
-    convergence_epsilon: float = 1e-6
-    prefilter_threshold: int = 10_000
-    # MUST match HopfieldConfig.prefilter_candidates in core/config.py, where the
-    # reasoning for the value is written. This stage decides final membership, so
-    # this number is a hard limit on which memories can be returned at all.
-    prefilter_candidates: int = 500
-    skip_threshold: int = 100_000
-    cache_ttl_seconds: float = 60.0
-    beta: float | None = None
 
 
 # ---------------------------------------------------------------------------

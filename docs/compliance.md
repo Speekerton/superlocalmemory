@@ -47,6 +47,29 @@ What the two exports carry for pictures and documents:
   `folder`, by id and never by file path). The pictures and documents themselves
   are not exported. Importing that file saves the text as plain memories again.
 
+What the full export (`slm gdpr export`, `GET /api/compliance/gdpr/export`) holds
+and leaves out:
+
+- It carries every table of `memory.db` that has a profile column, found from the
+  live schema, plus the profile record, the code graph, the `media` section above,
+  what the system learned about how you work (`learning_signals`), the
+  hash-chained audit records about you (`audit_chain`) and any save still waiting
+  to be written (`pending_saves`). Another profile's rows are never included.
+- It is plain JSON. Embeddings, Fisher vectors and other binary columns are
+  derived numbers, not text you wrote, and they make the file many times larger,
+  so they are omitted unless you ask (`--include-embeddings`, or
+  `include_embeddings=true` on the HTTP routes), in which case they are base64.
+- Search indexes (full-text and vector indexes) are not exported, because they are
+  rebuilt from the exported text; installation bookkeeping (schema versions,
+  settings, other users' credentials and sessions) is not data about you; and the
+  operator's erasure receipts stay with the operator as proof an erasure happened.
+- The file says all of this about itself under `export_manifest`
+  (`omitted_columns`, `not_exported`, and any table that could not be read).
+- On failure the HTTP routes answer with an error status and send no file, and the
+  dashboard shows that error; the CLI writes the file only when it is whole.
+- The memory data export (`GET /api/export`, formats `json`, `jsonl`, `csv`) follows
+  the same rule for embeddings and sends the file only once it is complete.
+
 A complete erasure claim requires proof that deletion propagates through:
 
 - relational facts and raw evidence;

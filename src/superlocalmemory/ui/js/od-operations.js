@@ -1002,14 +1002,22 @@
 
     if (exportBtn) {
       exportBtn.addEventListener('click', function () {
-        // Stream the JSON attachment to a download via a temporary anchor.
-        var a = document.createElement('a');
-        a.href = '/api/compliance/gdpr/export';
-        a.download = '';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        if (summary) summary.textContent = 'Export started — check your downloads.';
+        // Fetch the file so the page can say what really happened: a failed
+        // export used to print "Export started" and deliver nothing.
+        if (typeof window.slmDownloadExport !== 'function') {
+          // core.js is served from cache and predates this file.
+          if (summary) summary.textContent = 'Export failed: reload this page (hard refresh) to finish updating the dashboard.';
+          return;
+        }
+        exportBtn.disabled = true;
+        if (summary) summary.textContent = 'Preparing your export… a large store takes a while.';
+        window.slmDownloadExport('/api/compliance/gdpr/export').then(function (result) {
+          if (summary) summary.textContent = window.slmExportMessage(result);
+          if (!result.ok && typeof showToast === 'function') showToast(window.slmExportMessage(result));
+        }).catch(function (error) {
+          if (summary) summary.textContent = window.slmExportMessage(
+            { ok: false, error: (error && error.message) || 'unexpected error' });
+        }).then(function () { exportBtn.disabled = false; });
       });
     }
 

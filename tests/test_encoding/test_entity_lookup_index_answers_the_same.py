@@ -49,14 +49,8 @@ def resolver(tmp_path):
 
 
 def _original(res, name: str) -> str | None:
-    entity = res._db.get_entity_by_name(name, P)
-    if entity is not None:
-        return entity.entity_id
-    alias = res._alias_lookup(name, P)
-    if alias is not None:
-        return alias
-    match_id, score = res._fuzzy_match(name, P)
-    return match_id if match_id is not None and score >= er.JARO_WINKLER_AUTO_MERGE else None
+    """The same rules answered from the tables, without the kept rows."""
+    return res._lookup_one(name, P, None)
 
 
 def test_every_answer_is_the_original_one(resolver) -> None:

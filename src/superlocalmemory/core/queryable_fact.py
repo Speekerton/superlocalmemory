@@ -9,12 +9,10 @@ that gives a memory back the fact enrichment wrongly removed
 
 from __future__ import annotations
 
-import re
 import uuid
 from typing import Any
 
-_NAMES = re.compile(r"\b([A-Z][a-z]+(?:\s[A-Z][a-z]+){0,3})\b")
-_ACRONYMS = re.compile(r"\b([A-Z]{2,})\b")
+from superlocalmemory.encoding.entity_mentions import extract_mentions
 
 
 def queryable_fact(fact_content: str, *, profile_id: str, scope: str,
@@ -23,8 +21,7 @@ def queryable_fact(fact_content: str, *, profile_id: str, scope: str,
     """An embedding-free episodic fact holding ``fact_content`` verbatim."""
     from superlocalmemory.storage.models import AtomicFact, FactType
 
-    entities = sorted({m.group(1) for m in _NAMES.finditer(fact_content)}
-                      | {m.group(1) for m in _ACRONYMS.finditer(fact_content)})
+    entities = extract_mentions(fact_content)
     return AtomicFact(
         fact_id=uuid.uuid4().hex[:16],
         profile_id=profile_id,

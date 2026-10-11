@@ -24,7 +24,12 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Callable
 
+from superlocalmemory.compliance.export_encoding import ExportOptions, encode_row
+
 logger = logging.getLogger(__name__)
+
+#: Used when the caller passes no options: binary values are left out.
+_DEFAULT = ExportOptions()
 
 _PAGE = 500
 _PICTURE = ("media_id, kind, mime, bytes, width, height, captured_at, exif_json, anchor_memory_id,"
@@ -37,14 +42,16 @@ _FOLDER = ("source_id, kind, root_path, display_name, state, remote_visible, wat
 _JOB = "job_id, kind, state, done, total, error, created_at, updated_at"
 
 
-def _all(conn: sqlite3.Connection, sql: str, args: tuple) -> list[dict[str, Any]]:
+def _all(conn: sqlite3.Connection, sql: str, args: tuple,
+         options: ExportOptions | None = None, table: str = "media") -> list[dict[str, Any]]:
+    """Every row of a query, a page at a time, in a form JSON can write."""
     cursor = conn.execute(sql, args)
     out: list[dict[str, Any]] = []
     while True:
         page = cursor.fetchmany(_PAGE)
         if not page:
             return out
-        out.extend(dict(row) for row in page)
+        out.extend(encode_row(dict(row), table, options or _DEFAULT) for row in page)
 
 
 def _exif(raw: Any) -> Any:
@@ -55,9 +62,10 @@ def _exif(raw: Any) -> Any:
 
 
 def _pictures(conn: sqlite3.Connection, profile_id: str,
-              scopes: Callable[[list[str]], dict[str, str]]) -> list[dict[str, Any]]:
+              scopes: Callable[[list[str]], dict[str, str]],
+              options: ExportOptions | None = None) -> list[dict[str, Any]]:
     rows = _all(conn, f"SELECT {_PICTURE} FROM media_items WHERE profile_id = ? AND kind = 'image'"
-                " ORDER BY created_at, media_id", (profile_id,))
+                " ORDER BY created_at, media_id", (profile_id,), options, "media_items")
     scope_of = scopes([r["anchor_memory_id"] for r in rows if r["anchor_memory_id"]])
     for row in rows:
         row["exif"] = _exif(row.pop("exif_json"))
@@ -67,12 +75,14 @@ def _pictures(conn: sqlite3.Connection, profile_id: str,
     return rows
 
 
-def _documents(conn: sqlite3.Connection, profile_id: str) -> list[dict[str, Any]]:
+def _documents(conn: sqlite3.Connection, profile_id: str,
+               options: ExportOptions | None = None) -> list[dict[str, Any]]:
     docs = _all(conn, f"SELECT {_DOCUMENT} FROM documents WHERE profile_id = ?"
-                " ORDER BY created_at, document_id", (profile_id,))
+                " ORDER BY created_at, document_id", (profile_id,), options, "documents")
     pages = _all(conn, "SELECT p.document_id, p.page_no, p.media_id, p.text_origin, p.char_count"
                  " FROM doc_pages p JOIN documents d ON d.document_id = p.document_id"
-                 " WHERE d.profile_id = ? ORDER BY p.document_id, p.page_no", (profile_id,))
+                 " WHERE d.profile_id = ? ORDER BY p.document_id, p.page_no", (profile_id,),
+                 options, "doc_pages")
     by_doc: dict[str, list[dict[str, Any]]] = {}
     for page in pages:
         by_doc.setdefault(page.pop("document_id"), []).append(page)
@@ -94,24 +104,26 @@ def _scopes_from(db: Any, profile_id: str) -> Callable[[list[str]], dict[str, st
     return lookup
 
 
-def export_media(data_root: Path, profile_id: str, db: Any) -> dict[str, Any] | None:
+def export_media(data_root: Path, profile_id: str, db: Any,
+                 options: ExportOptions | None = None) -> dict[str, Any] | None:
     """The profile's media records; ``None`` when there is no ``media.db``;
     ``{"error": "unavailable"}`` when there is one and it cannot be read."""
     path = Path(data_root) / "media.db"
     if not path.is_file():
         return None
     try:
-        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+        conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True, timeout=5)
         conn.row_factory = sqlite3.Row
+        conn.text_factory = lambda raw: raw.decode("utf-8", "replace")
         try:
             args = (profile_id,)
             return {
-                "pictures": _pictures(conn, profile_id, _scopes_from(db, profile_id)),
-                "documents": _documents(conn, profile_id),
+                "pictures": _pictures(conn, profile_id, _scopes_from(db, profile_id), options),
+                "documents": _documents(conn, profile_id, options),
                 "folders": _all(conn, f"SELECT {_FOLDER} FROM sources WHERE profile_id = ?"
-                                " ORDER BY created_at, source_id", args),
+                                " ORDER BY created_at, source_id", args, options, "sources"),
                 "jobs": _all(conn, f"SELECT {_JOB} FROM jobs WHERE profile_id = ?"
-                             " ORDER BY created_at, job_id", args),
+                             " ORDER BY created_at, job_id", args, options, "jobs"),
             }
         finally:
             conn.close()

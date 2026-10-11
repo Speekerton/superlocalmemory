@@ -1032,7 +1032,6 @@ class MemoryEngine:
         pid = (profile_id or "").strip() or self._profile_id
         from superlocalmemory.core.engine_ingestion import _require_known_profile
         _require_known_profile(self, pid)
-        import re as _re
         import uuid as _uuid
         from datetime import datetime, timezone
         from superlocalmemory.core.engine_ingestion import content_passes_admission
@@ -1068,13 +1067,10 @@ class MemoryEngine:
             scope=scope, shared_with=shared_with,
         )
         self._db.store_memory(record)
-        # Lightweight regex entities (matches store_pipeline verbatim path) so
-        # the entity_graph channel has something to work with before enrichment.
-        ents = sorted(
-            {m.group(1) for m in _re.finditer(
-                r"\b([A-Z][a-z]+(?:\s[A-Z][a-z]+){0,3})\b", fact_text)}
-            | {m.group(1) for m in _re.finditer(r"\b([A-Z]{2,})\b", fact_text)}
-        )
+        # The shared Mode A entity rules (as the store_pipeline verbatim path),
+        # so the entity_graph channel has something before enrichment.
+        from superlocalmemory.encoding.entity_mentions import extract_mentions
+        ents = extract_mentions(fact_text)
         # Workstream D (3.8.4) — warm-guard synchronous embed.
         #
         # Original contract (3.8.2): queryable admission NEVER acquires the

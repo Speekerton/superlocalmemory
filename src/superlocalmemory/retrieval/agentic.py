@@ -325,7 +325,7 @@ class AgenticRetriever:
                 entity = self._db.get_entity_by_name(name, profile_id)
                 if entity:
                     try:
-                        aliases = self._db.get_aliases_for_entity(entity.entity_id, profile_id)
+                        aliases = _trusted_aliases(self._db, entity, profile_id)
                         for a in aliases[:2]:
                             sub_queries.append(f"{a.alias} {' '.join(action_words)}")
                     except Exception:
@@ -345,6 +345,16 @@ class AgenticRetriever:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _trusted_aliases(db: Any, entity: Any, profile_id: str) -> list[Any]:
+    """An entity's aliases in use: an old fuzzy-merge alias the rules reject
+    names another thing (encoding/entity_match.alias_in_use)."""
+    from superlocalmemory.encoding.entity_match import alias_in_use
+
+    name = str(getattr(entity, "canonical_name", "") or "")
+    return [a for a in db.get_aliases_for_entity(entity.entity_id, profile_id)
+            if alias_in_use(getattr(a, "source", ""), getattr(a, "alias", ""), name)]
+
 
 def _avg(results: list[tuple[AtomicFact, float]]) -> float:
     return sum(s for _, s in results) / len(results) if results else 0.0

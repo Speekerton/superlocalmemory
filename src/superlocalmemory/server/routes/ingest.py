@@ -154,6 +154,9 @@ async def ingest(req: IngestRequest, request: Request):
             result["reason"] = "already_ingested"
         return result
 
+    except HTTPException:
+        # A refusal (401/403/409 ...) reaches the client as itself, not as a 500.
+        raise
     except Exception as exc:
         raise HTTPException(500, detail=str(exc))
     finally:

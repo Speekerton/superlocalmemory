@@ -4441,6 +4441,16 @@ def _register_dashboard_routes(application: FastAPI) -> None:
                                 )
                             },
                         )
+            # RBAC mutation gate (4.1.25 governance audit G-C1/G-H3): every
+            # state-changing route needs a role once team accounts are on, so a
+            # route without a check of its own is still refused to a viewer
+            # and to a caller with no session in company mode.
+            if is_write:
+                from superlocalmemory.server.mutation_gate import mutation_gate
+
+                _resp = mutation_gate(request, application.state)
+                if _resp is not None:
+                    return _resp
             # RBAC read gate (C3/audit SEC-C-01): sensitive content reads must
             # also respect roles. Engages ONLY when RBAC is active (>=1 user) —
             # single-operator installs are unaffected. Owner (no session) reads
@@ -6245,6 +6255,12 @@ def _register_daemon_routes(application: FastAPI) -> None:
         # /remember and other dashboard mutations), not just the private CLI
         # capability — a non-technical user restarts from their own dashboard.
         _require_write_actor(request)
+        # The install token proves a loopback caller, not a person. Restarting
+        # the daemon interrupts everyone's work, so it is administration:
+        # where login is required it needs a signed-in administrator (or the
+        # daemon capability from the command line); personal mode is unchanged.
+        from superlocalmemory.server.rbac_enforce import require_manage
+        require_manage(request)
         import subprocess
         import sys as _sys
 

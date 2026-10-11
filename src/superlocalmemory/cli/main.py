@@ -1230,6 +1230,11 @@ def main() -> None:
         help="Write export JSON to FILE (default: stdout)",
     )
     gdpr_export_p.add_argument(
+        "--include-embeddings", action="store_true", dest="include_embeddings",
+        help=("Include embeddings and other binary columns (base64). "
+              "Omitted by default: they are derived numbers and make the file much larger"),
+    )
+    gdpr_export_p.add_argument(
         "--json", action="store_true", help="Output structured JSON envelope",
     )
 

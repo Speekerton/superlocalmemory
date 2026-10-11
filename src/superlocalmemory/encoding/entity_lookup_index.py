@@ -17,24 +17,30 @@ to the store (storage/store_signature) and answers the same way:
   only), so a name matches here exactly when it matched there;
 * a key held by more than one entity is answered by the original query, so
   which row wins never depends on a query plan;
-* the spelling match walks the rows in the order of the same queries it ran
-  before, with the same strict comparison, so ties resolve the same way; its
-  answer per name is kept while the rows are.
+* the spelling match applies a save's merge rules (``entity_match``) to the
+  canonical names only (``entity_name_cache``); its answer per name is kept
+  while the rows are.
+
+Aliases written by the pre-4.1.25 whole-string fuzzy merge are not loaded:
+they may be links of a chain ("Plorth" -> "Plot" -> "Lost").
 """
 
 from __future__ import annotations
 
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
+from superlocalmemory.encoding import entity_match as em
 from superlocalmemory.storage import store_signature
 
 _ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
 
 #: The original queries the spelling match ran; their row order is reused.
-_NAMES_SQL = "SELECT entity_id, canonical_name FROM canonical_entities WHERE profile_id = ?"
-_ALIASES_SQL = ("SELECT ea.entity_id, ea.alias FROM entity_aliases ea "
+_NAMES_SQL = ("SELECT entity_id, canonical_name, entity_type FROM canonical_entities "
+              "WHERE profile_id = ?")
+_ALIASES_SQL = ("SELECT ea.entity_id, ea.alias, ea.source, ce.canonical_name "
+                "FROM entity_aliases ea "
                 "JOIN canonical_entities ce ON ce.entity_id = ea.entity_id "
                 "WHERE ce.profile_id = ?")
 
@@ -64,7 +70,9 @@ class _Index:
     aliases: list[tuple[str, str]]
     by_name: dict[str, object]
     by_alias: dict[str, object]
-    fuzzy: dict[str, tuple[str | None, float]] = field(default_factory=dict)
+    types: dict[str, str] = field(default_factory=dict)
+    same: dict[str, str | None] = field(default_factory=dict)
+    name_of: dict[str, str] | None = None
 
 
 class EntityLookupIndex:
@@ -83,11 +91,13 @@ class EntityLookupIndex:
             hit = self._parts.get(profile_id)
             if hit is not None and hit[0] == sig:
                 return hit[1]
-        names = [(str(dict(r)["entity_id"]), str(dict(r)["canonical_name"] or ""))
-                 for r in self._db.execute(_NAMES_SQL, (profile_id,))]
-        aliases = [(str(dict(r)["entity_id"]), str(dict(r)["alias"] or ""))
-                   for r in self._db.execute(_ALIASES_SQL, (profile_id,))]
-        index = _Index(names, aliases, _keyed(names), _keyed(aliases))
+        rows = [dict(r) for r in self._db.execute(_NAMES_SQL, (profile_id,))]
+        names = [(str(r["entity_id"]), str(r["canonical_name"] or "")) for r in rows]
+        types = {str(r["entity_id"]): str(r["entity_type"] or "") for r in rows}
+        aliases = [(str(r["entity_id"]), str(r["alias"] or ""))
+                   for r in map(dict, self._db.execute(_ALIASES_SQL, (profile_id,)))
+                   if em.alias_in_use(r["source"], r["alias"], r["canonical_name"])]
+        index = _Index(names, aliases, _keyed(names), _keyed(aliases), types)
         with self._lock:
             self._parts[profile_id] = (sig, index)
             while len(self._parts) > 8:  # a few profiles at most
@@ -95,22 +105,23 @@ class EntityLookupIndex:
         return index
 
 
-def fuzzy_best(index: _Index, name: str,
-               score: Callable[[str, str], float]) -> tuple[str | None, float]:
-    """The original spelling match over the kept rows (same order, same ``>``)."""
-    name_lower = name.lower()
-    cached = index.fuzzy.get(name_lower)
-    if cached is not None:
-        return cached
-    best_id: str | None = None
-    best = 0.0
-    for rows in (index.names, index.aliases):
-        for entity_id, text in rows:
-            s = score(name_lower, text.lower())
-            if s > best:
-                best, best_id = s, entity_id
-    index.fuzzy[name_lower] = (best_id, best)
-    return best_id, best
+def plain_word_hit(index: _Index, word: str) -> str | None:
+    """The entity a lower-case question word spells exactly (as SQLite's
+    LOWER does), when such a word may name it at all
+    (``entity_match.plain_word_may_name``). An ambiguous spelling answers none.
+    """
+    key = sql_lower(word)
+    hit = index.by_name.get(key)
+    if hit is None:
+        hit = index.by_alias.get(key)
+    if hit is None or hit is AMBIGUOUS:
+        return None
+    if index.name_of is None:
+        index.name_of = dict(index.names)
+    entity_id = str(hit)
+    canonical = index.name_of.get(entity_id, "")
+    ok = em.plain_word_may_name(word, canonical, index.types.get(entity_id, ""))
+    return entity_id if ok else None
 
 
-__all__ = ["AMBIGUOUS", "EntityLookupIndex", "fuzzy_best", "sql_lower"]
+__all__ = ["AMBIGUOUS", "EntityLookupIndex", "plain_word_hit", "sql_lower"]

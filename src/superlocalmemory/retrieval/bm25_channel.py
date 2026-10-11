@@ -137,6 +137,7 @@ class BM25Channel:
 
     def __init__(self, db: DatabaseManager) -> None:
         self._db = db
+        self._legacy_requested = False
         self._corpus: list[list[str]] = []
         self._fact_ids: list[str] = []
         self._fact_id_set: set[str] = set()
@@ -156,16 +157,10 @@ class BM25Channel:
         include_global: bool | None = None,
         include_shared: bool | None = None,
     ) -> None:
-        """Cold-load BM25 tokens from DB for a profile (once).
-
-        Idempotent: subsequent calls for the same profile/scope are no-ops.
-
-        Args:
-            profile_id: Profile to load.
-            include_global: Include global-scope facts. Falls back to the
-                instance attribute when not supplied.
-            include_shared: Include shared-scope facts. Same fallback.
-        """
+        """Load one visibility-specific legacy corpus; successful FTS reads skip this."""
+        # Sticky once requested: even a failed/cold legacy load owns a live
+        # corpus. Writers must retain the historical append behaviour then.
+        self._legacy_requested = True
         if include_global is None:
             include_global = bool(getattr(self, "include_global", False))
         if include_shared is None:
@@ -188,43 +183,9 @@ class BM25Channel:
             include_shared=include_shared,
         )
         if not token_map:
-            # Fallback: tokenize facts directly if no pre-stored tokens
-            facts = self._db.get_all_facts(
-                profile_id,
-                include_global=include_global,
-                include_shared=include_shared,
-            )
-            for fact in facts:
-                if fact.fact_id in self._fact_id_set:
-                    continue
-                tokens = tokenize(fact.content)
-                if tokens:
-                    self._corpus.append(_with_version_terms(tokens, fact.content))
-                    self._fact_ids.append(fact.fact_id)
-                    self._fact_id_set.add(fact.fact_id)
-                    self._raw_texts.append(fact.content)
-                    # Persist for next cold start
-                    self._db.store_bm25_tokens(fact.fact_id, profile_id, tokens)
+            self._load_fact_tokens(profile_id, include_global, include_shared)
         else:
-            # Load raw texts for phrase matching (V3.3.12)
-            fact_content_map = {}
-            try:
-                facts = self._db.get_all_facts(
-                    profile_id,
-                    include_global=include_global,
-                    include_shared=include_shared,
-                )
-                fact_content_map = {f.fact_id: f.content for f in facts}
-            except Exception:
-                pass
-            for fid, tokens in token_map.items():
-                if fid in self._fact_id_set:
-                    continue
-                raw_text = fact_content_map.get(fid, "")
-                self._corpus.append(_with_version_terms(tokens, raw_text))
-                self._fact_ids.append(fid)
-                self._fact_id_set.add(fid)
-                self._raw_texts.append(raw_text)
+            self._load_persisted_tokens(token_map, profile_id, include_global, include_shared)
 
         self._dirty = True
         self._loaded_profiles.add(profile_id)
@@ -233,6 +194,49 @@ class BM25Channel:
             "BM25 cold-loaded %d documents for profile=%s",
             len(token_map) if token_map else 0, profile_id,
         )
+
+    def _load_fact_tokens(self, profile_id: str, include_global: bool,
+                          include_shared: bool) -> None:
+        # Fallback: tokenize facts directly if no pre-stored tokens
+        facts = self._db.get_all_facts(
+            profile_id,
+            include_global=include_global,
+            include_shared=include_shared,
+        )
+        for fact in facts:
+            if fact.fact_id in self._fact_id_set:
+                continue
+            tokens = tokenize(fact.content)
+            if tokens:
+                self._corpus.append(_with_version_terms(tokens, fact.content))
+                self._fact_ids.append(fact.fact_id)
+                self._fact_id_set.add(fact.fact_id)
+                self._raw_texts.append(fact.content)
+                # Persist for next cold start
+                self._db.store_bm25_tokens(fact.fact_id, profile_id, tokens)
+
+    def _load_persisted_tokens(self, token_map: dict, profile_id: str,
+                               include_global: bool, include_shared: bool) -> None:
+        # Load raw texts for phrase matching (V3.3.12)
+        fact_content_map = {}
+        try:
+            facts = self._db.get_all_facts(
+                profile_id,
+                include_global=include_global,
+                include_shared=include_shared,
+            )
+            fact_content_map = {f.fact_id: f.content for f in facts}
+        except Exception:
+            pass
+        for fid, tokens in token_map.items():
+            if fid in self._fact_id_set:
+                continue
+            raw_text = fact_content_map.get(fid, "")
+            self._corpus.append(_with_version_terms(tokens, raw_text))
+            self._fact_ids.append(fid)
+            self._fact_id_set.add(fid)
+            self._raw_texts.append(raw_text)
+
 
     def add(self, fact_id: str, content: str, profile_id: str) -> None:
         """Add a single fact to the index and persist tokens.
@@ -246,6 +250,14 @@ class BM25Channel:
         if not tokens:
             return
 
+        # Preserve durable tokens for legacy stores. Successful FTS readers
+        # never load the Python corpus, so their writes need no second copy.
+        # Once a legacy reader has loaded a scope, retain the original append
+        # behaviour: do not dispose structures another reader may be scoring.
+        self._db.store_bm25_tokens(fact_id, profile_id, tokens)
+        if not self._legacy_requested and self._fts_available():
+            return
+
         self._corpus.append(_with_version_terms(tokens, content))
         self._fact_ids.append(fact_id)
         self._fact_id_set.add(fact_id)
@@ -254,8 +266,16 @@ class BM25Channel:
         self._raw_texts.append(content)
         self._dirty = True
 
-        # Persist for cold start
-        self._db.store_bm25_tokens(fact_id, profile_id, tokens)
+    def _fts_available(self) -> bool:
+        """Unknown/lightweight stores retain the original legacy behaviour."""
+        try:
+            rows = self._db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='atomic_facts_fts'"
+            )
+            return isinstance(rows, list) and bool(rows) and (
+                dict(rows[0]).get("name") == "atomic_facts_fts")
+        except Exception:
+            return False
 
     def _fts5_search(
         self,

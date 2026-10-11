@@ -15,6 +15,15 @@ import asyncio
 import threading
 
 
+
+def _local_request():
+    """A minimal local GET /status request: the handler now checks who is asking."""
+    from starlette.requests import Request
+
+    return Request({"type": "http", "method": "GET", "path": "/status", "headers": [],
+                    "query_string": b"", "client": ("127.0.0.1", 50000),
+                    "server": ("127.0.0.1", 8765), "scheme": "http"})
+
 def _blocker(result):
     """A slow read that can only finish early if the event loop is free meanwhile."""
     entered, loop_ran, seen = threading.Event(), threading.Event(), []
@@ -67,7 +76,7 @@ def test_status_counts_do_not_hold_the_loop_either(tmp_path, monkeypatch) -> Non
     app.state.daemon_descriptor = SimpleNamespace(port=1)
     route = next(r for r in app.routes if getattr(r, "path", None) == "/status")
 
-    payload = asyncio.run(drive(route.endpoint()))
+    payload = asyncio.run(drive(route.endpoint(_local_request())))
     assert seen == [True], "the status route held the event loop while it read the database"
     assert payload["status"] == "running"
 

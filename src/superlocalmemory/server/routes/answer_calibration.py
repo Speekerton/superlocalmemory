@@ -53,3 +53,8 @@ def register(router, gate):
             )
         except ValueError as exc:
             return JSONResponse({"detail": str(exc)}, status_code=409)
+
+    @router.post("/calibration/cancel")
+    def cancel(request: Request):
+        gate(request)
+        return JSONResponse(job_for(request.app.state).cancel(), status_code=202)

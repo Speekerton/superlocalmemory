@@ -343,10 +343,20 @@
           function () { layaRemove(external); }));
       }
     }
+    appendCalibration(box, buttons);
+    box.appendChild(buttons);
+    if (status.laya_test_running) box.appendChild(note('Testing — this loads the model once and asks it one question.', 'dim'));
+    box.appendChild(testResult(status.tests && status.tests.laya, 'ac-laya-test'));
+    if (status.apple_silicon && laya.state !== 'installing') box.appendChild(buildExisting(laya));
+    box.appendChild(buildDetails(laya));
+    return box;
+  }
+  function appendCalibration(box, buttons) {
     var calibration = status.calibration || { state: 'idle' };
     if (status.active === 'laya') {
+      var calibrating = /^(running|warming|cancelling)$/.test(calibration.state);
       var calibrate = btn(calibration.state === 'running' ? 'Calibrating…' : 'Calibrate on my store', false, 'calibrate');
-      calibrate.disabled = !canManage || calibration.state === 'running' || (status.execution && status.execution.state !== 'ready');
+      calibrate.disabled = !canManage || calibrating || (status.execution && status.execution.state !== 'ready');
       calibrate.addEventListener('click', function () {
         send('/calibration', 'POST', { model: 'llama3.2:latest', samples: 32 }).then(function (result) {
           if (!result.ok) { toast(why(result)); return; }
@@ -354,14 +364,19 @@
         });
       });
       buttons.appendChild(calibrate);
+      if (calibrating) {
+        var cancelCalibration = btn('Cancel calibration', false, 'calibration-cancel');
+        cancelCalibration.disabled = !canManage || calibration.state === 'cancelling';
+        cancelCalibration.addEventListener('click', function () {
+          send('/calibration/cancel', 'POST', {}).then(function (result) {
+            if (!result.ok) { toast(why(result)); return; }
+            status.calibration = result.data; schedulePoll(); render();
+          });
+        });
+        buttons.appendChild(cancelCalibration);
+      }
       box.appendChild(note('Calibration ' + calibration.state + ': ' + (calibration.done || 0) + '/' + (calibration.total || 0) + '. ' + (calibration.detail || 'Questions and labels stay on this machine; uses your installed GPU model.'), 'dim'));
     }
-    box.appendChild(buttons);
-    if (status.laya_test_running) box.appendChild(note('Testing — this loads the model once and asks it one question.', 'dim'));
-    box.appendChild(testResult(status.tests && status.tests.laya, 'ac-laya-test'));
-    if (status.apple_silicon && laya.state !== 'installing') box.appendChild(buildExisting(laya));
-    box.appendChild(buildDetails(laya));
-    return box;
   }
   function onClick(b, fn) { b.addEventListener('click', fn); return b; }
 
@@ -617,7 +632,7 @@
 
   /* ── polling, refresh, bootstrap ──────────────────────────────── */
   function busy(s) {
-    return !!(s.execution && s.execution.state === 'warming') || !!(s.calibration && s.calibration.state === 'running') || s.laya.state === 'installing' || !!(s.adopt && s.adopt.running) || !!s.laya_test_running;
+    return !!(s.execution && s.execution.state === 'warming') || !!(s.calibration && /^(running|warming|cancelling)$/.test(s.calibration.state)) || s.laya.state === 'installing' || !!(s.adopt && s.adopt.running) || !!s.laya_test_running;
   }
   function stopPoll() { if (pollTimer) clearInterval(pollTimer); pollTimer = null; }
   function schedulePoll() {

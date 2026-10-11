@@ -85,7 +85,8 @@ class CalibrationJob:
         if getattr(judge, "backend", None) != "laya" or not judge.ready:
             raise ValueError("The on-device answer check must be warm before calibration")
         with self._lock:
-            if self._status["state"] in {"running", "warming"}:
+            if (self._status["state"] in {"running", "warming", "cancelling"}
+                    or (self._thread is not None and self._thread.is_alive())):
                 raise ValueError("Calibration is already running")
             from superlocalmemory.core.calibration_control import CancelToken
 
@@ -107,6 +108,15 @@ class CalibrationJob:
             )
             self._thread.start()
         return self.status()
+
+    def cancel(self) -> dict:
+        """Cancel only the active run; publication and cancellation share a lock."""
+        with self._lock:
+            if self._status["state"] in {"running", "warming", "cancelling"}:
+                self._stop.set()
+                self._status = {**self._status, "state": "cancelling",
+                                "detail": "Cancelling calibration; previous settings kept"}
+            return dict(self._status)
 
     def stop(self, timeout: float = 1.0) -> None:
         with self._lock:
@@ -151,7 +161,8 @@ class CalibrationJob:
                     "embedding_status", "unmeasured") + ")"
             self._progress(state="complete", detail=detail, metrics=measured)
         except Exception as exc:
-            self._progress(state="failed", detail=str(exc)[:200])
+            self._progress(state="cancelled" if stop.cancel_requested else "failed",
+                           detail=str(exc)[:200])
         finally:
             self._progress(finished_at=time.time())
 

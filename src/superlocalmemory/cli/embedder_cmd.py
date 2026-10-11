@@ -232,6 +232,7 @@ def _calibrate(args: Namespace) -> None:
 _HANDLERS = {
     "calibrate": _calibrate,
     "calibration-status": _calibrate,
+    "calibration-cancel": _calibrate,
     "switch": _switch,
     "upgrade": _upgrade,
     "status": _status,
@@ -306,6 +307,7 @@ def register_embedder_parser(sub: Any) -> None:
     c.add_argument("--samples", type=int, default=32)
     _json_flag(c)
     _json_flag(esub.add_parser("calibration-status", help="local calibration progress"))
+    _json_flag(esub.add_parser("calibration-cancel", help="cancel calibration; keep settings"))
     for name, text in (
         ("status", "progress of the current or last switch"),
         ("rollback", "go back to the previous model (re-indexes)"),

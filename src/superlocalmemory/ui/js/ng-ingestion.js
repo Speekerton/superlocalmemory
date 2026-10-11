@@ -105,11 +105,23 @@
     }
   }
 
+  function adapterBadge(adapter) {
+    if (adapter.state === 'completed') return ['Import complete', 'ng-badge-success'];
+    if (adapter.state === 'failed') {
+      return [adapter.setup_error ? 'Setup needs attention' : 'Failed', 'ng-badge-error'];
+    }
+    if (adapter.state === 'running') return ['Running', 'ng-badge-success'];
+    return adapter.enabled ? ['Enabled (Stopped)', 'ng-badge-warning'] : ['Disabled', 'ng-badge-neutral'];
+  }
+
   function renderAdapterCard(adapter, info) {
     var isEnabled = adapter.enabled;
     var isRunning = adapter.running;
-    var statusText = adapter.state === 'completed' ? 'Import complete' : adapter.setup_error ? 'Setup needs attention' : isRunning ? 'Running' : (isEnabled ? 'Enabled (Stopped)' : 'Disabled');
-    var statusClass = isRunning ? 'ng-badge-success' : (isEnabled ? 'ng-badge-warning' : 'ng-badge-neutral');
+    // Text and colour both come from the state the API reports; a setup
+    // problem is only flagged for an adapter that is turned on.
+    var badge = adapterBadge(adapter);
+    var statusText = badge[0];
+    var statusClass = badge[1];
 
     return '<div class="ng-glass" style="padding:24px;margin-bottom:16px">' +
       // Header

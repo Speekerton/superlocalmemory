@@ -359,7 +359,12 @@ function answerCheckSummaryText(status) {
         return 'On this Mac · configured' + (status.mode === 'auto' ? ' (turned on by itself)' : '');
     }
     if (status.active === 'jev') {
-        var line = 'Online (' + providerName + ') · ready';
+        // No live health signal exists for the hosted check; the status carries
+        // only the last Test, so say that and never "ready".
+        var test = (status.tests || {}).jev;
+        var line = 'Online (' + providerName + ') · ' + (!test ? 'not tested yet'
+            : test.ok ? 'last test passed'
+            : 'last test failed' + (test.message ? ': ' + test.message : ''));
         if (jev.rerank && jev.rerank.active) line += ' · reordering on';
         return line;
     }

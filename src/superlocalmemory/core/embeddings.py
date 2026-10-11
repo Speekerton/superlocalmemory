@@ -216,7 +216,10 @@ class EmbeddingService:
     """
 
     def __init__(self, config: EmbeddingConfig) -> None:
+        from superlocalmemory.core.embedding_memory import PressurePause
+
         self._config = config
+        self._pressure_pause = PressurePause()
         self._lock = threading.Lock()
         self._worker_proc: subprocess.Popen | None = None
         self._available = True
@@ -726,52 +729,17 @@ class EmbeddingService:
         return result_container[0] if result_container else ""
 
     @staticmethod
-    def _check_memory_pressure() -> bool:
-        """Check if system has enough memory to spawn a worker.
+    def _check_memory_pressure(worker_pid: int | None = None) -> bool:
+        """Use cold-load headroom before spawn and resident footprint after inference."""
+        from superlocalmemory.core.embedding_memory import enough_memory
 
-        V3.3.28: Prevents spawning embedding workers (1.4 GB each) when
-        the system is already under memory pressure. Returns True if safe.
-        """
-        min_available_gb = float(os.environ.get("SLM_MIN_AVAILABLE_MEMORY_GB", "2.0"))
-        try:
-            if sys.platform == "darwin":
-                # macOS: free + inactive pages, the same two counters vm_stat
-                # prints, read in-process. This runs after every embed while
-                # the request lock is held, recall's query embedding included;
-                # starting a vm_stat process from a large multi-threaded daemon
-                # cost 15 ms idle and seconds under load on that path.
-                import psutil
+        return enough_memory(worker_pid)
 
-                vm = psutil.virtual_memory()
-                available_gb = (vm.free + vm.inactive) / (1024 ** 3)
-                if available_gb < min_available_gb:
-                    logger.warning(
-                        "Low memory (%.1f GB available, need %.1f GB) — "
-                        "deferring embedding worker spawn",
-                        available_gb, min_available_gb,
-                    )
-                    return False
-            else:
-                # Linux/other: use /proc/meminfo or psutil
-                try:
-                    with open("/proc/meminfo", encoding="utf-8") as f:
-                        for line in f:
-                            if line.startswith("MemAvailable:"):
-                                available_kb = int(line.split()[1])
-                                available_gb = available_kb / (1024 * 1024)
-                                if available_gb < min_available_gb:
-                                    logger.warning(
-                                        "Low memory (%.1f GB available) — "
-                                        "deferring embedding worker spawn",
-                                        available_gb,
-                                    )
-                                    return False
-                                break
-                except FileNotFoundError:
-                    pass  # Not Linux, allow through
-        except Exception:
-            pass  # On error, allow through (don't block functionality)
-        return True
+    def memory_status(self) -> dict:
+        """Why this service is paused, without loading a model or waiting for inference."""
+        from superlocalmemory.core.embedding_memory import guard_for
+
+        return guard_for(self).snapshot()
 
     def _ensure_worker(self) -> None:
         """Spawn worker subprocess if not running.
@@ -792,6 +760,11 @@ class EmbeddingService:
             # its own old flock until the acquire timeout expires.
             self._kill_worker()
 
+        from superlocalmemory.core.embedding_memory import guard_for
+
+        if not guard_for(self).may_start():
+            return
+
         # Serialize the check/spawn/register sequence across processes. Checking
         # the PID file without this lock allows two cold callers to both see no
         # worker and launch memory-heavy children.
@@ -808,8 +781,8 @@ class EmbeddingService:
         # V3.3.28: Check memory pressure before spawning
         if not self._check_memory_pressure():
             release_embedding_lock()
-            logger.warning("Skipping embedding worker spawn due to memory pressure")
-            self._available = False
+            guard_for(self).block()
+            self._available = None  # transient pressure; an explicit request can recover
             return
         if self.is_closed:
             # Shut down while the checks above ran.
@@ -937,20 +910,19 @@ class EmbeddingService:
     def _reset_idle_timer(self) -> None:
         """Reset the configurable worker-idle timer.
 
-        F5 fix: opportunistically evict the worker mid-window when memory
-        pressure is detected (``_check_memory_pressure`` returns False).
-        This prevents the idle-timeout window from holding a worker alive
-        while system memory is exhausted.
+        Eviction uses the resident footprint, and a pressure pause survives
+        availability resets until the cooldown and recovery margin are met.
         """
         if self._idle_timer is not None:
             self._idle_timer.cancel()
             self._idle_timer = None
         if self.is_closed:
             return
-        if not self._check_memory_pressure():
-            # Pressure detected — kill worker immediately; do not schedule a
-            # new idle timer so no further embedding work is attempted until
-            # the next explicit request reloads the worker.
+        pid = getattr(self._worker_proc, "pid", None)
+        if not self._check_memory_pressure(worker_pid=pid):
+            from superlocalmemory.core.embedding_memory import guard_for
+
+            guard_for(self).block(pid)
             self._kill_worker()
             self._idle_timer = None
             return

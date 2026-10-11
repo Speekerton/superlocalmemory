@@ -18,7 +18,6 @@ from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
@@ -454,6 +453,8 @@ class RetrievalResult:
     relevance_score: float | None = None
     ranking_score: float | None = None
     memory_confidence: float | None = None
+    match_confidence: float | None = None
+    confidence_basis: str = "unmeasured"
     rank_position: int = 0
     evidence_chain: list[str] = field(default_factory=list)
     trust_score: float = 0.5

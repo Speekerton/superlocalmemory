@@ -96,6 +96,15 @@ def _status_text(data: dict) -> str:
 
 def _switch(args: Namespace) -> None:
     body: dict[str, Any] = {"model_name": args.model}
+    if getattr(args, "task_prefixes", False):
+        from superlocalmemory.core.embedding_recipe import task_model
+
+        try:
+            body.update(
+                model_name=task_model(args.model), provider="sentence-transformers", dimension=768
+            )
+        except ValueError as exc:
+            _fail(args, "switch", str(exc))
     if args.dimension:
         body["dimension"] = args.dimension
     if args.provider:
@@ -111,8 +120,7 @@ def _switch(args: Namespace) -> None:
     job = data["job"]
     if not getattr(args, "json", False) and not args.no_wait:
         job = _wait_for_start(job)
-    _out(args, "switch", {**data, "job": job},
-         f"{data.get('detail', '')}\n{describe(job)}")
+    _out(args, "switch", {**data, "job": job}, f"{data.get('detail', '')}\n{describe(job)}")
     if job.get("state") == "failed":
         sys.exit(1)
 
@@ -181,7 +189,8 @@ def _upgrade(args: Namespace) -> None:
     if not getattr(args, "json", False):
         print(_plan_text(plan))
     if not _confirm_upgrade(args):
-        hint = "" if _is_tty() and not getattr(args, "json", False) else "Run again with --yes to start it."
+        hint = ("" if _is_tty() and not getattr(args, "json", False)
+                else "Run again with --yes to start it.")
         if getattr(args, "json", False):
             _out(args, "upgrade", {"plan": plan, "started": False}, "")
         else:
@@ -260,6 +269,11 @@ def register_embedder_parser(sub: Any) -> None:
     esub = p.add_subparsers(dest="embedder_command", title="embedder subcommands")
     s = esub.add_parser("switch", help="re-index every memory with another model")
     s.add_argument("model", help="model name, e.g. nomic-ai/nomic-embed-text-v1.5")
+    s.add_argument(
+        "--task-prefixes",
+        action="store_true",
+        help="Nomic retrieval-v1: task prompts and opaque-token normalization (staged swap)",
+    )
     s.add_argument("--dimension", type=int, default=0, help="the model's vector size")
     s.add_argument("--provider", default="",
                    help="sentence-transformers | ollama | openai | slm-media (default: current)")

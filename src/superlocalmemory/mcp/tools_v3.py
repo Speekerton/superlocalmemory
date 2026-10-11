@@ -103,7 +103,9 @@ def register_v3_tools(server, get_engine: Callable) -> None:
             # A mode file naming another model: every engine stays on the live one
             # and the daemon re-indexes in the background (core/embedding_live.py).
             from superlocalmemory.core.embedding_reindex import (
-                pending_switch_message, space_changed)
+                pending_switch_message,
+                space_changed,
+            )
             needs_reindex = space_changed(old_config.embedding, config.embedding)
 
             reset_engine()
@@ -341,10 +343,12 @@ def register_v3_tools(server, get_engine: Callable) -> None:
         """
         try:
             import asyncio
+
             from superlocalmemory.mcp._daemon_proxy import choose_pool
             from superlocalmemory.mcp._recall_metadata import forward_recall_metadata
             from superlocalmemory.retrieval.temporal_utils import (
-                normalize_as_of, normalize_strict_boundary,
+                normalize_as_of,
+                normalize_strict_boundary,
             )
 
             # Normalize at MCP boundary before forwarding.
@@ -395,10 +399,12 @@ def register_v3_tools(server, get_engine: Callable) -> None:
                 results.append({
                     "fact_id": item.get("fact_id", ""),
                     "content": item.get("content", ""),
-                    "score": round(float(item.get("score", 0.0)), 4),
+                    "score": round(float(item.get("score") or 0.0), 4),
                     "relevance_score": round(
-                        float(item.get("relevance_score", item.get("score", 0.0))), 4
+                        float(item.get("relevance_score", item.get("score")) or 0.0), 4
                     ),
+                    "match_confidence": item.get("match_confidence"),
+                    "confidence_basis": item.get("confidence_basis", "unmeasured"),
                     "ranking_score": item.get("ranking_score"),
                     "confidence": round(float(item.get("confidence", 0.0)), 3),
                     "memory_confidence": round(
@@ -419,7 +425,8 @@ def register_v3_tools(server, get_engine: Callable) -> None:
                 "query_type": raw.get("query_type", "") if isinstance(raw, dict) else "",
                 "channel_weights": raw.get("channel_weights", {}) if isinstance(raw, dict) else {},
                 "total_candidates": raw.get("total_candidates", 0) if isinstance(raw, dict) else 0,
-                "retrieval_time_ms": round(float(raw.get("retrieval_time_ms", 0.0)) if isinstance(raw, dict) else 0.0, 1),
+                "retrieval_time_ms": round(
+                    float(raw.get("retrieval_time_ms", 0.0)) if isinstance(raw, dict) else 0.0, 1),
                 # M-10: the HTTP envelope's metadata in full (and any field
                 # added to it later), not a hand-picked subset.
                 **forward_recall_metadata(raw if isinstance(raw, dict) else {}),

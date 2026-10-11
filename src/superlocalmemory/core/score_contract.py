@@ -67,6 +67,9 @@ def finalize_score_contract(
         result.memory_confidence = memory_confidence
         result.confidence = memory_confidence
         result.rank_position = position
+        semantic = result.channel_scores.get("semantic")
+        result.match_confidence = _bounded(2 * semantic - 1) if semantic is not None else None
+        result.confidence_basis = "raw_semantic_evidence" if semantic is not None else "unmeasured"
 
     response.score_contract_version = "2"
     if verdict is None or not response.results:

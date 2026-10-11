@@ -20,12 +20,10 @@ Pure functions — no side effects, no DB access. Stdlib-only at import
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from superlocalmemory.core.config import CANONICAL_RECALL_LIMIT
 from superlocalmemory.retrieval.temporal_frame import relative_age, temporal_frame
-
 
 # ---------------------------------------------------------------------------
 # F-2: Per-fact content clamp
@@ -169,7 +167,8 @@ def media_object(source: dict) -> dict | None:
         "thumbnail_uri": f"slm://media/{media_id}/thumb" if media_id else None,
         "page": source.get("page"),
         "document_id": source.get("document_id"),
-        "citation": f"page {source.get('page')}" if kind == "page" and source.get("page") is not None else "",
+        "citation": (f"page {source.get('page')}"
+                     if kind == "page" and source.get("page") is not None else ""),
     }
 
 
@@ -249,7 +248,8 @@ def serialize_recall_response(
     """
     memory_map = memory_map or {}
     # T-inject: one shared "now" so every result's age label is consistent.
-    from datetime import datetime as _dt, timezone as _tz
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
     _now = _dt.now(_tz.utc)
     # None keeps kind_fields' own default; a caller that passed a value means it.
     _kind_kwargs = ({} if display_min_confidence is None
@@ -269,6 +269,8 @@ def serialize_recall_response(
             "relevance_score": round(
                 getattr(r, "relevance_score", r.score) or 0.0, 4
             ),
+            "match_confidence": getattr(r, "match_confidence", None),
+            "confidence_basis": getattr(r, "confidence_basis", "unmeasured"),
             "confidence": round(getattr(r, "confidence", 0.0), 4),
             "memory_confidence": round(
                 getattr(r, "memory_confidence", r.confidence) or 0.0, 4
@@ -301,7 +303,8 @@ def serialize_recall_response(
         # Only when asked, and only when the engine actually produced one —
         # an empty key would be indistinguishable from a marker that failed
         # to compute, and the hook validates before trusting anything anyway.
-        block = media_object(source_map[fact.memory_id]) if source_map and fact.memory_id in source_map else None
+        block = (media_object(source_map[fact.memory_id])
+                 if source_map and fact.memory_id in source_map else None)
         if block is not None:
             entry["media"] = block
         if include_marker:

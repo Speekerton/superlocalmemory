@@ -6,13 +6,10 @@ import hashlib as _hashlib
 import json as _json_mod
 import logging
 import threading
-import time
 from abc import ABC, abstractmethod
 from typing import Any, Callable
 
 # C-08: precomputed hash for the common "default" tenant — avoids sha256 on every request
-_DEFAULT_TENANT_HASH: str = _hashlib.sha256(b"default").hexdigest()
-
 from superlocalmemory.optimize.cache.exact import ExactCache
 from superlocalmemory.optimize.cache.invalidation import InvalidationEngine
 from superlocalmemory.optimize.cache.key_builder import CacheConfig, KeyBuilder
@@ -20,9 +17,11 @@ from superlocalmemory.optimize.cache.stampede import StampedeShield
 from superlocalmemory.optimize.metrics.counters import MetricsCollector
 from superlocalmemory.optimize.proxy.lifecycle import (
     CachedResponse,
-    ProxyRequest,
     ProviderResponse,
+    ProxyRequest,
 )
+
+_DEFAULT_TENANT_HASH: str = _hashlib.sha256(b"default").hexdigest()
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +93,10 @@ class _LazySemanticEmbedder:
                     from superlocalmemory.core.embeddings import EmbeddingService
 
                     config = SLMConfig.load()
-                    if config.embedding.provider == "slm-media":  # the managed model: not a built-in service
+                    name = getattr(config.embedding, "model_name", "")
+                    versioned = name.endswith("@retrieval-v1")
+                    if config.embedding.provider == "slm-media" or versioned:
+                        # Managed/versioned inputs go through the shared factory.
                         from superlocalmemory.core.engine_wiring import init_embedder
 
                         self._service = init_embedder(config)

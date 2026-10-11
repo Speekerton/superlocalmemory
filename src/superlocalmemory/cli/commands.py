@@ -1697,7 +1697,8 @@ def cmd_connect(args: Namespace) -> None:
             here = getattr(args, "here", False)
             profile = getattr(args, "profile", None)
             transport = getattr(args, "transport", "stdio")
-            daemon_port = getattr(args, "daemon_port", 8765)
+            from superlocalmemory.cli.deployment import runtime_port
+            daemon_port = getattr(args, "daemon_port", None) or runtime_port()
             verify = getattr(args, "verify", False)
             project = None
             if here:
@@ -3091,7 +3092,7 @@ _COMMAND_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
     ("Run SLM (daemon & dashboard)", [
         ("serve", "Start/stop the background daemon"),
         ("restart", "Restart the daemon (applies restart-only settings)"),
-        ("dashboard", "Open the web dashboard (localhost:8765)"),
+        ("dashboard", "Open the web dashboard on the configured daemon port"),
         ("mcp", "Start the MCP server (used by IDEs)"),
         ("remote", "Let other computers use this SLM over HTTPS with revocable keys"),
         ("warmup", "Pre-load models so the first recall is fast"),
@@ -4413,9 +4414,10 @@ def cmd_dashboard(args: Namespace) -> None:
     ensures the daemon is running and opens the browser. It does NOT
     start a separate server (saves ~500MB RAM from duplicate engine).
     """
-    from superlocalmemory.cli.daemon import ensure_daemon, _get_port
+    from superlocalmemory.cli.daemon import ensure_daemon
+    from superlocalmemory.cli.deployment import runtime_port
 
-    port = getattr(args, "port", None) or _get_port()
+    port = getattr(args, "port", None) or runtime_port()
 
     print("  SuperLocalMemory V4 — Web Dashboard")
     print(f"  Starting daemon if needed...")

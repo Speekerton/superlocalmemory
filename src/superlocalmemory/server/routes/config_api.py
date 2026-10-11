@@ -288,9 +288,11 @@ def get_daemon_config():
     """Return current daemon configuration."""
     try:
         data = _read_config()
+        from superlocalmemory.cli.deployment import configured_port
         return {
             "idle_timeout": data.get("daemon_idle_timeout", 0),
-            "port": data.get("daemon_port", 8765),
+            "port": configured_port(data.get("daemon_port")),
+            "configured_port": data.get("daemon_port", 8765),
             "legacy_port": data.get("daemon_legacy_port", 8767),
             "enable_legacy_port": data.get("daemon_enable_legacy_port", True),
         }

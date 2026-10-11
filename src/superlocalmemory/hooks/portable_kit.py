@@ -626,8 +626,15 @@ def _build_server_block(
         url = base_url + (f"?profile={profile}" if profile else "")
         return {"type": "stdio", "command": "mcp-remote", "args": [url]}
 
-    # Default: stdio — preserve existing behavior exactly
+    # Host applications do not inherit the activating shell's virtualenv PATH.
     block = copy.deepcopy(desc.server_block)
+    if block.get("command") == "slm":
+        block["command"] = sys.executable
+        block["args"] = ["-m", "superlocalmemory.cli", *block.get("args", [])]
+    from superlocalmemory.infra.data_root import canonical_data_root
+    block.setdefault("env", {}).update(
+        SLM_MCP_HOST=desc.ide_id, SLM_DATA_DIR=str(canonical_data_root()),
+    )
     if profile:
         block.setdefault("env", {})["SLM_MCP_PROFILE"] = profile
     return block

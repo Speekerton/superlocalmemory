@@ -41,6 +41,7 @@ from fastapi.testclient import TestClient
 
 def _make_app(monkeypatch, tmp_path: Path) -> TestClient:
     """Create a TestClient wired to config_api.router with MEMORY_DIR mocked."""
+    monkeypatch.delenv("SLM_DAEMON_PORT", raising=False)
     # Import lazily so monkeypatch fires first
     monkeypatch.setattr(
         "superlocalmemory.server.routes.config_api.MEMORY_DIR", tmp_path

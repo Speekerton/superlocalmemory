@@ -327,6 +327,9 @@ def ensure_profile_in_json(name: str, description: str = "") -> None:
     """Ensure a profile entry exists in profiles.json (idempotent)."""
     from datetime import datetime
 
+    from superlocalmemory.core import profile_tombstones
+
+    profile_tombstones.clear(MEMORY_DIR, name)  # an explicit creation lifts an erasure
     config = _load_profiles_json()
     profiles = config.get("profiles", {})
     if name not in profiles:
@@ -357,8 +360,16 @@ def sync_profiles() -> list[dict]:
 
     changed = False
 
-    # JSON-only → add to SQLite (fixes Dashboard-created profiles)
+    # JSON-only → add to SQLite (fixes Dashboard-created profiles). An erased
+    # workspace's leftover entry is dropped instead: it must not come back.
+    from superlocalmemory.core import profile_tombstones
+
+    erased = profile_tombstones.erased_digests(MEMORY_DIR)
     for key in json_keys - db_ids:
+        if profile_tombstones.digest(key) in erased:
+            json_profiles.pop(key, None)
+            changed = True
+            continue
         ensure_profile_in_db(key, json_profiles[key].get("description", ""))
 
     # SQLite-only → add to profiles.json (fixes CLI-created profiles)

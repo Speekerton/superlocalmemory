@@ -217,12 +217,16 @@ Configure the schedule in **Settings** → **Backup Configuration**:
 
 ### Export
 
-Click the **download icon** in the sidebar to export a compressed `.gz` backup
-file. This is `POST /api/backup/export` — it creates a single gzipped
-`memory-*.db` snapshot (`memory.db`-only) via `BackupManager` and streams it as
-a temporary `*.db.gz` (removed after the response). Not a coherent whole-root
-export; for a whole-root copy stop the daemon and copy the data-root store set
-offline.
+Click **Export backup (.tar.gz)** on the Backup page. This is
+`POST /api/backup/export`: one archive holding the coordinated backup set (every
+managed store, copied under one fence, with its checksum manifest), the picture
+and document originals, and `EXPORT-MANIFEST.json`, which lists what is inside and
+what is left out on purpose. Every checksum is read back from the finished archive
+before the download is offered. `config.json` (it can hold provider API keys) and
+the identity and access secrets are never bundled; copy `config.json` yourself if
+you want your settings. The archive is a temporary file, removed after the
+response, created readable by you only. There is no one-click restore: unpack it
+and restore the stores with the daemon stopped.
 
 ---
 

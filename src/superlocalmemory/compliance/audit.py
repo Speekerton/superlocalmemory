@@ -308,8 +308,9 @@ class AuditChain:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         limit: int = 100,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
-        """Query audit events with filters.
+        """Query audit events with filters, one page at a time.
 
         Args:
             profile_id: Filter by profile ID.
@@ -318,37 +319,19 @@ class AuditChain:
             start_date: ISO date string for range start.
             end_date: ISO date string for range end.
             limit: Maximum number of events to return.
+            offset: Events to skip (newest first), for paging.
 
         Returns:
             List of event dicts ordered by id descending.
         """
-        clauses: list[str] = []
-        params: list[Any] = []
-
-        if profile_id is not None:
-            clauses.append("profile_id = ?")
-            params.append(profile_id)
-        if agent_id is not None:
-            clauses.append("agent_id = ?")
-            params.append(agent_id)
-        if operation is not None:
-            clauses.append("operation = ?")
-            params.append(operation)
-        if start_date is not None:
-            clauses.append("timestamp >= ?")
-            params.append(start_date)
-        if end_date is not None:
-            clauses.append("timestamp <= ?")
-            params.append(end_date)
-
-        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        where, params = self._filters(profile_id, agent_id, operation, start_date, end_date)
         sql = (
             f"SELECT id, timestamp, operation, agent_id, profile_id, "
             f"content_hash, prev_hash, event_hash, metadata, hash_version "
             f"FROM audit_chain {where} "
-            f"ORDER BY id DESC LIMIT ?"
+            f"ORDER BY id DESC LIMIT ? OFFSET ?"
         )
-        params.append(limit)
+        params.extend([max(0, int(limit)), max(0, int(offset))])
 
         with self._lock:
             conn = self._get_conn()
@@ -358,18 +341,44 @@ class AuditChain:
             finally:
                 self._release_conn(conn)
 
-    def count(self, profile_id: Optional[str] = None) -> int:
-        """Number of entries (for one workspace when given), without loading them."""
-        sql = "SELECT COUNT(*) FROM audit_chain"
-        params: tuple = ()
-        if profile_id is not None:
-            sql += " WHERE profile_id = ?"
-            params = (profile_id,)
-        conn = self._get_conn()
-        try:
-            return int(conn.execute(sql, params).fetchone()[0])
-        finally:
-            self._release_conn(conn)
+    @staticmethod
+    def _filters(
+        profile_id: Optional[str], agent_id: Optional[str], operation: Optional[str],
+        start_date: Optional[str], end_date: Optional[str],
+    ) -> tuple[str, list[Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        for column, op, value in (
+            ("profile_id", "=", profile_id), ("agent_id", "=", agent_id),
+            ("operation", "=", operation), ("timestamp", ">=", start_date),
+            ("timestamp", "<=", end_date),
+        ):
+            if value is not None:
+                clauses.append(f"{column} {op} ?")
+                params.append(value)
+        return (f"WHERE {' AND '.join(clauses)}" if clauses else ""), params
+
+    def count(
+        self,
+        profile_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        operation: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> int:
+        """How many events match, counted by the database and not by loading them.
+
+        The Compliance view used to ``len(query(limit=100000))`` for its header:
+        a hundred thousand rows loaded and discarded on every page view.
+        """
+        where, params = self._filters(profile_id, agent_id, operation, start_date, end_date)
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                return int(conn.execute(
+                    f"SELECT COUNT(*) FROM audit_chain {where}", params).fetchone()[0])
+            finally:
+                self._release_conn(conn)
 
     def verify_integrity(self) -> bool:
         """True when the whole chain verifies (see :meth:`verify_report`)."""

@@ -11,7 +11,7 @@
  *   POST /api/backup/connect/github     body: {pat, repo_name}
  *   DELETE /api/backup/disconnect/{id}
  *   POST /api/backup/sync
- *   POST /api/backup/export             → FileResponse (.db.gz download)
+ *   POST /api/backup/export             → FileResponse (.tar.gz: every store + originals + manifest)
  *   GET  /api/backup/oauth/github/start → OAuth redirect or PAT form
  *   GET  /api/backup/oauth/google/start → Google OAuth redirect
  *   GET/POST /api/backup/encryption, /api/backup/recovery-key (od-backup-encryption.js)
@@ -237,7 +237,8 @@
 
     var exportBtn = el('button', { type:'button' });
     exportBtn.className = 'btn ghost';
-    exportBtn.textContent = 'Export .db.gz';
+    exportBtn.textContent = 'Export backup (.tar.gz)';
+    exportBtn.title = 'One archive: every database below, picture and document originals, and a manifest of what is and is not inside. Settings and secrets are left out on purpose.';
     exportBtn.addEventListener('click', function () {
       doExport(exportBtn);
     });
@@ -637,7 +638,7 @@
         var link = document.createElement('a');
         var objectUrl = URL.createObjectURL(download.blob);
         link.href = objectUrl;
-        link.download = match ? match[1] : 'superlocalmemory-backup.db.gz';
+        link.download = match ? match[1] : 'superlocalmemory-backup.tar.gz';
         link.style.display = 'none';
         document.body.appendChild(link);
         link.click();

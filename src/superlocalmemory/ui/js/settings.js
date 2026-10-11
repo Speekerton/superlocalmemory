@@ -543,7 +543,7 @@ async function exportBackup() {
         var objectUrl = URL.createObjectURL(blob);
         var link = document.createElement('a');
         link.href = objectUrl;
-        link.download = match ? match[1] : 'superlocalmemory-backup.db.gz';
+        link.download = match ? match[1] : 'superlocalmemory-backup.tar.gz';
         link.style.display = 'none';
         document.body.appendChild(link);
         link.click();

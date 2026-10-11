@@ -19,6 +19,10 @@ def _memory_db(root: Path) -> DatabaseManager:
     mgr = DatabaseManager(root / "memory.db")
     mgr.initialize(real_schema)
     mgr.execute("INSERT OR IGNORE INTO profiles (profile_id, name) VALUES ('alice', 'Alice')")
+    # Alice is the only profile on this computer, so the whole code graph is hers
+    # (with another profile present the export is scoped to her own links: see
+    # test_gdpr_export_scopes_the_code_graph).
+    mgr.execute("DELETE FROM profiles WHERE profile_id <> 'alice'")
     return mgr
 
 

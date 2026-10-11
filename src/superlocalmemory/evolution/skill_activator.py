@@ -31,10 +31,10 @@ import json
 import logging
 import os
 import re
-import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
+from superlocalmemory.evolution import backup_files
 from superlocalmemory.infra.data_root import canonical_data_root
 
 logger = logging.getLogger(__name__)
@@ -131,7 +131,10 @@ class SkillActivator:
     def _backup_path(self, skill_name: str) -> Path:
         safe = self._safe_skill_dir(skill_name, self._backup_root)
         digest = hashlib.sha256(skill_name.encode()).hexdigest()[:16]
-        return safe.with_name(f"{safe.name}-{digest}") / "SKILL.md.bak"
+        backup = safe.with_name(f"{safe.name}-{digest}") / "SKILL.md.bak"
+        backup_files.checked(backup, self._backup_root)
+        backup_files.checked(backup.with_suffix(".target.json"), self._backup_root)
+        return backup
 
     # ------------------------------------------------------------------
     # Public API
@@ -170,9 +173,8 @@ class SkillActivator:
         }
 
     def _backup_live(self, live_path, backup_path):
-        backup_path.parent.mkdir(parents=True, exist_ok=True)
         if live_path.exists():
-            shutil.copy2(live_path, backup_path)
+            backup_files.write(backup_path, live_path.read_bytes(), self._backup_root)
             return True
         return False
 
@@ -190,7 +192,7 @@ class SkillActivator:
         """Restore the complete identity's recorded host target."""
         backup_path, live_path = self._rollback_paths(skill_name)
         if backup_path.exists():
-            self._atomic_write(live_path, backup_path.read_bytes())
+            self._atomic_write(live_path, backup_files.read(backup_path, self._backup_root))
             restored = str(backup_path)
         elif live_path.exists():
             live_path.unlink()
@@ -210,8 +212,12 @@ class SkillActivator:
         if not backup.exists() and not manifest.exists():
             backup = self._safe_skill_dir(skill_name, self._backup_root) / "SKILL.md.bak"
             manifest = backup.with_suffix(".target.json")
+        backup_files.checked(backup, self._backup_root)
+        backup_files.checked(manifest, self._backup_root)
         if manifest.is_file():
-            live = self._source_target(json.loads(manifest.read_text())["live_path"])
+            live = self._source_target(
+                json.loads(backup_files.read(manifest, self._backup_root))["live_path"]
+            )
         else:
             live = self._safe_skill_dir(skill_name, self._live_root) / "SKILL.md"
         return backup, live
@@ -232,4 +238,6 @@ class SkillActivator:
 
     def _remember_target(self, backup_path, live_path):
         manifest = backup_path.with_suffix(".target.json")
-        manifest.write_text(json.dumps({"live_path": str(live_path)}), encoding="utf-8")
+        backup_files.write(
+            manifest, json.dumps({"live_path": str(live_path)}).encode(), self._backup_root
+        )

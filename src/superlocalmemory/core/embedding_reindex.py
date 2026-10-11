@@ -223,6 +223,8 @@ class ReindexRunner:
         return {"freed_vectors": freed, "previous": None}
 
     def status(self) -> dict:
+        from superlocalmemory.core.embedding_memory import runtime_status
+
         conn = self._conn()
         try:
             job = active_job(conn) or latest_job(conn)
@@ -231,7 +233,8 @@ class ReindexRunner:
             return {"job": public_view(job), "notice": self.notice,
                     "live": row["live_signature"] if row else None,
                     "previous": previous if previous and sp.has_previous(conn) else previous,
-                    "previous_vectors_kept": sp.has_previous(conn)}
+                    "previous_vectors_kept": sp.has_previous(conn),
+                    "worker": runtime_status(self.app_state)}
         finally:
             conn.close()
 

@@ -35,7 +35,11 @@ LEGACY_KEY = RemotePrincipal("legacy-api-key", "api_key", "api_key", "write", No
 
 
 @pytest.fixture(scope="module")
-def registry() -> dict[str, list[str]]:
+def registry(tmp_path_factory) -> dict[str, list[str]]:
+    """Audit the complete remote schema, including explicitly enabled media."""
+    catalog_root = tmp_path_factory.mktemp("remote-tool-catalog")
+    (catalog_root / "features.json").write_text(
+        json.dumps({"schema": 1, "media": {"enabled": True}}), encoding="utf-8")
     code = (
         "import asyncio, json\n"
         "from superlocalmemory.mcp.server import server\n"
@@ -43,7 +47,8 @@ def registry() -> dict[str, list[str]]:
         "print(json.dumps({t.name: sorted((t.input_schema or {}).get('properties', {}))"
         " for t in tools}))\n"
     )
-    env = {**os.environ, "SLM_MCP_ALL_TOOLS": "1", "PYTHONPATH": str(REPO / "src")}
+    env = {**os.environ, "SLM_MCP_ALL_TOOLS": "1", "PYTHONPATH": str(REPO / "src"),
+           "SLM_DATA_DIR": str(catalog_root)}
     out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True,
                          text=True, timeout=240, check=True)
     return json.loads(out.stdout.strip().splitlines()[-1])

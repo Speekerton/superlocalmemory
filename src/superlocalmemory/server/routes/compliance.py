@@ -13,11 +13,12 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from superlocalmemory.infra.data_root import DynamicStatePath
 from superlocalmemory.server.route_mutations import authorize_route_mutation
 from superlocalmemory.storage.memory_write import memory_write
 
 from .export_delivery import export_response
-from .helpers import DB_PATH, MEMORY_DIR, get_active_profile, get_engine_lazy
+from .helpers import DB_PATH, get_active_profile, get_engine_lazy
 
 logger = logging.getLogger("superlocalmemory.routes.compliance")
 router = APIRouter()
@@ -26,7 +27,7 @@ router = APIRouter()
 # (core/engine_wiring.py). The route MUST read that same file — an earlier
 # "audit.db" path pointed at a file nothing ever wrote, so the Compliance tab
 # always showed zero events.
-AUDIT_DB = MEMORY_DIR / "audit_chain.db"
+AUDIT_DB = DynamicStatePath("audit_chain.db")
 
 # Feature detection
 COMPLIANCE_AVAILABLE = False

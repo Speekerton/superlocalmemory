@@ -32,6 +32,7 @@ from superlocalmemory.optimize.compress.ccr import _UUID4_RE, CCRStore
 from superlocalmemory.optimize.compress.router import CompressRouter as CompressRouter
 from superlocalmemory.optimize.compress.router import CompressTextResult as CompressTextResult
 from superlocalmemory.optimize.storage.db import CacheDB, _normalize_tenant_id
+from superlocalmemory.optimize.storage.provenance import active_profile_id
 
 logger = logging.getLogger("slm.mcp.tools_optimize")
 
@@ -116,7 +117,13 @@ def register_optimize_tools(server) -> None:
         from superlocalmemory.mcp.compression_service import CompressionContext, compress
 
         ctx = CompressionContext(
-            CompressRouter, CompressTextResult, CCRStore, CacheDB, _tenant(), _MAX_COMPRESS_BYTES
+            CompressRouter,
+            CompressTextResult,
+            CCRStore,
+            CacheDB,
+            _tenant(),
+            _MAX_COMPRESS_BYTES,
+            active_profile_id(),
         )
         return compress(ctx, content, mode, reversible, ttl_seconds)
 
@@ -199,6 +206,7 @@ def register_optimize_tools(server) -> None:
                 model="mcp-kv",
                 ttl_expires=ttl_exp,
                 tags=["mcp-kv"],
+                profile_id=active_profile_id(),
             )
             # ``tag_json`` is descriptive only; tag invalidation joins the
             # normalized llmcache_tags index.  CacheManager registers that

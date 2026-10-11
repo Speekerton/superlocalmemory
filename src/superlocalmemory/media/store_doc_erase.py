@@ -109,6 +109,25 @@ class DocumentEraseMixin:
                 pass
         return removed
 
+    def detach_document_sources(self, document_ids: Sequence[str]) -> list[dict[str, Any]]:
+        """Forget the stored original of these documents (and any document sharing the same file).
+
+        Returns each distinct original's ``{"sha256", "source_relpath"}``; the caller removes
+        the file. The pages that remain keep their pictures and text, not their source.
+        """
+        rels: dict[str, str] = {}
+        with self._write() as conn:
+            for chunk in _chunks(document_ids):
+                for r in conn.execute(
+                        f"SELECT sha256, source_relpath FROM documents WHERE document_id IN "
+                        f"({_marks(len(chunk))}) AND source_relpath IS NOT NULL "
+                        "AND source_relpath != ''", chunk).fetchall():
+                    rels[r[1]] = r[0]
+            for rel in rels:
+                conn.execute("UPDATE documents SET source_relpath = '' WHERE source_relpath = ?",
+                             (rel,))
+        return [{"sha256": sha, "source_relpath": rel} for rel, sha in sorted(rels.items())]
+
     def document_file_in_use(self, source_relpath: str | None) -> bool:
         return bool(source_relpath and self._read().execute(
             "SELECT 1 FROM documents WHERE source_relpath = ? LIMIT 1", (source_relpath,)).fetchone())

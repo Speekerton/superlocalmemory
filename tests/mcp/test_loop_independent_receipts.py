@@ -155,12 +155,7 @@ async def test_waits_for_independent_receipt_with_unpredictable_output(tmp_path)
 
     from superlocalmemory.loops.execution_receipts import command_digest, run_check
 
-    conn = sqlite3.connect(":memory:", check_same_thread=False, isolation_level=None)
-    conn.row_factory = sqlite3.Row
-    conn.executescript(
-        "CREATE TABLE IF NOT EXISTS profiles(profile_id TEXT PRIMARY KEY); "
-        "INSERT OR IGNORE INTO profiles VALUES ('default');"
-    )
+    conn = _threaded_receipt_connection()
     db = SimpleNamespace(execute=lambda sql, p=(): conn.execute(sql, p).fetchall())
     command = [sys.executable, "-I", "-c", "import uuid; print(uuid.uuid4())"]
     contract = {

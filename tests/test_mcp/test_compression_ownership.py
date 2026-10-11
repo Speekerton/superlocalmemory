@@ -80,3 +80,22 @@ async def test_mcp_compression_preserves_existing_proxy_totals(compression):
     assert stats["cache_proxy_misses"] == 3
     assert stats["compress_runs"] == 9
     assert stats["tokens_saved_compress"] > 100
+
+
+@pytest.mark.asyncio
+async def test_recovery_copy_preserves_profile_erasure_ownership(compression, monkeypatch):
+    from superlocalmemory.optimize.storage.erasure import erase_profile
+
+    monkeypatch.setitem(
+        register_optimize_tools.__globals__, "active_profile_id", lambda: "owner-profile"
+    )
+    tools, db, _ = compression
+    result = await tools["slm_compress"]("A long narrative sentence. " * 80)
+    row = db._db.execute(
+        "SELECT profile_id FROM llmcache_ccr_originals WHERE ccr_id=?",
+        (result["ccr_id"],),
+    )[0]
+    assert row["profile_id"] == "owner-profile"
+    erased = erase_profile(db, "owner-profile")
+    assert erased.originals == 1 and not erased.failed
+    assert not (await tools["slm_retrieve"](result["ccr_id"]))["ok"]

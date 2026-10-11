@@ -81,7 +81,7 @@ async def compliance_status(request: Request):
             audit = AuditChain(str(AUDIT_DB))
             recent_audit_events = audit.query(profile_id=profile, limit=30)
             # get_stats() is global; count this profile's rows for the header.
-            audit_events_count = len(audit.query(profile_id=profile, limit=100000))
+            audit_events_count = audit.count(profile_id=profile)
         except Exception as exc:
             logger.debug("audit chain: %s", exc)
 
@@ -123,8 +123,13 @@ async def query_audit_trail(
     limit: int = Query(default=50, ge=1, le=500),
     event_type: Optional[str] = Query(default=None),
     since: Optional[str] = Query(default=None),
+    offset: int = Query(default=0, ge=0),
 ):
-    """Query audit trail events with optional filters."""
+    """Query audit trail events with optional filters, a page at a time.
+
+    ``total`` is how many events match (counted by the database); ``events`` is
+    the page of at most ``limit`` starting at ``offset``, newest first.
+    """
     if not COMPLIANCE_AVAILABLE:
         return {"available": False, "error": "Compliance engine not available"}
     # The audit trail reveals operations, actors, and fact_ids. This GET is not
@@ -139,15 +144,18 @@ async def query_audit_trail(
         audit = AuditChain(str(AUDIT_DB))
         events = audit.query(
             profile_id=profile, operation=event_type, start_date=since,
-            limit=limit,
+            limit=limit, offset=offset,
         )
+        matching = audit.count(profile_id=profile, operation=event_type, start_date=since)
         chain_ok = True
         try:
             chain_ok = audit.verify_integrity()
         except Exception:
             pass
         return {
-            "available": True, "events": events, "total": len(events),
+            "available": True, "events": events, "total": matching,
+            "returned": len(events), "offset": offset,
+            "has_more": offset + len(events) < matching,
             "chain_verified": chain_ok, "active_profile": profile,
             "filters": {"event_type": event_type, "since": since, "limit": limit},
         }
@@ -159,36 +167,58 @@ async def query_audit_trail(
 def _erasure_succeeded(result: dict) -> bool:
     """One place that decides, so the surfaces cannot disagree.
 
-    The erasure reports two things, because they are two questions: whether the
-    data is gone, and whether that can be shown afterwards. This route used to
-    inline its own list of failure markers and the CLI used a different one, so
-    the API could say failure while the command line printed COMPLETE for the
-    same erasure.
-
-    Anything that leaves either question unanswered is a failure here. A caller
-    that wants the finer distinction reads ``erasure_complete`` and
-    ``erasure_provable`` from the body, which are both in it.
+    The verdict lives in ``compliance.erasure_outcome`` and is shared with the
+    command line: two questions (is the data gone; can that be shown afterwards)
+    and every ``*_failed`` / ``*_failures`` / residue marker the erasure leaves.
     """
-    markers = (
-        "vector_store_failures",
-        "audit_completion_failed",
-        "audit_request_failed",
-        "receipt_persist_failed",
-        "table_delete_failures",
-        "code_graph_failed",
-        "fact_expansion_fts_failed",
-        "working_sets_failed",
-        "residue_recount_failed",
-        "backup_scan_failed",
+    from superlocalmemory.compliance.erasure_outcome import erasure_succeeded
+
+    return erasure_succeeded(result)
+
+
+def _erasure_response(profile_key: str, profile: str, result: dict, **extra) -> dict:
+    """The body every erasure route returns: the counts, plus a statement of the outcome.
+
+    ``erasure_report`` says what was removed and what remains and how to retry
+    it; ``error`` carries one sentence of the same when the erasure is not
+    complete, which is where the dashboard reads a failure from.
+    """
+    from superlocalmemory.compliance import erasure_outcome
+
+    result = dict(result or {})
+    ok = erasure_outcome.erasure_succeeded(result)
+    body = {"success": ok, profile_key: profile, **extra, **result,
+            "erasure_report": erasure_outcome.describe(result)}
+    if not ok:
+        body["error"] = erasure_outcome.failure_message(result) or "The erasure did not finish."
+    return body
+
+
+async def _leave_profile_to_erase(request: Request, profile: str) -> str:
+    """Move the running service off ``profile``; returns "" or the reason it could not.
+
+    Nothing has been erased when this fails, and the answer says so.
+    """
+    import asyncio
+
+    from superlocalmemory.server.profile_runtime import (
+        commit_daemon_profile_switch,
+        get_profile_runtime,
     )
-    if any(result.get(marker) for marker in markers):
-        return False
-    # Present on the profile path; absent on the entity path, where its absence
-    # must not be read as a failure.
-    for verdict in ("erasure_complete", "erasure_provable"):
-        if verdict in result and not result.get(verdict):
-            return False
-    return True
+
+    try:
+        runtime = get_profile_runtime(request.app.state)
+        if runtime.snapshot.profile_id != profile:
+            return ""
+        await asyncio.to_thread(
+            runtime.transition, "default",
+            lambda prior, target: commit_daemon_profile_switch(request.app.state, prior, target),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("could not leave the profile to erase: %s", type(exc).__name__)
+        return ("The service could not move off this profile (it is busy). Nothing was erased; "
+                "try again in a moment.")
+    return ""
 
 
 @router.post("/api/compliance/retention-policy")
@@ -397,11 +427,16 @@ async def gdpr_erase(request: Request, data: dict = {}):
             source_agent_id="http-gdpr-erase",
             profile_id=profile,
         )
+        # Move the service off the profile BEFORE erasing it. Left active, every
+        # request files the workspace row and its writes under that name again,
+        # so the erased workspace came back at the next page load; and nothing
+        # may be writing to a profile while it is erased.
+        moved = await _leave_profile_to_erase(request, profile)
+        if moved:
+            return {"success": False, "error": moved}
         result = GDPRCompliance(engine._db, engine=engine).forget_profile(profile)
         authorization.complete()
-        result = result or {}
-        success = _erasure_succeeded(result)
-        return {"success": success, "active_profile": profile, **result}
+        return _erasure_response("active_profile", profile, result)
     except HTTPException:
         # A refusal (401/403) is the answer, not a failure of the erase.
         raise
@@ -455,12 +490,7 @@ async def gdpr_erase_entity(request: Request, data: dict = {}):
         )
         result = GDPRCompliance(engine._db, engine=engine).forget_entity(entity_name, profile)
         authorization.complete()
-        result = result or {}
-        success = _erasure_succeeded(result)
-        return {
-            "success": success, "active_profile": profile,
-            "entity_name": entity_name, **result,
-        }
+        return _erasure_response("active_profile", profile, result, entity_name=entity_name)
     except HTTPException:
         # A refusal (401/403) is the answer, not a failure of the erase.
         raise

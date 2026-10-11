@@ -74,6 +74,7 @@ hash and the newest matching execution. A newer failure supersedes an older
 pass for the same run. Give each verification job its own run ID.
 
 Receipt rows are append-only and cannot be populated through `remember`.
+Deleting their owning profile cascades to its receipts.
 Missing, self-authored, failed, stale, wrong-run or mismatched evidence cannot
 produce `DONE`; the watcher halts at its configured bound. `require_support`
 also requires the answer check to support the recalled context.

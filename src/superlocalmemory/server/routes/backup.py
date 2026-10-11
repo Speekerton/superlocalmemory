@@ -8,17 +8,16 @@ Routes:
   Cloud:  /api/backup/destinations, /api/backup/connect/github, /api/backup/connect/gdrive,
           /api/backup/disconnect/{id}, /api/backup/sync, /api/backup/export
 """
-import gzip
 import hashlib
 import hmac
 import html as _html
 import logging
 import secrets
-import shutil
 import tempfile
 import threading
 import time
 import urllib.parse
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
@@ -400,47 +399,42 @@ def sync_cloud(request: Request):
 
 @router.post("/api/backup/export")
 def export_backup(request: Request):
-    """Create and download a compressed backup archive.
+    """Create and download ONE archive of the whole recovery unit.
 
-    Export is a credentialed mutation because it creates a local snapshot.
-    The compressed transport file is temporary and is removed after the
-    response completes; the normal retention policy owns the snapshot itself.
+    The archive holds the coordinated backup set (every managed store with its
+    checksum manifest), the picture and document originals, and an
+    ``EXPORT-MANIFEST.json`` naming what is included and what is left out on
+    purpose (settings that can hold API keys, secrets). Checksums are read back
+    from the finished archive before it is offered. It is a credentialed
+    mutation because it creates a local snapshot set; the transport file is
+    temporary and removed after the response.
     """
     _require_manage(request)
     if not BACKUP_AVAILABLE:
         raise HTTPException(status_code=501, detail="Backup module not available")
 
-    manager = _get_backup_manager()
-    filename = manager.create_backup(label="export")
-    if not filename:
-        raise HTTPException(status_code=500, detail="Failed to create backup")
+    from datetime import datetime, timezone
 
-    backup_path = MEMORY_DIR / "backups" / filename
-    if not backup_path.exists():
-        raise HTTPException(status_code=500, detail="Backup file not found")
+    from superlocalmemory.infra.backup_archive import build_export
 
-    # Compress into a one-response transport file. Never retain another full
-    # copy beside the bounded snapshot set.
-    with tempfile.NamedTemporaryFile(
-        prefix="slm-export-",
-        suffix=".db.gz",
-        dir=backup_path.parent,
-        delete=False,
-    ) as temp_file:
-        gz_path = backup_path.parent / temp_file.name
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    backup_dir = MEMORY_DIR / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(prefix="slm-export-", suffix=".tar.gz", dir=backup_dir,
+                                     delete=False) as temp_file:
+        archive = backup_dir / Path(temp_file.name).name
     try:
-        with open(backup_path, "rb") as f_in:
-            with gzip.open(gz_path, "wb") as f_out:
-                shutil.copyfileobj(f_in, f_out)
+        manifest = build_export(MEMORY_DIR, archive)
     except Exception:
-        gz_path.unlink(missing_ok=True)
-        raise
+        archive.unlink(missing_ok=True)
+        raise _internal_error("Backup export error")
 
     return FileResponse(
-        path=str(gz_path),
+        path=str(archive),
         media_type="application/gzip",
-        filename=f"{backup_path.name}.gz",
-        background=BackgroundTask(gz_path.unlink, missing_ok=True),
+        filename=f"slm-backup-{stamp}.tar.gz",
+        headers={"X-SLM-Stores": ",".join(s["name"] for s in manifest["stores"])},
+        background=BackgroundTask(archive.unlink, missing_ok=True),
     )
 
 

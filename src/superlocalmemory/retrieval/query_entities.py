@@ -140,7 +140,7 @@ def extract_query_entities(query: str) -> list[str]:
 
     candidates: list[str] = []
     seen: set[str] = set()
-    for name in extract_mentions(query or ""):
+    for name in extract_mentions(query or "", question=True):
         lo = name.lower()
         if lo not in seen and lo not in _ENTITY_STOP and len(name) >= 2:
             seen.add(lo)

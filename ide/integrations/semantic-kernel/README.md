@@ -11,9 +11,11 @@ SLM providers, connectors, backup, and downloads have separate network behavior.
 ## Prerequisites
 
 - Python >=3.12,<3.15 (3.12, 3.13, 3.14)
-- [SuperLocalMemory](https://github.com/qualixar/superlocalmemory) installed in the same environment
+- [SuperLocalMemory](https://github.com/qualixar/superlocalmemory) installed in a **separate** virtual environment; set `SLM_ENGINE_PYTHON` to its Python executable
 - `semantic-kernel >= 1.34.0` (the post-1.34 vector-store API)
 - Supported platforms: Apple Silicon macOS, 64-bit Windows, 64-bit Linux — Intel Mac and 32-bit Windows (Win32) are outside the SuperLocalMemory support contract (`cryptography==50.0.0` has no wheel for those architectures).
+
+The isolated installation recipe is in [framework-adapters.md](../../../docs/framework-adapters.md). These adapters do not install the SLM runtime into the framework environment. Close owned service/backend/collection resources when finished.
 
 ## Installation
 
@@ -48,6 +50,7 @@ await collection.ensure_collection_exists()
 await collection.upsert(Doc(id="d1", text="hello world"))
 doc = await collection.get("d1")
 await collection.delete("d1")
+collection.close()
 ```
 
 ## Status and scope

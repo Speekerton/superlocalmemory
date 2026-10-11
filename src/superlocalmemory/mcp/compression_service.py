@@ -17,6 +17,7 @@ class CompressionContext:
     cache: Any
     tenant: str
     max_bytes: int
+    profile_id: str
 
 
 def _compress(ctx, content, mode, notes):
@@ -38,7 +39,10 @@ def _recoverable(ctx, content, reversible, ttl, notes):
     if not reversible:
         return None
     stored = ctx.ccr.get_instance().store(
-        content.encode("utf-8"), tenant_id=ctx.tenant, ttl_seconds=ttl
+        content.encode("utf-8"),
+        tenant_id=ctx.tenant,
+        ttl_seconds=ttl,
+        profile_id=ctx.profile_id,
     )
     notes.append(
         "reversible: call slm_retrieve with this ccr_id"

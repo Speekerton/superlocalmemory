@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from superlocalmemory.storage.database import DatabaseManager
 
 from superlocalmemory.core.receipt_guard import keeps_own_fact
+from superlocalmemory.encoding.entity_validity import valid_names
 from superlocalmemory.storage.erasure_fence import is_erasing
 from superlocalmemory.storage.models import (
     AtomicFact,
@@ -468,7 +469,11 @@ def _drop_resurrected_facts(
         vec_store_ok = vector_store is not None and getattr(vector_store, "available", False)
         try:
             if vec_store_ok:
-                vector_store.delete(fid)
+                from superlocalmemory.retrieval.vector_store import classify_delete
+
+                if classify_delete(vector_store.delete(fid)).failed:
+                    logger.error(
+                        "resurrection undo: the vector of %s could not be removed", fid[:16])
             if ann_index is not None and hasattr(ann_index, "remove"):
                 ann_index.remove(fid)
             bm25 = getattr(retrieval_engine, "_bm25", None) if retrieval_engine else None
@@ -576,8 +581,9 @@ def run_store(
         try:
             from superlocalmemory.core.injection import is_low_quality
             if is_low_quality(content):
-                logger.debug("Store rejected (low-quality content): %s...",
-                             content[:80].replace("\n", " "))
+                # Rejected text is saved nowhere; a log line would be its only copy,
+                # and a log is not covered by an erasure.
+                logger.debug("Store rejected (low-quality content, %d chars)", len(content))
                 return []
         except Exception:
             pass  # Best-effort gate; store succeeds if import fails
@@ -1209,6 +1215,7 @@ def run_store_fact_direct(
             fact.fisher_mean, fact.fisher_variance = (
                 embedder.compute_fisher_params(fact.embedding)
             )
+    fact.entities = valid_names(list(fact.entities or []), fact.content)
     if entity_resolver and fact.entities:
         canonical = entity_resolver.resolve(
             fact.entities, profile_id,

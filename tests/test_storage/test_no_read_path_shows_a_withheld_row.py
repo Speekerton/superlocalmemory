@@ -307,7 +307,9 @@ class TestExportDoesNotSpreadThem:
         """
         import inspect
 
-        from superlocalmemory.server.routes import data_io
+        from superlocalmemory.server.routes import export_memories
 
-        src = inspect.getsource(data_io.export_memories)
+        # The query moved out of the route with the streaming export; the
+        # behavioural proof is tests/test_server/test_export_routes_on_a_real_store.py.
+        src = inspect.getsource(export_memories._query)
         assert "COALESCE(quarantined, 0) = 0" in src

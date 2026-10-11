@@ -20,17 +20,15 @@ from __future__ import annotations
 import io
 import json
 import os
-import sys
 import tempfile
 import time
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 # Module under test — import the internals we need to exercise
 from superlocalmemory.hooks.hook_handlers import (
     _ACTIVITY_LOG,
-    _LAST_CONSOLIDATION,
     _MARKER,
     _OBSERVE_COOLDOWN,
     _RECALL_INTERVAL,

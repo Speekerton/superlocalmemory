@@ -476,6 +476,7 @@ def run_wizard(auto: bool = False) -> None:
     """Run the supported wizard phases with this module's replaceable helpers."""
     from superlocalmemory.cli.setup_wizard_flow import run
     run(auto, sys.modules[__name__])
+
 # ---------------------------------------------------------------------------
 # First-use auto-trigger
 # ---------------------------------------------------------------------------

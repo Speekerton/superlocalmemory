@@ -5,12 +5,8 @@
 
 from __future__ import annotations
 
-import sqlite3
-import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from superlocalmemory.core.config import AutoInvokeConfig
 from superlocalmemory.hooks.auto_invoker import AutoInvoker

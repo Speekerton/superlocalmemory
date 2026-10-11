@@ -8,11 +8,8 @@ TDD RED phase: tests fail before implementation exists.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
-from unittest import mock
 
-import pytest
 
 
 class TestMigrationNotificationHelpers:
@@ -94,7 +91,6 @@ class TestMigrationFailureWritesErrorLog:
         # This tests the dispatch logic, not the full daemon startup
         from superlocalmemory.server.unified_daemon import (
             _write_migration_error_log,
-            _notify_migration_applied,
         )
 
         # Simulate a failed result

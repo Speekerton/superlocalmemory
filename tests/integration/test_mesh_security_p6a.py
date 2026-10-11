@@ -669,7 +669,6 @@ class TestOutboundSigning:
 
     def test_send_to_remote_adds_signature_headers(self, monkeypatch):
         """When a shared secret exists, send_to_remote adds X-Mesh-Sig headers."""
-        import json
         from unittest.mock import MagicMock, patch
 
         from superlocalmemory.mesh.remote_sync import RemoteSyncClient
@@ -874,7 +873,6 @@ class TestNonceBoundaryReplay:
     def test_nonce_at_exact_skew_boundary_not_pruned(self):
         """A nonce whose expiry == now must NOT be pruned (strict < means it stays)."""
         from superlocalmemory.mesh.broker_security import (
-            MESH_SIG_SKEW_SECONDS,
             _nonce_lock,
             _nonce_store,
             _prune_nonces,
@@ -949,7 +947,6 @@ class TestSQLiteNonceDurability:
 
     def test_clear_nonce_store_clears_sqlite_table(self, mesh_db):
         """_clear_nonce_store must also clear the SQLite mesh_nonces table."""
-        import sqlite3 as _sqlite3
         from superlocalmemory.mesh.broker import MeshBroker
         from superlocalmemory.mesh.broker_security import (
             _clear_nonce_store,

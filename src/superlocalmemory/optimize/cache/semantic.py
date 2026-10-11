@@ -28,7 +28,6 @@ import numpy as np
 
 from superlocalmemory.optimize.cache.boundary_store import (
     BoundaryStore,
-    PerItemBoundaryRecord,
 )
 from superlocalmemory.optimize.cache.centroid_store import (
     CentroidStore,

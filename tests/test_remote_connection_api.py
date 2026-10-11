@@ -1,5 +1,4 @@
 """Actual HTTP route checks; cloud provider is a synthetic fixture."""
-import asyncio
 from types import SimpleNamespace
 
 from fastapi import FastAPI

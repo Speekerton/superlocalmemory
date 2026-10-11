@@ -15,8 +15,6 @@ from __future__ import annotations
 import ast
 import pathlib
 
-import pytest
-
 _MIGRATIONS_DIR = (
     pathlib.Path(__file__).resolve().parents[2]
     / "src" / "superlocalmemory" / "storage" / "migrations"

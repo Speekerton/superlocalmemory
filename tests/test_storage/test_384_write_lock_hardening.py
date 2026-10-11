@@ -26,13 +26,11 @@ Verifies that the periodic writers fixed in the 3.8.4 hardening pass:
 
 from __future__ import annotations
 
-import sqlite3
 import threading
 import time
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 from superlocalmemory.storage import schema
 from superlocalmemory.storage.database import DatabaseManager

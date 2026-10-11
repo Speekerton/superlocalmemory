@@ -21,8 +21,6 @@ from __future__ import annotations
 import importlib
 from pathlib import Path
 
-import pytest
-
 
 def _reload_helpers():
     """Reload the helpers module so module-level state picks up env vars.
@@ -69,8 +67,8 @@ def test_dashboard_and_cli_agree_on_profile_dir(tmp_path, monkeypatch):
 
     # CLI side: DatabaseManager writes to config.db_path (env-resolved).
     from superlocalmemory.core.config import SLMConfig
-    from superlocalmemory.storage.database import DatabaseManager
     from superlocalmemory.storage import schema
+    from superlocalmemory.storage.database import DatabaseManager
 
     config = SLMConfig.load()
     assert Path(config.db_path) == tmp_path / "memory.db", (

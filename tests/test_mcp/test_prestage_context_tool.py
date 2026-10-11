@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import json
-import time
-
-import pytest
 
 from superlocalmemory.mcp.tools_context import (
     MAX_CALLS_PER_MINUTE,

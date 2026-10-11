@@ -10,7 +10,6 @@ retry with backoff, transaction support. Points at a separate SQLite file.
 
 from __future__ import annotations
 
-import json
 import logging
 import sqlite3
 import threading

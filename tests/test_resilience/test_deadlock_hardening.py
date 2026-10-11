@@ -26,12 +26,10 @@ from __future__ import annotations
 
 import json
 import os
-import signal
 import socket
 import sqlite3
 import time
 from pathlib import Path
-from threading import Thread
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -169,8 +167,6 @@ class TestDoubleSpawnRace:
         """
         from superlocalmemory.core.remember_runtime import (
             DaemonAlreadyServing,
-            _get_daemon_port,
-            _slm_health_check,
         )
 
         # The claim returns False (another daemon holds the lock)

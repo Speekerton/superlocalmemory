@@ -38,18 +38,18 @@ def _compress(ctx, content, mode, notes):
 def _recoverable(ctx, content, reversible, ttl, notes):
     if not reversible:
         return None
-    stored = ctx.ccr.get_instance().store(
-        content.encode("utf-8"),
+    original = content.encode("utf-8")
+    store = ctx.ccr.get_instance()
+    stored = store.store(
+        original,
         tenant_id=ctx.tenant,
         ttl_seconds=ttl,
         profile_id=ctx.profile_id,
     )
-    notes.append(
-        "reversible: call slm_retrieve with this ccr_id"
-        if stored
-        else "original NOT stored: output is not recoverable"
-    )
-    return stored or None
+    if not stored or store.retrieve(stored, tenant_id=ctx.tenant) != original:
+        raise RuntimeError("original persistence could not be verified; returning unchanged input")
+    notes.append("reversible: call slm_retrieve with this ccr_id")
+    return stored
 
 
 def _result(content, res, ccr_id, notes):
@@ -78,6 +78,7 @@ def _failure(content, note):
         "tokens_after": tokens,
         "ratio": 1.0,
         "lossy": False,
+        "byte_exact": isinstance(content, str),
         "ccr_id": None,
         "note": note,
     }
@@ -89,15 +90,16 @@ def compress(ctx, content, mode, reversible, ttl_seconds):
             return _failure(content, "empty input")
         notes = []
         if len(content.encode("utf-8")) > ctx.max_bytes:
-            reversible = False
-            notes.append("content over 1MB: ccr skipped")
+            if reversible:
+                return _failure(content, "content over 1MB: reversible compression refused")
+            notes.append("content over 1MB: irreversible compression requested")
         res = _compress(ctx, content, mode, notes)
         ccr_id = None
         if res.compressed_text != content:
             from superlocalmemory.optimize.metrics.mcp_compression import record_compression
 
-            record_compression(ctx.cache.get_default(), res.tokens_before, res.tokens_after)
             ccr_id = _recoverable(ctx, content, reversible, ttl_seconds, notes)
+            record_compression(ctx.cache.get_default(), res.tokens_before, res.tokens_after)
         return _result(content, res, ccr_id, notes)
     except Exception as exc:
         logger.error("slm_compress failed: %s", exc)

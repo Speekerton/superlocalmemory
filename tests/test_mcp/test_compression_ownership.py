@@ -99,3 +99,42 @@ async def test_recovery_copy_preserves_profile_erasure_ownership(compression, mo
     erased = erase_profile(db, "owner-profile")
     assert erased.originals == 1 and not erased.failed
     assert not (await tools["slm_retrieve"](result["ccr_id"]))["ok"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["empty_id", "sqlite_abort", "wrong_bytes", "oversize"])
+async def test_reversible_compression_refuses_unrecoverable_output(
+    compression, monkeypatch, failure,
+):
+    tools, db, _ = compression
+    content = "A long narrative sentence. " * 80
+    store = CCRStore.get_instance()
+    if failure == "empty_id":
+        monkeypatch.setattr(store, "store", lambda *a, **k: "")
+    elif failure == "sqlite_abort":
+        db._db.execute(
+            "CREATE TRIGGER refuse_ccr BEFORE INSERT ON llmcache_ccr_originals "
+            "BEGIN SELECT RAISE(ABORT,'disk write refused'); END"
+        )
+    elif failure == "wrong_bytes":
+        original_store = store.store
+        monkeypatch.setattr(store, "store", lambda *a, **k: original_store(b"wrong", **k))
+    else:
+        content *= 500
+    result = await tools["slm_compress"](content, reversible=True)
+    assert result["ok"] is False, result
+    assert result["compressed"] == content
+    assert result["byte_exact"] is True
+    assert result["lossy"] is False
+    assert result["ccr_id"] is None
+    assert (await tools["slm_optimize_stats"]())["compress_runs"] == 0
+
+
+@pytest.mark.asyncio
+async def test_returned_recovery_id_restores_exact_original(compression):
+    tools, _, _ = compression
+    content = "A long narrative sentence with Unicode: café.\n" * 80
+    result = await tools["slm_compress"](content, reversible=True)
+    assert result["ok"] and result["lossy"], result
+    recovered = await tools["slm_retrieve"](result["ccr_id"])
+    assert recovered["ok"] and recovered["content"] == content

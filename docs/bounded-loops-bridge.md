@@ -95,9 +95,11 @@ content-hash manifest. The subprocess runs there without a shell, with closed
 stdin, an allow-listed environment, private HOME/temp/XDG directories, and a
 bounded timeout. Installed pytest plugins are disabled unless explicitly loaded
 with `-p`. Checker descendants are stopped before validation and cleanup.
-Standalone absolute project paths and `--option=/project/path` arguments are
-relocated into the copy. Embedded code and check scripts must use relative paths
-for verdict-bearing inputs; external dependencies require a trusted operator
+Project aliases in command paths are canonicalized at registration. Standalone
+absolute project paths and `--option=/project/path` arguments are relocated into
+the copy. The executable must be operator-owned outside the project; project
+executables are refused at registration. Embedded code and check scripts must
+use relative paths for verdict-bearing inputs; external dependencies require a trusted operator
 contract. Outputs and caches remain in the private run and are discarded.
 
 Only after validation succeeds does the registered runner publish a receipt.

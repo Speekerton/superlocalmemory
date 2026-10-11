@@ -11,6 +11,31 @@ from superlocalmemory.loops.artifact_revision import copy_inputs, selectors
 from superlocalmemory.loops.private_workspace import private_dir, temporary
 
 
+def normalized(command, cwd):
+    """Freeze project aliases before execution can observe any later retargeting."""
+    root = Path(cwd)
+    executable = Path(command[0])
+    if ((executable.is_absolute() and (executable.is_relative_to(root)
+                                      or executable.resolve().is_relative_to(root)))
+            or (not executable.is_absolute() and ('/' in command[0] or '\\' in command[0]))):
+        raise ValueError('Check executable must be operator-owned outside the project')
+    argv = []
+    for arg in command:
+        prefix, value = '', arg
+        if arg.startswith('-') and '=' in arg:
+            option, value = arg.split('=', 1)
+            prefix = option + '='
+        path = Path(value)
+        if '..' in path.parts:
+            raise ValueError('Check command paths must be confined without traversal')
+        if path.is_absolute():
+            resolved = path.resolve()
+            if resolved.is_relative_to(root):
+                value = str(resolved)
+        argv.append(prefix + value)
+    return argv
+
+
 def relocated(command, cwd, destination):
     root = Path(cwd)
     argv = []

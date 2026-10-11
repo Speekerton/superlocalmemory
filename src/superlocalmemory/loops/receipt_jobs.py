@@ -14,7 +14,7 @@ from pathlib import Path
 from superlocalmemory.infra.data_root import canonical_data_root
 from superlocalmemory.loops import artifact_revision
 from superlocalmemory.loops.artifact_revision import copy_inputs, matches
-from superlocalmemory.loops.check_definition import materialize, prepare, relocated
+from superlocalmemory.loops.check_definition import materialize, normalized, prepare, relocated
 from superlocalmemory.loops.execution_guard import _key
 from superlocalmemory.loops.execution_receipts import _run_registered, command_digest
 from superlocalmemory.loops.private_workspace import platform_reason, private_dir, temporary
@@ -88,6 +88,7 @@ def register_job(
     if type(allow_prestart_evidence) is not bool or not 0 < float(ttl_seconds) <= 86400:
         raise ValueError('Gate lifetime must be positive and at most one day')
     cwd = str(Path(cwd).resolve())
+    command = normalized(command, cwd)
     store = _registration_storage(cwd, data_root)
     now, nonce = datetime.now(UTC), uuid.uuid4().hex
     job = dict(

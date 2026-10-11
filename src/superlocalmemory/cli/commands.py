@@ -3857,6 +3857,8 @@ def cmd_doctor(args: Namespace) -> None:
             "display_summaries": _h.display_summaries,
             "hidden_by_forgetting": _h.hidden_by_forgetting,
             "inconsistently_hidden": _h.inconsistently_hidden,
+            "missing_projection": _h.missing_projection,
+            "index_verified": _h.index_verified,
             "reachability": round(_h.reachability, 4),
             "healthy": _h.healthy,
             "unavailable": list(_h.unavailable),

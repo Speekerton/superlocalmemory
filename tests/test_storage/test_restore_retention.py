@@ -140,5 +140,7 @@ def test_erasure_reaches_deltas_and_pre_restore_copies(tmp_path) -> None:
     assert counts["restore_delta_rows_erased"] == 1
     assert counts["pre_restore_copies_registered"] == 1
     store = BackupObligationStore(tmp_path)
-    [pending] = store.list_pending_for_profile("alice")
-    assert Path(pending["snapshot_path"]).parent == tmp_path / "pre-restore"
+    # The pre-migration restore point taken while alice existed holds her too, and is
+    # now registered as well: every full copy of the stores is a backup.
+    held = {Path(p["snapshot_path"]).parent.name for p in store.list_pending_for_profile("alice")}
+    assert held == {"pre-restore", "pre-migration-snapshots"}

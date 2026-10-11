@@ -79,6 +79,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Erasing a person leaves no readable copy.** The bytes of the data folder are
+  now checked after an erasure, and everything they found is closed: queued
+  saves (`pending.db`), the encrypted request journal, the recall queue, the MCP
+  cache and the reversible compression originals, free pages inside the side
+  databases, event previews, the vector index itself (the command line used to
+  delete the bookkeeping and keep the vectors), the Lance history, the graph's
+  entity nodes, an erased picture's backup mirror, and the prompt text that two
+  logs kept. The workspace is removed from `profiles.json` and no longer comes
+  back at the next page load, and the service moves off the profile it erases.
+- **Erasure says exactly what it did.** `slm gdpr erase --json` reports
+  `success: false` for an incomplete erasure, the dashboard lists what was
+  removed and what remains, and the stored receipt is written after every step,
+  so it can no longer read COMPLETE over a failed sweep. Profile erasure no
+  longer collides with the immutable write receipts. A backup keeps its erasure
+  obligation until it is deleted or re-read clean (never by age), an unreadable
+  backup is an obligation too, and a restore replays targeted erasures (one
+  memory, one person's mentions) as well as profile ones.
+- **Smaller fixes.** A shared code graph is exported only as the person's own
+  links; exports and evidence bundles are created owner-only. `slm doctor`
+  counts memories whose vector is really in the index. `VectorStore.delete`
+  answers deleted, absent or failed. A backup just taken is no longer "overdue".
+  Erasing a PDF page removes the stored PDF that still holds it. The dashboard
+  backup export is one archive with every store, the picture originals and a
+  manifest. Deleting a profile no longer stops on the learning tables that
+  ordinary recall creates, the Compliance view counts and pages the audit trail,
+  and the unused `keep_float32_backup` switch now says it does nothing.
+
 - A daemon started with `python -m` now publishes its ready record, so `stop`
   no longer waits 90 seconds.
 - On SQLite 3.44.0 to 3.46.0, existing stores switch off the setting that

@@ -14,12 +14,16 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from dateutil.parser import ParserError, parse as dateutil_parse
+from dateutil.parser import ParserError
+from dateutil.parser import parse as dateutil_parse
 
 from superlocalmemory.encoding.temporal_parser import TemporalParser
+from superlocalmemory.retrieval.fact_cover import fact_table
+from superlocalmemory.retrieval.temporal_slice_cache import TemporalSliceCache
 from superlocalmemory.storage.database import _scope_where
 
 if TYPE_CHECKING:
@@ -28,6 +32,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _MAX_PROXIMITY_DAYS: float = 365.0
+_PROPER_RE = re.compile(r"\b([A-Z][a-z]+)\b")
 
 
 def _as_utc(dt: datetime | None) -> datetime | None:
@@ -73,6 +78,7 @@ class TemporalChannel:
 
     def __init__(self, db: DatabaseManager) -> None:
         self._db = db
+        self._slice_cache = TemporalSliceCache()
 
     def search(
         self,
@@ -196,22 +202,14 @@ class TemporalChannel:
         include_global: bool | None = None,
         include_shared: bool | None = None,
     ) -> list[tuple[str, float]]:
-        """Metadata-first: find temporal events for entities mentioned in query.
-
-        "When did Alice do X?" → SQL filter by entity_id for Alice → return
-        all temporal facts about Alice. High precision for entity+time queries.
-        """
+        """Resolve scoped entity events in the original temporal rank order."""
         if include_global is None:
             include_global = bool(getattr(self, "include_global", False))
         if include_shared is None:
             include_shared = bool(getattr(self, "include_shared", False))
-        import re
-        _PROPER_RE = re.compile(r"\b([A-Z][a-z]+)\b")
         names = [m.group(1) for m in _PROPER_RE.finditer(query)]
-        # Also try title-cased version for lowercase queries
         if not names:
             names = [m.group(1) for m in _PROPER_RE.finditer(query.title())]
-        # Filter out common words from title-casing
         _stop = {"What", "When", "Where", "Who", "Which", "How", "Does", "Did",
                  "The", "That", "This", "There", "Then", "Have", "Has", "Had",
                  "About", "After", "Before", "From", "With", "Would", "Could",
@@ -220,7 +218,6 @@ class TemporalChannel:
         names = [n for n in names if n not in _stop]
         if not names:
             return []
-
         results: list[tuple[str, float]] = []
         seen: set[str] = set()
         where, params = _scope_where(
@@ -229,30 +226,14 @@ class TemporalChannel:
             include_shared=include_shared,
             prefix="af",
         )
-
         for name in names[:3]:  # Limit to first 3 entity mentions
-            # An empty name would match the placeholder entity that dated
-            # facts with no resolved entity attach their temporal events to
-            # (core/store_pipeline.py::_ensure_unresolved_entity, whose
-            # canonical_name is ''). Entity extraction does not produce an
-            # empty name, so this guard costs nothing and removes the one way
-            # the placeholder could ever surface as a real entity match.
             if not name or not name.strip():
                 continue
-            # Resolve the entity and event in one scope-filtered query. Looking
-            # up the entity only in the requester's profile made global events
-            # owned by another profile undiscoverable before authorization was
-            # even evaluated.
             rows = self._db.execute(
                 "SELECT te.fact_id FROM temporal_events AS te "
                 "JOIN canonical_entities AS ce ON ce.entity_id = te.entity_id "
-                "JOIN atomic_facts AS af ON af.fact_id = te.fact_id "
-                f"WHERE {where} AND LOWER(ce.canonical_name) = LOWER(?) "
-                # The score below is derived from each row's POSITION in this
-                # result. Position must reflect temporal order so that the comment
-                # "first events more likely relevant" holds: oldest fact first,
-                # tie-broken by fact_id so two facts created in the same instant
-                # produce the same score on two runs.
+                f"JOIN {fact_table(self._db)} ON af.fact_id = te.fact_id "
+                f"WHERE {where} AND ce.canonical_name COLLATE NOCASE = ? "
                 "ORDER BY af.created_at ASC, te.fact_id ASC",
                 (*params, name),
             )
@@ -260,11 +241,8 @@ class TemporalChannel:
                 fid = dict(row)["fact_id"]
                 if fid not in seen:
                     seen.add(fid)
-                    # Rank by position (first events more likely relevant) instead
-                    # of flat 0.85 which loses discrimination
                     rank_score = 0.85 - len(seen) * 0.02
                     results.append((fid, max(0.3, rank_score)))
-
         return results
 
     def _load_events(
@@ -292,19 +270,14 @@ class TemporalChannel:
             include_shared=include_shared,
             prefix="af",
         )
-        # The bound has to match what the caller is looking for. Taking the
-        # newest 5,000 rows is right when the question is "what is recent", and
-        # wrong when it is "what happened in March 2024" — those events carry old
-        # rowids and were simply never loaded, so the answer was missing rather
-        # than slow. When a target date is known, bound by proximity to THAT date
-        # instead; the scan stays bounded either way.
+        key = (profile_id, bool(include_global), bool(include_shared), near_date)
+        return self._slice_cache.load(
+            self._db, key, lambda: self._read_events(where, params, near_date))
+
+    def _read_events(self, where: str, params: list,
+                     near_date: str | None) -> list[dict]:
+        """The original SQL and ordering, including same-fact event ties."""
         if near_date is not None:
-            # Include events that carry only interval_start/interval_end with no
-            # referenced_date or observation_date. The original filter required
-            # at least one of the point-date columns to be non-NULL, which
-            # excluded duration events ("during March 2024") entirely. The
-            # ORDER BY now uses the best available date column so that duration
-            # events are ranked by their interval_start when no point date exists.
             rows = self._db.execute(
                 "SELECT te.fact_id, te.observation_date, te.referenced_date, "
                 "te.interval_start, te.interval_end, af.created_at "
@@ -314,9 +287,6 @@ class TemporalChannel:
                 "  AND (te.referenced_date IS NOT NULL "
                 "       OR te.observation_date IS NOT NULL "
                 "       OR te.interval_start IS NOT NULL) "
-                # Thousands of events can tie on the proximity expression when
-                # they share a date, and a tie with no secondary key is broken by
-                # storage order. That decides which of them survive the LIMIT.
                 "ORDER BY ABS(julianday(COALESCE(te.referenced_date, "
                 "                               te.observation_date, "
                 "                               te.interval_start)) "
@@ -335,6 +305,7 @@ class TemporalChannel:
                 (*params,),
             )
         return [dict(r) for r in rows]
+
 
     def _recency_fallback(
         self,

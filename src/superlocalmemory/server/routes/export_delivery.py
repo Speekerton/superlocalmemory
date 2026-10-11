@@ -47,8 +47,11 @@ def _unlink(path: Path) -> None:
 
 
 def _gzip_file(source: Path) -> Path:
+    """Compress next to ``source``; the copy is owner-only like the original (0600)."""
     target = source.with_name(source.name + ".gz")
-    with open(source, "rb") as src, gzip.open(target, "wb") as dst:
+    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with open(source, "rb") as src, os.fdopen(fd, "wb") as raw, \
+            gzip.GzipFile(fileobj=raw, mode="wb") as dst:
         shutil.copyfileobj(src, dst, 1 << 20)
     return target
 

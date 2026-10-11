@@ -15,8 +15,9 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -33,7 +34,12 @@ class SaveRepairResult:
 
 def backup_store(db_path: Path) -> Path:
     """A consistent copy of ``db_path`` beside it (online backup, 0600)."""
-    target = db_path.with_name(f"{db_path.stem}.before-save-repair-{int(time.time())}.db")
+    fd, name = tempfile.mkstemp(
+        prefix=f"{db_path.stem}.before-save-repair-{int(time.time())}-",
+        suffix=".db", dir=db_path.parent,
+    )
+    os.close(fd)
+    target = Path(name)
     source = sqlite3.connect(str(db_path))
     try:
         copy = sqlite3.connect(str(target))
@@ -111,18 +117,31 @@ def _refile(db, item: RefileItem) -> bool:
 def apply(db_path: Path, save_plan: SavePlan) -> SaveRepairResult:
     """Back up ``db_path``, then apply ``save_plan`` in one transaction."""
     from superlocalmemory.storage.database import DatabaseManager
+    from superlocalmemory.storage.save_repair import plan
 
     copy = backup_store(db_path)
     db = DatabaseManager(db_path)
     refiled = skipped = filled = 0
     try:
-        with db.transaction():
+        with db.raw_connection() as conn:
+            # Hold the writer reservation while rechecking the reviewed evidence
+            # and applying it. Another writer cannot change visibility mid-repair.
+            conn.execute("BEGIN IMMEDIATE")
+            fresh = plan(conn)
+            candidates = {item.operation_id: item for item in fresh.refile}
             for item in save_plan.refile:
-                if _refile(db, item):
+                current = candidates.get(item.operation_id)
+                if current and current.action == "add_memory_and_fact":
+                    occupied = conn.execute("SELECT 1 FROM memories WHERE memory_id=?",
+                                            (item.memory_id,)).fetchone()
+                    current = None if occupied else replace(current, memory_id=item.memory_id)
+                if current == item and _refile(db, item):
                     refiled += 1
                 else:
                     skipped += 1
             for memory_id, agent in save_plan.attribution:
+                if (memory_id, agent) not in fresh.attribution:
+                    continue
                 db.execute(
                     "UPDATE memories SET metadata_json=json_set(COALESCE(metadata_json,'{}'),"
                     " '$.agent_id', ?, '$.agent_id_source', 'backfill:operation') "

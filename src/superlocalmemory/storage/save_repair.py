@@ -45,6 +45,7 @@ name on a memory from its own operation, where the operation recorded one.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import uuid
@@ -81,6 +82,8 @@ class RefileItem:
     memory_id: str
     reason: str
     fact_ids: tuple[str, ...] = ()
+    operation_fingerprint: str = ""
+    fact_fingerprint: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,13 +125,29 @@ def _own_memory(conn: sqlite3.Connection, op: sqlite3.Row) -> list[sqlite3.Row]:
         if _same_audience(row["shared_with"], op["shared_with_json"])][:1]
 
 
+def _fingerprint(value) -> str:
+    return hashlib.sha256(json.dumps(value, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def _fact_evidence(conn: sqlite3.Connection, op: sqlite3.Row, memory_id: str):
+    rows = conn.execute(
+        "SELECT fact_id, content, scope, shared_with, lifecycle FROM atomic_facts "
+        "WHERE memory_id=? AND profile_id=? AND lifecycle IN ('active','warm','cold') "
+        "ORDER BY created_at, fact_id", (memory_id, op["profile_id"])).fetchall()
+    if any((row["scope"] or "personal") != op["scope"] or not _same_audience(
+            row["shared_with"], op["shared_with_json"]) for row in rows):
+        return None
+    return tuple(str(row["fact_id"]) for row in rows), _fingerprint([dict(row) for row in rows])
+
+
 def _classify(conn: sqlite3.Connection, op: sqlite3.Row) -> RefileItem | tuple[str, str]:
+    fingerprint = _fingerprint(dict(op))
     own = _own_memory(conn, op)
     if len(own) > 1:
         return op["operation_id"], "more than one memory claims this save"
     if not own:
         return RefileItem(op["operation_id"], op["profile_id"], "add_memory_and_fact",
-                          uuid.uuid4().hex, op["last_error"])
+                          uuid.uuid4().hex, op["last_error"], operation_fingerprint=fingerprint)
     mem = own[0]
     if mem["content"] != op["raw_content"]:
         from superlocalmemory.storage.store_repair import is_blanked_copy
@@ -139,13 +158,13 @@ def _classify(conn: sqlite3.Connection, op: sqlite3.Row) -> RefileItem | tuple[s
     if (mem["scope"] or "personal") != op["scope"] or not _same_audience(
             mem["shared_with"], op["shared_with_json"]):
         return op["operation_id"], "its visibility was changed after saving"
-    facts = tuple(str(r[0]) for r in conn.execute(
-        "SELECT fact_id FROM atomic_facts WHERE memory_id=? AND profile_id=? "
-        "AND lifecycle IN ('active','warm','cold') ORDER BY created_at",
-        (mem["memory_id"], op["profile_id"])))
+    evidence = _fact_evidence(conn, op, mem["memory_id"])
+    if evidence is None:
+        return op["operation_id"], "its searchable facts have different visibility"
+    facts, fact_fingerprint = evidence
     action = "repoint" if facts else "add_fact"
     return RefileItem(op["operation_id"], op["profile_id"], action, mem["memory_id"],
-                      op["last_error"], facts)
+                      op["last_error"], facts, fingerprint, fact_fingerprint)
 
 
 def _attribution(conn: sqlite3.Connection) -> tuple[list[tuple[str, str]], dict]:

@@ -298,8 +298,9 @@ def _minimal_envelope(call, response, snapshot):
         for result in (getattr(response, "results", ()) or ())[:call.limit]
     ]
     return {
-        "ok": True, "query": call.query, "profile": call.profile_id or snapshot.profile_id,
-        "profile_generation": snapshot.generation,
+        "ok": True, "query": call.query,
+        "profile": call.profile_id or getattr(snapshot, "profile_id", ""),
+        "profile_generation": getattr(snapshot, "generation", 0),
         "results": results, "count": len(results), "result_count": len(results),
         "channel_status": dict(getattr(response, "channel_status", {}) or {}),
         "retrieval_mode": "partial_context",

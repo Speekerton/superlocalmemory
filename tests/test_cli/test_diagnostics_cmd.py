@@ -33,6 +33,7 @@ def test_successful_ide_connection_records_only_aggregate_activation(
         portable_kit,
         "connect_ide",
         lambda *_args, **_kwargs: {
+            "ide": "cursor",
             "error": None,
             "mcp_config": "wrote",
             "mcp_path": "/private/config.json",

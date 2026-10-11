@@ -12,16 +12,20 @@ about half of all fact/entity links pointed at the wrong entity, one entity
 share no name. The resolver no longer does this (encoding/entity_match); this
 repairs what it already wrote, by the same rules:
 
-1. ``aliases`` -- every alias the old merge wrote (source ``jaro_winkler``) and
-   every alias the old free-form model mapping wrote (source ``llm``) is
-   checked against its entity's own name. One the rules call the same name is
-   kept and relabelled with the rule that justifies it; a model's alias the
-   rules call borderline is kept as it is; any other is removed.
-2. ``links`` -- each fact that has entity links is linked again from the raw
-   names it was saved with (``atomic_facts.entities_json``): exact name, a
-   kept alias, the same name normalized, a one-word typo; a name that matches
-   none becomes its own entity. A fact with no raw names, or no links, is left
-   alone: this repairs links, it does not enrich.
+1. ``aliases`` -- every alias other than an entity's own name and those the
+   4.1.25 rules wrote is checked against its entity's own name: the old fuzzy
+   merge's (``jaro_winkler``), the old model mapping's (``llm``) and old
+   entity merges' (``merge``...). One the rules call the same name is kept and
+   relabelled with the rule that justifies it; a model's or merge's alias the
+   rules call borderline is kept; any other is removed.
+2. ``links`` -- each fact that has entity links is linked again from the names
+   the current extractor finds in its text, under the validity rules
+   (encoding/entity_validity): no ids, dates, paths, file names, status
+   words, everyday words where a sentence starts, or fragments. Each name
+   resolves by exact name, a kept alias, the same name normalized, a one-word
+   typo -- never to an entity whose own name fails those rules; a name that
+   matches none becomes its own entity. A fact with no links is left alone:
+   this repairs links, it does not enrich.
 3. ``index`` -- ``fact_entity_associations`` follows the new links, and each
    touched entity's ``fact_count`` is recounted.
 4. ``edges`` -- an entity, temporal or causal edge (each built only between
@@ -31,6 +35,10 @@ repairs what it already wrote, by the same rules:
    no longer links to is pointed at one it does (or the per-profile
    placeholder an entity-less dated fact uses), so the fact stays reachable
    by date.
+6. ``junk`` -- an entity no fact links to after the repair is removed with its
+   aliases when the repair emptied it, or when its name fails the validity
+   rules; one still named by a summary, profile, scene, community or temporal
+   event is kept and counted (storage/entity_link_repair_junk).
 
 ``plan`` reads and changes nothing. ``entity_link_repair_apply`` writes an
 undo record first, then every change, in one transaction; a second run finds
@@ -44,10 +52,10 @@ import sqlite3
 from dataclasses import dataclass, field
 
 from superlocalmemory.encoding import entity_match as em
+from superlocalmemory.encoding.entity_mentions import extract_mentions
 from superlocalmemory.encoding.entity_resolver import _usable_mention
+from superlocalmemory.encoding.entity_validity import valid_name
 
-#: Alias sources whose aliases are re-checked; every other source is kept.
-RECHECKED_SOURCES = frozenset({"jaro_winkler", "llm"})
 #: Edge types that exist only because the two facts shared an entity.
 ENTITY_EDGE_TYPES = ("entity", "temporal", "causal")
 PLACEHOLDER_PREFIX = "__slm_unresolved__:"
@@ -80,6 +88,8 @@ class ProfilePlan:
     facts: list[FactFix] = field(default_factory=list)
     new_entities: dict[str, str] = field(default_factory=dict)  # key -> name
     links: dict[str, tuple[str, ...]] = field(default_factory=dict)  # every fact
+    junk: list[str] = field(default_factory=list)  # entity ids to remove
+    junk_kept_referenced: int = 0
 
 
 @dataclass
@@ -95,11 +105,14 @@ class EntityRepairPlan:
             "facts_relinked": len(facts),
             "facts_left_with_no_entity": sum(1 for f in facts if not f.new_ids),
             "entities_to_create": sum(len(p.new_entities) for p in self.profiles),
+            "junk_entities_to_remove": sum(len(p.junk) for p in self.profiles),
+            "junk_entities_kept_referenced": sum(p.junk_kept_referenced
+                                                 for p in self.profiles),
         }
 
     @property
     def empty(self) -> bool:
-        return not any(p.aliases or p.facts for p in self.profiles)
+        return not any(p.aliases or p.facts or p.junk for p in self.profiles)
 
 
 def _rows(conn: sqlite3.Connection, sql: str, args: tuple = ()) -> list[tuple]:
@@ -110,17 +123,25 @@ def _has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
     return any(r[1] == column for r in conn.execute(f"PRAGMA table_info({table})"))
 
 
+#: Alias sources the 4.1.25 rules write; they are already justified.
+CURRENT_SOURCES = frozenset({"normalized", "typo", "llm_confirmed"})
+
+
 def _alias_fix(row: tuple, profile_id: str, canonical: str) -> AliasFix | None:
     alias_id, entity_id, alias, confidence, source = row
-    if str(source or "") not in RECHECKED_SOURCES:
+    source = str(source or "")
+    if source in CURRENT_SOURCES or em.name_key(str(alias)).compact == em.name_key(
+            canonical).compact:
         return None
     verdict, reason = em.compare(str(alias), canonical)
-    if verdict == em.BORDERLINE and source == "llm":
+    if verdict == em.BORDERLINE and source != "jaro_winkler":
+        if source != "llm":
+            return None  # an old merge's borderline alias: left as it is
         new_source: str | None = "llm_confirmed"  # left to a model, and one judged it
     else:
         new_source = reason if verdict == em.SAME else None
     return AliasFix(str(alias_id), profile_id, str(entity_id), str(alias),
-                    float(confidence or 0.0), str(source), new_source, reason)
+                    float(confidence or 0.0), source, new_source, reason)
 
 
 def _plan_aliases(conn: sqlite3.Connection, plan: ProfilePlan,
@@ -147,10 +168,14 @@ class _Linker:
 
     def __init__(self, entities: list[tuple[str, str]], aliases: dict[str, list[str]],
                  plan: ProfilePlan) -> None:
+        # Never link to an entity whose own name fails the validity rules
+        # ("/api/*" collected 718 facts through an alias "API").
+        entities = [(e, n) for e, n in entities if valid_name(n, capital_evidence=True)]
+        good = {e for e, _n in entities}
         self._exact: dict[str, list[str]] = {}
         for entity_id, name in entities:
             self._exact.setdefault(name.lower(), []).append(entity_id)
-        self._aliases = aliases
+        self._aliases = {k: [e for e in ids if e in good] for k, ids in aliases.items()}
         self._index = em.NameIndex(entities)
         self._plan = plan
 
@@ -179,16 +204,35 @@ def _decode(raw: object) -> list[str]:
     return [str(v) for v in values if v] if isinstance(values, list) else []
 
 
+def fact_names(content: str) -> list[str]:
+    """The names a fact is linked by: what the current extractor finds in its
+    text (validity rules included), one per spelling.
+
+    The names saved with the fact are not used: on the author's store they
+    came from the old extractor and from a model, and relinking from them
+    recreated "Users", "LIVE", 16-hex ids and quoted questions as entities.
+    Re-extracting also links each fact exactly as a new save of it would be.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for name in extract_mentions(content or ""):
+        key = em.name_key(name).compact
+        if key and key not in seen:
+            seen.add(key)
+            out.append(name)
+    return out
+
+
 def _plan_facts(conn: sqlite3.Connection, plan: ProfilePlan, linker: _Linker) -> None:
-    for fact_id, raw_json, links_json in _rows(
-            conn, "SELECT fact_id, entities_json, canonical_entities_json FROM atomic_facts "
-                  "WHERE profile_id = ? ORDER BY rowid", (plan.profile_id,)):
+    for fact_id, content, links_json in _rows(
+            conn, "SELECT fact_id, content, canonical_entities_json "
+                  "FROM atomic_facts WHERE profile_id = ? ORDER BY rowid", (plan.profile_id,)):
         old = tuple(dict.fromkeys(_decode(links_json)))
-        raw = _decode(raw_json)
         plan.links[str(fact_id)] = old
-        if not old or not raw:
+        if not old:
             continue
-        new = tuple(dict.fromkeys(i for i in (linker.link(r, old) for r in raw) if i))
+        names = fact_names(str(content or ""))
+        new = tuple(dict.fromkeys(i for i in (linker.link(n, old) for n in names) if i))
         if new != old:
             plan.facts.append(FactFix(str(fact_id), plan.profile_id, str(links_json), new))
             plan.links[str(fact_id)] = new
@@ -205,6 +249,9 @@ def plan_profile(conn: sqlite3.Connection, profile_id: str) -> ProfilePlan:
     _plan_facts(conn, plan, _Linker(entities, aliases, plan))
     used = {i for f in plan.facts for i in f.new_ids}
     plan.new_entities = {k: v for k, v in plan.new_entities.items() if f"new:{k}" in used}
+    from superlocalmemory.storage.entity_link_repair_junk import plan_junk
+
+    plan_junk(conn, plan, entities)
     return plan
 
 
@@ -237,4 +284,4 @@ def report(conn: sqlite3.Connection, the_plan: EntityRepairPlan, sample: int = 8
 
 
 __all__ = ["ENTITY_EDGE_TYPES", "AliasFix", "EntityRepairPlan", "FactFix", "ProfilePlan",
-           "RECHECKED_SOURCES", "plan", "plan_profile", "report"]
+           "CURRENT_SOURCES", "fact_names", "plan", "plan_profile", "report"]

@@ -94,9 +94,11 @@ def test_second_service_install_never_unloads_first(monkeypatch, tmp_path):
     from superlocalmemory.cli import service_installer as service
 
     calls = []
-    monkeypatch.setattr(service.subprocess, "run", lambda args, **kw: (
-        calls.append(args) or SimpleNamespace(returncode=0, stderr="")
-    ))
+    monkeypatch.setattr(
+        service.subprocess,
+        "run",
+        lambda args, **kw: calls.append(args) or SimpleNamespace(returncode=0, stderr=""),
+    )
     monkeypatch.setenv("SLM_DATA_DIR", str(tmp_path / "one"))
     first = service._macos_plist_path()
     assert service.install_macos()
@@ -105,3 +107,44 @@ def test_second_service_install_never_unloads_first(monkeypatch, tmp_path):
     assert service.install_macos()
     assert all(str(first) not in call for call in calls)
     assert first.exists()
+
+
+def test_release_connector_keeps_the_selected_daemon_port(monkeypatch, tmp_path):
+    from superlocalmemory.cli import commands
+    from superlocalmemory.hooks import portable_kit
+
+    monkeypatch.delenv("SLM_DAEMON_PORT", raising=False)
+    monkeypatch.setenv("SLM_DATA_DIR", str(tmp_path))
+    (tmp_path / "config.json").write_text('{"daemon_port":19283}')
+    seen = []
+    monkeypatch.setattr(
+        portable_kit,
+        "connect_ide",
+        lambda host, **kw: (
+            seen.append(kw)
+            or {"ide": host, "error": None, "mcp_config": "would_write", "mcp_path": "sandbox"}
+        ),
+    )
+    commands.cmd_connect(
+        SimpleNamespace(ide="codex", daemon_port=None, transport="http", dry_run=True, json=True)
+    )
+    assert seen[0]["daemon_port"] == 19283
+
+
+def test_opencode_command_list_is_pinned_without_changing_its_schema():
+    from superlocalmemory.hooks.portable_kit import IDE_MATRIX, _build_server_block
+
+    block = _build_server_block(IDE_MATRIX["opencode"], "stdio", 19281, "core")
+    assert block["command"] == [sys.executable, "-m", "superlocalmemory.cli", "mcp"]
+    assert block["environment"]["SLM_MCP_PROFILE"] == "core"
+    assert block["environment"]["SLM_MCP_HOST"] == "opencode"
+
+
+def test_settings_reports_bound_port_when_it_differs_from_environment(monkeypatch):
+    from superlocalmemory.server.routes import config_api
+
+    monkeypatch.setenv("SLM_DAEMON_PORT", "19282")
+    monkeypatch.setattr(config_api, "_read_config", lambda: {"daemon_port": 19281})
+    request = SimpleNamespace(app=SimpleNamespace(
+        state=SimpleNamespace(daemon_descriptor=SimpleNamespace(port=19284))))
+    assert config_api.get_daemon_config(request)["port"] == 19284

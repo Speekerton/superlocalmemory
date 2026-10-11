@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING
 from superlocalmemory.encoding import entity_match as em
 from superlocalmemory.encoding.entity_mentions import STOP_WORDS
 from superlocalmemory.encoding.entity_name_cache import CanonicalNames
+from superlocalmemory.encoding.entity_validity import valid_name
 from superlocalmemory.storage.models import CanonicalEntity, EntityAlias, _new_id, _now
 
 if TYPE_CHECKING:
@@ -57,7 +58,8 @@ PRONOUNS: frozenset[str] = frozenset({
 # Heuristic entity type patterns
 _ORG_MARKERS = ("Inc", "Corp", "LLC", "Ltd", "University", "Hospital", "Bank",
                 "Foundation", "Institute", "Company", "Group", "Agency")
-_PLACE_MARKERS = ("City", "State", "County", "Island", "River", "Mountain",
+_PLACE_MARKERS = ("City", "State", "County", "Island", "River", "Mountain", "Harbour",
+                  "Harbor", "Bay", "Valley", "Beach", "Square", "Bridge",
                   "Lake", "Park", "Street", "Avenue", "Road", "District")
 _EVENT_MARKERS = ("Festival", "Conference", "Summit", "Workshop", "Meeting",
                   "Election", "War", "Match", "Game", "Concert", "Wedding")
@@ -171,6 +173,35 @@ _COMMON_WORDS = frozenset({
 })
 
 
+#: Last words that make a two-word capitalised name a product, model or part
+#: of something, never a person ("Claude Code", "Claude Opus", "Gemini Flash").
+_PRODUCT_WORDS = frozenset("""
+code opus sonnet haiku flash pro ultra nano mini max turbo lite plus desktop cloud
+studio chat assistant agent agents mode edition hub lab labs engine kit suite cli
+os app apps api sdk server service section report board team panel page tab view
+analytics robotics logistics systems technologies solutions networks software
+industries partners capital ventures health media digital data security
+search docs drive maps sheets console store play ads workspace
+""".split())
+
+
+def _looks_like_person(name: str, words: list[str]) -> bool:
+    """Two or three capitalised words that read as a person's name.
+
+    4.1.25: "Claude Code" was typed person. A product word as the last word,
+    or an everyday English word before it ("Final Report", "Check Accenture"),
+    makes it something else; only a surname may be an everyday word ("Alice
+    Smith", "Linda Park"). Uncertain names are concepts, which costs little.
+    """
+    if not re.match(r"^[A-Z][a-z]+ [A-Z][a-z]+( [A-Z][a-z]+)?$", name):
+        return False
+    from superlocalmemory.encoding.common_words import is_common_word
+
+    if words[-1] in _PRODUCT_WORDS or any(w in _COMMON_WORDS for w in words):
+        return False
+    return not any(is_common_word(w) for w in words[:-1])
+
+
 def _guess_entity_type(name: str) -> str:
     """Heuristic entity type classification from name string.
 
@@ -186,11 +217,13 @@ def _guess_entity_type(name: str) -> str:
     if re.match(r"^[\d.v\-/]+$", name):
         return "concept"
 
-    if any(m in name for m in _ORG_MARKERS):
+    # Whole words only: "Stateless" is not a State, "Banking" not a Bank.
+    tokens = set(name.split())
+    if tokens & set(_ORG_MARKERS):
         return "organization"
-    if any(m in name for m in _PLACE_MARKERS):
+    if tokens & set(_PLACE_MARKERS):
         return "place"
-    if any(m in name for m in _EVENT_MARKERS):
+    if tokens & set(_EVENT_MARKERS):
         return "event"
 
     # v3.4.10: Skill entities — namespaced skills always skill type
@@ -206,10 +239,8 @@ def _guess_entity_type(name: str) -> str:
     if _SKILL_MARKERS_RE.search(name):
         return "skill"
 
-    # Multi-word entity: "person" only if 2-3 capitalized words, no stop words
-    if re.match(r"^[A-Z][a-z]+ [A-Z][a-z]+( [A-Z][a-z]+)?$", name):
-        if not any(p in _COMMON_WORDS for p in words):
-            return "person"
+    if _looks_like_person(name, words):
+        return "person"
 
     # Single capitalized word — almost never a person in our context
     # Only known first names should get "person" but we can't maintain
@@ -279,6 +310,11 @@ def _usable_mention(raw: str) -> str | None:
     if len(words) > 1 and all(w in _COMMON_WORDS or len(w) <= 2 for w in words):
         return None
     if re.match(r"^[\d.v\-/]+$", name):
+        return None
+    # Ids, dates, paths, status words, fragments (encoding/entity_validity).
+    # No text here, so a capitalised everyday word is given the benefit of
+    # the doubt; the save path judges it against the fact's text first.
+    if not valid_name(name, capital_evidence=True):
         return None
     return name
 
@@ -402,8 +438,9 @@ class EntityResolver:
         index = self._lookup_rows(profile_id)
         found: dict[str, str] = {}
         for word in words or ():
-            name = _usable_mention(word)
-            if name is None:
+            name = word.strip()
+            # The plain-word rule (not entity_validity) judges an everyday word.
+            if len(name) <= 2 or name.lower() in PRONOUNS or name.lower() in STOP_WORDS:
                 continue
             if index is not None:
                 hit = eli.plain_word_hit(index, name)

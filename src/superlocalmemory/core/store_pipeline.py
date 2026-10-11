@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from superlocalmemory.storage.database import DatabaseManager
 
 from superlocalmemory.core.receipt_guard import keeps_own_fact
+from superlocalmemory.encoding.entity_validity import valid_names
 from superlocalmemory.storage.erasure_fence import is_erasing
 from superlocalmemory.storage.models import (
     AtomicFact,
@@ -1209,6 +1210,7 @@ def run_store_fact_direct(
             fact.fisher_mean, fact.fisher_variance = (
                 embedder.compute_fisher_params(fact.embedding)
             )
+    fact.entities = valid_names(list(fact.entities or []), fact.content)
     if entity_resolver and fact.entities:
         canonical = entity_resolver.resolve(
             fact.entities, profile_id,

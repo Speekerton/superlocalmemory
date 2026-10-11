@@ -104,7 +104,8 @@ def _nothing_leaves_the_sandbox(monkeypatch):
     )
     yield
     from superlocalmemory.server.manual_heal import join_manual_heals
-    assert join_manual_heals(), "manual repair must finish before subprocess patches are restored"
+    assert join_manual_heals(timeout_s=None), (
+        "manual repair must finish before subprocess patches are restored")
 
 
 @pytest.fixture

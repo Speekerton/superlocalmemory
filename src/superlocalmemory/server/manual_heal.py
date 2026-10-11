@@ -32,13 +32,13 @@ def start_manual_heal(state, repair) -> bool:
         return True
 
 
-def join_manual_heals(state=None, timeout_s: float = 5.0) -> bool:
+def join_manual_heals(state=None, timeout_s: float | None = 5.0) -> bool:
     """Join owned workers before dependencies or subprocess patches disappear.
 
     Shutdown closes the supplied application's admission gate first. Tests
     without a lifespan join all workers started in this interpreter instead.
     """
-    deadline = time.monotonic() + timeout_s
+    deadline = None if timeout_s is None else time.monotonic() + timeout_s
     with _LOCK:
         if state is not None:
             state.manual_heal_closed = True
@@ -47,7 +47,7 @@ def join_manual_heals(state=None, timeout_s: float = 5.0) -> bool:
         else:
             workers = list(_WORKERS)
     for worker in workers:
-        worker.join(max(0.0, deadline - time.monotonic()))
+        worker.join(None if deadline is None else max(0.0, deadline - time.monotonic()))
     with _LOCK:
         _WORKERS.difference_update(w for w in workers if not w.is_alive())
     return all(not w.is_alive() for w in workers)

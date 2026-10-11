@@ -76,8 +76,9 @@ def test_shutdown_joins_worker_and_closes_admission():
         worker = state.manual_heal_thread
         assert start_manual_heal(state, repair)
         assert state.manual_heal_thread is worker
+        assert not join_manual_heals(timeout_s=0.001)
         timer.start()
-        assert join_manual_heals(state)
+        assert join_manual_heals(state, timeout_s=None)
         assert not worker.is_alive()
         assert not start_manual_heal(state, repair)
     finally:

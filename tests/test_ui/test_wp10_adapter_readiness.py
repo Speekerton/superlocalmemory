@@ -7,6 +7,16 @@ import pytest
 from superlocalmemory.ingestion import adapter_manager as manager
 
 
+def test_configure_route_has_a_real_request_in_the_assembled_api():
+    from fastapi import FastAPI
+
+    from superlocalmemory.server.routes.adapters import router
+
+    app = FastAPI()
+    app.include_router(router)
+    operation = app.openapi()["paths"]["/api/adapters/configure"]["post"]
+    assert not any(p["name"] == "request" for p in operation.get("parameters", []))
+
 @pytest.fixture(autouse=True)
 def sandbox(tmp_path, monkeypatch):
     monkeypatch.setenv("SLM_DATA_DIR", str(tmp_path))

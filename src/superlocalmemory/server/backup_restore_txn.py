@@ -170,3 +170,44 @@ def recover_safety_copy(root: Path, safety_id: str) -> dict:
         before = create_point(root)["id"]
         restore_atomically(root, safety_id, before)
     return {"restored": safety_id, "safety_id": before}
+
+
+LOG_NAME = "backup-recovery.log"
+_STALE_S = 15 * 60
+
+
+def log_path(root: Path) -> Path:
+    return Path(root) / "logs" / LOG_NAME
+
+
+def _dead(status: dict, mtime: float | None) -> bool:
+    pid = status.get("worker_pid")
+    if pid is not None:
+        return not _alive(pid)
+    return mtime is not None and time.time() - mtime > _STALE_S
+
+
+def settle(status: dict, root: Path, mtime: float | None = None) -> dict:
+    """Turn an in-progress status whose worker has died into an honest failure.
+
+    The worker holds the writer lease through the operating system, so its
+    death already released the store; this releases the queue (a dead
+    "restoring" no longer answers every later restore with 409) and says what
+    the operator should do, pointing at the worker's log.
+    """
+    if status.get("state") not in IN_PROGRESS or not _dead(status, mtime):
+        return status
+    stage = status.get("state")
+    details = f"Details are in {log_path(root)}."
+    if stage == "restoring":
+        message = ("The recovery stopped part-way because its process ended, so the stores "
+                   "may be partly restored. Stop the service (`slm serve stop`) and run "
+                   f"`{RECOVER_COMMAND}` to put the safety copy back. {details}")
+    elif stage == "restarting":
+        message = ("The backup was restored but the restart may not have finished. "
+                   f"If the dashboard does not respond, run `slm serve start`. {details}")
+    else:
+        message = ("Recovery stopped before restoring anything, so nothing was changed. "
+                   f"If the service is not running, start it with `slm serve start`. {details}")
+    status.update({"state": "failed", "message": message, "interrupted_at": stage})
+    return status

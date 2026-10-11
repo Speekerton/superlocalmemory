@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.background import BackgroundTask
 
 from superlocalmemory.server import backup_bundle as bundles
-from superlocalmemory.server.backup_restore_txn import IN_PROGRESS
+from superlocalmemory.server.backup_restore_txn import IN_PROGRESS, log_path, settle
 from superlocalmemory.server.config_file import update_config
 from superlocalmemory.storage._durable_json import read_json, write_json_atomic
 
@@ -121,29 +121,60 @@ def recovery_export(request: Request):
     )
 
 
+def _outcome_path(root: Path) -> Path:
+    return root / "backup-recovery-outcome.json"
+
+
+def _settled(root: Path) -> dict:
+    """The recovery status, with a dead worker's stuck state turned into a failure."""
+    path = _outcome_path(root)
+    current = read_json(path)
+    if not current:
+        return {"state": "idle"}
+    mtime = path.stat().st_mtime
+    if settle(dict(current), root, mtime).get("state") == current.get("state"):
+        return current
+    result: dict = {}
+
+    def apply(status):  # re-checked under the lock: the worker may have moved on
+        settle(status, root, mtime)
+        result.update(status)
+
+    update_config(path, apply)
+    return result
+
+
 @router.get("/status")
 def recovery_status(request: Request):
     _gate(request)
-    return read_json(_root() / "backup-recovery-outcome.json") or {"state": "idle"}
+    return _settled(_root())
 
 
-def _spawn(root, point_id):
+def _spawn(root, point_id) -> int:
+    """Start the detached worker; its output goes to logs/backup-recovery.log."""
     from superlocalmemory.core.platform_utils import popen_platform_kwargs
+    from superlocalmemory.infra.private_files import create_private_file
 
-    subprocess.Popen(
-        [
-            sys.executable,
-            "-m",
-            "superlocalmemory.server.backup_restore_worker",
-            str(root),
-            point_id,
-            str(os.getpid()),
-        ],
-        env={**os.environ, "SLM_DATA_DIR": str(root)},
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        **popen_platform_kwargs(),
-    )
+    log = log_path(root)
+    log.parent.mkdir(parents=True, exist_ok=True)
+    if not log.exists():
+        create_private_file(log)
+    with open(log, "ab") as output:
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "superlocalmemory.server.backup_restore_worker",
+                str(root),
+                point_id,
+                str(os.getpid()),
+            ],
+            env={**os.environ, "SLM_DATA_DIR": str(root)},
+            stdout=output,
+            stderr=subprocess.STDOUT,
+            **popen_platform_kwargs(),
+        )
+    return process.pid
 
 
 @router.post("/restore")
@@ -160,13 +191,19 @@ def recovery_restore(request: Request, body: PointBody):
         status.clear()
         status.update({"state": "queued", "id": body.id})
 
-    update_config(root / "backup-recovery-outcome.json", reserve)
+    _settled(root)
+    update_config(_outcome_path(root), reserve)
     try:
-        _spawn(root, body.id)
+        worker = _spawn(root, body.id)
     except Exception:
         logger.exception("Recovery worker could not start")
-        write_json_atomic(root / "backup-recovery-outcome.json", {"state": "failed", "id": body.id})
+        write_json_atomic(_outcome_path(root), {"state": "failed", "id": body.id})
         raise HTTPException(503, "Recovery could not start. Nothing was restored; retry.") from None
+
+    def record(status):
+        status.setdefault("worker_pid", worker)
+
+    update_config(_outcome_path(root), record)
     return {
         "success": True,
         "state": "queued",

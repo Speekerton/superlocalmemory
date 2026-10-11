@@ -122,5 +122,17 @@ def run(root: Path, point_id: str, pid: int) -> None:
         status.write("complete", "Recovery backup restored and the daemon restarted.")
 
 
+def _log_to_file(root: Path) -> None:
+    """Keep the worker's reasons: it runs detached, with nobody reading stderr."""
+    from superlocalmemory.server.backup_restore_txn import log_path
+
+    path = log_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handler = logging.FileHandler(path, encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    logging.basicConfig(level=logging.INFO, handlers=[handler], force=True)
+
+
 if __name__ == "__main__":
+    _log_to_file(Path(sys.argv[1]))
     run(Path(sys.argv[1]), sys.argv[2], int(sys.argv[3]))

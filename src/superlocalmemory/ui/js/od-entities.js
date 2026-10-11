@@ -31,10 +31,8 @@
 
   // CRIT-1: Local escapeHtml to prevent XSS if core.js loads after this module.
   function _esc(s) {
-    if (typeof escapeHtml === 'function') return escapeHtml(s);
-    var d = document.createElement('div');
-    d.textContent = String(s == null ? '' : s);
-    return d.innerHTML;
+    // Quote-safe: the result is used inside attribute values too.
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   function _fmt(iso) {
@@ -304,7 +302,7 @@
       var isAct  = _st.selected === e.name;
       return '<button type="button" aria-pressed="' + isAct + '" class="od-ent-row' + (isAct ? ' active' : '') + '" ' +
           'aria-label="Show entity ' + _esc(e.name) + '" data-od-act="select-entity" data-ename="' +
-          _esc(e.name).replace(/"/g, '&quot;') + '">' +
+          _esc(e.name) + '">' +
         '<div aria-hidden="true" class="od-ent-av" style="background:' + color + '">' + _esc(av) + '</div>' +
         '<div style="flex:1;min-width:0">' +
           '<div style="font-weight:600;white-space:nowrap;overflow:hidden;' +

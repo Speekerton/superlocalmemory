@@ -127,21 +127,21 @@
         '<div style="display:flex;gap:8px">' +
           (isEnabled ?
             (isRunning ?
-              '<button class="ng-btn" data-act-click="adapter-action" data-adapter="' + adapter.name + '" data-adapter-action="stop">' +
+              '<button class="ng-btn" data-act-click="adapter-action" data-adapter="' + escapeHtml(adapter.name) + '" data-adapter-action="stop">' +
                 '<i class="bi bi-stop-circle"></i> Stop</button>' :
-              '<button class="ng-btn ng-btn-accent" data-act-click="adapter-action" data-adapter="' + adapter.name + '" data-adapter-action="start">' +
+              '<button class="ng-btn ng-btn-accent" data-act-click="adapter-action" data-adapter="' + escapeHtml(adapter.name) + '" data-adapter-action="start">' +
                 '<i class="bi bi-play-circle"></i> Start</button>'
             ) +
-            '<button class="ng-btn" data-act-click="adapter-action" data-adapter="' + adapter.name + '" data-adapter-action="disable" style="color:var(--ng-status-error)">' +
+            '<button class="ng-btn" data-act-click="adapter-action" data-adapter="' + escapeHtml(adapter.name) + '" data-adapter-action="disable" style="color:var(--ng-status-error)">' +
               '<i class="bi bi-x-circle"></i> Disable</button>' :
-            '<button class="ng-btn ng-btn-accent" data-act-click="adapter-action" data-adapter="' + adapter.name + '" data-adapter-action="enable">' +
+            '<button class="ng-btn ng-btn-accent" data-act-click="adapter-action" data-adapter="' + escapeHtml(adapter.name) + '" data-adapter-action="enable">' +
               '<i class="bi bi-power"></i> Enable</button>'
           ) +
         '</div>' +
       '</div>' +
       // Setup failures are recoverable and visible without reading logs.
       (adapter.setup_error ? '<p role="status">' + escapeHtml(adapter.setup_error) + '</p>' : '') +
-      '<button class="ng-btn" data-adapter-config="' + adapter.name + '">Configure local import</button>' +
+      '<button class="ng-btn" data-adapter-config="' + escapeHtml(adapter.name) + '">Configure local import</button>' +
       // Description
       '<p style="color:var(--ng-text-secondary);font-size:0.875rem;margin-bottom:12px">' + info.description + '</p>' +
       // Details grid
@@ -203,7 +203,7 @@
       '</div>' +
     '</div>';
   }
-  function escapeHtml(text) { var n = document.createElement('span'); n.textContent = String(text); return n.innerHTML; }
+  function escapeHtml(text) { return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
   document.addEventListener('click', function (e) {
     var button = e.target.closest('[data-adapter-config]');
     if (!button) return;

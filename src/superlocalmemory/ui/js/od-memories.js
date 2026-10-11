@@ -25,10 +25,8 @@
   // ── Utilities ───────────────────────────────────────────────────────────────
 
   function _esc(s) {
-    if (typeof escapeHtml === 'function') return escapeHtml(s);
-    var d = document.createElement('div');
-    d.textContent = String(s == null ? '' : s);
-    return d.innerHTML;
+    // Quote-safe: the result is used inside attribute values too.
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   function _fmt(iso) {

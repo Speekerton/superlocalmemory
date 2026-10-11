@@ -4,7 +4,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 
-from superlocalmemory.server.profile_lease import current_request_lease, release_late_lease
+from superlocalmemory.server.profile_lease import acquire_request_lease, current_request_lease
 
 _RECALL_LEASE = ContextVar("slm_recall_lease", default=None)
 
@@ -35,13 +35,7 @@ async def _acquire(runtime, deadline):
     parent = current_request_lease()
     if parent is not None and parent.runtime is runtime:
         return parent.fork()
-    task = asyncio.create_task(asyncio.to_thread(runtime.acquire_lease))
-    try:
-        return await asyncio.wait_for(
-            asyncio.shield(task), max(0, deadline - asyncio.get_running_loop().time()))
-    except BaseException:
-        task.add_done_callback(release_late_lease)
-        raise
+    return await acquire_request_lease(runtime, deadline)
 
 
 @asynccontextmanager

@@ -532,6 +532,14 @@ class ProfileRuntimeMiddleware:
         return profile_switch or config_transition
 
     async def __call__(self, scope, receive, send) -> None:
+        from superlocalmemory.server.recall_ingress import is_recall, serve
+
+        if is_recall(scope):
+            await serve(self._call, self._app_state, scope, receive, send)
+        else:
+            await self._call(scope, receive, send)
+
+    async def _call(self, scope, receive, send) -> None:
         if scope.get("type") != "http":
             await self._app(scope, receive, send)
             return
@@ -544,21 +552,10 @@ class ProfileRuntimeMiddleware:
             await self._app(scope, receive, send)
             return
 
-        import asyncio
-
-        from superlocalmemory.server.profile_lease import release_late_lease
+        from superlocalmemory.server.profile_lease import acquire_request_lease
 
         runtime = get_profile_runtime(self._app_state)
-        acquire_task = asyncio.create_task(
-            asyncio.to_thread(runtime.acquire_lease)
-        )
-        try:
-            # Shield the worker so cancellation cannot strand a lease that the
-            # thread acquires after this coroutine has already unwound.
-            lease = await asyncio.shield(acquire_task)
-        except asyncio.CancelledError:
-            acquire_task.add_done_callback(release_late_lease)
-            raise
+        lease = await acquire_request_lease(runtime)
         await self._serve_admitted(scope, receive, send, lease)
 
     async def _serve_admitted(self, scope, receive, send, lease):

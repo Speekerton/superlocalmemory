@@ -241,9 +241,9 @@ async def run_recall(engine: Any, call: RecallCall, *, app_state: Any) -> dict:
     from superlocalmemory.server.recall_admission import foreground_admission
     from superlocalmemory.server.recall_deadline import timed_out
 
-    loop = asyncio.get_running_loop()
     budget = effective_budget_s(call)
-    public_deadline = loop.time() + budget
+    from superlocalmemory.server.recall_ingress import remaining_deadline
+    public_deadline = remaining_deadline(budget)
     worker_deadline = public_deadline - min(0.20, budget * 0.25)
     runtime = get_profile_runtime(app_state)
     snapshot = runtime.snapshot

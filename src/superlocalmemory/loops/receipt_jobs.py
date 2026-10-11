@@ -19,6 +19,7 @@ from superlocalmemory.loops.check_lock import exclusive_check
 from superlocalmemory.loops.execution_guard import _key
 from superlocalmemory.loops.execution_receipts import _run_registered, command_digest
 from superlocalmemory.loops.private_workspace import platform_reason, private_dir, temporary
+from superlocalmemory.loops.pytest_config import prepare_pytest, validate_pytest_configuration
 
 _SCHEMA = (
     'CREATE TABLE IF NOT EXISTS loop_gate_jobs ('
@@ -120,6 +121,7 @@ def current_job(db, job_id, profile_id, watcher_name):
 
 def _validate_execution(db, job, run_dir, artifacts):
     """All checks finish before any authenticated measurement is published."""
+    validate_pytest_configuration(job, run_dir)
     if not matches(job):
         raise ValueError('Checked artifacts changed during verification')
     if not current_job(db, job['job_id'], job['profile_id'], job['watcher_name']):
@@ -156,6 +158,7 @@ def run_registered_check(db, job_id, *, timeout=30):
             job['cwd'], json.loads(job['artifact_paths_json']), run_dir, allow_empty=True)
         candidate = dict(job, revision_digest=revision)
         command = relocated(json.loads(job['command_json']), job['cwd'], run_dir)
+        command = prepare_pytest(command, run_dir, candidate)
         return _run_registered(
             db, candidate, command, run_dir, timeout,
             lambda: _validate_execution(db, candidate, run_dir, artifacts),

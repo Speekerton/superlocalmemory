@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -31,6 +32,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _MAX_PROXIMITY_DAYS: float = 365.0
+_PROPER_RE = re.compile(r"\b([A-Z][a-z]+)\b")
 
 
 def _as_utc(dt: datetime | None) -> datetime | None:
@@ -205,8 +207,6 @@ class TemporalChannel:
             include_global = bool(getattr(self, "include_global", False))
         if include_shared is None:
             include_shared = bool(getattr(self, "include_shared", False))
-        import re
-        _PROPER_RE = re.compile(r"\b([A-Z][a-z]+)\b")
         names = [m.group(1) for m in _PROPER_RE.finditer(query)]
         if not names:
             names = [m.group(1) for m in _PROPER_RE.finditer(query.title())]

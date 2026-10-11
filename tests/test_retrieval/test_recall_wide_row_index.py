@@ -15,12 +15,12 @@ def test_wide_row_covering_index_keeps_ranked_hits(tmp_path):
     seed(db, 100, vectors=True, migrated=True)
     db.execute("DROP INDEX IF EXISTS idx_recall_fact_cover")
     before = (BM25Channel(db).search("Alice memory", "default"),
-              TemporalChannel(db).search("Alice March 2025", "default"))
+              TemporalChannel(db).search("Alice on 2025-03-15T00:00:00", "default"))
     with db.transaction():
         migration.apply(db._txn_state.conn)
         assert migration.verify(db._txn_state.conn)
     assert (BM25Channel(db).search("Alice memory", "default"),
-            TemporalChannel(db).search("Alice March 2025", "default")) == before
+            TemporalChannel(db).search("Alice on 2025-03-15T00:00:00", "default")) == before
     plan = db.execute(
         f"EXPLAIN QUERY PLAN SELECT created_at FROM {fact_table(db)} WHERE fact_id=? "
         "AND profile_id=? AND COALESCE(archive_status,'live')!='archived' "

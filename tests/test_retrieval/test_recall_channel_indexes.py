@@ -15,7 +15,7 @@ def rankings(db):
     return [
         entity.search("Alice", "default", 20),
         entity.score_candidates("Alice", [f"f{i:06}" for i in range(20)], "default"),
-        temporal.search("Alice March 2025", "default", 20),
+        temporal.search("Alice on 2025-03-15T00:00:00", "default", 20),
         bm25.search("Alice release", "default", 20),
     ]
 

@@ -76,11 +76,11 @@ def test_cache_is_bounded_and_preserves_same_fact_event_ties(tmp_path):
         db.execute("INSERT INTO temporal_events(event_id,entity_id,fact_id,referenced_date,"
                    "interval_end) VALUES (?,'e0','f000000','2025-01-01',?)", (event, end))
     channel = TemporalChannel(db)
-    before = channel.search("Alice March 2025", "default")
+    before = channel.search("Alice on 2025-03-15T00:00:00", "default")
     with db.transaction():
         migration.apply(db._txn_state.conn)
-    assert channel.search("Alice March 2025", "default") == before
-    assert channel.search("Alice March 2025", "default") == before
+    assert channel.search("Alice on 2025-03-15T00:00:00", "default") == before
+    assert channel.search("Alice on 2025-03-15T00:00:00", "default") == before
     for day in range(1, 20):
         channel._load_events("default", near_date=f"2025-03-{day:02}")
     assert len(channel._slice_cache._rows) == 8

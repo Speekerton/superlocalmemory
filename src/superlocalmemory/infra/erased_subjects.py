@@ -167,6 +167,8 @@ def register_targeted_erasure(db: object, profile_id: str, fact_ids: Sequence[st
     if db_path is None or not fact_ids:
         return True, []
     root = Path(db_path).resolve().parent
+    if not root.is_dir():  # no data folder, so no store and no backup to protect
+        return True, []
     try:
         record(root, profile_id, "fact", fact_ids, erasure_id)
     except Exception as exc:  # noqa: BLE001

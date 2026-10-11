@@ -69,8 +69,8 @@ async def test_hidden_media_tools_keep_their_remote_refusal(name):
 
 @pytest.mark.asyncio
 async def test_hidden_upload_link_keeps_its_opt_in_refusal():
-    from superlocalmemory.mcp.tools_media_upload import register_upload_link_tool
     from superlocalmemory.mcp.remote_caller import remote_caller
+    from superlocalmemory.mcp.tools_media_upload import register_upload_link_tool
     from superlocalmemory.runtimes import features
 
     assert not features.media_enabled()

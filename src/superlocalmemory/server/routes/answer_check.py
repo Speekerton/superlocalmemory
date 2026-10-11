@@ -18,7 +18,9 @@ Who may change it. Every mutation needs a credential the product issues —
 the install token the dashboard sends on every change, the daemon
 capability, or an API key — even from this machine: these settings decide
 where memory text is sent and what is billed, so "a process that reached the
-port" is not enough. On top of that, MANAGE permission (``_require_manage``).
+port" is not enough. On top of that, authority over the whole installation
+(``_require_manage``: the machine owner or an administrator of every
+workspace), since the consent sends memories of every workspace out.
 GET is a plain read, open to anyone who can reach the dashboard, and it
 changes nothing and starts nothing.
 
@@ -158,9 +160,9 @@ def _require_credential(request: Request) -> None:
 
 def _require_manage(request: Request) -> None:
     """One explicit authorization boundary, same pattern as other v3 routes."""
-    from superlocalmemory.server.rbac_enforce import require_manage
+    from superlocalmemory.server.rbac_enforce import require_global_manage
 
-    require_manage(request)
+    require_global_manage(request)
 
 
 def _gate(request: Request) -> None:

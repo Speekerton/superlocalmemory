@@ -86,9 +86,9 @@ async def _apply_runtime_config(request: Request, config, *, mode_change: bool) 
 
 def _require_manage(request: Request) -> None:
     """Use one explicit authorization boundary for dashboard configuration."""
-    from superlocalmemory.server.rbac_enforce import require_manage
+    from superlocalmemory.server.rbac_enforce import require_global_manage
 
-    require_manage(request)
+    require_global_manage(request)
 
 
 def _resolve_profile(request: Request, requested: str = "") -> str:
@@ -260,8 +260,8 @@ async def set_mode(request: Request):
     """Switch operating mode. Body: {"mode": "a"|"b"|"c"}"""
     # SEC-H-01: mode switch reconfigures the whole engine — admin-only (MANAGE)
     # on top of machine auth. Owner keeps MANAGE; personal mode unaffected.
-    from superlocalmemory.server.rbac_enforce import require_manage
-    require_manage(request)
+    from superlocalmemory.server.rbac_enforce import require_global_manage
+    require_global_manage(request)
     try:
         body = await request.json()
         new_mode = body.get("mode", "").lower()
@@ -450,8 +450,8 @@ async def set_full_config(request: Request):
     V3.4.24: Also accepts embedding_* fields for custom embedding endpoints.
     """
     # SEC-H-01: sets the LLM provider + API key for the whole engine — admin-only.
-    from superlocalmemory.server.rbac_enforce import require_manage
-    require_manage(request)
+    from superlocalmemory.server.rbac_enforce import require_global_manage
+    require_global_manage(request)
     try:
         body = await request.json()
         if not isinstance(body, dict):
@@ -757,8 +757,8 @@ def _refuse_incompatible_embedding(
 async def set_embedding_config(request: Request):
     """Update embedding configuration independently of mode switch."""
     # SEC-H-01: swapping the embedding provider/key affects all recall — admin-only.
-    from superlocalmemory.server.rbac_enforce import require_manage
-    require_manage(request)
+    from superlocalmemory.server.rbac_enforce import require_global_manage
+    require_global_manage(request)
     try:
         body = await request.json()
         from superlocalmemory.core.config import SLMConfig, EmbeddingConfig
@@ -850,8 +850,8 @@ async def get_scope_config(request: Request):
 async def set_scope_config(request: Request):
     """Validate, persist, and hot-apply explicit multi-scope defaults."""
     # SEC-H-01: scope defaults govern cross-profile recall visibility — admin-only.
-    from superlocalmemory.server.rbac_enforce import require_manage
-    require_manage(request)
+    from superlocalmemory.server.rbac_enforce import require_global_manage
+    require_global_manage(request)
     try:
         body = await request.json()
         from superlocalmemory.core.config import SLMConfig, ScopeConfig
@@ -1190,10 +1190,10 @@ async def set_provider(request: Request):
     # Swapping the provider + API key redirects all LLM traffic (prompt/output
     # interception risk) — admin-only, on top of mutation auth.
     from superlocalmemory.server.route_mutations import authorize_route_mutation
-    from superlocalmemory.server.rbac_enforce import require_manage
+    from superlocalmemory.server.rbac_enforce import require_global_manage
     _auth = authorize_route_mutation(request, operation="update",
                                      source_agent_id="http-set-provider")
-    require_manage(request)
+    require_global_manage(request)
     try:
         body = await request.json()
         provider = body.get("provider", "")

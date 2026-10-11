@@ -51,8 +51,8 @@ def _require_admin(request: Request) -> None:
     this BEFORE the handler's try/except so the 401/403 is not swallowed into a
     500.
     """
-    from superlocalmemory.server.rbac_enforce import require_manage
-    require_manage(request)
+    from superlocalmemory.server.rbac_enforce import require_global_manage
+    require_global_manage(request)
 
 # ---------------------------------------------------------------------------
 # Allowed backend values

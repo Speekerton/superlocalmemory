@@ -31,7 +31,8 @@ from superlocalmemory.access.rbac_admin import (
     AuditUnavailable, AuthorityError, audited, check_identity_authority, record,
 )
 from superlocalmemory.server.rbac_enforce import (
-    get_rbac_engine, principal_info, require_manage, resolve_principal,
+    get_rbac_engine, principal_info, require_global_manage, require_manage,
+    resolve_principal,
 )
 
 logger = logging.getLogger("superlocalmemory.routes.rbac")
@@ -425,7 +426,8 @@ async def remove_member(req: RemoveMemberRequest, request: Request):
 @router.post("/policy")
 async def set_policy(req: PolicyRequest, request: Request):
     _machine_guard(request)
-    principal = require_manage(request)
+    # One setting for every workspace: MANAGE on the active one is not enough.
+    principal = require_global_manage(request)
     rbac = _engine(request)
     old = rbac.require_login()
     try:

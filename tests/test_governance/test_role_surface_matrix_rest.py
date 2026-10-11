@@ -219,3 +219,152 @@ def test_a_viewer_lists_corrections_but_cannot_act_on_them(matrix):
                         headers=who["viewer_a"])
     assert acted.status_code == 403
     assert "write" in acted.json().get("error", acted.json().get("detail", ""))
+
+
+# -- PR 248 review, finding 1: installation-wide settings ----------------------------
+
+#: Every route that changes state shared by all workspaces (one value per install).
+INSTALLATION_WIDE = (
+    ("POST", "/api/rbac/policy"),
+    ("POST", "/api/daemon/restart"),
+    ("POST", "/api/v3/components/heal"),
+    ("POST", "/api/v3/ide/connect"),
+    ("POST", "/api/v3/ollama/validate"),
+    ("PUT", "/api/v3/mode"),
+    ("POST", "/api/v3/mode/set"),
+    ("PUT", "/api/v3/provider"),
+    ("POST", "/api/v3/provider/test"),
+    ("PUT", "/api/v3/embedding/config"),
+    ("POST", "/api/v3/embedding/test"),
+    ("POST", "/api/v3/embedding/reindex"),
+    ("POST", "/api/v3/embedding/reindex/upgrade"),
+    ("PUT", "/api/v3/scope/config"),
+    ("PUT", "/api/v3/runtime/config"),
+    ("PUT", "/api/v3/auto-capture/config"),
+    ("PUT", "/api/v3/auto-recall/config"),
+    ("PUT", "/api/v3/auto-invoke/config"),
+    ("PUT", "/api/v3/daemon/config"),
+    ("PUT", "/api/v3/forgetting/config"),
+    ("PUT", "/api/v3/graph/config"),
+    ("PUT", "/api/v3/mesh/config"),
+    ("PUT", "/api/v3/storage/config"),
+    ("PUT", "/api/v3/trust/config"),
+    ("PUT", "/api/v3/ratelimit"),
+    ("POST", "/api/v3/features/media/enable"),
+    ("POST", "/api/v3/features/media/disable"),
+    ("PUT", "/api/optimize/config"),
+    ("DELETE", "/api/optimize/cache/clear"),
+    ("POST", "/api/v3/answer-check/jev/consent"),
+    ("POST", "/api/v3/answer-check/jev/key"),
+    ("DELETE", "/api/v3/answer-check/jev/key"),
+    ("POST", "/api/v3/answer-check/jev/rerank"),
+    ("POST", "/api/v3/answer-check/jev/test"),
+    ("POST", "/api/v3/answer-check/laya/setup"),
+    ("POST", "/api/v3/answer-check/laya/adopt"),
+    ("POST", "/api/v3/answer-check/laya/remove"),
+    ("POST", "/api/v3/answer-check/mode"),
+    ("POST", "/api/v3/answer-check/save"),
+    ("POST", "/api/backup/configure"),
+    ("POST", "/api/backup/create"),
+    ("POST", "/api/backup/recovery-key"),
+    ("POST", "/api/upgrade/restore"),
+    ("POST", "/api/adapters/enable"),
+    ("POST", "/api/adapters/start"),
+    ("POST", "/api/evolution/enable"),
+    ("POST", "/api/evolution/config"),
+)
+
+
+@pytest.fixture
+def no_side_effects(monkeypatch):
+    """A refusal must come before any handler runs; nothing may spawn regardless."""
+    import subprocess
+
+    def _refuse(*_a, **_k):
+        raise AssertionError("a refused request reached a handler that spawns a process")
+
+    monkeypatch.setattr(subprocess, "Popen", _refuse)
+
+
+def _global_admin(app, who, ids):
+    """An account that administers every workspace on the installation."""
+    rbac = app.state.rbac
+    uid = rbac.create_user("root_admin", "password-1234")["user_id"]
+    for space in ("default", "sales"):
+        rbac.set_membership(space, uid, "admin")
+    ids["root_admin"] = uid
+    who["root_admin"] = {**who["owner"], "X-SLM-User-Session": rbac.create_session(uid)}
+
+
+def _gate_allows(app, method, path, headers) -> bool:
+    from starlette.requests import Request
+
+    from superlocalmemory.server.mutation_gate import mutation_gate
+
+    scope = {"type": "http", "method": method, "path": path, "query_string": b"",
+             "headers": [(k.lower().encode(), v.encode()) for k, v in headers.items()],
+             "app": app, "client": LOOPBACK, "server": ("127.0.0.1", 8765)}
+    return mutation_gate(Request(scope), app.state) is None
+
+
+@pytest.mark.parametrize("scoped", ["admin_a", "admin_b"])
+def test_a_workspace_admin_cannot_change_installation_wide_state(matrix, scoped, no_side_effects):
+    app, client, who, _ = matrix
+    _company(app)
+    home = "default" if scoped == "admin_a" else "sales"
+    client.post(f"/api/profiles/{home}/switch", headers=who[scoped])
+    answered = []
+    for method, path in INSTALLATION_WIDE:
+        r = client.request(method, path, json={}, headers=who[scoped])
+        if r.status_code != 403:
+            answered.append((method, path, r.status_code))
+    assert not answered, f"{scoped} changed installation-wide state: {answered}"
+    assert app.state.rbac.require_login() is True
+
+
+def test_the_reviewers_reproduction_company_mode_stays_on(matrix):
+    """P1 + P1b: a scoped admin turning login off, then reading with no session."""
+    app, client, who, _ = matrix
+    _company(app)
+    client.post("/api/profiles/sales/switch", headers=who["admin_b"])
+    pol = client.post("/api/rbac/policy", json={"require_login": False}, headers=who["admin_b"])
+    assert pol.status_code == 403, pol.text[:200]
+    pol = client.post("/api/rbac/policy", json={"require_login": False}, headers=who["admin_a"])
+    assert pol.status_code == 403, pol.text[:200]
+    assert app.state.rbac.require_login() is True
+    assert client.get("/api/memories").status_code == 401
+    for space in ("default", "sales"):
+        anon = client.get("/api/tiers/stats", params={"profile_id": space})
+        assert anon.status_code == 401, (space, anon.status_code)
+
+
+@pytest.mark.parametrize("login_required", [True, False], ids=["company", "login-optional"])
+def test_an_admin_of_every_workspace_passes_the_gate(matrix, login_required):
+    app, _, who, ids = matrix
+    _global_admin(app, who, ids)
+    if login_required:
+        _company(app)
+    refused = [(m, p) for m, p in INSTALLATION_WIDE
+               if not _gate_allows(app, m, p, who["root_admin"])]
+    assert not refused, refused
+
+
+def test_the_owner_passes_the_gate_in_personal_mode_and_with_the_capability(matrix):
+    from tests.test_server.test_rbac_company_mode_credential import _daemon_headers
+
+    app, _, who, _ = matrix
+    assert all(_gate_allows(app, m, p, who["owner"]) for m, p in INSTALLATION_WIDE)
+    _company(app)
+    assert not any(_gate_allows(app, m, p, who["owner"]) for m, p in INSTALLATION_WIDE)
+    cap = _daemon_headers(app)
+    refused = [(m, p) for m, p in INSTALLATION_WIDE if not _gate_allows(app, m, p, cap)]
+    assert not refused, refused
+
+
+def test_an_admin_of_every_workspace_changes_the_login_policy(matrix):
+    app, client, who, ids = matrix
+    _global_admin(app, who, ids)
+    _company(app)
+    r = client.post("/api/rbac/policy", json={"require_login": False}, headers=who["root_admin"])
+    assert r.status_code == 200, r.text[:200]
+    assert app.state.rbac.require_login() is False

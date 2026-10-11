@@ -6306,8 +6306,8 @@ def _register_daemon_routes(application: FastAPI) -> None:
         # the daemon interrupts everyone's work, so it is administration:
         # where login is required it needs a signed-in administrator (or the
         # daemon capability from the command line); personal mode is unchanged.
-        from superlocalmemory.server.rbac_enforce import require_manage
-        require_manage(request)
+        from superlocalmemory.server.rbac_enforce import require_global_manage
+        require_global_manage(request)
         import subprocess
         import sys as _sys
 

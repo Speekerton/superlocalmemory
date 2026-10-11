@@ -492,6 +492,17 @@ class RbacEngine:
         finally:
             conn.close()
 
+    def list_member_workspaces(self) -> list[str]:
+        """Every workspace at least one account belongs to (sorted)."""
+        conn = self._conn()
+        try:
+            rows = conn.execute(
+                "SELECT DISTINCT profile_id FROM rbac_memberships ORDER BY profile_id"
+            ).fetchall()
+            return [row[0] for row in rows]
+        finally:
+            conn.close()
+
     # -- policy settings --------------------------------------------------
 
     def get_policy(self, key: str, default: str = "") -> str:

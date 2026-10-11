@@ -31,12 +31,12 @@ Principal model
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import HTTPException, Request
 
 from superlocalmemory.access.rbac import Permission, Role, permissions_for_role
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -232,6 +232,60 @@ def require_permission(
 def require_manage(request: Request, *, profile: str | None = None) -> dict:
     """Guard for user/role administration (MANAGE permission)."""
     return require_permission(request, Permission.MANAGE, profile=profile)
+
+
+GLOBAL_MANAGE_MESSAGE = (
+    "Your role does not allow changing this setting: it applies to every "
+    "workspace on this computer, so only the computer's owner or an "
+    "administrator of every workspace can change it."
+)
+
+
+def installation_workspaces(rbac: Any) -> frozenset[str]:
+    """Every workspace on this installation: those with members and those stored.
+
+    A workspace nobody belongs to still counts: switching company mode off,
+    for one, would open it to anyone. An unreadable profile list adds nothing
+    (the member list alone still decides), never a reason to say yes.
+    """
+    spaces = set(rbac.list_member_workspaces())
+    try:
+        from superlocalmemory.server.routes.helpers import _get_db_profiles
+
+        spaces.update(str(p["profile_id"]) for p in _get_db_profiles() if p.get("profile_id"))
+    except Exception:  # noqa: BLE001 - the membership list is the floor
+        logger.debug("installation workspaces: profile list unreadable", exc_info=True)
+    return frozenset(spaces)
+
+
+def holds_global_manage(rbac: Any, user_id: str) -> bool:
+    """True when ``user_id`` administers every workspace on this installation."""
+    if rbac is None:
+        return False
+    spaces = installation_workspaces(rbac)
+    return bool(spaces) and all(
+        rbac.has_permission(user_id, space, Permission.MANAGE) for space in spaces
+    )
+
+
+def require_global_manage(request: Request) -> dict:
+    """Authorize a change to installation-wide state (one setting for everyone).
+
+    The policy that turns login on or off, the Jev consent and key, the
+    provider, the embedding model, Optimize, restarts: none of these belongs
+    to one workspace, so MANAGE on the active one is not enough (4.1.25 PR 248
+    review, finding 1: an administrator of ``sales`` switched company mode off
+    for ``default``). Allowed: the machine owner under the same rules as any
+    MANAGE (personal mode, or the daemon capability in company mode), or a
+    signed-in user who administers every workspace.
+    """
+    principal = resolve_principal(request)
+    if principal["kind"] != "user":
+        return require_permission(request, Permission.MANAGE)
+    rbac = get_rbac_engine(request.app.state)
+    if holds_global_manage(rbac, principal["user_id"]):
+        return principal
+    raise HTTPException(403, detail=GLOBAL_MANAGE_MESSAGE)
 
 
 def resolve_actor_roles(request: Request, *, profile: str | None = None):

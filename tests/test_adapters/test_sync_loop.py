@@ -11,7 +11,6 @@ from pathlib import Path
 import pytest
 
 from superlocalmemory.hooks.adapter_base import (
-    atomic_write,
     path_sha256,
     sync_log_record,
 )
@@ -86,7 +85,6 @@ async def test_sync_log_row_per_sync_attempt(tmp_path, fake_recall):
         recall_fn=fake_recall,
     )
     # First call writes; second is a content-hash skip.
-    import time as _time
     cp._now_iso = lambda: "2026-04-18T00:00:00+00:00"
     await run_once([adapter])
     await run_once([adapter])

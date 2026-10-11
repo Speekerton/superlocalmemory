@@ -7,7 +7,6 @@
 import json
 
 import pytest
-from pathlib import Path
 
 from superlocalmemory.hooks.ide_connector import IDEConnector, SLM_MARKER
 

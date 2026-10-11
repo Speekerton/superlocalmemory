@@ -813,7 +813,7 @@ class TestIsSearchableByMeaning:
 
     def test_returns_false_on_error_not_raises(self, tmp_path: Path) -> None:
         """Any exception from the DB must be caught — fail-closed, not crash."""
-        from unittest.mock import patch as _patch, MagicMock
+        from unittest.mock import patch as _patch
 
         db_path = _make_db(tmp_path)
         cfg = VectorStoreConfig(dimension=DIM, enabled=True)

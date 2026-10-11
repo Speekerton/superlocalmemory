@@ -20,7 +20,6 @@ Pure functions — no side effects, no DB access. Stdlib-only at import
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from superlocalmemory.core.config import CANONICAL_RECALL_LIMIT

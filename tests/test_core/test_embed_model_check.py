@@ -6,8 +6,6 @@ import asyncio
 import json
 from types import SimpleNamespace
 
-import pytest
-
 from superlocalmemory.core import daemon_text_embedder as dte
 from superlocalmemory.server.routes import v3_api
 

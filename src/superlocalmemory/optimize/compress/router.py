@@ -16,7 +16,7 @@ import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from superlocalmemory.optimize.proxy.lifecycle import ProxyRequest, CompressHook
+from superlocalmemory.optimize.proxy.lifecycle import ProxyRequest
 from superlocalmemory.optimize.config.store import ConfigStore
 
 if TYPE_CHECKING:

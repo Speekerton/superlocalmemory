@@ -10,7 +10,7 @@ import json
 import logging
 import re
 import uuid
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
@@ -27,6 +27,9 @@ from .helpers import (
     get_db_connection,
     get_engine_lazy,
 )
+
+if TYPE_CHECKING:
+    from superlocalmemory.core.operation_request import OperationKind
 
 logger = logging.getLogger("superlocalmemory.routes.memories")
 router = APIRouter()

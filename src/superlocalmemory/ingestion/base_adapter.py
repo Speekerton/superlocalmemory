@@ -23,8 +23,7 @@ import signal
 import sys
 import threading
 import time
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 from typing import NamedTuple
 
 logger = logging.getLogger("superlocalmemory.ingestion")

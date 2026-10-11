@@ -26,8 +26,6 @@ import concurrent.futures
 import threading
 import time
 
-import pytest
-
 from superlocalmemory.retrieval import engine as engine_mod
 from superlocalmemory.retrieval.engine import CHANNEL_HANG_GUARD_SECONDS
 

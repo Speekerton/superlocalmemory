@@ -13,9 +13,7 @@ from superlocalmemory.mcp import remote_caller
 from superlocalmemory.mcp.remote_caller import remote_grant
 from superlocalmemory.server import remote_profile_binding as binding
 from superlocalmemory.server import remote_tool_policy as policy
-from superlocalmemory.server.remote_access import RemotePrincipal
 from tests.test_security.test_remote_tool_policy import (
-    CID,
     WEB_READ,
     WEB_WRITE,
     _grant,

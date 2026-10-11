@@ -191,7 +191,6 @@ class SheafConsistencyChecker:
 
     def _get_fact_embedding(self, fact_id: str) -> np.ndarray | None:
         """Load a fact's embedding from the database."""
-        import json
         rows = self._db.execute(
             "SELECT embedding FROM atomic_facts WHERE fact_id = ?",
             (fact_id,),

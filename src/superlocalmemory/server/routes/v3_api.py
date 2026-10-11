@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 import os
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -22,6 +23,9 @@ from superlocalmemory.core.status_contract import (
 )
 from superlocalmemory.server.routes.helpers import SLM_VERSION, get_read_connection
 from superlocalmemory.server.route_mutations import authorize_route_mutation
+
+if TYPE_CHECKING:
+    from superlocalmemory.core.config import LLMConfig, SLMConfig
 
 logger = logging.getLogger(__name__)
 
@@ -1898,7 +1902,7 @@ async def get_associations(
     """Get association edges for a profile with content previews."""
     pid = _resolve_profile(request, profile)
     try:
-        from superlocalmemory.server.routes.helpers import get_active_profile, DB_PATH
+        from superlocalmemory.server.routes.helpers import DB_PATH
         import sqlite3
 
         if not DB_PATH.exists():
@@ -1965,7 +1969,7 @@ async def get_association_stats(request: Request, profile: str = ""):
     """Get association graph statistics."""
     pid = _resolve_profile(request, profile)
     try:
-        from superlocalmemory.server.routes.helpers import get_active_profile, DB_PATH
+        from superlocalmemory.server.routes.helpers import DB_PATH
         import sqlite3
 
         if not DB_PATH.exists():
@@ -2066,7 +2070,7 @@ async def get_consolidation_status(request: Request, profile: str = ""):
     """Get consolidation status and last run results."""
     pid = _resolve_profile(request, profile)
     try:
-        from superlocalmemory.server.routes.helpers import get_active_profile, DB_PATH
+        from superlocalmemory.server.routes.helpers import DB_PATH
         from superlocalmemory.core.config import SLMConfig
         import sqlite3
 
@@ -2161,7 +2165,6 @@ async def trigger_consolidation(request: Request):
         lightweight = body.get("lightweight", False)
         profile = body.get("profile", "")
 
-        from superlocalmemory.server.routes.helpers import get_active_profile
         pid = _resolve_mutation_profile(profile)
         _require_manage_for_profile(request, pid)
         authorization = authorize_route_mutation(
@@ -2213,7 +2216,7 @@ async def get_core_memory(request: Request, profile: str = ""):
     """Get all Core Memory blocks for a profile."""
     pid = _resolve_profile(request, profile)
     try:
-        from superlocalmemory.server.routes.helpers import get_active_profile, DB_PATH
+        from superlocalmemory.server.routes.helpers import DB_PATH
         import sqlite3
 
         if not DB_PATH.exists():
@@ -2343,7 +2346,7 @@ async def get_vector_store_status(request: Request, profile: str = ""):
     try:
         from superlocalmemory.core.config import SLMConfig
         from superlocalmemory.server.routes.helpers import DB_PATH
-        import sqlite3
+        import sqlite3  # noqa: F401
 
         config = SLMConfig.load()
 
@@ -2403,7 +2406,7 @@ async def forgetting_stats(request: Request, profile: str = ""):
     """Get memory retention zone distribution."""
     pid = _resolve_profile(request, profile)
     try:
-        from superlocalmemory.server.routes.helpers import get_active_profile, DB_PATH
+        from superlocalmemory.server.routes.helpers import DB_PATH
         import sqlite3 as _sqlite3
 
         zones = {"active": 0, "warm": 0, "cold": 0, "archive": 0, "forgotten": 0}
@@ -2450,7 +2453,7 @@ async def run_forgetting(request: Request):
         body = await request.json()
         profile = body.get("profile", "")
 
-        from superlocalmemory.server.routes.helpers import get_active_profile, DB_PATH
+        from superlocalmemory.server.routes.helpers import DB_PATH
         from superlocalmemory.storage.memory_write import memory_write as _memory_write
         pid = _resolve_mutation_profile(profile)
         _require_manage_for_profile(request, pid)
@@ -2535,7 +2538,7 @@ async def quantization_stats(request: Request, profile: str = ""):
     """Get embedding quantization tier distribution."""
     pid = _resolve_profile(request, profile)
     try:
-        from superlocalmemory.server.routes.helpers import get_active_profile, DB_PATH
+        from superlocalmemory.server.routes.helpers import DB_PATH
         import sqlite3 as _sqlite3
 
         tiers = {"float32": 0, "int8": 0, "polar4": 0, "polar2": 0}
@@ -2598,7 +2601,7 @@ async def ccq_blocks(request: Request, profile: str = "", limit: int = 50):
     """Get CCQ consolidated blocks."""
     pid = _resolve_profile(request, profile)
     try:
-        from superlocalmemory.server.routes.helpers import get_active_profile, DB_PATH
+        from superlocalmemory.server.routes.helpers import DB_PATH
         import sqlite3 as _sqlite3
 
         if not DB_PATH.exists():
@@ -2658,7 +2661,7 @@ async def get_soft_prompts(request: Request, profile: str = ""):
     """Get active soft prompt templates."""
     pid = _resolve_profile(request, profile)
     try:
-        from superlocalmemory.server.routes.helpers import get_active_profile, DB_PATH
+        from superlocalmemory.server.routes.helpers import DB_PATH
         import sqlite3 as _sqlite3
 
         if not DB_PATH.exists():
@@ -2764,7 +2767,7 @@ async def get_graph_communities(request: Request, profile: str = ""):
     """
     pid = _resolve_profile(request, profile)
     try:
-        from superlocalmemory.server.routes.helpers import get_active_profile, DB_PATH
+        from superlocalmemory.server.routes.helpers import DB_PATH
         import sqlite3
 
         if not DB_PATH.exists():
@@ -2917,7 +2920,7 @@ async def v33_overview(request: Request, profile: str = ""):
     """Get SLM 3.3 feature overview -- all new capabilities at a glance."""
     pid = _resolve_profile(request, profile)
     try:
-        from superlocalmemory.server.routes.helpers import get_active_profile, DB_PATH
+        from superlocalmemory.server.routes.helpers import DB_PATH
         import sqlite3 as _sqlite3
 
         overview: dict = {

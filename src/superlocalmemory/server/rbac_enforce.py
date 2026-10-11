@@ -288,6 +288,18 @@ def require_global_manage(request: Request) -> dict:
     raise HTTPException(403, detail=GLOBAL_MANAGE_MESSAGE)
 
 
+def has_global_manage(request: Request) -> bool:
+    """Whether the caller holds installation-wide authority (never raises)."""
+    try:
+        require_global_manage(request)
+    except HTTPException:
+        return False
+    except Exception:  # noqa: BLE001 - authority that cannot be read is not held
+        logger.warning("installation authority could not be read", exc_info=True)
+        return False
+    return True
+
+
 def resolve_actor_roles(request: Request, *, profile: str | None = None):
     """Resolve the caller to concrete ActorContext roles (server-derived).
 

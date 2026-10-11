@@ -59,6 +59,10 @@ def record(rbac: RbacEngine, event: str, *, actor: str, profile: str = "",
     from superlocalmemory.compliance.audit import AuditChain
 
     safe = {k: v for k, v in details.items() if v is not None}
+    # No workspace = the whole installation (accounts, the login policy,
+    # sign-in): say so, so the audit pane can show it to whoever holds
+    # authority over the installation (PR 248 review, finding 5).
+    safe["scope"] = "workspace" if profile else "installation"
     try:
         AuditChain(_audit_path(rbac)).log(
             operation=AUDIT_PREFIX + event, agent_id=actor, profile_id=profile,

@@ -146,13 +146,20 @@ async def query_audit_trail(
     try:
         from superlocalmemory.server.audit_view import integrity_summary, present_event
 
+        from superlocalmemory.server.rbac_enforce import has_global_manage
+
         profile = get_active_profile()
+        # Installation-wide events (accounts, the login policy, sign-in) carry
+        # no workspace; whoever holds authority over the whole installation
+        # sees them next to the active workspace's (PR 248 review, finding 5).
+        installation = has_global_manage(request)
+        scope = (profile, "") if installation else profile
         audit = AuditChain(str(AUDIT_DB))
         events = [present_event(e) for e in audit.query(
-            profile_id=profile, operation=event_type, start_date=since,
+            profile_id=scope, operation=event_type, start_date=since,
             limit=limit, offset=offset,
         )]
-        matching = audit.count(profile_id=profile, operation=event_type, start_date=since)
+        matching = audit.count(profile_id=scope, operation=event_type, start_date=since)
         integrity = integrity_summary(audit)
         return {
             "available": True, "events": events, "total": matching,
@@ -162,6 +169,7 @@ async def query_audit_trail(
             "integrity_label": integrity["label"],
             "integrity": integrity["report"],
             "active_profile": profile,
+            "includes_installation_events": installation,
             "filters": {"event_type": event_type, "since": since, "limit": limit},
         }
     except Exception:

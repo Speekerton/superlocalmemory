@@ -306,7 +306,7 @@ class AuditChain:
 
     def query(
         self,
-        profile_id: Optional[str] = None,
+        profile_id: Optional[Union[str, tuple[str, ...]]] = None,
         agent_id: Optional[str] = None,
         operation: Optional[str] = None,
         start_date: Optional[str] = None,
@@ -347,11 +347,18 @@ class AuditChain:
 
     @staticmethod
     def _filters(
-        profile_id: Optional[str], agent_id: Optional[str], operation: Optional[str],
+        profile_id: Optional[Union[str, tuple[str, ...]]], agent_id: Optional[str],
+        operation: Optional[str],
         start_date: Optional[str], end_date: Optional[str],
     ) -> tuple[str, list[Any]]:
         clauses: list[str] = []
         params: list[Any] = []
+        if isinstance(profile_id, (list, tuple, frozenset, set)):
+            # Several workspaces (the active one plus "" = installation scope).
+            spaces = sorted(profile_id)
+            clauses.append(f"profile_id IN ({','.join('?' for _ in spaces)})")
+            params.extend(spaces)
+            profile_id = None
         for column, op, value in (
             ("profile_id", "=", profile_id), ("agent_id", "=", agent_id),
             ("operation", "=", operation), ("timestamp", ">=", start_date),
@@ -364,7 +371,7 @@ class AuditChain:
 
     def count(
         self,
-        profile_id: Optional[str] = None,
+        profile_id: Optional[Union[str, tuple[str, ...]]] = None,
         agent_id: Optional[str] = None,
         operation: Optional[str] = None,
         start_date: Optional[str] = None,

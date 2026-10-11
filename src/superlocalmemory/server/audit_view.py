@@ -57,6 +57,8 @@ def _target(event: dict, meta: dict) -> str:
     profile = event.get("profile_id") or ""
     if profile:
         bits.append(f"workspace {profile}")
+    else:
+        bits.append("installation-wide")
     return ", ".join(bits)
 
 

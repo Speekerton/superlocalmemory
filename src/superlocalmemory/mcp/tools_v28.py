@@ -209,20 +209,22 @@ def register_v28_tools(server, get_engine: Callable) -> None:
         """
         try:
             engine = get_engine()
+            pid, refused = tool_profile(engine, "")
+            if refused:
+                return refused
             authorization = authorize_mcp_mutation(
                 engine,
                 "update",
                 mutation_source="mcp-retention-policy",
+                profile_id=pid,
             )
-            from superlocalmemory.learning.lifecycle_policy import InactivityPolicy
+            from superlocalmemory.learning.lifecycle_policy import set_configured_policy
 
-            InactivityPolicy(cold_after_days, archive_after_days)
-            with engine._db.transaction():
-                engine._db.set_config("retention_cold_days", str(cold_after_days))
-                engine._db.set_config("retention_archive_days", str(archive_after_days))
+            set_configured_policy(engine._db, pid, cold_after_days, archive_after_days)
             authorization.complete()
             return {
                 "success": True,
+                "profile_id": pid,
                 "cold_after_days": cold_after_days,
                 "archive_after_days": archive_after_days,
             }

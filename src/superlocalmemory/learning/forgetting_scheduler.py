@@ -94,7 +94,9 @@ class ForgettingScheduler:
             return {"skipped": True, "reason": "within_interval"}
         facts = self._fetch_facts_with_metadata(profile_id)
         previous = self._get_existing_zones(profile_id, facts)
-        results = apply_configured_policy(self._db, self._ebbinghaus.batch_compute_retention(facts))
+        results = apply_configured_policy(
+            self._db, self._ebbinghaus.batch_compute_retention(facts), profile_id
+        )
         stats, forgotten = _retention_stats(results, previous)
         if not dry_run:
             self._db.batch_upsert_retention(results, profile_id)

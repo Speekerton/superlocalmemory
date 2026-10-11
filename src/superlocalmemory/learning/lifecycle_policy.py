@@ -2,6 +2,7 @@
 # Licensed under AGPL-3.0-or-later
 """One inactivity policy for configured compaction and periodic decay."""
 
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -36,11 +37,20 @@ class InactivityPolicy:
         return MemoryLifecycle.ARCHIVED
 
 
-def configured_policy(db):
-    cold, archive = db.get_config("retention_cold_days"), db.get_config("retention_archive_days")
-    if not isinstance(cold, (str, int)) or not isinstance(archive, (str, int)):
+def configured_policy(db, profile_id):
+    raw = db.get_config(f"retention_policy:{profile_id}")
+    if not isinstance(raw, str):
         return None
-    return InactivityPolicy(int(cold), int(archive))
+    thresholds = json.loads(raw)
+    return InactivityPolicy(thresholds["cold_days"], thresholds["archive_days"])
+
+
+def set_configured_policy(db, profile_id, cold_days, archive_days):
+    policy = InactivityPolicy(cold_days, archive_days)
+    db.set_config(
+        f"retention_policy:{profile_id}",
+        json.dumps({"cold_days": policy.cold_days, "archive_days": policy.archive_days}),
+    )
 
 
 class LifecycleManager(BaseLifecycleManager):
@@ -61,11 +71,11 @@ class LifecycleManager(BaseLifecycleManager):
         if latest is not None:
             # SQLite's Julian clock and Python's UTC clock have the same epoch.
             timestamp = datetime.fromtimestamp((latest - 2440587.5) * 86400.0, UTC).isoformat()
-        return (configured_policy(self._db) or InactivityPolicy()).state(timestamp)
+        return (configured_policy(self._db, fact.profile_id) or InactivityPolicy()).state(timestamp)
 
 
-def apply_configured_policy(db, results):
-    policy = configured_policy(db)
+def apply_configured_policy(db, results, profile_id):
+    policy = configured_policy(db, profile_id)
     if policy is None:
         return results
     return [

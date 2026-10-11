@@ -7,7 +7,7 @@ import logging
 import time
 
 import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.requests import Request
 from fastapi.responses import Response
 
@@ -96,6 +96,7 @@ class ProxyApp:
 
 def build_proxy_router(proxy: ProxyApp) -> APIRouter:
     """Build and return the FastAPI router for all proxy surfaces."""
+    from superlocalmemory.optimize.proxy.access import require_proxy_access
     from superlocalmemory.optimize.proxy.anthropic_surface import (
         handle_count_tokens,
         handle_messages,
@@ -113,7 +114,8 @@ def build_proxy_router(proxy: ProxyApp) -> APIRouter:
         handle_vertex_generative,
     )
 
-    router = APIRouter(tags=["slm-optimize-proxy"])
+    router = APIRouter(tags=["slm-optimize-proxy"],
+                       dependencies=[Depends(require_proxy_access)])
 
     @router.post("/v1/messages")
     async def messages_route(request: Request) -> Response:

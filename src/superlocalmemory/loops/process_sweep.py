@@ -33,7 +33,7 @@ def sweep(before, began):
     while True:
         current = user_processes()
         remaining = [value for identity, value in current.items()
-                     if identity not in before and identity[1] >= int(began)
+                     if identity not in before and identity[1] >= began
                      and identity[0] != os.getpid()]
         if not remaining:
             return reason

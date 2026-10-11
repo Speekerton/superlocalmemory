@@ -12,16 +12,16 @@ from superlocalmemory.loops.process_sweep import sweep, user_processes
 
 
 def execute(command, cwd, timeout):
+    began = time.time()
     try:
         before = user_processes()
     except ValueError as error:
         return -1, '', str(error)
-    began = time.time()
     try:
         process = subprocess.Popen(
             command, cwd=cwd, stdin=subprocess.DEVNULL, shell=False,
             env=execution_environment(cwd), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, errors='replace', start_new_session=True,
+            start_new_session=True,
         )
     except OSError:
         return -1, '', 'Independent check did not complete'

@@ -10,7 +10,7 @@ import secrets
 import stat
 from pathlib import Path
 
-from superlocalmemory.loops.private_workspace import directory_handle, private_file
+from superlocalmemory.loops.private_workspace import directory_handle, private_dir, private_file
 
 
 def admission(job):
@@ -19,16 +19,7 @@ def admission(job):
             'definition_digest': job['definition_digest'], 'validation': 'hermetic-copy-v1'}
 
 
-def _key(store, *, create=False):
-    path = Path(store) / 'admission.key'
-    if create:
-        try:
-            stream = private_file(path)
-        except FileExistsError:
-            pass
-        else:
-            with stream:
-                stream.write(secrets.token_bytes(32))
+def _read_key(path):
     with directory_handle(path.parent) as directory:
         fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
     with os.fdopen(fd, 'rb') as stream:
@@ -39,6 +30,34 @@ def _key(store, *, create=False):
     if len(key) != 32:
         raise ValueError('Invalid admission key')
     return key
+
+
+def _key(store, *, create=False):
+    path = private_dir(Path(store).parent / 'loop-admission') / 'admission.key'
+    legacy = Path(store) / 'admission.key'
+    if create:
+        try:
+            previous = _read_key(legacy)
+        except FileNotFoundError:
+            previous = None
+        try:
+            stream = private_file(path)
+        except FileExistsError:
+            pass
+        else:
+            with stream:
+                stream.write(previous if previous is not None else secrets.token_bytes(32))
+        key = _read_key(path)
+        if previous is not None:
+            if not hmac.compare_digest(key, previous):
+                raise ValueError('Conflicting admission key locations; operator repair required')
+            with directory_handle(store) as directory:
+                try:
+                    os.unlink(legacy.name, dir_fd=directory)
+                except FileNotFoundError:
+                    pass
+        return key
+    return _read_key(path)
 
 
 def _payload(receipt):

@@ -15,6 +15,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+from superlocalmemory.loops.check_output import output_evidence
 from superlocalmemory.loops.check_process import execute
 
 _SCHEMA = (
@@ -88,11 +89,11 @@ def run_check(
     return receipt
 
 
-def _measurement(profile_id, task_id, run_id, producer, digest, exit_code, stdout, stderr):
-    measurement = {"exit_code": exit_code, "stdout": stdout, "stderr": stderr}
-    if exit_code == -1 and stderr.startswith(('a process started by the check is still running:',
-                                              'Cannot validate the user process table')):
-        measurement['stop_reason'] = stderr
+def _measurement(profile_id, task_id, run_id, producer, digest, exit_code, stdout, stderr,
+                 secret_material=()):
+    measurement = dict(exit_code=exit_code, **output_evidence(stdout, stderr, secret_material))
+    if exit_code == -1:
+        measurement['stop_reason'] = measurement['stderr_excerpt']
     evidence = json.dumps(measurement, sort_keys=True)
     receipt = dict(
         receipt_id=uuid.uuid4().hex,
@@ -112,12 +113,13 @@ def _measurement(profile_id, task_id, run_id, producer, digest, exit_code, stdou
 
 def _run_registered(db, job, command, cwd, timeout, validate_result):
     """Only this runner signs, after the complete validation callback returns."""
-    from superlocalmemory.loops.execution_guard import _sign_receipt
+    from superlocalmemory.loops.execution_guard import _key, _sign_receipt
 
+    key = _key(job["store_path"])
     result = _execution(command, cwd, min(max(float(timeout), 0.1), 60))
     validate_result()
     receipt = _measurement(job["profile_id"], job["task_id"], job["run_id"], job["producer"],
-                           job["command_digest"], *result)
+                           job["command_digest"], *result, secret_material=(key,))
     _sign_receipt(job, receipt)
     _store(db, receipt)
     return receipt

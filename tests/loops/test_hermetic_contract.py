@@ -200,7 +200,7 @@ def test_authenticated_receipt_rejects_changed_measurement(receipt_db, tmp_path)
     assert verify_admission(job, receipt)
     receipt["produced_at"] = "2026-01-01T00:00:00+00:00"
     assert not verify_admission(job, receipt)
-    key = tmp_path / "slm" / "loop-checks" / "admission.key"
+    key = tmp_path / "slm" / "loop-admission" / "admission.key"
     assert key.stat().st_mode & 0o777 == 0o600
     for path in (tmp_path / "slm" / "loop-checks").rglob("*"):
         assert path.stat().st_mode & 0o777 == (0o700 if path.is_dir() else 0o600)

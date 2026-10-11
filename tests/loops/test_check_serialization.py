@@ -4,7 +4,7 @@ import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
-from superlocalmemory.loops import receipt_jobs
+from superlocalmemory.loops import private_workspace, receipt_jobs
 from tests.loops.test_hermetic_contract import register
 from tests.mcp.test_loop_receipt_races import receipt_db as receipt_db
 
@@ -28,13 +28,16 @@ def test_root_lock_covers_validation_and_next_job(receipt_db, tmp_path, monkeypa
         return original(db, job, run_dir, artifacts)
 
     monkeypatch.setattr(receipt_jobs, '_validate_execution', validate)
+    copies = tmp_path / 'copies'
+    copies.mkdir()
+    monkeypatch.setattr(receipt_jobs, 'temporary', lambda: private_workspace.temporary(copies))
     with ThreadPoolExecutor(max_workers=2) as workers:
         one = workers.submit(receipt_jobs.run_registered_check, receipt_db, first['job_id'])
         assert validated.wait(5)
         two = workers.submit(receipt_jobs.run_registered_check, receipt_db, second['job_id'])
         try:
             assert not entered.wait(0.2)
-            assert len(list((tmp_path / 'slm/loop-checks/runs').iterdir())) == 1
+            assert len(list(copies.iterdir())) == 1
         finally:
             release.set()
         assert one.result()['verdict'] == two.result()['verdict'] == 'PASS'

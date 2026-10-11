@@ -129,5 +129,3 @@ async def test_N8_survivor_from_one_check_certifies_another_job(db, tmp_path):
     assert rx["verdict"] == "FAIL"
     escaped = await watch(db, jx["job_id"], name="X")
     assert "a process started by the check is still running:" in escaped["receipt_reason"]
-
-

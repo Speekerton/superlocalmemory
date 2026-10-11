@@ -150,7 +150,7 @@ def run_registered_check(db, job_id, *, timeout=30):
     reason = platform_reason()
     if reason:
         raise ValueError(reason)
-    with exclusive_check(job['store_path']), temporary(Path(job['store_path']) / 'runs') as run_dir:
+    with exclusive_check(job['store_path']), temporary() as run_dir:
         materialize(job, run_dir)
         artifacts, revision = artifact_revision.copy_inputs(
             job['cwd'], json.loads(job['artifact_paths_json']), run_dir, allow_empty=True)

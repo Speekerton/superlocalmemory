@@ -33,8 +33,12 @@ def wired(tmp_path):
 
 
 @pytest.mark.parametrize("bit_width", [8, 4, 2])
-def test_enabled_quantized_only_fact_is_used_by_wired_channel(wired, bit_width):
+@pytest.mark.parametrize("with_vector_extension", [True, False])
+def test_enabled_quantized_only_fact_is_used_by_wired_channel(
+    wired, bit_width, with_vector_extension,
+):
     config, db, vector_store, retrievals = wired
+    vector_store = vector_store if with_vector_extension else None
     retrieval = init_retrieval(config, db, None, None, None, vector_store=vector_store)
     retrievals.append(retrieval)
     channel = retrieval._semantic
@@ -70,5 +74,13 @@ def test_initialization_failure_is_visible(wired, caplog):
     config, db, vector_store, _retrievals = wired
     with patch("superlocalmemory.math.polar_quant.PolarQuantEncoder",
                side_effect=ValueError("bad codec")):
+        assert _init_quantization_aware_search(vector_store, db, config) is None
+    assert "quantized tiers unavailable" in caplog.text.lower()
+
+
+def test_unavailable_candidate_backend_is_visible(wired, caplog):
+    config, db, vector_store, _retrievals = wired
+    with patch("superlocalmemory.retrieval.canonical_vector_index.candidate_vector_source",
+               return_value=None):
         assert _init_quantization_aware_search(vector_store, db, config) is None
     assert "quantized tiers unavailable" in caplog.text.lower()

@@ -539,22 +539,24 @@ def _init_quantization_aware_search(
     """Create QuantizationAwareSearch if quantized store is available.
 
     Returns None on an explicit disable or a reported initialization failure.
-    Stateless wrapper: zero memory overhead, no workers, no threads.
+    No workers or threads; reuses the canonical candidate vector index.
     """
     if not config.quantization.enabled:
         logger.info("Quantized search disabled by configuration")
-        return None
-    if vector_store is None:
-        logger.warning("Quantized tiers unavailable: no vector candidate store")
         return None
     try:
         from dataclasses import replace
 
         from superlocalmemory.math.polar_quant import PolarQuantEncoder
         from superlocalmemory.math.qjl import QJLEncoder
+        from superlocalmemory.retrieval.canonical_vector_index import candidate_vector_source
         from superlocalmemory.retrieval.quantization_aware_search import QuantizationAwareSearch
         from superlocalmemory.storage.quantized_store import QuantizedEmbeddingStore
 
+        vector_store = candidate_vector_source(db, vector_store, config.embedding.dimension)
+        if vector_store is None or not vector_store.available:
+            logger.warning("Quantized tiers unavailable: no vector candidate store")
+            return None
         polar = PolarQuantEncoder(replace(
             config.quantization.polar, dimension=config.embedding.dimension,
         ))

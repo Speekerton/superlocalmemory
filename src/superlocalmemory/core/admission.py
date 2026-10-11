@@ -617,6 +617,7 @@ def admits(kind: OperationKind):
             except AdmissionDenied as exc:
                 return refusal_result(exc.decision.reason)
             return await fn(*args, **kwargs)
+        wrapper._slm_admission_gated = True
         return wrapper
     return decorator
 

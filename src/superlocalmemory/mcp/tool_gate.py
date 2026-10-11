@@ -60,7 +60,7 @@ def default_read_gate(fn: Callable) -> Callable:
     from superlocalmemory.core.operation_request import OperationKind
 
     name = fn.__name__
-    if name in PUBLIC_MCP_TOOLS or name in _GATED_MCP_TOOLS:
+    if name in PUBLIC_MCP_TOOLS or getattr(fn, "_slm_admission_gated", False):
         return fn
     _GATED_MCP_TOOLS.add(name)
     kind = OperationKind.RECALL
@@ -75,6 +75,7 @@ def default_read_gate(fn: Callable) -> Callable:
         def gated(*args, **kwargs):
             refusal = _refused(kind, str(kwargs.get("profile_id", "") or ""))
             return refusal if refusal is not None else fn(*args, **kwargs)
+    gated._slm_admission_gated = True
     return gated
 
 

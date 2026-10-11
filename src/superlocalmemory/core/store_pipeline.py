@@ -469,7 +469,11 @@ def _drop_resurrected_facts(
         vec_store_ok = vector_store is not None and getattr(vector_store, "available", False)
         try:
             if vec_store_ok:
-                vector_store.delete(fid)
+                from superlocalmemory.retrieval.vector_store import classify_delete
+
+                if classify_delete(vector_store.delete(fid)).failed:
+                    logger.error(
+                        "resurrection undo: the vector of %s could not be removed", fid[:16])
             if ann_index is not None and hasattr(ann_index, "remove"):
                 ann_index.remove(fid)
             bm25 = getattr(retrieval_engine, "_bm25", None) if retrieval_engine else None
@@ -577,8 +581,9 @@ def run_store(
         try:
             from superlocalmemory.core.injection import is_low_quality
             if is_low_quality(content):
-                logger.debug("Store rejected (low-quality content): %s...",
-                             content[:80].replace("\n", " "))
+                # Rejected text is saved nowhere; a log line would be its only copy,
+                # and a log is not covered by an erasure.
+                logger.debug("Store rejected (low-quality content, %d chars)", len(content))
                 return []
         except Exception:
             pass  # Best-effort gate; store succeeds if import fails

@@ -645,7 +645,11 @@ def backfill_missing_embeddings(
                     )
                 except Exception:
                     if projection_written and vector_store is not None:
-                        vector_store.delete(fid)
+                        from superlocalmemory.retrieval.vector_store import classify_delete
+
+                        if classify_delete(vector_store.delete(fid)).failed:
+                            logger.warning(
+                                "backfill: undoing the vector of %s failed", fid[:16])
                     raise
                 embedded += 1
                 # Cooperative yield: release db._lock briefly so concurrent

@@ -60,6 +60,13 @@ class MemoryHealth:
     #: Rows whose retention zone contradicts their retention score, i.e. hidden
     #: while the maths says to keep them. Should be zero after repair.
     inconsistently_hidden: int = 0
+    #: Memories that HAVE a stored embedding but no vector in the search index
+    #: (it was lost or rejected). They are what a restart repopulates.
+    missing_projection: int = 0
+    #: Whether ``findable_by_meaning`` was read from the vector index itself.
+    #: ``False`` when the index could not be opened here, in which case the figure
+    #: is the bookkeeping beside the index and is not a claim about search.
+    index_verified: bool = True
     #: Present only when a table or column was absent.
     unavailable: tuple[str, ...] = field(default_factory=tuple)
 
@@ -74,17 +81,35 @@ class MemoryHealth:
     def healthy(self) -> bool:
         """Whether anything here warrants telling the owner about."""
         return (
-            self.reachability >= 0.99
+            self.index_verified
+            and self.reachability >= 0.99
             and self.missing_vector == 0
+            and self.missing_projection == 0
             and self.inconsistently_hidden == 0
         )
+
+
+def _open_for_measure(db_path: str | Path) -> tuple[sqlite3.Connection, bool]:
+    """A read-only connection, with sqlite-vec loaded when it can be.
+
+    ``(connection, index_readable)``. The vector index is a virtual table: it can
+    be counted only by a connection that has the extension, and a count taken
+    without it would be a count of something else.
+    """
+    from superlocalmemory.retrieval.vector_physical import VectorIndexUnreadable, open_vec
+
+    try:
+        return open_vec(db_path, read_only=True), True
+    except VectorIndexUnreadable as exc:
+        logger.debug("memory health: vector index not readable here: %s", exc)
+    return sqlite3.connect(f"file:{Path(db_path)}?mode=ro", uri=True), False
 
 
 def measure(db_path: str | Path) -> MemoryHealth:
     """Count the store's answer-ability. Read-only; never raises."""
     unavailable: list[str] = []
     try:
-        conn = sqlite3.connect(f"file:{Path(db_path)}?mode=ro", uri=True)
+        conn, index_readable = _open_for_measure(db_path)
     except sqlite3.Error as exc:
         logger.debug("memory health: cannot open %s: %s", db_path, exc)
         return MemoryHealth(unavailable=("database",))
@@ -111,16 +136,8 @@ def measure(db_path: str | Path) -> MemoryHealth:
             f"WHERE embedding IS NULL AND {live_clause}",
         )
 
-        if _table_exists(conn, "embedding_metadata"):
-            findable = _count(
-                conn,
-                "SELECT COUNT(*) FROM embedding_metadata em "
-                "JOIN atomic_facts af ON af.fact_id = em.fact_id "
-                f"WHERE {_prefixed(live_clause, 'af')}",
-            )
-        else:
-            unavailable.append("embedding_metadata")
-            findable = 0
+        findable, verified = _findable(conn, live_clause, index_readable, unavailable)
+        projection_gap = max(0, live - missing_vec - findable) if verified else 0
 
         display = (
             _count(conn, "SELECT COUNT(*) FROM consolidated_summaries")
@@ -154,6 +171,8 @@ def measure(db_path: str | Path) -> MemoryHealth:
             display_summaries=display,
             hidden_by_forgetting=hidden,
             inconsistently_hidden=inconsistent,
+            missing_projection=projection_gap,
+            index_verified=verified,
             unavailable=tuple(unavailable),
         )
     except sqlite3.Error as exc:
@@ -161,6 +180,38 @@ def measure(db_path: str | Path) -> MemoryHealth:
         return MemoryHealth(unavailable=(*unavailable, "query_failed"))
     finally:
         conn.close()
+
+
+def _findable(conn: sqlite3.Connection, live_clause: str, index_readable: bool,
+              unavailable: list[str]) -> tuple[int, bool]:
+    """``(memories that search can return, whether that was read from the index)``.
+
+    A memory is findable by meaning when search would return it: its vector is
+    physically in the index under its own profile AND a metadata row names the
+    same fact and profile (the join ``VectorStore.search`` makes). Counting the
+    metadata alone said "all findable" for a store whose index had been emptied,
+    because the metadata survives the loss of the vectors it describes.
+    """
+    if not _table_exists(conn, "embedding_metadata"):
+        unavailable.append("embedding_metadata")
+        return 0, False
+    if not index_readable:
+        unavailable.append("fact_embeddings")
+        return _count(
+            conn,
+            "SELECT COUNT(*) FROM embedding_metadata em "
+            "JOIN atomic_facts af ON af.fact_id = em.fact_id "
+            f"WHERE {_prefixed(live_clause, 'af')}",
+        ), False
+    if not _table_exists(conn, "fact_embeddings"):
+        return 0, True  # no index at all: nothing is findable by meaning
+    return _count(
+        conn,
+        "SELECT COUNT(*) FROM embedding_metadata em "
+        "JOIN atomic_facts af ON af.fact_id = em.fact_id AND af.profile_id = em.profile_id "
+        "JOIN fact_embeddings fe ON fe.rowid = em.vec_rowid AND fe.profile_id = em.profile_id "
+        f"WHERE {_prefixed(live_clause, 'af')}",
+    ), True
 
 
 def describe(health: MemoryHealth) -> list[str]:
@@ -180,6 +231,11 @@ def describe(health: MemoryHealth) -> list[str]:
         lines.append(
             "Whether they can be found by asking a question is not known yet — "
             "the search index has not been built."
+        )
+    elif not health.index_verified:
+        lines.append(
+            "Whether they can be found by asking a question could not be checked "
+            "here: the search index cannot be opened by this program."
         )
     elif health.live_facts:
         pct = 100.0 * health.reachability
@@ -210,6 +266,13 @@ def describe(health: MemoryHealth) -> list[str]:
                 f"will miss them. This repairs itself as the service runs; if "
                 f"it does not, the embedding model is unavailable."
             )
+
+    if health.missing_projection:
+        lines.append(
+            f"{health.missing_projection:,} memories are saved but missing from the "
+            f"search index, so asking a question will not find them. `slm restart` "
+            f"rebuilds the index from what is saved."
+        )
 
     if health.withheld_summaries:
         lines.append(
@@ -244,6 +307,8 @@ def classify(health: MemoryHealth) -> tuple[str, str]:
     """
     if health.healthy:
         return "PASS", ""
+    if not health.index_verified:
+        return "WARN", ""
     if health.reachability < 0.9:
         return "FAIL", "slm restart"
     if health.inconsistently_hidden:

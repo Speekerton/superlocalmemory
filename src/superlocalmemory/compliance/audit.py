@@ -225,18 +225,22 @@ class AuditChain:
 
     def _read_anchor(self) -> Optional[dict[str, Any]]:
         """Read the external truncation anchor, or None if absent/unreadable."""
+        return self._anchor_state()[0]
+
+    def _anchor_state(self) -> tuple[Optional[dict[str, Any]], str]:
+        """``(anchor, problem)``: problem is ``""``, ``"missing"`` or ``"unreadable"``."""
         if not self._anchor_path:
-            return None
+            return None, ""
         try:
             with open(self._anchor_path, encoding="utf-8") as fh:
                 data = json.loads(fh.read())
             if isinstance(data, dict) and "count" in data and "head" in data:
-                return data
+                return data, ""
         except FileNotFoundError:
-            return None
+            return None, "missing"
         except Exception as exc:  # noqa: BLE001
             logger.warning("audit anchor read failed: %s", exc)
-        return None
+        return None, "unreadable"
 
     # ------------------------------------------------------------------
     # Public API
@@ -414,9 +418,16 @@ class AuditChain:
         return report
 
     def _anchor_failure(self, rows: list[dict]) -> Optional[tuple[Optional[int], str]]:
-        """Truncation or a replaced tail, judged against the external anchor."""
-        anchor = self._read_anchor()
+        """Truncation or a replaced tail, judged against the external anchor.
+
+        A chain with entries and no readable anchor is reported, never passed:
+        without it, deleting the tail together with the anchor would verify as
+        intact (PR 248 review, finding 4). An in-memory chain has no anchor.
+        """
+        anchor, problem = self._anchor_state()
         if anchor is None:
+            if problem and rows:
+                return None, f"no anchor ({problem}): truncation cannot be checked"
             return None
         count = int(anchor.get("count", 0))
         if len(rows) < count:

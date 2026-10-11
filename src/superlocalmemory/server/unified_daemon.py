@@ -3907,9 +3907,9 @@ def create_app() -> FastAPI:
     validation_errors.install(application)
 
     # -- Middleware --
-    from superlocalmemory.server.profile_runtime import ProfileRuntimeMiddleware
     from superlocalmemory.server.daemon_cors import DaemonCORSMiddleware
     from superlocalmemory.server.origin import daemon_browser_origins
+    from superlocalmemory.server.profile_runtime import ProfileRuntimeMiddleware
     from superlocalmemory.server.security_middleware import SecurityHeadersMiddleware
     application.add_middleware(
         ProfileRuntimeMiddleware,

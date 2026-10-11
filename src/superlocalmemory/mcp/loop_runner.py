@@ -17,7 +17,7 @@ from superlocalmemory.loops import (
     pool_backed_ledger,
     run_bounded_loop,
 )
-from superlocalmemory.loops.receipt_gate import receipt_passes
+from superlocalmemory.loops.receipt_gate import receipt_status
 from superlocalmemory.mcp import tools_loops as shared
 from superlocalmemory.mcp.agent_context import get_current_agent_id
 from superlocalmemory.retrieval.answer_check_status import REQUEST_NO_REORDER
@@ -87,21 +87,23 @@ class Watcher:
         found, floor, reason, answerable = self._read()
         results = [result for result in found if _external_locator(result)]
         best = max((_score(result) for result in results), default=0.0)
+        independent, self.receipt_reason = receipt_status(
+            self.engine, self.contract, self.agent,
+            watcher_name=self.name, started_at=self.started_at,
+        )
         passed = (
             bool(results)
             and not floor
             and reason != "judged_insufficient"
             and best >= self.minimum
             and (not self.require_support or answerable[0] == SUPPORTED)
-            and receipt_passes(
-                self.engine, results, self.contract, self.agent,
-                watcher_name=self.name, started_at=self.started_at,
-            )
+            and independent
         )
         detail = (
             f"recall '{self.query[:48]}': hits={len(results)} top={best:.3f} floor={floor} "
             f"judged_insufficient={reason == 'judged_insufficient'} "
-            f"answerability={answerable[0]}:{answerable[1]} independent_receipt={passed}"
+            f"answerability={answerable[0]}:{answerable[1]} independent_receipt={independent} "
+            f"receipt_reason={self.receipt_reason}"
         )
         return Verdict(passed, detail)
 
@@ -172,7 +174,11 @@ async def _watch(name, engine, pool, watcher, bounds, poll):
         run_bounded_loop, name, bounds=bounds, runner=runner, gate=watcher.gate, ledger=ledger
     )
     laps = await asyncio.to_thread(ledger.laps, outcome.run_id)
-    return _outcome(outcome, laps)
+    result = _outcome(outcome, laps)
+    result["receipt_reason"] = getattr(watcher, "receipt_reason", "no receipt examined")
+    if not result["passed"] and "unsupported on this platform" in result["receipt_reason"]:
+        result["reason"] = result["receipt_reason"]
+    return result
 
 
 def _outcome(outcome, laps):

@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from superlocalmemory.mcp.tools_loops import register_loop_tools
+from tests.loops.hermetic_fixtures import private_data_root as private_data_root
 from tests.mcp.test_loop_tools import _Capture, _FakeEngine
 
 

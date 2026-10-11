@@ -1,73 +1,83 @@
-"""Guard failure paths and descriptor lifetime stay fail closed."""
+"""Secure copy refusal and descriptor lifetime stay fail closed."""
 
 import os
 from types import SimpleNamespace
 
 import pytest
 
-from superlocalmemory.loops import execution_guard as guard
-from superlocalmemory.loops.artifact_revision import snapshot
+from superlocalmemory.loops import artifact_revision, private_workspace
+from superlocalmemory.loops.artifact_revision import copy_inputs
 
 
-def job(root):
-    state = root / "state"
-    state.write_text("fail")
-    artifacts, revision = snapshot(root, [state])
-    return state, {"cwd": str(root), "artifacts_json": artifacts, "revision_digest": revision}
+def test_no_posix_timestamp_dependency(tmp_path, monkeypatch):
+    work, copy = tmp_path / 'work', tmp_path / 'copy'
+    work.mkdir()
+    copy.mkdir()
+    (work / 'state').write_text('fail')
+    simulated = SimpleNamespace(**vars(os))
+    simulated.name = 'nt'
+    monkeypatch.setattr(private_workspace, 'os', simulated)
+    assert private_workspace.platform_reason() is None
+    # The copy uses the real filesystem backend, regardless of the host label.
+    copy_inputs(work, ['state'], copy)
+    assert (copy / 'state').read_text() == 'fail'
 
 
-def test_unsupported_change_markers_refuse_execution(tmp_path, monkeypatch):
-    _, registered = job(tmp_path)
-    monkeypatch.setattr(guard, "os", SimpleNamespace(name="nt"))
-    with pytest.raises(ValueError, match="POSIX change timestamps"):
-        with guard.execution_guard(registered):
-            pytest.fail("Unsupported host admitted a registered check")
+def test_mutation_after_copy_hash_does_not_change_copied_bytes(tmp_path, monkeypatch):
+    work, copy = tmp_path / 'work', tmp_path / 'copy'
+    work.mkdir()
+    copy.mkdir()
+    state = work / 'state'
+    state.write_text('fail')
+    original = artifact_revision.private_file
+    streams = []
 
-
-def test_mutation_during_initial_hash_is_refused_and_handles_close(tmp_path, monkeypatch):
-    state, registered = job(tmp_path)
-    streams, digest, fdopen = [], guard._digest, os.fdopen
-
-    def opened(*args, **kwargs):
-        stream = fdopen(*args, **kwargs)
+    def opened(path):
+        stream = original(path)
         streams.append(stream)
         return stream
 
-    def mutate_while_hashing(stream):
-        result = digest(stream)
-        before = state.stat()
-        state.write_text("pass")
-        state.write_text("fail")
-        os.utime(state, ns=(before.st_atime_ns, before.st_mtime_ns))
-        return result
-
-    monkeypatch.setattr(guard.os, "fdopen", opened)
-    monkeypatch.setattr(guard, "_digest", mutate_while_hashing)
-    with pytest.raises(ValueError, match="changed during verification"):
-        with guard.execution_guard(registered):
-            pytest.fail("Input read race admitted execution")
+    monkeypatch.setattr(artifact_revision, 'private_file', opened)
+    _, digest = copy_inputs(work, ['state'], copy)
+    state.write_text('pass')
+    assert (copy / 'state').read_text() == 'fail' and len(digest) == 64
     assert streams and all(stream.closed for stream in streams)
 
 
-def test_disappearing_input_during_window_refuses_validation(tmp_path):
-    state, registered = job(tmp_path)
-    with pytest.raises(ValueError, match="changed during verification"):
-        with guard.execution_guard(registered) as validate:
-            state.unlink()
-            validate()
+def test_disappearing_input_refuses_copy_and_closes_handles(tmp_path, monkeypatch):
+    work, copy = tmp_path / 'work', tmp_path / 'copy'
+    work.mkdir()
+    copy.mkdir()
+    state = work / 'state'
+    state.write_text('fail')
+    selected = artifact_revision._selected
+
+    def disappear(*args):
+        result = selected(*args)
+        state.unlink()
+        return result
+
+    monkeypatch.setattr(artifact_revision, '_selected', disappear)
+    with pytest.raises(ValueError, match='regular files'):
+        copy_inputs(work, ['state'], copy)
+    assert not list(copy.iterdir())
 
 
 def test_nonregular_replacement_is_refused_without_blocking(tmp_path, monkeypatch):
-    state, registered = job(tmp_path)
-    namespace = guard._namespace
+    work, copy = tmp_path / 'work', tmp_path / 'copy'
+    work.mkdir()
+    copy.mkdir()
+    state = work / 'state'
+    state.write_text('fail')
+    selected = artifact_revision._selected
 
     def replace_with_fifo(*args):
-        result = namespace(*args)
+        result = selected(*args)
         state.unlink()
         os.mkfifo(state)
         return result
 
-    monkeypatch.setattr(guard, "_namespace", replace_with_fifo)
-    with pytest.raises(ValueError, match="changed during verification"):
-        with guard.execution_guard(registered):
-            pytest.fail("Nonregular input admitted execution")
+    monkeypatch.setattr(artifact_revision, '_selected', replace_with_fifo)
+    with pytest.raises(ValueError, match='regular files'):
+        copy_inputs(work, ['state'], copy)
+    assert not list(copy.iterdir())

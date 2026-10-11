@@ -9,6 +9,7 @@ import pytest
 
 from superlocalmemory.loops.execution_receipts import run_check
 from superlocalmemory.mcp.tools_loops import register_loop_tools
+from tests.loops.hermetic_fixtures import private_data_root as private_data_root
 from tests.mcp.test_loop_independent_receipts import _threaded_receipt_connection
 from tests.mcp.test_loop_tools import _Capture, _FakeEngine
 
@@ -155,7 +156,7 @@ async def test_waiter_observes_new_operator_check(receipt_db, tmp_path):
 
 @pytest.mark.asyncio
 async def test_artifact_alias_retarget_cannot_replay_pass(receipt_db, tmp_path):
-    from superlocalmemory.loops.receipt_jobs import register_job, run_registered_check
+    from superlocalmemory.loops.receipt_jobs import register_job
 
     state, command = checker(tmp_path)
     passed, failed = tmp_path / "pass_state", tmp_path / "fail_state"
@@ -163,16 +164,14 @@ async def test_artifact_alias_retarget_cannot_replay_pass(receipt_db, tmp_path):
     failed.write_text("fail")
     state.unlink()
     state.symlink_to(passed)
-    job = register_job(
-        receipt_db, profile_id="default", task_id="build", watcher_name="build",
-        producer="checker", command=command, cwd=tmp_path, artifact_paths=[state],
-        allow_prestart_evidence=True,
-    )
-    assert run_registered_check(receipt_db, job["job_id"])["verdict"] == "PASS"
-    state.unlink()
-    state.symlink_to(failed)
+    with pytest.raises(ValueError, match="symlink"):
+        register_job(
+            receipt_db, profile_id="default", task_id="build", watcher_name="build",
+            producer="checker", command=command, cwd=tmp_path, artifact_paths=[state],
+            allow_prestart_evidence=True,
+        )
     outcome = await harness(receipt_db)(
-        "build", "build", max_iterations=1, gate_contract={"job_id": job["job_id"]},
+        "build", "build", max_iterations=1, gate_contract={"job_id": "0" * 32},
     )
     assert outcome["status"] == "HALT", outcome
 

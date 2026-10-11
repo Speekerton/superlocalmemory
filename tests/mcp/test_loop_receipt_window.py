@@ -8,6 +8,7 @@ import time
 import pytest
 
 from superlocalmemory.loops.receipt_jobs import register_job, run_registered_check
+from tests.loops.hermetic_fixtures import private_data_root as private_data_root
 from tests.mcp.test_loop_receipt_races import receipt_db as receipt_db
 from tests.mcp.test_loop_receipt_races import receipts
 from tests.mcp.test_loop_receipt_replay import harness
@@ -50,7 +51,8 @@ def setup_job(db, root, kind):
     command = bootstrap(control, state, script, kind)
     job = register_job(
         db, profile_id="default", task_id="build", watcher_name="build", producer="checker",
-        command=command, cwd=work, artifact_paths=[state, script], allow_prestart_evidence=True,
+        command=command, cwd=work, artifact_paths=[state], check_paths=[script],
+        allow_prestart_evidence=True,
     )
     return work, control, state, script, alternate, job
 
@@ -66,8 +68,8 @@ def wait(name):
         time.sleep(.005)
 (control / 'started').write_text('ready')
 wait('go')
-passed = (runpy.run_path({str(script)!r})['passed'] if {kind!r} == 'script'
-          else Path({str(state)!r}).read_text() == 'pass')
+passed = (runpy.run_path('verdict.py')['passed'] if {kind!r} == 'script'
+          else Path('inputs/state').read_text() == 'pass')
 print('read pass' if passed else 'read fail', flush=True)
 (control / 'read_done').write_text('ready')
 wait('restored')
@@ -119,6 +121,10 @@ def switch(kind, work, control, state, script, alternate):
 async def test_aba_window_never_publishes_pass(receipt_db, tmp_path, monkeypatch, kind):
     from superlocalmemory.loops import execution_receipts
 
+    if kind == "alias":
+        with pytest.raises(ValueError, match="symlink"):
+            setup_job(receipt_db, tmp_path, kind)
+        return
     work, control, state, script, alternate, job = setup_job(receipt_db, tmp_path, kind)
     measurements, errors = [], []
     execute = execution_receipts._execution
@@ -143,14 +149,13 @@ async def test_aba_window_never_publishes_pass(receipt_db, tmp_path, monkeypatch
     thread = threading.Thread(target=mutate)
     thread.start()
     try:
-        with pytest.raises(ValueError, match="changed during verification"):
-            run_registered_check(receipt_db, job["job_id"])
+        assert run_registered_check(receipt_db, job["job_id"])["verdict"] == "FAIL"
     finally:
         thread.join(6)
     assert not errors and not thread.is_alive()
-    assert measurements[0][0] == 0 and "read pass" in measurements[0][1]
+    assert measurements[0][0] == 1 and "read fail" in measurements[0][1]
     assert state.read_text() == "fail" and script.read_text() == "passed = False"
-    assert not receipts(receipt_db)
+    assert all(row["verdict"] == "FAIL" for row in receipts(receipt_db))
     result = await harness(receipt_db)(
         "build", "build", max_iterations=1, gate_contract={"job_id": job["job_id"]},
     )

@@ -14,7 +14,8 @@ _QUOTES = re.compile(r'''["“”‘’`]|(?<!\w)'|'(?!\w)''')
 def assertion_sentences(memory):
     # A quote can span several sentences. Conservatively leave such documents
     # to the classifier instead of losing the context at a sentence boundary.
-    if _QUOTES.search(memory):
+    context = r"(draft|rejected|quoted|said|claims?|rumored|imagined|hypothetical|denied|false)"
+    if _QUOTES.search(memory) or re.search(context, memory, re.I):
         return ()
     return tuple(
         sentence.rstrip(".! ").strip()
@@ -26,5 +27,7 @@ def assertion_sentences(memory):
 
 
 def affirmative_sentences(memory):
+    if _UNCERTAIN.search(memory):
+        return ()  # ambiguity or denial anywhere in the document defeats a source proof
     return tuple(sentence for sentence in assertion_sentences(memory)
                  if not _UNCERTAIN.search(sentence))

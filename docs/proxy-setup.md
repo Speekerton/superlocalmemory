@@ -282,7 +282,7 @@ const completion = await client.chat.completions.create({
 If you prefer not to change your base URL, use the in-process adapter:
 
 ```python
-from superlocalmemory.optimize.adapters.openai_adapter import withSLM
+from superlocalmemory.optimize.adapters import withSLM
 from openai import OpenAI
 
 client = withSLM(OpenAI())           # wraps in-process — same interface

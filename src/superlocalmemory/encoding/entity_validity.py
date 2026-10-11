@@ -91,6 +91,9 @@ def _shape_ok(name: str) -> bool:
 def _single_ok(word: str, capital_evidence: bool) -> bool:
     if word.lower() in _GENERIC:
         return False
+    parts = word.split("-")
+    if len(parts) > 1 and all(_CAPS.match(p) and is_common_word(p.lower()) for p in parts):
+        return False  # "AUTO-CREATED", "READ-ONLY": a shouted label
     if _CAPS.match(word):
         low = word.lower()
         return low not in _CAPS_NOISE and not (len(word) >= 3 and is_common_word(low))

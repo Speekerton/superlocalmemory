@@ -27,7 +27,7 @@ JUNK = ["Users", "User", "LIVE", "VERIFIED", "PASS", "FAIL", "DONE", "Final", "p
         "2026-09-14 00:55", "2026-04-29 16:57", "/api/v3/consolidation/trigger",
         "/.well-known/oauth-protected-resource", "Xenobot Section Still Has",
         "Check Accenture", "spill over", "gate.py", "notes.md", "SCREEN RECORDING",
-        "/api/*", "[Agantic_official]", "honest/critical beat", "Url"]
+        "/api/*", "[Agantic_official]", "honest/critical beat", "Url", "AUTO-CREATED"]
 
 NAMES = ["SuperLocalMemory", "Claude Code", "SLM 4.1.25", "Varun", "Accenture", "pgbouncer",
          "vitamin D", "billing service", "llama3.2", "Ollama", "NASA",

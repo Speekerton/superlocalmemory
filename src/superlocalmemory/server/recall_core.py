@@ -292,7 +292,8 @@ async def _run_admitted(engine, call, app_state, runtime, snapshot,
 def _minimal_envelope(call, response, snapshot):
     """Keep already-retrieved facts without any source hydration/database access."""
     results = [
-        {"fact_id": result.fact.fact_id, "memory_id": result.fact.memory_id,
+        {"id": result.fact.memory_id or result.fact.fact_id,
+         "fact_id": result.fact.fact_id, "memory_id": result.fact.memory_id,
          "content": sanitize_json_text(result.fact.content[:2400]), "score": result.score}
         for result in (getattr(response, "results", ()) or ())[:call.limit]
     ]

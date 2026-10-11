@@ -379,8 +379,31 @@ def test_default_target_uses_essential_filtered_server():
     assert isinstance(target, mod._FilteredServer), (
         f"_target should be _FilteredServer, got {type(target).__name__}"
     )
-    # Must be filtered on _ESSENTIAL_TOOLS
-    assert target._allowed == mod._ESSENTIAL_TOOLS, (
-        f"Default _FilteredServer._allowed must equal _ESSENTIAL_TOOLS; "
-        f"diff: {target._allowed.symmetric_difference(mod._ESSENTIAL_TOOLS)}"
+    # Registered: the essential tools plus the media tools. Media tools are
+    # registered up front so turning images on needs no restart; whether they
+    # are listed or callable is decided per request (see the test below).
+    from superlocalmemory.mcp.profiles import _MEDIA_TOOLS
+
+    expected = mod._ESSENTIAL_TOOLS | _MEDIA_TOOLS
+    assert target._allowed == expected, (
+        f"Default _FilteredServer._allowed must equal essential + media; "
+        f"diff: {target._allowed.symmetric_difference(expected)}"
     )
+
+
+def test_media_tools_are_offered_only_while_images_are_on(monkeypatch):
+    """Registered by default, but listed and callable only while images are on."""
+    from superlocalmemory.mcp.profiles import _MEDIA_TOOLS
+    from superlocalmemory.runtimes import features
+
+    mod = importlib.import_module("superlocalmemory.mcp.server")
+    server = mod.server
+    media = sorted(_MEDIA_TOOLS)[0]
+    plain = sorted(mod._ESSENTIAL_TOOLS - _MEDIA_TOOLS)[0]
+
+    monkeypatch.setattr(features, "media_enabled", lambda: False)
+    assert not server._tool_enabled(media)
+    assert server._tool_enabled(plain)
+
+    monkeypatch.setattr(features, "media_enabled", lambda: True)
+    assert server._tool_enabled(media)

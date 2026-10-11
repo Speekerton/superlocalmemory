@@ -10,6 +10,7 @@ joined to each other by entity edges, and found by recall for "Lost".
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -86,6 +87,9 @@ def _build(path: Path) -> DatabaseManager:
     # does not relink keeps its entity.
     db.execute("INSERT INTO entity_profiles (profile_entry_id, entity_id, profile_id, "
                "knowledge_summary) VALUES ('ep1', 'e_orphan', ?, 'derived')", (P,))
+    # A scene lists a junk entity beside a real one: only the junk id leaves.
+    db.execute("INSERT INTO memory_scenes (scene_id, profile_id, theme, entity_ids_json) "
+               "VALUES ('s1', ?, 'ops', '[\"e_live\", \"e_kube\"]')", (P,))
     db.store_memory(MemoryRecord(memory_id="m0", profile_id=P, content="notes"))
     for fact_id, (raw, links) in FACTS.items():
         text = NOTE if fact_id == "f_note" else f"note about {' and '.join(raw)}"
@@ -115,10 +119,12 @@ def db(tmp_path: Path) -> DatabaseManager:
 def _state(path: Path) -> dict:
     conn = sqlite3.connect(path)
     try:
-        return {t: sorted(map(repr, conn.execute(f"SELECT * FROM {t}").fetchall())) for t in (
-            "canonical_entities", "entity_aliases", "graph_edges", "temporal_events",
-            "fact_entity_associations", "entity_profiles")} | {"links": sorted(conn.execute(
-                "SELECT fact_id, canonical_entities_json FROM atomic_facts").fetchall())}
+        tables = ("canonical_entities", "entity_aliases", "graph_edges", "temporal_events",
+                  "fact_entity_associations", "entity_profiles", "memory_scenes")
+        state = {t: sorted(map(repr, conn.execute(f"SELECT * FROM {t}").fetchall()))
+                 for t in tables}
+        return state | {"links": sorted(conn.execute(
+            "SELECT fact_id, canonical_entities_json FROM atomic_facts").fetchall())}
     finally:
         conn.close()
 
@@ -134,7 +140,6 @@ def _plan(path: Path) -> dict:
 def _links(db: DatabaseManager) -> dict[str, list[str]]:
     names = {r["entity_id"]: r["canonical_name"] for r in map(dict, db.execute(
         "SELECT entity_id, canonical_name FROM canonical_entities"))}
-    import json
     return {r["fact_id"]: [names[i] for i in json.loads(r["canonical_entities_json"] or "[]")]
             for r in map(dict, db.execute("SELECT fact_id, canonical_entities_json "
                                           "FROM atomic_facts"))}
@@ -174,6 +179,8 @@ def test_apply_dissolves_the_chain_and_relinks_every_fact(db) -> None:
     assert left == {"VERIFIED", "Ravi Kumar"}  # one still named elsewhere; a valid name
     assert not db.execute("SELECT 1 FROM entity_aliases WHERE entity_id = 'e_users'")
     assert not db.execute("SELECT 1 FROM entity_profiles WHERE entity_id = 'e_orphan'")
+    scene = db.execute("SELECT entity_ids_json FROM memory_scenes WHERE scene_id = 's1'")
+    assert json.loads(dict(scene[0])["entity_ids_json"]) == ["e_kube"]
     assert result["junk_entities_removed"] == 5
     aliases = {dict(r)["alias"]: dict(r)["source"] for r in db.execute(
         "SELECT alias, source FROM entity_aliases WHERE entity_id = 'e_lost'")}

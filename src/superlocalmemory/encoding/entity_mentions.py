@@ -193,11 +193,13 @@ def _lower_mentions(text: str, out: _Found) -> None:
             out.add(f"{modifier} {noun}")
 
 
-def extract_mentions(text: str) -> list[str]:
+def extract_mentions(text: str, *, question: bool = False) -> list[str]:
     """Entity mentions in ``text``, sorted and without duplicates.
 
     Every candidate passes ``entity_validity.valid_name``; a single
-    Capitalised everyday word counts only where no sentence starts."""
+    Capitalised everyday word counts only where no sentence starts. A
+    ``question`` ("Scope of the audit?") gets the benefit of the doubt there:
+    it only looks up entities that exist, and it creates none."""
     if not text:
         return []
     from superlocalmemory.encoding.entity_validity import opens_sentence, valid_name
@@ -212,7 +214,8 @@ def extract_mentions(text: str) -> list[str]:
         quoted = m.group(1).strip()
         if len(quoted) >= 2:
             out.add(quoted)
-    return sorted(n for n, evidence in out.items() if valid_name(n, capital_evidence=evidence))
+    return sorted(n for n, evidence in out.items()
+                  if valid_name(n, capital_evidence=evidence or question))
 
 
 __all__ = ["STOP_WORDS", "extract_mentions"]

@@ -336,10 +336,7 @@ def enrich_fact(
         if embedder and embedding:
             fisher_mean, fisher_variance = embedder.compute_fisher_params(embedding)
 
-    # Names from a model or an older extractor pass the same validity rules as
-    # the rule-based extractor's (encoding/entity_validity) before they can
-    # become entities: no ids, dates, paths, status words or fragments.
-    entities = valid_names(list(fact.entities or []), fact.content)
+    entities = valid_names(list(fact.entities or []), fact.content)  # entity_validity
     canonical = {}
     if entity_resolver and entities:
         canonical = entity_resolver.resolve(entities, profile_id)

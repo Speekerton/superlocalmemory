@@ -28,6 +28,7 @@ from superlocalmemory.storage import entity_link_repair as elr
 from superlocalmemory.storage.entity_link_repair_junk import (
     remove_junk,
     restore_junk,
+    restore_lists,
     unproject,
 )
 
@@ -447,6 +448,7 @@ def _undo_in(conn: sqlite3.Connection, run_id: str) -> dict[str, int]:
                          "temporal_events_restored", "edges_restored", "aliases_restored",
                          "created_entities_removed", "created_entities_kept_in_use"), 0)
     out["junk_entities_restored"] = restore_junk(conn, parts)  # before the counts
+    restore_lists(conn, parts)
     restored = _undo_facts(conn, parts, out)
     _undo_rows(conn, parts, out)
     _undo_created(conn, parts, out)

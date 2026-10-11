@@ -168,6 +168,8 @@ def _apple_vision(path: str) -> str | None:
     handler = vision.VNImageRequestHandler.alloc().initWithURL_options_(
         foundation.NSURL.fileURLWithPath_(path), None)
     request = vision.VNRecognizeTextRequest.alloc().init()
+    request.setRecognitionLevel_(vision.VNRequestTextRecognitionLevelAccurate)
+    request.setAutomaticallyDetectsLanguage_(True)
     request.setUsesLanguageCorrection_(True)
     ok, _err = handler.performRequests_error_([request], None)
     if not ok:
@@ -193,8 +195,13 @@ def _rapidocr(path: str) -> str | None:
 def ocr_image(path: str, *, engine: str = "auto") -> dict:
     """Read the text in an image: ``{"engine": "apple_vision|rapidocr|none", "text": str}``."""
     candidates = {"apple_vision": _apple_vision, "rapidocr": _rapidocr}
+    empty = None
     for name in (candidates if engine == "auto" else [engine] if engine in candidates else []):
         text = candidates[name](path)
         if text is not None:
-            return {"engine": name, "text": text}
-    return {"engine": "none", "text": ""}
+            result = {"engine": name, "text": text}
+            if text.strip() or engine != "auto":
+                return result
+            if empty is None:
+                empty = result
+    return empty or {"engine": "none", "text": ""}

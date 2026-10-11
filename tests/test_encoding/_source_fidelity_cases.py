@@ -42,7 +42,7 @@ FAITHFUL: list[tuple[str, str]] = [
     (KESTREL, "The Kestrel checkpoint was recalled at rank 1 in 2004.6 milliseconds."),
     (KESTREL, "The Kestrel checkpoint recall took 2,004.6 ms."),
     # relative dates resolved
-    ("I renewed the licence yesterday.", "Dana renewed the licence on 2026-10-05."),
+    ("[Dana]: I renewed the licence yesterday.", "Dana renewed the licence on 2026-10-05."),
     ("The demo is next Tuesday.", "The demo is on 2026-10-13."),
     ("We shipped the fix 3 days ago.", "The fix shipped on 2026-10-03."),
     ("The audit happens next month.", "The audit happens in 2026-11."),

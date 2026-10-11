@@ -204,6 +204,11 @@ class MemoryConsolidator:
                     reason=f"contradiction detected (score={best_score:.3f})",
                     pending=pending,
                 )
+            from superlocalmemory.encoding.source_fidelity import check_fact_against_source
+            if not (check_fact_against_source(new_fact.content, best_fact.content).ok
+                    and check_fact_against_source(best_fact.content, new_fact.content).ok):
+                return self._execute_add(new_fact, profile_id,
+                                         reason="different source values", pending=pending)
             return self._execute_noop(
                 new_fact, best_fact, profile_id,
                 reason=f"near-duplicate (score={best_score:.3f})",
@@ -228,6 +233,11 @@ class MemoryConsolidator:
             reason=f"new information (best_score={best_score:.3f})",
             pending=pending,
         )
+
+    def link_source(self, fact: AtomicFact, profile_id: str,
+                    pending: tuple[str, ...] = ()) -> None:
+        """Link the protected source projection without consolidating or replacing it."""
+        self._create_semantic_edges(fact, profile_id, pending)
 
     def get_consolidation_history(
         self, profile_id: str, limit: int = 50,
@@ -289,6 +299,8 @@ class MemoryConsolidator:
                     seen_ids.add(fact.fact_id)
                     candidate_facts.append(fact)
 
+        from superlocalmemory.storage.fact_context import same_context_candidates
+        candidate_facts = same_context_candidates(self._db, new_fact, candidate_facts)
         # --- score all candidates ---
         scored: list[tuple[AtomicFact, float]] = []
         for cand in candidate_facts:
@@ -426,10 +438,8 @@ class MemoryConsolidator:
         reason: str,
     ) -> ConsolidationAction:
         """Near-duplicate — just bump access count on existing."""
-        self._db.update_fact(
-            existing.fact_id,
-            {"access_count": existing.access_count + 1},
-        )
+        # A repeated write is evidence, not a retrieval access. Only the
+        # retrieval path increments access_count.
         action = self._log_action(
             ConsolidationActionType.NOOP,
             new_fact.fact_id, existing.fact_id,

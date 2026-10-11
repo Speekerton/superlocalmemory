@@ -3,7 +3,6 @@
 # Part of SuperLocalMemory V3 | https://qualixar.com | https://varunpratap.com
 
 """Cognitive Consolidation Quantization (CCQ) — Phase E.
-
 Sleep-time consolidation that mirrors hippocampal-neocortical transfer:
   1. IDENTIFY: warm/cold facts below retention threshold
   2. CLUSTER: group by entity overlap + temporal proximity (Union-Find)
@@ -11,11 +10,6 @@ Sleep-time consolidation that mirrors hippocampal-neocortical transfer:
   4. COMPRESS: source embeddings -> PolarQuant 2-bit
   5. STORE: gist block at float32 + archive source facts
   6. AUDIT: complete audit trail
-
-Biological analogy:
-  Hippocampus (atomic_facts) -> replay during sleep (CCQ pipeline)
-  -> Neocortex (ccq_consolidated_blocks with full-precision gist)
-
 Hard rules:
   - Already-consolidated facts NEVER re-consolidated (HR-01)
   - Minimum cluster size 3 (HR-02)
@@ -28,14 +22,6 @@ Hard rules:
   - PolarQuant optional (HR-10)
   - Audit trail mandatory (HR-11)
 
-References:
-  McClelland et al. (1995). Complementary Learning Systems.
-  SimpleMem (arXiv 2601.02553). Semantic lossless compression.
-  TurboQuant (ICLR 2026). Recursive polar quantization.
-
-Part of Qualixar | Author: Varun Pratap Bhardwaj
-License: AGPL-3.0-or-later
-IP Novelty: 92% (no prior art for retention-gated consolidation + polar quantization)
 """
 
 from __future__ import annotations
@@ -53,9 +39,7 @@ from superlocalmemory.storage.models import _new_id
 if TYPE_CHECKING:
     from superlocalmemory.core.config import CCQConfig
     from superlocalmemory.storage.database import DatabaseManager
-
 logger = logging.getLogger(__name__)
-
 
 # ---------------------------------------------------------------------------
 # Protocols
@@ -725,105 +709,10 @@ class CognitiveConsolidator:
         gist: GistResult,
         profile_id: str,
     ) -> str:
-        """Create CCQ consolidated block and archive source facts.
-
-        Source facts are SOFT-ARCHIVED (HR-04), never deleted.
-        Gist embedding stored at float32 (HR-05).
-
-        Ordering guarantee: the gist replacement is committed as a live
-        atomic fact BEFORE source facts are archived.  This ensures there
-        is never a window where neither the sources nor the replacement
-        are recallable.
-        """
-        block_id = _new_id()
-
-        # Generate gist embedding BEFORE the transaction.  Embedding generation
-        # is a pure CPU/ML computation with no DB side effects; running it outside
-        # the transaction avoids holding a write lock during a potentially slow
-        # model forward pass.  If generation fails, we abort before any write.
-        # Note: gist_embedding_rowid is currently always None because vec0
-        # insertion requires VectorStore integration (future work).  When that
-        # integration lands, the rowid write must move INSIDE the transaction
-        # below so a rollback removes the embedding row together with the block.
-        gist_embedding_rowid: int | None = None
-        gist_embedding: list[float] | None = None
-        if self._embedder is not None:
-            try:
-                # Kept, not discarded (audit BRN-10: the result was thrown
-                # away and the gist stored with embedding=NULL).
-                vec = self._embedder.encode(gist.gist_text)
-                gist_embedding = [float(x) for x in vec] if vec is not None else None
-            except Exception as exc:
-                logger.warning("Gist embedding generation failed: %s", exc)
-
-        from superlocalmemory.storage.models import AtomicFact, MemoryRecord
-        from superlocalmemory.core.lifecycle_state import set_fact_lifecycle_zone
-
-        # All four writes are wrapped in a single transaction so a mid-write
-        # failure (e.g. store_ccq_block raising) cannot leave an orphan gist
-        # AtomicFact with no corresponding ccq_consolidated_blocks row.
-        # set_fact_lifecycle_zone is transaction-aware and reuses the active
-        # connection rather than opening a nested one.
-        with self._db.transaction():
-            # Re-check inside the transaction: a correction may have retired a
-            # source after it was selected. Its content must not become a
-            # current gist (audit BRN-31), so the cluster is abandoned.
-            gist_confidence = self._still_current_confidence(
-                cluster.fact_ids, profile_id)
-            # --- Store replacement fact FIRST (ordering guarantee) ---
-            # The gist is persisted as a live atomic fact so it is immediately
-            # recallable.  Source archival happens only after this write lands.
-            self._db.store_memory(
-                MemoryRecord(
-                    memory_id=block_id,
-                    profile_id=profile_id,
-                    content=gist.gist_text,
-                    session_id="ccq",
-                )
-            )
-            self._db.store_fact(
-                AtomicFact(
-                    memory_id=block_id,
-                    profile_id=profile_id,
-                    content=gist.gist_text,
-                    canonical_entities=list(gist.key_entities),
-                    importance=0.8,
-                    # No more certain than its least certain source; it used
-                    # to be stamped 1.0 whatever the evidence (BRN-31).
-                    confidence=gist_confidence,
-                    session_id="ccq",
-                    embedding=gist_embedding,
-                )
-            )
-
-            # Store the consolidated block — must follow the gist fact INSERT so
-            # the step-1 identify filter (NOT IN ccq_consolidated_blocks) sees the
-            # correct state on any immediate re-run.
-            self._db.store_ccq_block(
-                block_id=block_id,
-                profile_id=profile_id,
-                content=gist.gist_text,
-                source_fact_ids=json.dumps(list(cluster.fact_ids)),
-                gist_embedding_rowid=gist_embedding_rowid,
-                char_count=len(gist.gist_text),
-                cluster_id=cluster.cluster_id,
-            )
-
-            # Archive source facts AFTER replacement is committed (HR-04: soft-archive, never delete)
-            set_fact_lifecycle_zone(
-                self._db, cluster.fact_ids, "archive", profile_id=profile_id,
-            )
-            for fact_id in cluster.fact_ids:
-                # Log access event
-                self._db.execute(
-                    "INSERT INTO fact_access_log "
-                    "(log_id, fact_id, profile_id, accessed_at, "
-                    " access_type, session_id) "
-                    "VALUES (?, ?, ?, datetime('now'), 'consolidation', 'ccq')",
-                    (_new_id(), fact_id, profile_id),
-                )
-
-        return block_id
+        """Atomically persist the replacement before soft-archiving its sources."""
+        from superlocalmemory.encoding.gist_store import store_block
+        return store_block(self._db, self._embedder, cluster, gist, profile_id, _new_id,
+                           lambda ids: self._still_current_confidence(ids, profile_id))
 
     def _still_current_confidence(self, fact_ids: tuple[str, ...],
                                   profile_id: str) -> float:

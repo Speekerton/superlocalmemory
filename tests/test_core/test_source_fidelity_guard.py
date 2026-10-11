@@ -207,16 +207,16 @@ def _one_fact(tmp_path: Path, fact: str) -> DatabaseManager:
     ("Ship the Android build before the iOS build", "order_reversed"),
     ("Costs were $21.50", "unsupported_number"),
 ])
-def test_heuristic_findings_flag_but_never_withhold(tmp_path: Path, fact: str,
+def test_deterministic_fidelity_findings_withhold_derived_facts(tmp_path: Path, fact: str,
                                                     reason: str) -> None:
-    """Only number_became_date withholds; the rest stay in answers, marked."""
+    """A derived fact with a fidelity failure is withheld; the source remains."""
     from superlocalmemory.core.source_fidelity_guard import withhold_if_unfaithful
 
     db = _one_fact(tmp_path, fact)
     got = withhold_if_unfaithful(db, profile_id="default", fact_id="f", content=fact,
                                  raw_content=POLICY_SOURCE)
-    assert got == f"source_fidelity_unverified:{reason}"
-    assert _state(db)["f"][0] == 0, "a heuristic finding must not take a fact out of answers"
+    assert got == f"source_fidelity:{reason}"
+    assert _state(db)["f"][0] == 1, "unsupported derived facts must stay out of answers"
 
 
 def test_recall_marks_unverified_results_and_leaves_the_rest(tmp_path: Path) -> None:

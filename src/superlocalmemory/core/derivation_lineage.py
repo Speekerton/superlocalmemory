@@ -214,10 +214,12 @@ def _fact_record(base: dict[str, Any], fact_id: str, content: str | None,
     if content is None:
         return dict(record, source_status="unresolved",
                     unresolved_reason="final_fact_missing"), None
-    start = raw_content.find(content)
-    if start >= 0:
+    from superlocalmemory.encoding.source_spans import exact_span
+    span = exact_span(content, raw_content)
+    if span is not None:
+        start, end = span
         return dict(record, source_status="exact", source_start=start,
-                    source_end=start + len(content),
+                    source_end=end,
                     source_text_sha256=_content_sha(content)), None
     # A derived fact must still say what the source said; one that
     # turns 2004.6 ms into a date is withheld, other doubts are marked.

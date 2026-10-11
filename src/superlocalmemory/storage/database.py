@@ -542,6 +542,8 @@ class DatabaseManager:
         conn = self._connect()
         try:
             schema_module.create_all_tables(conn)
+            from superlocalmemory.storage.source_identity import ensure_indexes
+            ensure_indexes(conn)
             conn.commit()
             logger.info("Schema initialized at %s", self.db_path)
         finally:
@@ -992,25 +994,24 @@ class DatabaseManager:
             # new statement back onto dead history instead of giving it its
             # own current copy, so something the successor's enrichment
             # re-derives would only ever exist as a fact recall never shows.
-            existing = self.execute(
-                "SELECT fact_id FROM atomic_facts "
-                "WHERE profile_id = ? AND content = ? "
-                "AND lifecycle IN ('active', 'warm', 'cold') "
-                "AND fact_id NOT IN ("
-                "    SELECT fact_id FROM fact_temporal_validity "
-                "    WHERE system_expired_at IS NOT NULL"
-                ") "
-                "ORDER BY created_at LIMIT 1",
-                (fact.profile_id, fact.content),
-            )
+            from superlocalmemory.storage.source_identity import matching_fact
+
+            existing = matching_fact(self, fact)
             if existing:
                 canonical_id = dict(existing[0])["fact_id"]
+                from superlocalmemory.encoding.typed_values import has_relative_time
+                if has_relative_time(fact.content):
+                    self.execute(
+                        "UPDATE atomic_facts SET referenced_date=NULL, interval_start=NULL, "
+                        "interval_end=NULL WHERE fact_id=? AND COALESCE(observation_date,'')<>?",
+                        (canonical_id, fact.observation_date or ''),
+                    )
                 self.execute(
                     "UPDATE atomic_facts "
                     "SET evidence_count = evidence_count + 1, "
-                    "    access_count = access_count + 1 "
+                    "    observation_date = COALESCE(?, observation_date) "
                     "WHERE fact_id = ?",
-                    (canonical_id,),
+                    (fact.observation_date, canonical_id),
                 )
                 # Rewrite caller's id so downstream embedding/graph/context
                 # writes target the canonical fact (idempotent), not an
@@ -1527,17 +1528,16 @@ class DatabaseManager:
         facts for popular entities (500+) causing 17GB+ memory usage.
         Ordered by created_at DESC so newest facts are always included.
         """
-        where, params = _scope_where(
-            profile_id,
-            include_global=include_global,
+        from superlocalmemory.storage.entity_index import facts_for_entity, is_complete
+        pairs = facts_for_entity(
+            self, entity_id, profile_id, limit=self._MAX_FACTS_PER_ENTITY_LOOKUP,
+            indexed=is_complete(self), include_global=include_global,
             include_shared=include_shared,
         )
-        rows = self.execute(
-            f"SELECT * FROM atomic_facts WHERE {where} AND canonical_entities_json LIKE ? "
-            "ORDER BY created_at DESC LIMIT ?",
-            (*params, f'%"{entity_id}"%', self._MAX_FACTS_PER_ENTITY_LOOKUP),
-        )
-        return [self._row_to_fact(r) for r in rows]
+        facts = self.get_facts_by_ids([fid for fid, _ in pairs], profile_id,
+                                    include_global=include_global, include_shared=include_shared)
+        by_id = {fact.fact_id: fact for fact in facts}
+        return [by_id[fid] for fid, _ in pairs if fid in by_id]
 
     def get_facts_by_type(
         self, fact_type: FactType, profile_id: str,

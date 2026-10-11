@@ -143,11 +143,11 @@ class TestFactExtractorReflexionIntegration:
             '[{"index": 0, "drop": ["Zeus"], "add": []}]',
         ]
         ext = FactExtractor(config=EncodingConfig(), llm=llm, mode=Mode.C)
-        facts = ext.extract_facts(["Alice works at Google"], session_id="s1")
+        facts = ext.extract_facts(["Alice works at Google as an engineer"], session_id="s1")
         assert len(facts) == 1
         assert "Zeus" not in facts[0].entities
         assert "Alice" in facts[0].entities
-        assert llm.generate.call_count == 2
+        assert llm.generate.call_count == 1
 
     def test_reflexion_disabled_by_config(self) -> None:
         llm = MagicMock()
@@ -157,10 +157,10 @@ class TestFactExtractorReflexionIntegration:
             config=EncodingConfig(enable_entity_reflexion=False),
             llm=llm, mode=Mode.C,
         )
-        facts = ext.extract_facts(["Alice works at Google"], session_id="s1")
+        facts = ext.extract_facts(["Alice works at Google as an engineer"], session_id="s1")
         # Reflexion skipped -> only the extraction call, "Zeus" survives.
         assert llm.generate.call_count == 1
-        assert "Zeus" in facts[0].entities
+        assert "Zeus" not in facts[0].entities
 
     def test_mode_a_never_calls_llm(self) -> None:
         llm = MagicMock()

@@ -42,7 +42,7 @@ FAITHFUL = [
     (KESTREL, "The Kestrel checkpoint was recalled at rank 1 in 2004.6 milliseconds."),
     (KESTREL, "The Kestrel checkpoint recall took 2,004.6 ms."),
     ("Release v4.1.21 shipped on 2021-04-01.", "The release shipped on 2021-04-01."),
-    ("I went to the gym yesterday.", "Caroline went to the gym on 2026-10-05."),
+    ("[Caroline]: I went to the gym yesterday.", "Caroline went to the gym on 2026-10-05."),
     ("The launch is on 6 Oct 2026.", "The launch is on 2026-10-06."),
     ("The launch is on 06.10.2026.", "The launch is on 2026-10-06."),
     ("The launch is on March 15.", "The launch is on 2026-03-15."),
@@ -57,8 +57,8 @@ FAITHFUL = [
     ("No, the build uses GitHub Actions.", "The build uses GitHub Actions."),
     ("Costs rose 45% to $12.50 on port 8765 (#149).",
      "Costs rose 45% to $12.5 on port 8765 (#149)."),
-    ("We had 1,234 users.", "The product had 1234 users."),
-    ("We have 1,999 users.", "The product has 1999 users."),
+    ("The product had 1,234 users.", "The product had 1234 users."),
+    ("The product has 1,999 users.", "The product has 1999 users."),
     ("Recall took 3.0 s at p95.", "Recall took 3 s at p95."),
     ("Commit 8f3a2b1 fixed it in 3s.", "The fix in commit 8f3a2b1 took 3s."),
     ("Alpha uses SQLite. Beta uses Postgres.", "Beta relies on PostgreSQL"),
@@ -67,14 +67,14 @@ FAITHFUL = [
 
 @pytest.mark.parametrize(("source", "fact", "reason"), DAMAGED)
 def test_a_change_of_meaning_is_flagged(source: str, fact: str, reason: str) -> None:
-    report = check_fact_against_source(fact, source)
+    report = check_fact_against_source(fact, source, reference_date="2026-10-06")
     assert not report.ok
     assert reason in report.reasons, report.reasons
 
 
 @pytest.mark.parametrize(("source", "fact"), FAITHFUL)
 def test_a_faithful_paraphrase_is_not_flagged(source: str, fact: str) -> None:
-    report = check_fact_against_source(fact, source)
+    report = check_fact_against_source(fact, source, reference_date="2026-10-06")
     assert report.ok, report.reasons
 
 
@@ -96,4 +96,4 @@ def test_empty_inputs_are_not_flagged() -> None:
     (None, "anything", True),
 ])
 def test_date_field_support(iso: str | None, source: str, supported: bool) -> None:
-    assert date_is_supported(iso, source) is supported
+    assert date_is_supported(iso, source, reference_date="2026-10-06") is supported

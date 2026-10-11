@@ -1,0 +1,166 @@
+"""Dashboard recovery: verify before export or confirmed offline restore."""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, ConfigDict, Field
+from starlette.background import BackgroundTask
+
+from superlocalmemory.server import backup_bundle as bundles
+from superlocalmemory.server.config_file import update_config
+from superlocalmemory.storage._durable_json import read_json, write_json_atomic
+
+from .backup_legacy_verify import router as legacy_router
+
+router = APIRouter(prefix="/api/backup/recovery", tags=["backup-recovery"])
+router.include_router(legacy_router)
+logger = logging.getLogger(__name__)
+
+
+class PointBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(pattern=r"^[a-f0-9]{16}$")
+    confirm: str = ""
+
+
+def _root():
+    from superlocalmemory.server.routes.backup import _get_backup_manager
+
+    return Path(_get_backup_manager().db_path).parent
+
+
+def _gate(request):
+    from superlocalmemory.server.routes.backup import _require_manage
+
+    _require_manage(request)
+
+
+def _verify(point_id):
+    try:
+        return bundles.verify_point(_root(), point_id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from None
+
+
+@router.get("/list")
+def recovery_list(request: Request):
+    _gate(request)
+    items = []
+    for file in sorted((_root() / "backups").glob("backup_*/recovery.json"), reverse=True):
+        try:
+            record = json.loads(file.read_text())
+            items.append(
+                {
+                    "recovery_id": record["id"],
+                    "created": record["created"],
+                    "stores": record["stores"],
+                    "scope": "Managed stores and settings",
+                    "size_mb": sum(e["bytes"] for e in record["files"]) / 1024**2,
+                    "status": "Verify before restore",
+                }
+            )
+        except (OSError, ValueError, KeyError):
+            logger.warning("A recovery record could not be read")
+    from superlocalmemory.server.routes.backup import _get_backup_manager
+
+    legacy = [
+        dict(item, scope="Legacy memory database", status="Verify database only")
+        for item in _get_backup_manager().list_backups()
+        if item.get("type") == "memory"
+    ]
+    items.extend(legacy)
+    items.sort(key=lambda item: item.get("created", ""), reverse=True)
+    return {"backups": items, "count": len(items)}
+
+
+@router.post("/create")
+def recovery_create(request: Request):
+    _gate(request)
+    try:
+        point = bundles.create_point(_root())
+        return {"success": True, "filename": point["id"], "recovery_id": point["id"]}
+    except Exception:
+        logger.exception("Recovery snapshot failed")
+        raise HTTPException(
+            503, "Recovery backup could not be created. Retry after other writes finish."
+        ) from None
+
+
+@router.post("/verify")
+def recovery_verify(request: Request, body: PointBody):
+    _gate(request)
+    return _verify(body.id)
+
+
+@router.post("/export")
+def recovery_export(request: Request):
+    _gate(request)
+    point = bundles.create_point(_root())
+    path = bundles.export_point(_root(), point["id"])
+    return FileResponse(
+        path,
+        media_type="application/zip",
+        filename=f"slm-recovery-{point['id']}.zip",
+        background=BackgroundTask(path.unlink, missing_ok=True),
+    )
+
+
+@router.get("/status")
+def recovery_status(request: Request):
+    _gate(request)
+    return read_json(_root() / "backup-recovery-outcome.json") or {"state": "idle"}
+
+
+def _spawn(root, point_id):
+    from superlocalmemory.core.platform_utils import popen_platform_kwargs
+
+    subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "superlocalmemory.server.backup_restore_worker",
+            str(root),
+            point_id,
+            str(os.getpid()),
+        ],
+        env={**os.environ, "SLM_DATA_DIR": str(root)},
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        **popen_platform_kwargs(),
+    )
+
+
+@router.post("/restore")
+def recovery_restore(request: Request, body: PointBody):
+    _gate(request)
+    if body.confirm != "RESTORE":
+        raise HTTPException(422, "Type RESTORE to confirm replacing your stores.")
+    _verify(body.id)
+    root = _root()
+
+    def reserve(status):
+        if status.get("state") in ("queued", "stopping", "restoring"):
+            raise HTTPException(409, "A recovery is already in progress.")
+        status.clear()
+        status.update({"state": "queued", "id": body.id})
+
+    update_config(root / "backup-recovery-outcome.json", reserve)
+    try:
+        _spawn(root, body.id)
+    except Exception:
+        logger.exception("Recovery worker could not start")
+        write_json_atomic(root / "backup-recovery-outcome.json", {"state": "failed", "id": body.id})
+        raise HTTPException(503, "Recovery could not start. Nothing was restored; retry.") from None
+    return {
+        "success": True,
+        "state": "queued",
+        "message": "Stopping, restoring and restarting. Reopen this page to see the outcome.",
+    }

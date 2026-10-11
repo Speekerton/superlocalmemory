@@ -11,12 +11,12 @@ Uses V3 compliance modules: ABACEngine, AuditChain, RetentionEngine.
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from superlocalmemory.server.route_mutations import authorize_route_mutation
 from superlocalmemory.storage.memory_write import memory_write
 
+from .export_delivery import export_response
 from .helpers import DB_PATH, MEMORY_DIR, get_active_profile, get_engine_lazy
 
 logger = logging.getLogger("superlocalmemory.routes.compliance")
@@ -316,15 +316,23 @@ async def enforce_retention(request: Request):
 # ── GDPR Art. 15/20 — Right to Access / Portability ─────────────────────────
 
 @router.get("/api/compliance/gdpr/export")
-async def gdpr_export(request: Request):
+async def gdpr_export(
+    request: Request,
+    include_embeddings: bool = Query(
+        False, description="Include embeddings and other binary columns as base64"),
+):
     """Export ALL data for the active profile (GDPR Art. 20 portability).
 
-    Comprehensive 14-table export (memories, facts, entities, edges, trust,
-    feedback, behavioral patterns, provenance, audit, …) as a downloadable
-    JSON attachment. Read-only.
+    Comprehensive export (memories, facts, entities, edges, trust, feedback,
+    behavioral patterns, provenance, audit, media records, learned signals, …) as
+    a downloadable JSON attachment. Read-only.
+
+    The document is written to a temporary file and sent only when whole: an
+    export that fails answers with an error status and sends no file, and the
+    dashboard shows that error rather than a download that never came.
     """
     if not COMPLIANCE_AVAILABLE:
-        return {"available": False, "error": "Compliance engine not available"}
+        raise HTTPException(status_code=503, detail="Compliance engine not available")
     # A full-workspace data dump is an administrative action. Triggered by a
     # top-level navigation (a.href) that cannot carry a credential header, so
     # gate on the loopback-trusted mutation boundary (local owner allowed,
@@ -336,20 +344,18 @@ async def gdpr_export(request: Request):
     require_http_mutation_actor(request, getattr(request.app.state, "daemon_descriptor", None),
                                 actor_kind="gdpr-export")
     require_manage(request)
-    try:
-        engine = get_engine_lazy(request.app.state)
-        if engine is None:
-            return {"available": False, "error": "Engine not initialized"}
-        profile = get_active_profile()
-        data = GDPRCompliance(engine._db).export_profile_data(profile)
-        filename = f"slm-export-{profile}.json"
-        return JSONResponse(
-            content=data,
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
-    except Exception:
-        logger.exception("gdpr_export error")
-        return {"available": False, "error": "Internal server error"}
+    engine = get_engine_lazy(request.app.state)
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Engine not initialized")
+    profile = get_active_profile()
+
+    def write(fp) -> int:
+        summary = GDPRCompliance(engine._db).write_profile_export(
+            profile, fp, include_embeddings=include_embeddings)
+        return summary["total_items"]
+
+    return await export_response(
+        write, media_type="application/json", filename=f"slm-export-{profile}.json")
 
 
 # ── GDPR Art. 17 — Right to Erasure ─────────────────────────────────────────
@@ -396,6 +402,9 @@ async def gdpr_erase(request: Request, data: dict = {}):
         result = result or {}
         success = _erasure_succeeded(result)
         return {"success": success, "active_profile": profile, **result}
+    except HTTPException:
+        # A refusal (401/403) is the answer, not a failure of the erase.
+        raise
     except Exception:
         logger.exception("gdpr_erase error")
         return {"success": False, "error": "Internal server error"}
@@ -452,6 +461,9 @@ async def gdpr_erase_entity(request: Request, data: dict = {}):
             "success": success, "active_profile": profile,
             "entity_name": entity_name, **result,
         }
+    except HTTPException:
+        # A refusal (401/403) is the answer, not a failure of the erase.
+        raise
     except Exception:
         logger.exception("gdpr_erase_entity error")
         return {"success": False, "error": "Internal server error"}

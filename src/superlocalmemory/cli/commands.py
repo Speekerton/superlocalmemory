@@ -3715,6 +3715,19 @@ def cmd_doctor(args: Namespace) -> None:
             # pending on it by definition, so this is not a finding.
             _check("Projection queue", "PASS", "not applicable to this store")
 
+    # 10c. Failed saves. `slm ops status` reports dead-lettered saves, degraded
+    # operations and exhausted retries; doctor said nothing about them and read
+    # 0 failures on a store where 60 saves had been given up on (4.1.25 audit
+    # L-05). Same counts, same source, so the two commands cannot disagree.
+    if db_path.exists():
+        try:
+            from superlocalmemory.cli.doctor_ops import failed_saves_finding
+
+            _check("Failed saves", *failed_saves_finding(db_path))
+        except Exception as _fs_exc:  # noqa: BLE001 - never break doctor
+            _check("Failed saves", "WARN", f"could not read the failed-save counts: {_fs_exc}",
+                   "Run `slm ops status`")
+
     # 11. PEP 668 advisory (only for the system Python; a venv is exempt)
     #     and whether this Python can load SQLite extensions at all.
     try:
@@ -3847,6 +3860,8 @@ def cmd_doctor(args: Namespace) -> None:
     #     upgraded the package and read a clean `slm doctor` had every reason to
     #     believe they had all of it, and no way to find out otherwise.
     try:
+        from superlocalmemory.cli import doctor_hosts as _dh_plugins
+
         _pkg_version = _slm_version()
         _pl = _installed_plugin_versions()
         if not _pl:
@@ -3874,16 +3889,17 @@ def cmd_doctor(args: Namespace) -> None:
                         _pkg_version,
                         ", ".join(f"{n}={v}" for n, v in sorted(_stale.items())),
                     ),
-                    fix="claude plugin marketplace update qualixar && "
-                        "claude plugin update superlocalmemory@qualixar",
+                    fix=_dh_plugins.update_command_for(_stale),
                 )
             else:
+                _note = _dh_plugins.codex_cache_note(_pl)
                 _check(
                     "plugin_skills",
                     "PASS",
                     f"plugin content matches the package ({_pkg_version}): "
                     + ", ".join(sorted(_pl)) + " (found on disk; not proof "
-                    "that the host runs its hooks)",
+                    "that the host runs its hooks)"
+                    + (f". Note: {_note}" if _note else ""),
                 )
     except Exception as _pl_exc:  # noqa: BLE001 — never break doctor
         _check("plugin_skills", "WARN", f"could not probe plugins: {_pl_exc}")

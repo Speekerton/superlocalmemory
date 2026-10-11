@@ -10,7 +10,7 @@ Uses V3 compliance.lifecycle.LifecycleManager.
 import logging
 import sqlite3
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 
 from .helpers import DB_PATH, get_active_profile, get_engine_lazy, get_read_connection
 from superlocalmemory.server.route_mutations import authorize_route_mutation
@@ -179,6 +179,8 @@ async def trigger_compaction(request: Request, data: dict = {}):
             "applied": applied,
             "transitions": candidates[:20],
         }
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("lifecycle compaction failed")
         return {"success": False, "error": "internal error"}

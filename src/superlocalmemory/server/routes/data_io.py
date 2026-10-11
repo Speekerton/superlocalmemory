@@ -12,15 +12,15 @@ import gzip
 import hashlib
 import json
 import logging
-from typing import Any, Optional
+from typing import Optional
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, File
-from fastapi.responses import StreamingResponse
 
+from .export_delivery import export_response
+from .export_memories import write_memories_export
 from .helpers import (
     DB_PATH,
-    dict_factory,
     get_active_profile,
     get_db_connection,
     require_engine,
@@ -53,8 +53,15 @@ async def export_memories(
     format: str = Query("json", pattern="^(json|jsonl|csv)$"),
     category: Optional[str] = None,
     project_name: Optional[str] = None,
+    include_embeddings: bool = Query(
+        False, description="Include embeddings as base64 (omitted by default)"),
 ):
-    """Export memories as JSON, JSONL, or CSV."""
+    """Export memories as JSON, JSONL, or CSV.
+
+    The file is written to a temporary file first and sent only when whole, so a
+    failure is an error status and never a download that looks complete.
+    Embeddings are left out unless ``include_embeddings`` is set.
+    """
     # Bulk data export. This GET is not covered by the mutation middleware and
     # is reached both by a plain fetch and a top-level navigation, neither of
     # which carries a credential header — so gate on the loopback-trusted
@@ -70,159 +77,20 @@ async def export_memories(
     from superlocalmemory.server.rbac_enforce import require_permission
     active_profile = get_active_profile()
     require_permission(request, Permission.READ, profile=active_profile)
-    try:
+
+    def write(fp) -> int:
         conn = get_db_connection()
-        conn.row_factory = dict_factory
-        cursor = conn.cursor()
-
-        # Detect schema
         try:
-            cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='atomic_facts'",
-            )
-            use_v3 = cursor.fetchone() is not None
-        except Exception:
-            use_v3 = False
+            return write_memories_export(
+                conn, fp, format, active_profile, category=category,
+                project_name=project_name, include_embeddings=include_embeddings)
+        finally:
+            conn.close()
 
-        if use_v3:
-            # Withheld summaries are excluded, and this is about IMPORT, not
-            # tidiness. Import re-ingests every record through the normal
-            # pipeline, which mints a fresh memory with quarantined = 0 — so an
-            # export taken here and imported anywhere would resurrect all 1,195
-            # model-written rows as though the owner had written them, on a
-            # machine where nothing had gone wrong. The repair would then have
-            # to run again there.
-            #
-            # Nothing the owner wrote is lost: these are derived artefacts, the
-            # consolidator regenerates them from the facts that ARE exported,
-            # and their text is kept in consolidated_summaries. (That table is
-            # not in this export either — it is a view, not a memory. Worth
-            # revisiting when export covers derived state.)
-            query = "SELECT * FROM atomic_facts WHERE profile_id = ?"
-            if _has_column(cursor, "atomic_facts", "quarantined"):
-                query += " AND COALESCE(quarantined, 0) = 0"
-            params = [active_profile]
-            if category:
-                query += " AND fact_type = ?"
-                params.append(category)
-            if project_name:
-                query += " AND session_id = ?"
-                params.append(project_name)
-            query += " ORDER BY created_at"
-        else:
-            query = "SELECT * FROM memories WHERE profile = ?"
-            params = [active_profile]
-            if category:
-                query += " AND category = ?"
-                params.append(category)
-            if project_name:
-                query += " AND project_name = ?"
-                params.append(project_name)
-            query += " ORDER BY created_at"
-
-        cursor.execute(query, params)
-        memories = cursor.fetchall()
-        if use_v3:
-            _mark_sources(cursor, memories, active_profile)
-        conn.close()
-
-        if format == "jsonl":
-            content = "\n".join(json.dumps(m) for m in memories)
-            media_type = "application/x-ndjson"
-        elif format == "csv":
-            import csv
-            import io as _io
-            if memories:
-                buf = _io.StringIO()
-                fieldnames = list(memories[0].keys())
-                writer = csv.DictWriter(
-                    buf, fieldnames=fieldnames, extrasaction="ignore",
-                )
-                writer.writeheader()
-                for m in memories:
-                    writer.writerow({
-                        k: (json.dumps(v) if isinstance(v, (dict, list)) else v)
-                        for k, v in m.items()
-                    })
-                content = buf.getvalue()
-            else:
-                content = ""
-            media_type = "text/csv"
-        else:
-            content = json.dumps({
-                "version": "3.0.0",
-                "exported_at": datetime.now(timezone.utc).isoformat(),
-                "total_memories": len(memories),
-                "filters": {"category": category, "project_name": project_name},
-                "memories": memories,
-            }, indent=2)
-            media_type = "application/json"
-
-        ts = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
-        if len(content) > 10000:
-            compressed = gzip.compress(content.encode())
-            return StreamingResponse(
-                io.BytesIO(compressed), media_type="application/gzip",
-                headers={
-                    "Content-Disposition": f"attachment; filename=memories_export_{ts}.{format}.gz",
-                },
-            )
-        return StreamingResponse(
-            io.BytesIO(content.encode()), media_type=media_type,
-            headers={
-                "Content-Disposition": f"attachment; filename=memories_export_{ts}.{format}",
-            },
-        )
-
-    except Exception:
-        raise _internal_error("Export error")
-
-
-# What a marker may say in an export: ids only, never a path or a file name.
-_SOURCE_KEYS = ("media_id", "document_id", "page", "part", "source_id")
-_SOURCE_TYPES = {"media": "media", "document": "document_page", "folder": "folder"}
-
-
-def _mark_sources(cursor: Any, facts: list, profile_id: str) -> None:
-    """Tag the facts that came from a picture, a document page or a connected folder.
-
-    Only their text is exported (never the picture, the document or the folder),
-    so the record says where the text came from. Other facts are left untouched.
-    """
-    try:
-        cursor.execute(
-            "SELECT memory_id, metadata_json FROM memories WHERE profile_id = ?"
-            " AND metadata_json LIKE '%_slm_source%'", (profile_id,))
-        marks: dict[str, dict] = {}
-        for row in cursor.fetchall():
-            try:
-                raw = (json.loads(row["metadata_json"] or "{}") or {}).get("_slm_source")
-            except ValueError:
-                continue
-            kind = _SOURCE_TYPES.get(raw.get("type")) if isinstance(raw, dict) else None
-            if kind:
-                marks[row["memory_id"]] = {
-                    "type": kind, **{k: raw[k] for k in _SOURCE_KEYS if k in raw}}
-    except Exception:  # noqa: BLE001 -- an export must not fail over a marker
-        logger.warning("export: source markers unavailable")
-        return
-    for fact in facts:
-        mark = marks.get(fact.get("memory_id"))
-        if mark:
-            fact["source"] = dict(mark)
-
-
-def _has_column(cursor: Any, table: str, column: str) -> bool:
-    """Whether ``table`` carries ``column`` in this database.
-
-    Presence-guarded because ``quarantined`` arrives with a migration and this
-    route must keep working on a store the engine has not opened.
-    """
-    try:
-        cursor.execute(f"PRAGMA table_info({table})")
-        return any(row[1] == column for row in cursor.fetchall())
-    except Exception:  # noqa: BLE001 -- an export must not fail over a probe
-        return False
+    ts = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+    media = {"jsonl": "application/x-ndjson", "csv": "text/csv"}.get(format, "application/json")
+    return await export_response(
+        write, media_type=media, filename=f"memories_export_{ts}.{format}", gzip_over=10000)
 
 
 @router.post("/api/import")

@@ -466,6 +466,12 @@ slm doctor --fix     # re-download missing models and install sqlite-vec first
 slm doctor --json
 ```
 
+Doctor also reads the same failure counts as `slm ops status`: a "Failed saves"
+row warns when saves were given up on after repeated attempts (dead-lettered, so
+those memories may lack entities or graph links) and fails at 50 or more. Its fix
+line names the commands to run: `slm ops list`, then `slm ops resolve <id> --action
+retry` or `--action cancel`.
+
 ### `slm warmup`
 
 Load the embedding model (about 500 MB to download the first time) and confirm
@@ -838,11 +844,16 @@ backup](cloud-backup.md).
 ```bash
 slm gdpr status
 slm gdpr export --profile work --output work-export.json
+slm gdpr export --profile work --output work-export.json --include-embeddings
 slm gdpr erase --profile work --dry-run
 slm gdpr erase --profile work --yes     # irreversible
 slm gdpr verify --receipt-id <id>
 ```
 
+`export` streams the file to disk, so a large store needs little memory, and the
+file appears only when it is complete. Embeddings and other binary columns are
+left out unless you pass `--include-embeddings` (they are written as base64).
+The file lists what it left out and why under `export_manifest`.
 `erase` removes a whole profile and cannot be undone; it needs both `--profile`
 and `--yes`. `verify` checks an erasure receipt and exits 0 when it is intact,
 1 when tampered, 2 when not found. See [Compliance](compliance.md).

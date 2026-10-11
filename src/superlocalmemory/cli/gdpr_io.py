@@ -11,7 +11,9 @@ All symbols here are internal (prefixed ``_``) or ALL_CAPS constants.
 from __future__ import annotations
 
 import json as _json
+import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -66,6 +68,53 @@ def _db_path() -> Path:
 
 def _audit_chain_path() -> Path:
     return _data_root() / "audit_chain.db"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Export delivery
+# ─────────────────────────────────────────────────────────────────────────────
+
+def stream_export_to_file(gdpr: Any, profile: str, out_path: Path, *,
+                          include_embeddings: bool) -> dict:
+    """Stream an Art.15/20 export into ``out_path``; the file appears only when whole.
+
+    The export is written to ``<out>.part`` (owner-only) and renamed on success,
+    so a failure never leaves a truncated file that looks like a finished export.
+    """
+    part = out_path.with_name(out_path.name + ".part")
+    fd = os.open(part, os.O_RDWR | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w+b") as fp:
+            summary = gdpr.write_profile_export(profile, fp, include_embeddings=include_embeddings)
+        os.replace(part, out_path)
+    except BaseException:
+        part.unlink(missing_ok=True)
+        raise
+    return summary
+
+
+def stream_export_to_stdout(gdpr: Any, profile: str, *, include_embeddings: bool,
+                            envelope: bool) -> dict:
+    """Stream an export to stdout, optionally inside the standard JSON envelope.
+
+    Nothing reaches stdout until the export has been read in full, so a failure
+    prints no half of a document.
+    """
+    from superlocalmemory.compliance.export_stream import copy_file
+
+    with tempfile.TemporaryFile("w+b") as spool:
+        summary = gdpr.write_profile_export(profile, spool, include_embeddings=include_embeddings)
+        out = sys.stdout
+        if envelope:
+            head = _json_envelope("gdpr-export", data={})
+            head.pop("data")
+            out.write(_json.dumps(head, indent=2)[:-2] + ',\n  "data": ')
+        out.flush()
+        copy_file(spool, out)
+        if envelope:
+            out.write("}\n")
+        out.flush()
+    return summary
 
 
 # ─────────────────────────────────────────────────────────────────────────────

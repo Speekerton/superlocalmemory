@@ -138,6 +138,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the mesh, web access, governance and bot skills, the web agent
   instructions, Cursor, VS Code, Continue and Cody cover pictures, upload
   links, `mesh_wait` and the Connected apps switches.
+- **Exporting your data works on a real store.** The dashboard's **Export my data**,
+  the memory export (`/api/export`) and `slm gdpr export` died or wrote junk on any
+  store that held embeddings (a vector is stored as binary), and the dashboard still
+  said "Export started". Both exports now write plain JSON, leave embeddings out
+  unless you ask for them (`--include-embeddings`, or `include_embeddings=true`,
+  written as base64), stream to disk instead of building the file in memory, and
+  send the file only when it is complete. A failed export is an error status and the
+  dashboard shows the error and the saved file's name and size. The full export now
+  also carries the audit records about you and any save still waiting, and lists what
+  it leaves out and why under `export_manifest`. The memory export's filter for
+  withheld summaries, which never applied, now does.
+- `slm doctor` has a **Failed saves** row that reads the same counts as
+  `slm ops status`: it warns when saves were dead-lettered (and fails at 50 or more),
+  and prints `slm ops list` and `slm ops resolve <id> --action retry|cancel`.
+- After `slm upgrade-hosts --host codex --apply`, `slm doctor` reports the refreshed
+  Codex version instead of the old copy in Codex's own plugin cache.
+- A refused write from this computer names `X-Install-Token` first (and `slm token
+  show`); `X-SLM-API-Key` is named first only for callers on other hosts.
 
 ## [4.1.24] — Connecting ChatGPT, Grok Bot, Muse and dots works the first time
 

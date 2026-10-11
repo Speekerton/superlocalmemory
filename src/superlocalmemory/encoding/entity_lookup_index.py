@@ -17,17 +17,21 @@ to the store (storage/store_signature) and answers the same way:
   only), so a name matches here exactly when it matched there;
 * a key held by more than one entity is answered by the original query, so
   which row wins never depends on a query plan;
-* the spelling match walks the rows in the order of the same queries it ran
-  before, with the same strict comparison, so ties resolve the same way; its
-  answer per name is kept while the rows are.
+* the spelling match applies a save's merge rules (``entity_match``) to the
+  canonical names only (``entity_name_cache``); its answer per name is kept
+  while the rows are.
+
+Aliases written by the pre-4.1.25 whole-string fuzzy merge are not loaded:
+they may be links of a chain ("Plorth" -> "Plot" -> "Lost").
 """
 
 from __future__ import annotations
 
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
+from superlocalmemory.encoding import entity_match as em
 from superlocalmemory.storage import store_signature
 
 _ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
@@ -36,7 +40,7 @@ _ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrst
 _NAMES_SQL = "SELECT entity_id, canonical_name FROM canonical_entities WHERE profile_id = ?"
 _ALIASES_SQL = ("SELECT ea.entity_id, ea.alias FROM entity_aliases ea "
                 "JOIN canonical_entities ce ON ce.entity_id = ea.entity_id "
-                "WHERE ce.profile_id = ?")
+                "WHERE ce.profile_id = ? AND " + em.trusted_alias_sql("ea.source"))
 
 AMBIGUOUS = object()
 
@@ -64,7 +68,8 @@ class _Index:
     aliases: list[tuple[str, str]]
     by_name: dict[str, object]
     by_alias: dict[str, object]
-    fuzzy: dict[str, tuple[str | None, float]] = field(default_factory=dict)
+    same: dict[str, str | None] = field(default_factory=dict)
+    plain: dict[str, str] | None = None
 
 
 class EntityLookupIndex:
@@ -95,22 +100,17 @@ class EntityLookupIndex:
         return index
 
 
-def fuzzy_best(index: _Index, name: str,
-               score: Callable[[str, str], float]) -> tuple[str | None, float]:
-    """The original spelling match over the kept rows (same order, same ``>``)."""
-    name_lower = name.lower()
-    cached = index.fuzzy.get(name_lower)
-    if cached is not None:
-        return cached
-    best_id: str | None = None
-    best = 0.0
-    for rows in (index.names, index.aliases):
-        for entity_id, text in rows:
-            s = score(name_lower, text.lower())
-            if s > best:
-                best, best_id = s, entity_id
-    index.fuzzy[name_lower] = (best_id, best)
-    return best_id, best
+def plain_word_hit(index: _Index, word: str) -> str | None:
+    """A canonical name a lower-case question word spells exactly (case and
+    punctuation aside), when such a word may name it at all."""
+    if index.plain is None:
+        plain: dict[str, str] = {}
+        for entity_id, name in index.names:
+            if em.plain_word_may_name(name):
+                plain.setdefault(em.name_key(name).compact, entity_id)
+        index.plain = plain
+    key = em.name_key(word).compact
+    return index.plain.get(key) if key else None
 
 
-__all__ = ["AMBIGUOUS", "EntityLookupIndex", "fuzzy_best", "sql_lower"]
+__all__ = ["AMBIGUOUS", "EntityLookupIndex", "plain_word_hit", "sql_lower"]

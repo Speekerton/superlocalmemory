@@ -752,14 +752,10 @@ def run_store(
             and content.strip()
             and len(content.strip()) >= 40
             and len(content.strip().split()) >= _MIN_VERBATIM_WORDS):
-        import re as _re
+        from superlocalmemory.encoding.entity_mentions import extract_mentions
         _verbatim_text = content.strip()
-        # Extract entities using the same regex as fact_extractor
-        _ent_re = _re.compile(r"\b([A-Z][a-z]+(?:\s[A-Z][a-z]+){0,3})\b")
-        _entity_set = {m.group(1) for m in _ent_re.finditer(_verbatim_text)}
-        # Also extract all-caps abbreviations (NYU, MIT, etc.) — dedup with first set
-        _entity_set |= {m.group(1) for m in _re.finditer(r'\b([A-Z]{2,})\b', _verbatim_text)}
-        _verbatim_entities = sorted(_entity_set)
+        # The shared Mode A rules, as every other write path uses.
+        _verbatim_entities = extract_mentions(_verbatim_text)
         verbatim = AtomicFact(
             fact_id=uuid.uuid4().hex[:16],
             content=_verbatim_text,

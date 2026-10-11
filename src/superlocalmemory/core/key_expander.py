@@ -28,6 +28,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from superlocalmemory.encoding.entity_match import is_trusted_alias_source
+
 if TYPE_CHECKING:
     from superlocalmemory.storage.database import DatabaseManager
     from superlocalmemory.storage.models import AtomicFact
@@ -85,7 +87,8 @@ class KeyExpander:
             try:
                 for alias in self._db.get_aliases_for_entity(entity_id, profile_id):
                     a = getattr(alias, "alias", None)
-                    if a:
+                    # An alias the old fuzzy merge wrote may name another thing.
+                    if a and is_trusted_alias_source(getattr(alias, "source", "")):
                         out.add(a)
             except Exception:
                 continue

@@ -41,11 +41,13 @@ class TestExtractQueryEntities:
         assert "alice" in names
         assert "bob" in names
 
-    def test_title_cased_fallback(self) -> None:
-        # All lowercase — title() should produce proper nouns
-        result = extract_query_entities("what did alice do?")
-        names = [n.lower() for n in result]
-        assert "alice" in names
+    def test_lower_case_words_are_not_title_cased_into_names(self) -> None:
+        # 4.1.25: title-casing made every word a name ("zxqv plorth wimble"
+        # gave three). Lower-case words get an exact-only lookup instead.
+        from superlocalmemory.retrieval.entity_channel import query_plain_words
+
+        assert extract_query_entities("what did alice do?") == []
+        assert "alice" in query_plain_words("what did alice do?")
 
     def test_quoted_phrases(self) -> None:
         result = extract_query_entities('Tell me about "Project Alpha"')

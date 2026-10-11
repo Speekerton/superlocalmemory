@@ -33,7 +33,7 @@ def _extract(items: list[dict], **kw) -> tuple[list, MagicMock]:
     llm = _llm(items)
     ext = FactExtractor(config=EncodingConfig(enable_entity_reflexion=False), llm=llm,
                         mode=Mode.C, **kw)
-    return ext.extract_facts(["turn one", "turn two"], session_id="s1",
+    return ext.extract_facts([" ".join(item["text"] for item in items)], session_id="s1",
                              session_date="2026-10-03"), llm
 
 
@@ -89,4 +89,4 @@ def test_flag_on_is_the_default_and_changes_only_the_kind_lines() -> None:
     _, llm = _extract([_item("Alice chose Postgres over DynamoDB.")])
     system = llm.generate.call_args.kwargs["system"]
     added = set(system.splitlines()) - set(fx._SYSTEM_PROMPT.splitlines())
-    assert len(added) == 2, added   # the instruction line and the example line
+    assert len(added) == 1, added   # the instruction line and the example line

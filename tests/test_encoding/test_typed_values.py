@@ -116,7 +116,8 @@ class TestModelDateFields:
         assert fact.referenced_date is None
 
     def test_a_resolved_relative_date_is_kept(self) -> None:
-        [fact] = keep_supported_dates([self._fact("2026-10-05")], "It moved yesterday.")
+        [fact] = keep_supported_dates([self._fact("2026-10-05")], "It moved yesterday.",
+                                    reference_date="2026-10-06")
         assert fact.referenced_date == "2026-10-05"
 
     def test_a_stated_date_is_kept(self) -> None:

@@ -8,11 +8,9 @@ These tests run against README.md in the repo root.
 from __future__ import annotations
 
 import re
-import os
 import tomllib
 from pathlib import Path
 
-import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -101,9 +99,9 @@ def test_line_count_le_720():
 
 # ---------------------------------------------------------------------------
 # AC2: one install block, at the top. The 4.1.20 README rewrite (e48b83b2)
-# replaced "## Quick Start" with a three-line install block under the hero and
-# a "## 30-second example"; the intent -- one place to start, no duplicate
-# accordion copy -- is unchanged.
+# replaced "## Quick Start" with a three-line install block before the
+# "## 30-second example". Feature announcements can precede installation;
+# the walkthrough must not. Keep one place to start, with no duplicate copy.
 # ---------------------------------------------------------------------------
 
 
@@ -116,8 +114,8 @@ def test_single_quick_start():
         f"Expected exactly 1 install block, found {len(install_blocks)} (LLD AC2)."
     )
     assert "slm setup" in install_blocks[0]
-    assert text.index("pipx install superlocalmemory") < text.index("\n## "), (
-        "The install block must come before the first section (LLD AC2)."
+    assert text.index("pipx install superlocalmemory") < text.index("\n## 30-second example"), (
+        "The install block must come before the runnable example (LLD AC2)."
     )
     assert len(re.findall(r"^#{2,3} Quick Start", text, re.MULTILINE)) <= 1
 

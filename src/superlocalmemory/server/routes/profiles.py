@@ -251,7 +251,6 @@ async def create_profile(body: ProfileSwitch, request: Request):
             source_agent_id="http-profile-create",
         )
         # RBAC (C3): creating a tenant is an administrative action.
-        from superlocalmemory.access.rbac import Permission as _Perm
         from superlocalmemory.server.rbac_enforce import require_manage as _rbac_manage
         _principal = _rbac_manage(request)
         # Write to BOTH stores atomically

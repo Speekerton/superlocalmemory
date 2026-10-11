@@ -23,7 +23,6 @@ modules lazily inside each function so CLI help stays snappy.
 
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 import sys

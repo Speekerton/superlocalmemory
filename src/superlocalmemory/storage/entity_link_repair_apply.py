@@ -258,7 +258,11 @@ def _enqueue_projection(conn: sqlite3.Connection, profile_id: str, fact_ids: lis
 
 def _connect(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(db_path), timeout=30, isolation_level=None)
-    conn.execute("PRAGMA busy_timeout=30000")
+    try:
+        conn.execute("PRAGMA busy_timeout=30000")
+    except BaseException:
+        conn.close()
+        raise
     return conn
 
 

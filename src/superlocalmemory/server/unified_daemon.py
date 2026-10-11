@@ -7066,8 +7066,11 @@ def start_server(port: int = _DEFAULT_PORT) -> None:
             bind_host, port, exc,
         )
         return
-    # The lifespan uses the configured port for its identity and health
-    # payload, so a CLI --port must be reflected there as well.
+    # Port 0 asks the kernel for an ephemeral listener. Resolve it before
+    # publishing identity or building the app's MCP origin and callback URL;
+    # those require the actual port even while the descriptor is "starting".
+    port = listener.getsockname()[1]
+    # The lifespan uses this port for its identity and health payload too.
     os.environ["SLM_DAEMON_PORT"] = str(port)
 
     # v3.4.23: rotate oversized logs before anything else so both the CLI

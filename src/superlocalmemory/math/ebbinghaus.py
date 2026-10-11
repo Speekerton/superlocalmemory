@@ -46,7 +46,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, TypedDict
 
 if TYPE_CHECKING:
-    from superlocalmemory.storage.database import DatabaseManager
+    pass
 
 from superlocalmemory.core.config import ForgettingConfig
 

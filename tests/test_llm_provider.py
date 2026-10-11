@@ -5,8 +5,6 @@
 """Tests for LLM provider layer — Task 1 of V3 build."""
 import json
 import pytest
-from pathlib import Path
-from unittest.mock import patch, MagicMock
 from superlocalmemory.llm.backbone import LLMBackbone, _SUPPORTED_PROVIDERS
 from superlocalmemory.core.config import SLMConfig, LLMConfig
 from superlocalmemory.storage.models import Mode

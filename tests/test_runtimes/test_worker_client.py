@@ -1,6 +1,5 @@
 """The client: lazy start, idle kill, restart, timeouts, memory limit, factory."""
 
-import os
 import subprocess
 import threading
 import time

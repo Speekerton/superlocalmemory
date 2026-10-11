@@ -157,7 +157,6 @@ class GraphAnalyzer:
 
         O(m) where m = edges (fast), no parameter tuning needed.
         """
-        import networkx as nx
         from networkx.algorithms.community import (
             label_propagation_communities,
         )
@@ -187,7 +186,6 @@ class GraphAnalyzer:
         no giant-community collapse), pure-Python via networkx — no extra
         binary deps. Falls back to Label Propagation if unavailable.
         """
-        import networkx as nx
 
         if graph is None:
             graph = self._build_networkx_graph(profile_id)

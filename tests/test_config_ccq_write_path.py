@@ -229,7 +229,7 @@ def _make_cluster_and_gist(db=None):
         ConsolidationCluster,
         GistResult,
     )
-    from superlocalmemory.storage.models import AtomicFact, MemoryRecord
+    from superlocalmemory.storage.models import MemoryRecord
 
     src_ids = ("src-fact-a", "src-fact-b", "src-fact-c")
 

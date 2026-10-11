@@ -6,7 +6,7 @@ import json
 import os
 from types import SimpleNamespace
 
-from tests.test_sources.test_shared_ownership import PDF, PNG, bump, user_memory
+from tests.test_sources.test_shared_ownership import PDF, PNG, user_memory
 
 
 def live(env, sid, relpath):
@@ -116,6 +116,7 @@ def test_file_restored_after_a_purge_is_saved_fresh(env):
 
 
 def test_a_file_that_comes_back_after_delete_counts_on(env):
+    sid = None
     for n in range(3):
         path = env.write("a.md", "same words")
         env.write("keep.canvas", "{}")  # the folder is never empty

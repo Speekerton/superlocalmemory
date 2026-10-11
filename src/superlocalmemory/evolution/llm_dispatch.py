@@ -36,7 +36,7 @@ import tempfile
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable
 
 from superlocalmemory.core import outbound_http
 from superlocalmemory.core.security_primitives import run_subprocess_safe

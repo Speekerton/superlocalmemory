@@ -5,11 +5,10 @@ from __future__ import annotations
 import base64
 from types import SimpleNamespace
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from superlocalmemory.media import ingest, open_media_store
+from superlocalmemory.media import open_media_store
 from superlocalmemory.media.ingest import MediaReceipt
 from superlocalmemory.server.routes import media as routes
 

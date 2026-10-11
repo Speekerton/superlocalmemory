@@ -19,7 +19,6 @@ Covers:
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 # Imported at collection time on purpose: tests/conftest.py replaces the
@@ -29,16 +28,13 @@ from superlocalmemory.retrieval.reranker import (
     CrossEncoderReranker as _RealCrossEncoderReranker,
 )
 
-import pytest
 
-from superlocalmemory.core.config import ChannelWeights, RetrievalConfig
+from superlocalmemory.core.config import RetrievalConfig
 from superlocalmemory.retrieval.engine import RetrievalEngine
-from superlocalmemory.retrieval.fusion import FusionResult
 from superlocalmemory.storage.models import (
     AtomicFact,
     Mode,
     RecallResponse,
-    RetrievalResult,
 )
 
 

@@ -54,8 +54,8 @@ class EntityGraphChannel:
     Replaces per-node SQLite queries (23ms each) with dict lookup (<0.001ms).
     The cache is loaded once per scope; after that a write is spliced into it
     by the write's own size (retrieval/graph_catchup) instead of reloading it.
-    Memory: the array view only, ~30 MB a scope at 611k edges
-    (retrieval/adjacency_slot). Zero quality change -- same algorithm.
+    Memory: ~20.2 MB of arrays at 611k undirected edges / 25.6k nodes,
+    plus workload-dependent Python maps (retrieval/adjacency_slot).
 
     Per-request profiles: the cache holds the last SLM_ADJ_CACHE_PROFILES
     (default 3) profile scopes in an LRU, so alternating requests do not

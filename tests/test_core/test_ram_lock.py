@@ -15,8 +15,6 @@ Covers IMPLEMENTATION-MANIFEST-v3.4.22-FINAL.md §P0.5.
 
 from __future__ import annotations
 
-import os
-import signal
 import subprocess
 import sys
 import textwrap

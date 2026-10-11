@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import struct
 import subprocess
-import zlib
 from pathlib import Path
 
 from superlocalmemory.runtimes import pdf_parse

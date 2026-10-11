@@ -9,7 +9,7 @@ TYPE NAME CANONICAL RULE:
 from __future__ import annotations
 
 import dataclasses
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 
 # ─── Data types ──────────────────────────────────────────────────────────────

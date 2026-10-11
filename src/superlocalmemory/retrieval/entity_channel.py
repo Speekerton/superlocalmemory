@@ -47,6 +47,27 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def ranked_authorized_topk(db: Any, ranked: list[tuple[str, float]], profile_id: str,
+                           top_k: int, **scope: bool) -> list[tuple[str, float]]:
+    """Authorize only enough ranks to fill a page, without dropping candidates.
+
+    Authorization preserves order and scores. Walking the sorted prefix and
+    backfilling rejected ranks is therefore exactly full authorization followed
+    by slicing. No visibility cache is used: revocations take effect on each read.
+    Negative slices retain the historical Python slicing behaviour.
+    """
+    if top_k < 0:
+        return filter_authorized_results(db, ranked, profile_id, **scope)[:top_k]
+    out: list[tuple[str, float]] = []
+    cursor = 0
+    while len(out) < top_k and cursor < len(ranked):
+        size = min(800, top_k - len(out))
+        page = ranked[cursor:cursor + size]
+        out.extend(filter_authorized_results(db, page, profile_id, **scope))
+        cursor += size
+    return out
+
+
 class EntityGraphChannel:
     """Entity-based retrieval with spreading activation (SA-RAG).
 
@@ -275,78 +296,50 @@ class EntityGraphChannel:
         with self._cache_lock:
             return self._search_locked(query, profile_id, top_k)
 
-    def _search_locked(
-        self,
-        query: str,
-        profile_id: str,
-        top_k: int = 50,
-    ) -> list[tuple[str, float]]:
-        """Search via entity graph with spreading activation.
-
-        V3.3.9: Uses in-memory adjacency for O(1) edge lookups.
-        V3.4.5: Routes to CozoDB if backend is active (Sprint 2).
-        """
+    def _search_locked(self, query: str, profile_id: str,
+                       top_k: int = 50) -> list[tuple[str, float]]:
+        """Resolve a question, walk its scope, and authorize the ranked page."""
         include_global = bool(getattr(self, "include_global", False))
         include_shared = bool(getattr(self, "include_shared", False))
-        raw_entities, plain_words = extract_query_entities(query), query_plain_words(query)
-        if not raw_entities and not plain_words:
+        raw, plain = extract_query_entities(query), query_plain_words(query)
+        if not raw and not plain:
             return []
-
-        # Load the visible fact/entity map before resolution. Canonical entity
-        # IDs are profile-local UUIDs, so the same name may have a different ID
-        # in an opted-in global/shared owner's partition.
-        self._ensure_adjacency(
-            profile_id,
-            include_global=include_global,
-            include_shared=include_shared,
-        )
-
-        canonical_ids = self._resolve_entities(raw_entities, profile_id, plain_words)
-        if not canonical_ids:
+        self._ensure_adjacency(profile_id, include_global=include_global,
+                               include_shared=include_shared)
+        ids = self._resolve_entities(raw, profile_id, plain)
+        if not ids:
             return []
-
-        # One walk, over the array-shaped snapshot when there is one. The
-        # dict form below is kept for the mock/lightweight DBs that never build
-        # an adjacency cache, and it is the only path that still pays a Python
-        # loop per edge.
         snapshot = getattr(self, "_snapshot", None)
         if snapshot is not None and snapshot.node_count:
-            activation_result = spreading.activate(
-                snapshot,
-                canonical_ids,
-                decay=self._decay,
-                threshold=self._threshold,
-                max_hops=self._max_hops,
-            )
-            spreading.apply_community_bias(
-                activation_result.scores, snapshot, canonical_ids,
-            )
-            activation = activation_result.as_mapping(snapshot, threshold=-1.0)
+            result = spreading.activate(snapshot, ids, decay=self._decay,
+                                        threshold=self._threshold, max_hops=self._max_hops)
+            spreading.apply_community_bias(result.scores, snapshot, ids)
+            activation = result.as_mapping(snapshot, threshold=-1.0)
             if activation:
                 self._suppress_contradictions(activation, profile_id)
-            results = [
-                (fid, sc) for fid, sc in activation.items() if sc >= self._threshold
-            ]
-            if not results:
-                return []
-            max_score = max(sc for _, sc in results)
-            if max_score > 0:
-                results = [(fid, sc / max_score) for fid, sc in results]
-            results.sort(key=lambda x: (-x[1], x[0]))
-            return filter_authorized_results(
-                self._db,
-                results,
-                profile_id,
-                include_global=include_global,
-                include_shared=include_shared,
-            )[:top_k]
+        else:
+            activation = self._legacy_activation(ids, profile_id)
+        return self._rank_page(activation, profile_id, top_k, include_global, include_shared)
 
-        # Seed activation from direct entity-linked facts (no adjacency cache:
-        # mock and lightweight DBs only). Graph intelligence is unavailable on
-        # this path by design -- see Phase 7 LLD H-01.
+    def _rank_page(self, activation: dict[str, float], profile_id: str, top_k: int,
+                   include_global: bool, include_shared: bool) -> list[tuple[str, float]]:
+        results = [(fid, sc) for fid, sc in activation.items() if sc >= self._threshold]
+        if not results:
+            return []
+        max_score = max(sc for _, sc in results)
+        if max_score > 0:
+            results = [(fid, sc / max_score) for fid, sc in results]
+        results.sort(key=lambda x: (-x[1], x[0]))
+        return ranked_authorized_topk(self._db, results, profile_id, top_k,
+                                       include_global=include_global, include_shared=include_shared)
+
+    def _legacy_activation(self, canonical_ids: list[str],
+                           profile_id: str) -> dict[str, float]:
+        """Lightweight/mock stores without a snapshot retain the original walk."""
+        include_global = bool(getattr(self, "include_global", False))
+        include_shared = bool(getattr(self, "include_shared", False))
         activation: dict[str, float] = defaultdict(float)
         visited_entities: set[str] = set(canonical_ids)
-        use_cache = False
         for eid in canonical_ids:
             for fact in self._db.get_facts_by_entity(
                 eid,
@@ -356,7 +349,13 @@ class EntityGraphChannel:
             ):
                 activation[fact.fact_id] = max(activation[fact.fact_id], 1.0)
 
-        frontier = set(activation.keys())
+        return self._legacy_hops(activation, visited_entities, profile_id)
+
+    def _legacy_hops(self, activation: dict[str, float], visited_entities: set[str],
+                     profile_id: str) -> dict[str, float]:
+        frontier = set(activation)
+        include_global = bool(getattr(self, "include_global", False))
+        include_shared = bool(getattr(self, "include_shared", False))
         for hop in range(1, self._max_hops):
             hop_decay = self._decay**hop
             if hop_decay < self._threshold:
@@ -392,47 +391,7 @@ class EntityGraphChannel:
             if not frontier:
                 break
 
-        # v3.4.1 P2: Community-aware boosting
-        if self._graph_metrics and use_cache:
-            from collections import Counter as _Counter
-
-            seed_communities: _Counter = _Counter()
-            for eid in canonical_ids:
-                for fid in self._entity_to_facts.get(eid, ()):
-                    m = self._graph_metrics.get(fid, {})
-                    comm = m.get("community_id")
-                    if comm is not None:
-                        seed_communities[comm] += 1
-            if seed_communities:
-                total_seeds = sum(seed_communities.values())
-                for fid in list(activation.keys()):
-                    m = self._graph_metrics.get(fid, {})
-                    fact_comm = m.get("community_id")
-                    if fact_comm is not None and fact_comm in seed_communities:
-                        boost = min(1.0 + 0.15 * (seed_communities[fact_comm] / total_seeds), 1.3)
-                        activation[fid] *= boost
-                    elif fact_comm is not None and fact_comm not in seed_communities:
-                        activation[fid] *= 0.9  # Mild penalty for unrelated communities
-
-        # v3.4.1 P3: Contradiction suppression via graph_edges
-        if use_cache and activation:
-            self._suppress_contradictions(activation, profile_id)
-
-        # v3.4.1: Score normalization to [0, 1]
-        results = [(fid, sc) for fid, sc in activation.items() if sc >= self._threshold]
-        if not results:
-            return []
-        max_score = max(sc for _, sc in results)
-        if max_score > 0:
-            results = [(fid, sc / max_score) for fid, sc in results]
-        results.sort(key=lambda x: (-x[1], x[0]))
-        return filter_authorized_results(
-            self._db,
-            results,
-            profile_id,
-            include_global=include_global,
-            include_shared=include_shared,
-        )[:top_k]
+        return activation
 
     def score_candidates(
         self,

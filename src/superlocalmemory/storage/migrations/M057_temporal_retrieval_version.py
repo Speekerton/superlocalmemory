@@ -13,6 +13,11 @@ import sqlite3
 
 NAME = "M057_temporal_retrieval_version"
 DB_TARGET = "memory"
+#: Additive (a new table, a partial index and triggers). The triggers live in
+#: the store, so writes by an older build still bump the version and the slice
+#: cache cannot go stale after a downgrade and re-upgrade. Going back to 4.1.18
+#: stays possible.
+DOWNGRADE_FLOOR = 51
 
 
 def _unsafe(prefix: str = "") -> str:

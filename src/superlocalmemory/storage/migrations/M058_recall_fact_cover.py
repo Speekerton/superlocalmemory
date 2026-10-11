@@ -12,6 +12,8 @@ import sqlite3
 
 NAME = "M058_recall_fact_cover"
 DB_TARGET = "memory"
+#: Additive (one covering index; an older build ignores it), so going back to 4.1.18 stays possible.
+DOWNGRADE_FLOOR = 51
 _COLUMNS = {"fact_id", "profile_id", "scope", "shared_with", "archive_status",
             "quarantined", "created_at"}
 DDL = """

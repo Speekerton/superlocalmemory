@@ -15,6 +15,8 @@ import sqlite3
 
 NAME = "M056_recall_channel_indexes"
 DB_TARGET = "memory"
+#: Additive (indexes only; an older build ignores them), so going back to 4.1.18 stays possible.
+DOWNGRADE_FLOOR = 51
 
 DDL = """
 CREATE INDEX IF NOT EXISTS idx_recall_entity_name

@@ -59,7 +59,7 @@ def _channel(results):
 
 def _engine(reranker) -> RetrievalEngine:
     # The right memory is a real semantic hit, just below twelve others.
-    semantic = [(fid, 0.9 - i * 0.01) for i, fid in enumerate(_SEEDS)] + [(_GOLD, 0.7)]
+    semantic = [(fid, 0.95 - i * 0.01) for i, fid in enumerate(_SEEDS)] + [(_GOLD, 0.82)]
     entity = _channel([])
     # Siblings share the query's entities, so they also pass the evidence
     # floor - exactly what lets them through on a real store.

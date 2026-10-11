@@ -52,7 +52,7 @@ def test_the_persons_own_note_still_counts_by_its_words():
 def test_a_picture_with_readable_text_and_plain_memories_are_unchanged():
     facts = _facts(shot=f"{TEXT_MARKER}Recall Lab channel scores", plain="Staging DB is on port 5434")
     kept = RetrievalEngine._apply_evidence_floor(
-        [_fr("shot", media=0.40, semantic=0.70), _fr("plain", semantic=0.70)], facts, 0.60, 0.69)
+        [_fr("shot", media=0.40, semantic=0.85), _fr("plain", semantic=0.85)], facts, 0.60, 0.69)
     assert [k.fact_id for k in kept] == ["shot", "plain"]
 
 

@@ -100,7 +100,7 @@ def _sqlite_emergency_recall(
         conn = ReadConnectionFactory(memory_db, timeout_ms=250).open()
         try:
             rows = conn.execute(
-                f"""SELECT f.fact_id, f.content, f.memory_id, f.created_at,
+                f"""SELECT f.fact_id, f.content, f.memory_id, f.created_at, f.profile_id,
                            fts.rank AS bm25_rank
                     FROM atomic_facts_fts AS fts
                     JOIN atomic_facts AS f ON f.fact_id = fts.fact_id
@@ -112,21 +112,30 @@ def _sqlite_emergency_recall(
                     LIMIT ?""",
                 (safe_query, profile_id, limit * 2),
             ).fetchall()
+            from superlocalmemory.retrieval.fallback_fidelity import admit_fallback
+            # Transfer the read lease: a stalled check owns it until it exits.
+            owned_conn, conn = conn, None
+            rows, fidelity = admit_fallback(
+                [dict(r) for r in rows], owned_conn, profile_id, close_db=True)
         finally:
-            conn.close()
+            if conn is not None:
+                conn.close()
+        from types import MappingProxyType
+        from superlocalmemory.server.recall_serializer import recall_response_metadata
+        metadata = MappingProxyType(recall_response_metadata(fidelity))
         # FTS5 rank is negative (lower = better). Normalize to [0.3, 0.9].
         if not rows:
-            return PoolRecallResponse()
-        ranks = [r[4] for r in rows]
+            return PoolRecallResponse(metadata=metadata)
+        ranks = [r["bm25_rank"] for r in rows]
         rmin, rmax = min(ranks), max(ranks)
         rng = (rmax - rmin) or 1.0
         items = [
             PoolRecallItem(
                 fact=PoolFact(
-                    fact_id=r[0] or "", content=r[1] or "",
-                    memory_id=r[2] or "", created_at=r[3] or "",
+                    fact_id=r["fact_id"] or "", content=r["content"] or "",
+                    memory_id=r["memory_id"] or "", created_at=r["created_at"] or "",
                 ),
-                score=round(0.3 + 0.6 * (1.0 - (r[4] - rmin) / rng), 3),
+                score=round(0.3 + 0.6 * (1.0 - (r["bm25_rank"] - rmin) / rng), 3),
             )
             for r in rows
         ]
@@ -134,7 +143,7 @@ def _sqlite_emergency_recall(
             "session_init: EMERGENCY FTS5 fallback (%d results). "
             "Daemon unreachable — semantic/graph channels disabled.", len(items),
         )
-        return PoolRecallResponse(results=items[:limit])
+        return PoolRecallResponse(results=items[:limit], metadata=metadata)
     except Exception as exc:
         logger.warning("Emergency FTS5 fallback failed: %s", exc)
         return PoolRecallResponse()

@@ -3501,6 +3501,9 @@ async def lifespan(application: FastAPI):
         try:
             yield
         finally:
+            from superlocalmemory.retrieval.fallback_fidelity import join_fallback_checks
+            if not await asyncio.to_thread(join_fallback_checks):
+                logger.warning("Fallback source admission still running at shutdown")
             remote_runtime = getattr(application.state, "remote_connection_runtime", None)
             if remote_runtime is not None:
                 try:

@@ -27,9 +27,13 @@ import os
 import socket
 import sys
 import time
+from typing import TYPE_CHECKING
 
 from superlocalmemory.cli import daemon_startup as _startup
-from superlocalmemory.cli.daemon_errors import DaemonServerError, server_error_from  # noqa: F401 - re-exported
+from superlocalmemory.cli.daemon_errors import (  # noqa: F401 - re-exported
+    DaemonServerError,
+    server_error_from,
+)
 from superlocalmemory.infra.daemon_identity import (
     build_descriptor,
     descriptor_matches_health,
@@ -49,6 +53,9 @@ from superlocalmemory.infra.process_identity import (
 )
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from subprocess import Popen
 
 try:
     _DEFAULT_PORT = int(os.environ.get("SLM_DAEMON_PORT", "") or 8765)
@@ -409,7 +416,10 @@ def _verified_legacy_health() -> dict | None:
     port_file = descriptor_path().with_name("daemon.port")
     try:
         pid = int(pid_file.read_text(encoding="utf-8").strip())
-        port = int(port_file.read_text(encoding="utf-8").strip()) if port_file.exists() else _DEFAULT_PORT
+        port = (
+            int(port_file.read_text(encoding="utf-8").strip())
+            if port_file.exists() else _DEFAULT_PORT
+        )
     except (OSError, ValueError):
         return None
     if not _is_verified_legacy_process(pid):
@@ -896,12 +906,18 @@ def _start_daemon_subprocess(*, port: int | None = None) -> bool:
     kwargs["env"] = daemon_env
 
     with open(log_file, "a", encoding="utf-8") as lf:
+        log_offset = lf.tell()
         proc = subprocess.Popen(cmd, stdout=lf, stderr=lf, **kwargs)
 
     # The child writes the record itself once it owns the data folder. The
     # parent never does: a child that loses a start race must not overwrite
     # the record of the daemon that won it.
-    return _wait_for_daemon(timeout=60)
+    ready = _wait_for_daemon(timeout=60, proc=proc)
+    if not ready and (exit_code := proc.poll()) is not None:
+        from superlocalmemory.cli.daemon_start_error import startup_error
+
+        logger.error("%s", startup_error(log_file, log_offset, exit_code))
+    return ready
 
 
 def _wait_bounded_for_lock_holder() -> bool:
@@ -1101,21 +1117,28 @@ def ensure_daemon(*, port: int | None = None) -> bool:
             # third starter lock a fresh inode while this one is still held.
 
 
-def _wait_for_daemon(timeout: int = 60) -> bool:
-    """Wait for matching owned health; liveness alone is never readiness."""
+def _wait_for_daemon(timeout: int = 60, *, proc: Popen | None = None) -> bool:
+    """Wait for owned health, stopping when our child and any race winner die."""
     for _ in range(timeout * 2):  # check every 0.5s
         time.sleep(0.5)
         descriptor = read_descriptor()
-        if descriptor is not None:
-            if not _descriptor_process_is_alive(descriptor):
-                continue
+        live = descriptor is not None and _descriptor_process_is_alive(descriptor)
+        if live:
             health = _fetch_health(descriptor.port)
             if health is not None and descriptor_matches_health(descriptor, health):
                 return True
             continue
-        if descriptor_path().exists():
+        if proc is not None and proc.poll() is not None:
+            # A competing child may have published between our read and poll.
+            # Its live record wins even when the child we spawned lost the race.
+            winner = read_descriptor()
+            if winner is None or not _descriptor_process_is_alive(winner):
+                return False
             continue
-        if _verified_legacy_health() is not None:
+        if (
+            descriptor is None and not descriptor_path().exists()
+            and _verified_legacy_health() is not None
+        ):
             return True
     return False
 

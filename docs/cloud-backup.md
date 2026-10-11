@@ -240,8 +240,9 @@ computer's owner or an administrator of every workspace can use them.
 
 A restore stops the service, holds the store so nothing else can write to it,
 takes a safety point, restores, and starts the service again. It is all or
-nothing: if any step fails, the safety point and the previous settings are put
-back. Accounts, sessions and the sign-in setting are never rolled back; the
+nothing: just before it writes, the stores, settings and vector index are
+copied as plain files, and if any step fails those copies are put back without
+running the restore again. Accounts, sessions and the sign-in setting are never rolled back; the
 ones you have now are kept. If even the rollback fails, the service stays
 stopped and the Backup page says so. Then run:
 

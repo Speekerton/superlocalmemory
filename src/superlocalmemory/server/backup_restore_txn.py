@@ -14,11 +14,11 @@ changed. This module wraps the whole thing:
   a daemon started by a hook or a CLI call cannot claim the store and write
   part-way through. ``restore_in_progress`` lets daemon start-up refuse early,
   before migrations run.
-* Before writing, the settings files are copied byte for byte and the media
-  files present are listed. On any failure the safety point (taken a moment
-  earlier, after the stop) is restored, media files the failed restore added
-  are removed, and the settings bytes are put back. Only if that rollback also
-  fails is the store left for ``slm backup restore-safety-copy``.
+* Before writing, everything the restore may change is copied as plain files
+  (``backup_rollback``). On any failure those files are put back, without
+  running any restore code again. Only if that rollback also fails is the
+  store left for ``slm backup restore-safety-copy``, which restores the safety
+  point taken after the stop.
 """
 
 from __future__ import annotations
@@ -108,56 +108,30 @@ def restore_in_progress(root: Path) -> str | None:
     return None
 
 
-def _snapshot(root: Path) -> dict[str, bytes | None]:
-    from superlocalmemory.core.config import CURRENT_MODE_FILE
-    from superlocalmemory.server.backup_bundle import SETTINGS
+def restore_atomically(root: Path, point_id: str) -> None:
+    """Restore ``point_id`` as one unit, or leave every covered file as it was.
 
-    saved: dict[str, bytes | None] = {}
-    for name in (*SETTINGS, CURRENT_MODE_FILE):
-        path = Path(root) / name
-        saved[name] = path.read_bytes() if path.is_file() else None
-    return saved
-
-
-def _put_back(root: Path, saved: dict[str, bytes | None]) -> None:
-    from superlocalmemory.infra.private_files import create_private_file
-
-    for name, data in saved.items():
-        path = Path(root) / name
-        if data is None:
-            path.unlink(missing_ok=True)
-            continue
-        tmp = path.with_name(path.name + ".rollback")
-        create_private_file(tmp)
-        tmp.write_bytes(data)
-        os.replace(tmp, path)
-
-
-def _media_files(root: Path) -> set[Path]:
-    base = Path(root) / "media"
-    if not base.is_dir():
-        return set()
-    return {p for p in base.rglob("*") if p.is_file() and not p.is_symlink()}
-
-
-def restore_atomically(root: Path, point_id: str, safety_id: str) -> None:
-    """Restore ``point_id``; on failure put ``safety_id`` and the old settings back."""
+    The rollback is a file copy taken just before the restore
+    (``backup_rollback.PreRestoreCopy``); it runs none of the restore code, so
+    a failure that repeats cannot fail the rollback too. The copy is kept when
+    even the rollback fails, for manual recovery.
+    """
     from superlocalmemory.server import backup_bundle
+    from superlocalmemory.server.backup_rollback import PreRestoreCopy
 
-    root = Path(root)
-    settings, media = _snapshot(root), _media_files(root)
+    copy = PreRestoreCopy.take(Path(root))
     try:
-        backup_bundle.restore_point(root, point_id)
-        return
+        backup_bundle.restore_point(Path(root), point_id)
     except Exception as exc:
         cause = exc
+    else:
+        copy.discard()
+        return
     try:
-        backup_bundle.restore_point(root, safety_id, settings=False)
-        for added in _media_files(root) - media:
-            added.unlink(missing_ok=True)
-        _put_back(root, settings)
+        copy.roll_back()
     except Exception as exc:
         raise RollbackFailed(str(exc)) from cause
+    copy.discard()
     raise RolledBack(str(cause)) from cause
 
 
@@ -168,7 +142,7 @@ def recover_safety_copy(root: Path, safety_id: str) -> dict:
     verify_point(root, safety_id)
     with writer_lease(root, wait_s=0.0):
         before = create_point(root)["id"]
-        restore_atomically(root, safety_id, before)
+        restore_atomically(root, safety_id)
     return {"restored": safety_id, "safety_id": before}
 
 

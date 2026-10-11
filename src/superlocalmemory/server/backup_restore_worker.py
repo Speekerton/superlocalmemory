@@ -7,8 +7,9 @@ Order, and why:
 2. Stop the daemon and wait for its process to exit.
 3. Take the store's writer lease and hold it until the restore is finished,
    so nothing can claim the store in the meantime.
-4. Take a safety point, then restore as one unit: on any failure the safety
-   point and the old settings are put back (``restore_atomically``).
+4. Take a safety point (for ``slm backup restore-safety-copy``), then restore
+   as one unit: on any failure the plain pre-restore file copy is put back
+   (``restore_atomically``).
 5. Release the lease and start the daemon. It stays stopped only when the
    rollback itself failed; the outcome then names the command that puts the
    safety copy back.
@@ -79,7 +80,7 @@ def _restore(root: Path, point_id: str, status: _Outcome) -> None:
     with writer_lease(root):
         status.safety_id = create_point(root)["id"]
         status.write("restoring")
-        restore_atomically(root, point_id, status.safety_id)
+        restore_atomically(root, point_id)
 
 
 def run(root: Path, point_id: str, pid: int) -> None:
@@ -100,7 +101,7 @@ def run(root: Path, point_id: str, pid: int) -> None:
             f"`{RECOVER_COMMAND}` to put the safety copy back, then `slm serve start`."))
         return
     except RolledBack:
-        logger.exception("Backup recovery failed; the safety copy was put back")
+        logger.exception("Backup recovery failed; the state before it was put back")
         status.write("failed", "Recovery could not finish, so nothing was changed: the "
                                "stores, settings and files are as they were before.")
     except Exception:

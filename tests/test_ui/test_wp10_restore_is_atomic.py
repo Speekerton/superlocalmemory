@@ -127,7 +127,7 @@ def test_a_settings_failure_rolls_everything_back_and_restarts(tmp_path, worker,
 def test_a_failed_rollback_keeps_the_service_stopped_and_names_the_command(
     tmp_path, worker, monkeypatch
 ):
-    from superlocalmemory.server import backup_bundle
+    from superlocalmemory.server import backup_bundle, backup_rollback
 
     seed(tmp_path)
     point = backup_bundle.create_point(tmp_path)
@@ -135,11 +135,14 @@ def test_a_failed_rollback_keeps_the_service_stopped_and_names_the_command(
     def broken(*args, **kwargs):
         raise OSError("store unreadable")
 
+    # Both the restore and the plain-file rollback fail (disk gone, say).
     monkeypatch.setattr(backup_bundle, "restore_point", broken)
+    monkeypatch.setattr(backup_rollback.PreRestoreCopy, "roll_back", broken)
     worker.run(tmp_path, point["id"], 123)
     result = outcome(tmp_path)
     assert result["state"] == "failed"
     assert result["safety_id"]
+    assert list((tmp_path / "backups").glob(".pre-restore-*")), "kept for manual recovery"
     assert "slm backup restore-safety-copy" in result["message"]
     assert worker.calls == ["stop", "stopped"]
 

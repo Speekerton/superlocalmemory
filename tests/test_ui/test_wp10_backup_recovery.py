@@ -224,7 +224,7 @@ def test_recovery_worker_stops_before_restore_and_restarts_after(tmp_path, monke
     monkeypatch.setattr(worker, "control", lambda root, action: calls.append(action))
     monkeypatch.setattr(worker, "wait_stopped", lambda pid: calls.append("stopped"))
     monkeypatch.setattr(
-        worker, "restore_atomically", lambda root, point_id, safety: calls.append("restore")
+        worker, "restore_atomically", lambda root, point_id: calls.append("restore")
     )
     worker.run(tmp_path, point["id"], 123)
     assert calls == ["stop", "stopped", "restore", "start"]

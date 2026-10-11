@@ -21,7 +21,7 @@ import inspect
 from superlocalmemory.retrieval.fusion import FusionResult
 from superlocalmemory.retrieval.time_window import windowed_candidates
 
-MIN_SEM = 0.60
+MIN_SEM = 0.60  # raw cosine; the channel scores below are on the stored (cos+1)/2 scale
 
 
 def _fr(fact_id: str, **scores: float) -> FusionResult:
@@ -40,14 +40,14 @@ def test_an_inferred_window_with_no_evidence_inside_keeps_every_candidate() -> N
 
 def test_an_inferred_window_with_evidence_inside_still_narrows() -> None:
     old = _fr("old", bm25=2.0)
-    new = _fr("new", semantic=0.72)
+    new = _fr("new", semantic=0.82)
     kept = windowed_candidates([old, new], lambda fid: fid == "new",
                                explicit=False, min_semantic=MIN_SEM)
     assert [fr.fact_id for fr in kept] == ["new"]
 
 
 def test_an_inferred_window_that_keeps_nothing_keeps_every_candidate() -> None:
-    fused = [_fr("a", bm25=1.0), _fr("b", semantic=0.8)]
+    fused = [_fr("a", bm25=1.0), _fr("b", semantic=0.85)]
     kept = windowed_candidates(fused, lambda fid: False, explicit=False, min_semantic=MIN_SEM)
     assert [fr.fact_id for fr in kept] == ["a", "b"]
 

@@ -462,7 +462,11 @@ class RetrievalConfig:
     # semantic >= 0.85 or bm25 > 0. The discriminator is earned channel evidence.
     # Env kill-switch: SLM_RECALL_NO_FLOOR=1 disables without release.
     evidence_floor_enabled: bool = True
-    min_semantic_evidence: float = 0.60   # Minimum cosine similarity to keep a result
+    # Minimum RAW cosine for meaning-only evidence (the channel stores (cos+1)/2; the
+    # floor is converted once in retrieval.time_window.has_primary_evidence). Measured
+    # 2026-10-11 on a 26k-fact store: unrelated text peaks at raw 0.61, true answers
+    # start at 0.62. Keyword, entity and time evidence pass regardless of this value.
+    min_semantic_evidence: float = 0.60
     media_min_score: float = 0.30   # Picture similarity that counts as evidence
 
     # v3.6.6: Recall output budget — protect consuming agents from 585KB responses.

@@ -24,7 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 #: Bumped whenever an entry's numbers or advice change.
-CATALOG_VERSION = "2026-10-08"
+CATALOG_VERSION = "2026-10-11"
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +59,10 @@ def _e(**kw) -> ModelEntry:
 
 
 LOCAL_LLMS: tuple[ModelEntry, ...] = (
+    _e(id="gemma4:e2b", role="llm", provider="ollama", label="Gemma 4 E2B",
+       size_gb=7.2, min_ram_gb=16, recommended=True,
+       advice="Installed local alternative for extraction. No automatic switch; "
+              "run your source-fidelity checks before choosing it."),
     _e(id="gemma3:4b", role="llm", provider="ollama", label="Gemma 3 4B",
        size_gb=3.3, min_ram_gb=8, damaged=0, tested=102, recommended=True,
        advice="Most faithful in SLM's extraction test; fewer, fuller facts. "
@@ -152,25 +156,30 @@ def recommend_local_llms(ram_gb: float | None, installed: list[str]) -> list[Rec
     Deterministic for the same inputs.
     """
     have = {_base(m) for m in installed if (m or "").strip()}
-    have_llm = {m for m in have if not _is_embedder_name(m)}
+    have_llm = {m for m in have if not _is_embedder_name(m) and not m.endswith(":cloud")}
 
     def fits(entry: ModelEntry | None) -> bool:
         return (entry is None or entry.min_ram_gb is None or ram_gb is None
                 or ram_gb >= entry.min_ram_gb)
 
     known = {e.id: e for e in LOCAL_LLMS}
+
+    def preference(entry: ModelEntry):
+        if entry.id == 'gemma4:e2b':
+            return (False, True, *_rank(entry))
+        return _rank(entry)
     out: list[Recommendation] = []
-    for entry in sorted((known[m] for m in have_llm if m in known), key=_rank):
+    for entry in sorted((known[m] for m in have_llm if m in known), key=preference):
         if fits(entry):
             out.append(Recommendation(entry, entry.id, True, True, _tested_reason(entry)))
     for model_id in sorted(m for m in have_llm if m not in known):
         out.append(Recommendation(None, model_id, True, True,
                                   "Installed; SLM has not tested its extraction."))
-    for entry in sorted(LOCAL_LLMS, key=_rank):
+    for entry in sorted(LOCAL_LLMS, key=preference):
         if entry.id not in have_llm and entry.recommended and fits(entry):
             out.append(Recommendation(entry, entry.id, False, True,
                                       f"Not installed: ollama pull {entry.id}"))
-    for entry in sorted((known[m] for m in have_llm if m in known), key=_rank):
+    for entry in sorted((known[m] for m in have_llm if m in known), key=preference):
         if not fits(entry):
             out.append(Recommendation(entry, entry.id, True, False,
                                       f"Needs about {entry.min_ram_gb} GB of memory."))
@@ -187,6 +196,8 @@ def best_local_llm(ram_gb: float | None, installed: list[str]) -> str:
 
 
 def _tested_reason(entry: ModelEntry) -> str:
+    if entry.tested is None:
+        return entry.advice
     return (f"{entry.damaged} of {entry.tested} test sentences gave a changed fact. "
             f"{entry.advice}")
 

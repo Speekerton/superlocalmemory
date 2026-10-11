@@ -3578,24 +3578,9 @@ def cmd_doctor(args: Namespace) -> None:
                         f"{config.llm.api_base}/api/tags", timeout=5.0,
                     )
                     if resp.status_code == 200:
-                        models = [
-                            m["name"].split(":")[0]
-                            for m in resp.json().get("models", [])
-                        ]
-                        has_llm = config.llm.model.split(":")[0] in models
-                        if has_llm:
-                            _check(
-                                "Ollama", "PASS",
-                                f"running, {len(models)} models, "
-                                f"'{config.llm.model}' available",
-                            )
-                        else:
-                            _check(
-                                "Ollama", "WARN",
-                                f"running but '{config.llm.model}' "
-                                f"not pulled",
-                                f"ollama pull {config.llm.model}",
-                            )
+                        from superlocalmemory.cli.doctor_models import local_model_finding
+                        models = [m["name"] for m in resp.json().get("models", [])]
+                        _check("Ollama extraction model", *local_model_finding(config, models))
                     else:
                         _check(
                             "Ollama", "WARN",

@@ -15,7 +15,8 @@ def test_hermes_is_a_native_package_with_honest_contract_levels():
     hermes = clients["hermes"]
     assert hermes["test_level"] == "local_packaged_contract"
     assert not hermes["external_host_runtime_proven"]
-    assert hermes["contracts"]["start_command_shape"]["status"] == "not_applicable"
+    assert hermes["contracts"]["start_command_shape"]["status"] == "proven_local"
+    assert hermes["contracts"]["start_command_shape"]["checker"] == "hermes_config"
     assert hermes["contracts"]["memory_surface"]["status"] == "static_only"
     assert {
         "hermes-plugin/plugin.yaml", "hermes-plugin/__init__.py",

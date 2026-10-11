@@ -302,12 +302,29 @@ def _hermes_package(repo: Path, _client_id: str, _work: Path) -> str:
     return "hermes-plugin/plugin.yaml"
 
 
+def _hermes_config(_repo: Path, _client_id: str, work: Path) -> str:
+    """Round-trip the optional dashboard MCP setup independently of its plugin."""
+    from superlocalmemory.server.local_host_setup import configure_hermes
+
+    home = work / "dashboard-hermes"
+    path = home / ".hermes/config.yaml"
+    if not configure_hermes("core", home=home):
+        raise AssertionError("Hermes dashboard config generation failed")
+    first = path.read_bytes()
+    if not configure_hermes("core", home=home) or path.read_bytes() != first:
+        raise AssertionError("Hermes dashboard config is not idempotent")
+    data = _parse_config(path, "yaml")
+    _validate_start_command(data["mcp_servers"]["superlocalmemory"])
+    return "hermes:dashboard-config"
+
+
 CHECKERS: dict[str, Callable[[Path, str, Path], str]] = {
     "portable_config": _portable_config,
     "mcp_surface": _mcp_surface,
     "active_adapter": _active_adapter,
     "plugin_package": _plugin_package,
     "hermes_package": _hermes_package,
+    "hermes_config": _hermes_config,
 }
 
 

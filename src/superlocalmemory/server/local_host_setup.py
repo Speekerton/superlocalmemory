@@ -5,39 +5,31 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
-from superlocalmemory.cli.deployment import security_environment
-from superlocalmemory.infra.data_root import canonical_data_root
+from superlocalmemory.hooks.portable_kit import _pin_stdio_runtime
 
 
-def configure_hermes(profile: str) -> bool:
+def configure_hermes(profile: str, *, home: Path | None = None) -> bool:
     import yaml
 
-    path = Path.home() / ".hermes" / "config.yaml"
-    config = yaml.safe_load(path.read_text()) if path.exists() else {}
+    path = (home or Path.home()) / ".hermes" / "config.yaml"
+    config = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}
     if config is None:
         config = {}
     if not isinstance(config, dict) or not isinstance(config.get("mcp_servers", {}), dict):
         raise ValueError("Hermes settings must contain an MCP server mapping")
     block = {
-        "command": sys.executable,
-        "args": ["-m", "superlocalmemory.cli.main", "mcp"],
-        "env": {
-            "SLM_MCP_PROFILE": profile,
-            "SLM_MCP_HOST": "hermes",
-            "SLM_DATA_DIR": str(canonical_data_root()),
-            **security_environment(),
-        },
+        "command": "slm", "args": ["mcp"], "env": {"SLM_MCP_PROFILE": profile},
     }
+    _pin_stdio_runtime(block, "hermes")
     updated = {
         **config,
         "mcp_servers": {**config.get("mcp_servers", {}), "superlocalmemory": block},
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(".slm.tmp")
-    temporary.write_text(yaml.safe_dump(updated, sort_keys=False))
+    temporary.write_text(yaml.safe_dump(updated, sort_keys=False), encoding="utf-8")
     os.chmod(temporary, 0o600)
     temporary.replace(path)
     return True
@@ -48,7 +40,9 @@ def configure_claude_code(profile: str) -> bool:
     if not executable:
         raise ValueError("Claude Code is not installed. Install the app, then refresh this page.")
     # Use the host's supported config command rather than editing its files.
-    env = {**os.environ, "SLM_MCP_PROFILE": profile, "SLM_MCP_HOST": "claude-code"}
+    block = {"command": "slm", "args": ["mcp"], "env": {"SLM_MCP_PROFILE": profile}}
+    _pin_stdio_runtime(block, "claude-code")
+    env = {**os.environ, **block["env"]}
     args = [
         executable,
         "mcp",
@@ -58,20 +52,8 @@ def configure_claude_code(profile: str) -> bool:
         "user",
         "--transport",
         "stdio",
-        "--env",
-        f"SLM_DATA_DIR={canonical_data_root()}",
-        "--env",
-        f"SLM_MCP_PROFILE={profile}",
-        "--env",
-        "SLM_MCP_HOST=claude-code",
-        "--",
-        sys.executable,
-        "-m",
-        "superlocalmemory.cli.main",
-        "mcp",
     ]
-    policy = [part for key, value in security_environment().items()
-              for part in ("--env", f"{key}={value}")]
-    args[args.index("--"):args.index("--")] = policy
+    args += [part for key, value in block["env"].items() for part in ("--env", f"{key}={value}")]
+    args += ["--", block["command"], *block["args"]]
     result = subprocess.run(args, env=env, capture_output=True, timeout=30, check=False)
     return result.returncode == 0

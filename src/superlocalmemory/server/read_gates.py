@@ -55,6 +55,9 @@ _SENSITIVE_READ_PREFIXES = (
     "/api/v3/graph", "/api/v3/runtime", "/api/v3/provider",
     "/api/v3/hooks", "/api/v3/ide", "/api/v3/math", "/api/v3/ollama",
     "/api/v3/components",
+    # 4.1.25 audit G-M6 / M006: provider base URLs, the active model, the
+    # metrics port, cache TTLs and savings answered a logged-out caller.
+    "/api/optimize",
 )
 _SENSITIVE_READ_EXACT_PATHS = (
     "/api/search", "/api/v3/recall/trace", "/api/patterns",
@@ -109,10 +112,35 @@ def _rbac_active(rbac) -> bool | None:
         return None
 
 
+#: Reads that need a signed-in user (where one is required) but no role on the
+#: active workspace, because the route itself narrows the answer to the caller.
+#: ``/api/profiles``: lists only the workspaces the user belongs to (OPS-09), so
+#: a member of ``sales`` alone can still find and enter ``sales``.
+AUTHENTICATED_ONLY_READS = frozenset({"/api/profiles"})
+
+#: Query parameters through which a read names the workspace it reads.
+PROFILE_QUERY_KEYS = ("profile_id", "profile")
+
+
+def requested_profiles(request) -> tuple[str, ...]:
+    """The workspaces a request names in its query string (deduplicated)."""
+    names: list[str] = []
+    for key in PROFILE_QUERY_KEYS:
+        for value in request.query_params.getlist(key):
+            name = (value or "").strip()
+            if name and name not in names:
+                names.append(name)
+    return tuple(names)
+
+
 def rbac_read_gate(request, app_state, *, profile: str | None = None,
                    machine_principal: bool = False):
-    """READ on ``profile`` (default: the active one). ``None`` allows; else the
-    refusal response.
+    """READ on ``profile``, else on every workspace the query names, else on
+    the active one. ``None`` allows; else the refusal response.
+
+    Before 4.1.25 (audit OPS-25) the check always ran against the active
+    workspace while the route honoured ``?profile=`` / ``?profile_id=``, so a
+    viewer of ``default`` read another workspace's timeline and insights.
 
     ``machine_principal`` is a caller that proved it is one of this computer's
     own agents (the daemon capability) or a mesh node (the shared secret):
@@ -129,19 +157,80 @@ def rbac_read_gate(request, app_state, *, profile: str | None = None,
         return _json(503, "authorization temporarily unavailable")
     if not active:
         return None  # single-operator install — reads are open
-    token = _session_token(request)
-    user = rbac.resolve_session(token) if token else None
+    from superlocalmemory.server.rbac_enforce import (
+        INVALID_SESSION_MESSAGE,
+        presented_session_user,
+    )
+
+    user, refused = presented_session_user(rbac, _session_token(request))
+    if refused:
+        # A viewer's ended session is not the owner (OPS-24), in any mode.
+        return _json(401, INVALID_SESSION_MESSAGE)
     if user is None:
         if rbac.require_login() and not machine_principal:
             return _json(401, "Login required to read memory.")
         return None  # owner/operator, personal mode
+    if request.url.path in AUTHENTICATED_ONLY_READS:
+        return None  # the route answers for this user only (see the set's notes)
     from superlocalmemory.access.rbac import Permission
     from superlocalmemory.server.routes.helpers import get_active_profile
 
-    if rbac.has_permission(user["user_id"], profile or get_active_profile(),
-                           Permission.READ):
+    targets = (profile,) if profile else (requested_profiles(request)
+                                          or (get_active_profile(),))
+    if all(rbac.has_permission(user["user_id"], target, Permission.READ)
+           for target in targets):
         return None
+    # The same answer for a workspace that exists and one that does not.
     return _json(403, "Your role cannot read this workspace.")
+
+
+#: GET paths a signed-in user may call whatever their role on the workspace in
+#: view: how a person finds out who they are and where they belong. Everything
+#: else a signed-in user reads needs READ on the workspace it names.
+USER_READ_OPEN = {
+    "/": "the dashboard page itself, which shows the sign-in form",
+    "/favicon.ico": "a static icon",
+    "/health": "liveness probe, no memory content",
+    "/status": "daemon discovery; details are gated by status_details_allowed",
+    "/api/version": "version string only",
+    "/openapi.json": "the shape of the API, no data",
+    "/docs": "API documentation page, no data",
+    "/docs/oauth2-redirect": "API documentation helper page, no data",
+    "/redoc": "API documentation page, no data",
+    "/internal/token": "install token for loopback callers; carries no authority in company mode",
+    "/api/rbac/whoami": "the caller's own identity and role",
+    "/api/rbac/status": "whether sign-in is required; no memory content",
+    "/api/rbac/users": "the route shows only users in workspaces the caller manages",
+    "/api/rbac/members": "the route needs manage on the workspace it names",
+    "/api/profiles": "the route lists only the workspaces the caller belongs to (OPS-09)",
+    "/api/v3/embed/ping": "embedder readiness probe; names the model only",
+}
+#: Path families with a gate of their own for signed-in users.
+USER_READ_SELF_GATED_PREFIXES = (
+    "/static/",   # packaged dashboard files, no data
+    "/mesh/",     # mesh_read_gate: READ on the workspace the request names
+    "/mcp",       # every MCP tool is admitted by its own decorator
+    "/v1/", "/v1beta/",  # LLM provider proxy: provider keys, not SLM roles
+    "/api/backup/oauth/", "/api/v3/connections/callback",  # OAuth state checks
+)
+
+
+def user_read_gate(request, app_state):
+    """READ for every GET a signed-in user makes (not only the listed ones).
+
+    A caller that presents no session is left to the other gates, unchanged.
+    A caller that presents one is that user: the session must be valid and
+    the user must hold READ on each workspace the request names, or on the
+    active one. Paths in :data:`USER_READ_OPEN` and
+    :data:`USER_READ_SELF_GATED_PREFIXES` are the explicit exceptions.
+    """
+    path = request.url.path
+    if (request.method != "GET" or not _session_token(request)
+            or path in USER_READ_OPEN
+            or path.startswith(USER_READ_SELF_GATED_PREFIXES)
+            or is_sensitive_dashboard_read(request.method, path)):  # gated already
+        return None
+    return rbac_read_gate(request, app_state)
 
 
 # -- mesh ---------------------------------------------------------------------------
@@ -200,6 +289,10 @@ __all__ = [
     "is_cli_status_read",
     "is_sensitive_dashboard_read",
     "mesh_read_gate",
+    "PROFILE_QUERY_KEYS",
+    "USER_READ_OPEN",
     "rbac_read_gate",
+    "requested_profiles",
     "status_details_allowed",
+    "user_read_gate",
 ]

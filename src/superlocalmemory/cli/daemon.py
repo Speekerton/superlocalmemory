@@ -716,7 +716,12 @@ def daemon_request(
         # does not replace a dashboard user's profile-scoped authorization in
         # governed workspaces. The user opts in by supplying an explicit
         # session through the process environment (never logged or persisted).
-        user_session = os.environ.get("SLM_USER_SESSION", "").strip()
+        # The caller's own session: the one an HTTP MCP request carried when
+        # this runs inside the daemon on its behalf (the daemon's environment
+        # is not the caller's), else this process's SLM_USER_SESSION (OPS-16).
+        from superlocalmemory.core.caller_session import presented_session
+
+        user_session = presented_session()
         if user_session:
             headers["X-SLM-User-Session"] = user_session
         req = urllib.request.Request(url, data=data, headers=headers, method=method)

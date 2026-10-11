@@ -119,23 +119,52 @@ def require_machine_credential(request: Request) -> None:
         )
 
 
+INVALID_SESSION_MESSAGE = (
+    "Your session has ended (signed out, expired or revoked). Sign in again, "
+    "or remove the old session to continue as this computer's owner."
+)
+
+
+def _accounts_exist(rbac: Any) -> bool:
+    """Whether any team account exists. Unreadable counts as yes (fail closed)."""
+    try:
+        return rbac.user_count() > 0
+    except Exception:  # noqa: BLE001 - an unreadable store is not "no accounts"
+        return True
+
+
+def presented_session_user(rbac: Any | None, token: str) -> tuple[dict | None, bool]:
+    """``(user, refused)`` for a session token a caller presented.
+
+    ``refused`` is True when a token was presented, team accounts exist and the
+    token names nobody (signed out, expired, revoked, disabled, forged). That
+    caller once held, or claims, a user's limited role; it must never fall
+    back to the machine owner, in any mode (4.1.25 audit OPS-24: a viewer's
+    revoked session became the owner on its next request when login was
+    optional). With no accounts at all a stray token is ignored, so a single
+    operator with an old cookie is unchanged.
+    """
+    if rbac is None or not token:
+        return None, False
+    user = rbac.resolve_session(token)
+    if user:
+        return user, False
+    return None, _accounts_exist(rbac)
+
+
 def resolve_principal(request: Request) -> dict:
     """Resolve the caller to a user (valid session) or the machine owner.
 
-    In company mode a session token that does not resolve (expired, revoked,
-    forged) is refused with 401; it never silently becomes the owner.
+    A session token that does not resolve (expired, revoked, forged) is
+    refused with 401 in every mode once team accounts exist; it never silently
+    becomes the owner. Only a caller that presents no session is the owner.
     """
     rbac = get_rbac_engine(request.app.state)
-    token = _session_token(request)
-    if rbac is not None and token:
-        user = rbac.resolve_session(token)
-        if user:
-            return {"kind": "user", **user}
-        if rbac.require_login():
-            raise HTTPException(
-                401,
-                detail="Your session is not valid. Sign in again.",
-            )
+    user, refused = presented_session_user(rbac, _session_token(request))
+    if user:
+        return {"kind": "user", **user}
+    if refused:
+        raise HTTPException(401, detail=INVALID_SESSION_MESSAGE)
     return dict(OWNER_PRINCIPAL)
 
 
@@ -258,14 +287,18 @@ def principal_info(request: Request) -> dict:
     """Rich identity for /whoami: principal + role + effective permissions on
     the active profile. Never raises — used by the dashboard to render UI."""
     rbac = get_rbac_engine(request.app.state)
+    session_invalid = False
     try:
         principal = resolve_principal(request)
     except HTTPException:
         # An expired session: the dashboard asks who it is before it shows the
-        # login form. Report the unauthenticated owner view, never raise.
+        # login form. Report the unauthenticated view and say the session is
+        # over, so the page can drop it (every other request is refused).
         principal = dict(OWNER_PRINCIPAL)
+        session_invalid = True
     prof = _active_profile()
     info = {
+        "session_invalid": session_invalid,
         "kind": principal["kind"],
         "user_id": principal["user_id"],
         "username": principal["username"],

@@ -534,7 +534,14 @@ def _rbac_write_gate(request, app_state):
         return None  # single-operator install — mutations are open
     token = (request.headers.get("x-slm-user-session", "")
              or (request.cookies.get("slm_session", "") if request.cookies else ""))
-    user = rbac.resolve_session(token) if token else None
+    from superlocalmemory.server.rbac_enforce import (
+        INVALID_SESSION_MESSAGE,
+        presented_session_user,
+    )
+
+    user, refused = presented_session_user(rbac, token)
+    if refused:
+        return JSONResponse(status_code=401, content={"error": INVALID_SESSION_MESSAGE})
     if user is None:
         if rbac.require_login():
             return JSONResponse(status_code=401,
@@ -4136,8 +4143,13 @@ def create_app() -> FastAPI:
 
         from superlocalmemory.server.remote_tool_policy import RemoteToolScopeASGI
 
+        from superlocalmemory.core.caller_session import CallerSessionASGI
+
         # Remote callers: only the tools their key allows (default deny).
-        application.mount("/mcp", RemoteToolScopeASGI(AgentIDExtractorASGI(_mcp_app)))
+        # CallerSessionASGI hands the caller's sign-in to the tools, so a
+        # session REST accepts is the same identity over HTTP MCP (OPS-16).
+        application.mount("/mcp", RemoteToolScopeASGI(
+            CallerSessionASGI(AgentIDExtractorASGI(_mcp_app))))
         logger.info(
             "MCP HTTP transport mounted at /mcp (Streamable HTTP, mcp 2.0.0, "
             "stateless=%s, port %d; per-agent routing enabled)",
@@ -4470,6 +4482,14 @@ def _register_dashboard_routes(application: FastAPI) -> None:
                 )
                 if _resp is not None:
                     return _resp
+            # Every other GET a signed-in user makes needs READ on the
+            # workspace it names (OPS-25): a route that honours ?profile= no
+            # longer reads a workspace the check never looked at.
+            from superlocalmemory.server.read_gates import user_read_gate
+
+            _resp = user_read_gate(request, application.state)
+            if _resp is not None:
+                return _resp
             _resp = _mesh_read_gate(request, application.state)
             if _resp is not None:
                 return _resp
@@ -6088,28 +6108,30 @@ def _register_daemon_routes(application: FastAPI) -> None:
     ):
         """Return all failed/stuck/degraded operations — admin surface.
 
-        Requires MANAGE permission (OWNER or ADMIN role).  Returns three
-        categories: dead-letter DLQ entries, DEGRADED completion manifests,
-        and exhausted projection obligations.  Safe read-only; never mutates.
+        Requires MANAGE: the owner sees every workspace, a signed-in admin
+        only the workspaces they manage (OPS-22). Three categories:
+        dead-letter DLQ entries, DEGRADED completion manifests, and exhausted
+        projection obligations. Read-only. A store that cannot be read is a
+        503 that says so, never an empty list (OPS-10).
         """
-        from superlocalmemory.server.rbac_enforce import require_permission
-        from superlocalmemory.access.rbac import Permission
+        from superlocalmemory.server.ops_scope import listing_scope
 
-        require_permission(request, Permission.MANAGE)
+        scope = listing_scope(request, profile or None)
         _update_activity()
 
         config = getattr(application.state, "config", None)
         db_path = getattr(config, "db_path", None)
-        if db_path is None or not db_path.exists():
-            return {"dead_letter": [], "degraded_manifests": [],
-                    "exhausted_obligations": [], "total": 0}
+        from superlocalmemory.core.ops_remediation import list_failed_operations
 
-        try:
-            from superlocalmemory.core.ops_remediation import list_failed_operations
-            return list_failed_operations(db_path, profile_id=profile)
-        except Exception as exc:
-            logger.warning("list_failed_operations endpoint error: %s", exc, exc_info=True)
-            raise HTTPException(status_code=500, detail="Failed to query operations")
+        result = list_failed_operations(
+            db_path if db_path is not None else Path("memory.db.missing"),
+            allowed_profiles=scope,
+        )
+        if not result.get("success", False):
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse(status_code=503, content=result)
+        return result
 
     @application.post("/operations/{operation_id}/resolve")
     async def resolve_operation_endpoint(request: Request, operation_id: str):
@@ -6117,14 +6139,15 @@ def _register_daemon_routes(application: FastAPI) -> None:
 
         Body JSON: ``{"action": "retry"|"force_reconcile"|"cancel"}``
 
-        Requires MANAGE permission.  Writes an audit event for every mutation.
+        Requires MANAGE on the operation's own workspace (the owner: any).
+        Writes an audit event for every mutation.
         The action itself is delegated to ``core.ops_remediation.resolve_operation``.
         Returns ``{"success": bool, "action": str, "operation_id": str, ...}``.
         """
-        from superlocalmemory.server.rbac_enforce import require_permission
-        from superlocalmemory.access.rbac import Permission
+        from superlocalmemory.server.ops_scope import remediation_scope
 
-        require_permission(request, Permission.MANAGE)
+        # MANAGE is checked by remediation_scope, on the workspaces the
+        # operation belongs to (OPS-22), not on whichever one is active.
         _update_activity()
 
         body: dict = {}
@@ -6146,10 +6169,13 @@ def _register_daemon_routes(application: FastAPI) -> None:
             raise HTTPException(status_code=503, detail="Database not available")
 
         engine = getattr(application.state, "engine", None)
+        # MANAGE on the operation's own workspace, not the active one (OPS-22).
+        scope = remediation_scope(request, db_path, operation_id)
 
         try:
             from superlocalmemory.core.ops_remediation import resolve_operation
-            result = resolve_operation(db_path, engine, operation_id, action)
+            result = resolve_operation(db_path, engine, operation_id, action,
+                                       profiles=scope)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         except Exception as exc:
@@ -6159,17 +6185,23 @@ def _register_daemon_routes(application: FastAPI) -> None:
             )
             raise HTTPException(status_code=500, detail="Remediation failed")
 
-        # Audit trail — best effort, non-blocking
+        # Audit trail — best effort, non-blocking. The actor is the server's
+        # own view of the caller (X-Actor-Id is a claim, not authority) and
+        # the target is the workspace the operation belongs to (OPS-22).
         try:
             from superlocalmemory.compliance.audit import AuditChain
+            from superlocalmemory.server.ops_scope import actor_label
+
             audit_path = state_path("audit_chain.db")
-            actor_header = request.headers.get("X-Actor-Id", "admin")
+            targets = sorted(scope) if scope is not None else []
             AuditChain(str(audit_path)).log(
                 operation=f"ops_resolve:{action}",
-                agent_id=actor_header,
-                profile_id="",
+                agent_id=actor_label(request),
+                profile_id=",".join(targets),
                 content_hash="",
-                metadata={"operation_id": operation_id, "result": result},
+                metadata={"operation_id": operation_id, "target_profiles": targets,
+                          "success": bool(result.get("success")),
+                          "reason": str(result.get("reason") or "")[:200]},
             )
         except Exception:
             logger.debug("audit log for ops_resolve failed (non-fatal)", exc_info=True)
@@ -6769,6 +6801,8 @@ def _ops_failure_counts(engine, application) -> dict:
             result["dead_letter_count"] = counts.get("dead_letter_count", 0)
             result["degraded_operations"] = counts.get("degraded_operations", 0)
             result["exhausted_obligations"] = counts.get("exhausted_obligations", 0)
+            # OPS-10: a count that could not be read is named, never "0 failures".
+            result["failure_counts_unavailable"] = list(counts.get("unavailable") or [])
     except Exception:
         pass
 

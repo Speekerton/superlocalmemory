@@ -318,6 +318,28 @@ def _authorize_memory_mutation(
     return engine, profile_id, context
 
 
+def _authorize_review_read(request: Request, profile: str | None):
+    """``(engine, profile_id)`` for reading review cases: READ, not WRITE.
+
+    A viewer is the role meant to audit, so it may see pending corrections and
+    overtaken cases; acting on them stays WRITE (4.1.25 audit G-M5: listings
+    went through the mutation check and told a viewer it had tried to write).
+    The caller's role is checked before the profile's existence is revealed.
+    """
+    from superlocalmemory.access.rbac import Permission as _Perm
+    from superlocalmemory.server.rbac_enforce import require_permission as _rbac_require
+
+    _rbac_require(request, _Perm.READ, profile=profile)
+    engine = _get_engine(request)
+    if engine is None:
+        raise HTTPException(503, detail="Engine not initialized")
+    if profile is not None and not engine._db.execute(
+        "SELECT 1 AS one FROM profiles WHERE profile_id = ?", (profile,),
+    ):
+        raise _UnknownRoutedProfile(profile)
+    return engine, profile or engine.profile_id
+
+
 def _preview(content: str | None) -> str:
     """Truncate content for preview display."""
     if not content:
@@ -1840,9 +1862,7 @@ def list_corrections(request: Request, limit: int = 100, profile_id: str = "",
     ``profile_id`` names it (authorized like a routed review), else the active one."""
     try:
         profile = _routed_profile(profile_id)
-        engine, target_profile, _context = _authorize_memory_mutation(
-            request, "update", "correction-list", run_pre_hook=False, profile=profile,
-        )
+        engine, target_profile = _authorize_review_read(request, profile)
         cases = _correction_store_for(engine, target_profile).list_cases(
             target_profile, limit=limit)
         from superlocalmemory.server.routes.overtaken import overtaken_for  # a user action closed
@@ -1871,9 +1891,7 @@ def get_correction(request: Request, case_id: str, profile_id: str = ""):
     routed profile when ``profile_id`` names it, else from the active one."""
     try:
         profile = _routed_profile(profile_id)
-        engine, target_profile, _context = _authorize_memory_mutation(
-            request, "update", case_id, run_pre_hook=False, profile=profile,
-        )
+        engine, target_profile = _authorize_review_read(request, profile)
         case = _correction_store_for(engine, target_profile).get_case(case_id)
         return {"success": True, "correction": _correction_case_response(case)}
     except HTTPException:

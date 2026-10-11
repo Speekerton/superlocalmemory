@@ -66,10 +66,30 @@ def _get_memory_count(profile: str) -> int:
         return 0
 
 
+def _visible_profile_ids(request: Request) -> set[str] | None:
+    """The workspaces this caller may see, or ``None`` for all of them.
+
+    The machine owner sees every workspace. A signed-in user sees only the
+    workspaces they belong to (any role grants READ): before 4.1.25 (audit
+    OPS-09) a viewer of ``default`` got every workspace's name, description
+    and memory count.
+    """
+    from superlocalmemory.server.rbac_enforce import resolve_principal
+
+    principal = resolve_principal(request)  # an ended session is a 401
+    if principal.get("kind") != "user":
+        return None
+    rbac = getattr(request.app.state, "rbac", None)
+    if rbac is None:
+        return set()
+    return {row["profile_id"] for row in rbac.list_user_profiles(principal["user_id"])}
+
+
 @router.get("/api/profiles")
 async def list_profiles(request: Request):
     """List available memory profiles (synced from SQLite + profiles.json)."""
     try:
+        visible = _visible_profile_ids(request)
         merged = sync_profiles()
         active = get_profile_runtime(request.app.state).snapshot.profile_id
 
@@ -77,6 +97,8 @@ async def list_profiles(request: Request):
         for p in merged:
             # profile_id is the canonical key (PK, FK target, used by engine)
             pid = p.get('profile_id', p.get('name', ''))
+            if visible is not None and pid not in visible:
+                continue  # never named, never counted
             count = _get_memory_count(pid)
             profiles.append({
                 "name": pid,
@@ -89,10 +111,12 @@ async def list_profiles(request: Request):
 
         return {
             "profiles": profiles,
-            "active_profile": active,
+            "active_profile": active if visible is None or active in visible else "",
             "total_profiles": len(profiles),
         }
 
+    except HTTPException:
+        raise
     except Exception:
         raise _internal_error("Profile list error")
 
@@ -114,11 +138,18 @@ async def switch_profile(name: str, request: Request):
                 detail=f"Profile '{name}' not found. Available: {available}",
             )
 
+        from superlocalmemory.access.rbac import Permission as _SwitchPerm
+
+        # Entering a workspace needs READ on it for a signed-in user (the
+        # mutation gate's rule for this path); the owner needs MANAGE there.
         authorization = authorize_route_mutation(
             request,
             operation="update",
             source_agent_id="http-profile-switch",
             profile_id=name,
+            permission=_SwitchPerm.READ,
+            owner_permission=_SwitchPerm.MANAGE,
+            operation_policy=False,
         )
         # RBAC (C4): a logged-in user may only activate a workspace they belong
         # to — this is the read boundary. Switching sets the active tenant for

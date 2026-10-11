@@ -839,10 +839,14 @@
   function showAuditChainStatus(auditFull) {
     var el = document.getElementById('od-audit-chain-status');
     if (!el || !auditFull) return;
-    var ok = auditFull.chain_verified !== false;
-    el.innerHTML = ok
-      ? '<span class="badge ok" style="margin-left:8px">Chain verified</span>'
-      : '<span class="badge danger" style="margin-left:8px">Chain integrity issue</span>';
+    // Say what the check covered (server label); never "verified" by default (L-16/G-L2).
+    var ok = auditFull.chain_verified === true;
+    var badge = document.createElement('span');
+    badge.className = 'badge ' + (ok ? 'ok' : 'danger');
+    badge.style.marginLeft = '8px';
+    badge.textContent = auditFull.integrity_label || (ok ? 'Order verified' : 'Integrity not checked');
+    el.textContent = '';
+    el.appendChild(badge);
   }
 
   /** Task C: re-fetch audit trail from API with a specific event_type filter. */

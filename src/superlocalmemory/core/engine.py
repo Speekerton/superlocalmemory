@@ -573,10 +573,10 @@ class MemoryEngine:
         shared_with: list[str] | None = None,
         profile_id: str | None = None,
     ) -> list[str]:
-        """Durably admit content and return its queryable fact_ids.
+        """Store content and finish canonical materialization. Returns fact_ids.
 
-        Enrichment is materialized separately. Admission must work offline
-        and must not wait for a cold embedding model to load.
+        Standalone callers own the work they queue, so enrichment finishes
+        before success. Without an embedder, lexical materialization suffices.
 
         Multi-scope: ``scope`` sets the visibility (personal/shared/global).
         ``shared_with`` is a list of profile_ids for shared scope.
@@ -605,7 +605,7 @@ class MemoryEngine:
             session_date=session_date,
             speaker=speaker,
             role=role,
-            require_complete=False,
+            require_complete=True,
             profile_id=profile_id,
         )
 

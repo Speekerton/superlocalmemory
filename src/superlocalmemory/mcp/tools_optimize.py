@@ -31,6 +31,7 @@ from superlocalmemory.mcp.remote_caller import current_remote_key_id
 from superlocalmemory.optimize.compress.ccr import CCRStore, _UUID4_RE
 from superlocalmemory.optimize.compress.router import CompressRouter, CompressTextResult
 from superlocalmemory.optimize.storage.db import CacheDB, _normalize_tenant_id
+from superlocalmemory.optimize.storage.provenance import active_profile_id
 
 logger = logging.getLogger("slm.mcp.tools_optimize")
 
@@ -161,6 +162,7 @@ def register_optimize_tools(server) -> None:
                     content.encode("utf-8"),
                     tenant_id=_tenant(),
                     ttl_seconds=ttl_seconds,
+                    profile_id=active_profile_id(),
                 )
                 ccr_id = stored or None
                 if ccr_id:
@@ -258,6 +260,7 @@ def register_optimize_tools(server) -> None:
             db.set(
                 cache_key, norm_tid, value_bytes,
                 model="mcp-kv", ttl_expires=ttl_exp, tags=["mcp-kv"],
+                profile_id=active_profile_id(),
             )
             # ``tag_json`` is descriptive only; tag invalidation joins the
             # normalized llmcache_tags index.  CacheManager registers that

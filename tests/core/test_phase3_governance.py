@@ -13,6 +13,8 @@ import json
 import sqlite3
 import time
 from pathlib import Path
+
+from superlocalmemory.compliance.erasure_outcome import subject_ref
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -419,7 +421,8 @@ def test_entity_erase_produces_non_empty_proofs(tmp_path: Path) -> None:
     with db.raw_connection() as conn:
         row = conn.execute(
             "SELECT owner_evidence_json FROM erasure_receipts "
-            "WHERE subject_type = 'entity' AND subject_id = 'Alice' AND profile_id = 'p1'"
+            "WHERE subject_type = 'entity' AND subject_id = ? AND profile_id = 'p1'",
+            (subject_ref("entity", "Alice"),),
         ).fetchone()
 
     assert row is not None, "erasure receipt must be persisted"
@@ -455,7 +458,8 @@ def test_entity_erase_proofs_reflect_actual_stores(tmp_path: Path) -> None:
     with db.raw_connection() as conn:
         row = conn.execute(
             "SELECT owner_evidence_json FROM erasure_receipts "
-            "WHERE subject_type = 'entity' AND subject_id = 'Bob'"
+            "WHERE subject_type = 'entity' AND subject_id = ?",
+            (subject_ref("entity", "Bob"),),
         ).fetchone()
 
     assert row is not None

@@ -1,5 +1,7 @@
 """Temporal slices reuse exact rows only while their write version is current."""
 
+import sqlite3
+
 from benchmark.recall_channels import seed
 
 from superlocalmemory.retrieval.temporal_channel import TemporalChannel
@@ -121,3 +123,26 @@ def test_product_event_replacement_does_not_leave_an_unsafe_counter(tmp_path):
         row = dict(db.execute("SELECT uncacheable FROM temporal_retrieval_version")[0])
         assert row["uncacheable"] == expected
     db.close()
+
+
+def test_fact_id_rename_invalidates_an_already_cached_join(tmp_path):
+    from superlocalmemory.storage.migrations import M057_temporal_retrieval_version as migration
+
+    db = DatabaseManager(tmp_path / "synthetic.db")
+    try:
+        seed(db, 20)
+        with db.transaction():
+            migration.apply(db._txn_state.conn)
+        channel = TemporalChannel(db)
+        before = channel._load_events("default", near_date="2025-03-15")
+        assert any(row["fact_id"] == "f000000" for row in before)
+        version = db.execute("SELECT version FROM temporal_retrieval_version")[0][0]
+        # Legacy / external SQLite writer, with foreign key enforcement off.
+        with sqlite3.connect(db.db_path) as writer:
+            writer.execute("UPDATE atomic_facts SET fact_id='renamed' WHERE fact_id='f000000'")
+        assert db.execute("SELECT version FROM temporal_retrieval_version")[0][0] > version
+        after = channel._load_events("default", near_date="2025-03-15")
+        assert after != before and all(row["fact_id"] != "f000000" for row in after)
+        assert after == TemporalChannel(db)._load_events("default", near_date="2025-03-15")
+    finally:
+        db.close()

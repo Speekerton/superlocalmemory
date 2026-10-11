@@ -276,6 +276,8 @@ _KNOWN_EQUIVALENT_DDL_HASHES: dict[str, frozenset[str]] = {
         # Original WP-4b recounting triggers. M057.verify checks definitions;
         # M057.repair upgrades them and rebuilds the counter before acceptance.
         "1b33a4fa21a72714a8e6e95deb4509e644ce4410629ea2152d0deb6b903ab194",
+        # Incremental-trigger fix-up before fact_id was watched (PR 250 #3).
+        "79999b6dfcc6cec4250639b9db5f72da02063155bc6b9c4ec32600b9bccbff86",
     }),
     _M002.NAME: frozenset({
         # v3.4.21 hardened copy-forward variant.

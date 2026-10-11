@@ -74,8 +74,9 @@ CREATE TRIGGER IF NOT EXISTS trg_temporal_slice_fact_insert AFTER INSERT ON atom
     UPDATE temporal_retrieval_version SET version=version+1 WHERE id=1;
 END;
 CREATE TRIGGER IF NOT EXISTS trg_temporal_slice_fact_update
-AFTER UPDATE OF profile_id,scope,shared_with,created_at ON atomic_facts
-WHEN NEW.profile_id IS NOT OLD.profile_id OR NEW.scope IS NOT OLD.scope
+AFTER UPDATE OF fact_id,profile_id,scope,shared_with,created_at ON atomic_facts
+WHEN NEW.fact_id IS NOT OLD.fact_id OR NEW.profile_id IS NOT OLD.profile_id
+    OR NEW.scope IS NOT OLD.scope
     OR NEW.shared_with IS NOT OLD.shared_with OR NEW.created_at IS NOT OLD.created_at BEGIN
     UPDATE temporal_retrieval_version SET version=version+1 WHERE id=1;
 END;

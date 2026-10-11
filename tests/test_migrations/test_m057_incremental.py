@@ -103,11 +103,14 @@ def test_repair_upgrades_a_complete_but_recounting_trigger():
         assert conn.execute("SELECT uncacheable FROM temporal_retrieval_version").fetchone() == (2,)
 
 
-def test_runner_repairs_the_original_wp4b_ddl_hash(tmp_path):
+@pytest.mark.parametrize("original", [
+    "1b33a4fa21a72714a8e6e95deb4509e644ce4410629ea2152d0deb6b903ab194",
+    "79999b6dfcc6cec4250639b9db5f72da02063155bc6b9c4ec32600b9bccbff86",
+])
+def test_runner_repairs_the_original_wp4b_ddl_hash(tmp_path, original):
     from superlocalmemory.storage import migration_runner as mr
 
     learning, memory = current_store(tmp_path)
-    original = "1b33a4fa21a72714a8e6e95deb4509e644ce4410629ea2152d0deb6b903ab194"
     with closing(sqlite3.connect(memory)) as conn, conn:
         conn.execute("DROP TABLE temporal_uncacheable_events")
         conn.execute("UPDATE migration_log SET ddl_sha256=? WHERE name=?",

@@ -602,7 +602,7 @@ class MemoryEngine:
             session_date=session_date,
             speaker=speaker,
             role=role,
-            require_complete=False,
+            require_complete=True,
             profile_id=profile_id,
         )
 

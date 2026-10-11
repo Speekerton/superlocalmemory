@@ -599,7 +599,9 @@ def cmd_session(args: Namespace) -> None:
     so a shell hook (e.g. Claude session-start / /quit) can call it directly.
     """
     from superlocalmemory.cli.daemon import (
-        daemon_request, ensure_daemon, is_daemon_running,
+        daemon_request,
+        ensure_daemon,
+        is_daemon_running,
     )
 
     action = getattr(args, "session_command", None)
@@ -622,7 +624,8 @@ def cmd_session(args: Namespace) -> None:
             print(f"Session opened — warmed {resp.get('warmed', 0)} memories "
                   f"(query: {resp.get('query', '')})")
         else:
-            print("Session open failed (daemon unreachable?)")
+            print("Session open failed (daemon unreachable?)", file=sys.stderr)
+            raise SystemExit(1)
         return
 
     # close
@@ -633,7 +636,8 @@ def cmd_session(args: Namespace) -> None:
         print(f"Session closed: {sid} — "
               f"{resp.get('summary_events_created', 0)} summary event(s) created")
     else:
-        print("Session close failed (daemon unreachable?)")
+        print("Session close failed (daemon unreachable?)", file=sys.stderr)
+        raise SystemExit(1)
 
 
 def _cmd_upgrade_hosts(args: Namespace) -> None:
@@ -2024,7 +2028,11 @@ def cmd_remember(args: Namespace) -> None:
 
     try:
         from superlocalmemory.cli.daemon import (
-            DaemonUnprocessable, daemon_request, ensure_daemon, is_daemon_running,
+            DaemonServerError,
+            DaemonUnprocessable,
+            daemon_request,
+            ensure_daemon,
+            is_daemon_running,
         )
         kind = (getattr(args, "kind", "") or "").strip()
         if kind:
@@ -2068,20 +2076,24 @@ def cmd_remember(args: Namespace) -> None:
         }
         # A 422 is a refusal of this request, printed as such, not "daemon
         # unavailable" (an idempotency conflict never heals by retrying).
-        extra = {"preserve_unprocessable": True}
+        extra = {"preserve_unprocessable": True, "preserve_server_error": sync_mode}
         if replaces is not None:
             body["replaces"] = replaces
         body["idempotency_key"] = _cli_remember_idempotency_key(body)
         try:
-            result = daemon_request("POST", path, body, timeout_seconds=30, **extra)
-        except DaemonUnprocessable as exc:
+            result = daemon_request("POST", path, body,
+                                    timeout_seconds=300 if sync_mode else 30, **extra)
+        except (DaemonUnprocessable, DaemonServerError) as exc:
             if use_json:
                 from superlocalmemory.cli.json_output import json_print
                 json_print("remember", error={"code": exc.code, "message": exc.message})
             else:
                 print(exc.message, file=sys.stderr)
-            sys.exit(2)
+            sys.exit(1 if isinstance(exc, DaemonServerError) else 2)
         if result and "fact_ids" in result:
+            if sync_mode:
+                from superlocalmemory.cli.save_completion import require_completed_receipt
+                require_completed_receipt(result, use_json)
             if use_json:
                 from superlocalmemory.cli.json_output import json_print
                 json_print("remember", data=result)

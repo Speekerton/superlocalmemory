@@ -1156,6 +1156,7 @@ def _completeness_of(response: RecallResponse) -> dict:
     return {
         "incomplete_channels": tuple(getattr(response, "incomplete_channels", ()) or ()),
         "channel_status": dict(getattr(response, "channel_status", {}) or {}),
+        "graph_lag_s": getattr(response, "graph_lag_s", None),
         "stage_ms": dict(getattr(response, "stage_ms", {}) or {}),
         # #150: a project filter that fell back to unfiltered results must
         # still say so after a rebuild.

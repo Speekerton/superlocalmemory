@@ -243,15 +243,18 @@ takes a safety point, restores, and starts the service again. It is all or
 nothing: just before it writes, the stores, settings and vector index are
 copied as plain files, and if any step fails those copies are put back without
 running the restore again. Accounts, sessions and the sign-in setting are never rolled back; the
-ones you have now are kept. If even the rollback fails, the service stays
-stopped and the Backup page says so. Then run:
+ones you have now are kept. If even the rollback fails (or the restore is cut
+off while writing), the service stays stopped: every start, including hooks
+and `slm serve start`, refuses until the stores are recovered. Then run:
 
 ```bash
 slm backup restore-safety-copy   # puts back the safety copy of the last restore
 slm serve start
 ```
 
-`--id <recovery point>` restores a specific point instead.
+`--id <recovery point>` restores a specific point instead. Only if you have
+repaired the stores another way, `slm backup clear-recovery-needed` lets the
+service start again.
 
 ---
 

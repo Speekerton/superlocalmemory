@@ -9,6 +9,7 @@
   slm backup decrypt FILE [-o OUT]   turn a downloaded backup into a .db file
   slm backup restore-safety-copy     put back the safety copy a failed dashboard
                                      restore left (service stopped)
+  slm backup clear-recovery-needed   let the service start after a manual repair
 
 A recovery key is only ever read from stdin (or a hidden prompt), never from
 the command line, so it stays out of shell history and the process list.
@@ -59,13 +60,20 @@ def add_backup_parser(sub: Any) -> None:
                         help="Recovery point to restore (default: the last restore's safety copy)")
     safe_p.add_argument("--json", action="store_true", help="Output JSON")
 
+    clear_p = backup_sub.add_parser(
+        "clear-recovery-needed",
+        help="Let the service start again after you repaired the stores yourself",
+    )
+    clear_p.add_argument("--json", action="store_true", help="Output JSON")
+
 
 def cmd_backup(args: argparse.Namespace) -> None:
     from superlocalmemory.infra.backup_crypto import BackupCryptoError
     from superlocalmemory.server.backup_restore_txn import RolledBack, StoreBusy
 
     handlers = {"status": _status, "recovery-key": _recovery_key, "decrypt": _decrypt,
-                "restore-safety-copy": _restore_safety_copy}
+                "restore-safety-copy": _restore_safety_copy,
+                "clear-recovery-needed": _clear_recovery_needed}
     handler = handlers.get(getattr(args, "backup_command", None) or "status")
     try:
         handler(args)
@@ -81,6 +89,16 @@ def _data_root() -> Path:
     from superlocalmemory.core.config import SLMConfig
 
     return Path(SLMConfig.load().db_path).parent
+
+
+def _clear_recovery_needed(args: argparse.Namespace) -> None:
+    from superlocalmemory.server.backup_restore_txn import clear_recovery_needed
+
+    cleared = clear_recovery_needed(_data_root())
+    text = ("Cleared: the service may start again. Only do this after repairing the stores; "
+            "`slm backup restore-safety-copy` is the safe way back." if cleared
+            else "Nothing to clear: no restore is waiting for recovery.")
+    _emit(args, {"cleared": cleared}, text)
 
 
 def _restore_safety_copy(args: argparse.Namespace) -> None:

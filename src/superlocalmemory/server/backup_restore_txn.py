@@ -97,8 +97,40 @@ def _alive(pid) -> bool:
     return True
 
 
+RECOVERY_NEEDED = "recovery-needed.json"
+CLEAR_COMMAND = "slm backup clear-recovery-needed"
+
+
+def mark_recovery_needed(root: Path, reason: str, safety_id: str | None) -> None:
+    """Record that the stores may be mixed; start-up refuses until it is cleared.
+
+    Written when a rollback failed or a worker died while restoring (PR 251
+    re-review N3). Only a successful ``restore-safety-copy`` or the owner's
+    explicit ``clear-recovery-needed`` removes it.
+    """
+    from datetime import UTC, datetime
+
+    from superlocalmemory.storage._durable_json import write_json_atomic
+
+    write_json_atomic(Path(root) / RECOVERY_NEEDED, {
+        "reason": reason, "safety_id": safety_id,
+        "at": datetime.now(UTC).isoformat(timespec="seconds")})
+
+
+def clear_recovery_needed(root: Path) -> bool:
+    path = Path(root) / RECOVERY_NEEDED
+    existed = path.exists()
+    path.unlink(missing_ok=True)
+    return existed
+
+
 def restore_in_progress(root: Path) -> str | None:
     """Why a daemon must not start now, or None. Never raises."""
+    if (Path(root) / RECOVERY_NEEDED).exists():
+        return ("The last restore stopped part-way and the stores may be mixed, so the "
+                f"service will not start on them. Run `{RECOVER_COMMAND}` to put the safety "
+                f"copy back (or, only if you have repaired the stores yourself, "
+                f"`{CLEAR_COMMAND}`), then `slm serve start`.")
     try:
         status = read_json(Path(root) / OUTCOME_NAME) or {}
     except Exception:  # noqa: BLE001 - an unreadable note never blocks start-up
@@ -145,6 +177,7 @@ def recover_safety_copy(root: Path, safety_id: str) -> dict:
         # The point taken first must never prune the copy it is about to restore.
         before = create_point(root, keep=frozenset({safety_id}))["id"]
         restore_atomically(root, safety_id)
+        clear_recovery_needed(root)
         write_json_atomic(Path(root) / OUTCOME_NAME, {
             "state": "recovered", "id": safety_id, "safety_id": before,
             "message": "The safety copy was put back. Start the service with `slm serve start`."})
@@ -179,6 +212,8 @@ def settle(status: dict, root: Path, mtime: float | None = None) -> dict:
     stage = status.get("state")
     details = f"Details are in {log_path(root)}."
     if stage == "restoring":
+        mark_recovery_needed(root, "the restore worker ended while restoring",
+                             status.get("safety_id"))
         message = ("The recovery stopped part-way because its process ended, so the stores "
                    "may be partly restored. Stop the service (`slm serve stop`) and run "
                    f"`{RECOVER_COMMAND}` to put the safety copy back. {details}")

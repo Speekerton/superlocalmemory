@@ -952,6 +952,24 @@ def _wait_while_owned() -> bool | None:
     return True
 
 
+def _recovery_root():
+    from pathlib import Path
+
+    from superlocalmemory.core.config import SLMConfig
+
+    return Path(SLMConfig.load().db_path).parent
+
+
+def _recovery_block() -> str | None:
+    """Why a restore forbids starting now, or None (unreadable settings never block)."""
+    try:
+        from superlocalmemory.server.backup_restore_txn import restore_in_progress
+
+        return restore_in_progress(_recovery_root())
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def ensure_daemon(*, port: int | None = None) -> bool:
     """Start daemon if not running. Returns True if daemon is ready.
 
@@ -973,6 +991,11 @@ def ensure_daemon(*, port: int | None = None) -> bool:
     """
     if is_daemon_running():
         return True
+    blocked = _recovery_block()
+    if blocked:
+        # A restore left the stores mixed: never start on them (see backup_restore_txn).
+        logger.error("Not starting SuperLocalMemory: %s", blocked)
+        return False
     if (
         os.environ.get("SLM_TEST_ISOLATION") == "1"
         and os.environ.get("SLM_TEST_ALLOW_DAEMON_SPAWN") != "1"

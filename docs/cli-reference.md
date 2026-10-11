@@ -831,14 +831,16 @@ memory content, no secrets) for manual inspection or support. `reliability
 Bayesian learner has moved off its prior and whether each schema-guarded path has
 ever run against this store.
 
-### `slm backup status|recovery-key|decrypt|restore-safety-copy`
+### `slm backup status|recovery-key|decrypt|restore-safety-copy|clear-recovery-needed`
 
 Cloud backups are encrypted. `status` shows the encryption state;
 `recovery-key` shows the recovery key, or with `--import` reads one from stdin
 for a new computer; `decrypt <file> [-o OUT] [--recovery-key-stdin] [--force]`
 turns a downloaded backup into a plain `.db` file;
 `restore-safety-copy [--id POINT]` puts back the safety copy a failed dashboard
-restore kept, with the service stopped. See [Cloud backup](cloud-backup.md).
+restore kept, with the service stopped; `clear-recovery-needed` lets the service
+start again after you repaired the stores yourself. See [Cloud
+backup](cloud-backup.md).
 
 ### `slm gdpr status|export|erase|verify`
 

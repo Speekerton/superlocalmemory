@@ -929,6 +929,12 @@ def cmd_serve(args: Namespace) -> None:
         return
 
     print("Starting SLM daemon (engine warming up)...")
+    from superlocalmemory.cli.daemon import _recovery_block
+
+    blocked = _recovery_block()
+    if blocked:
+        print(blocked)
+        sys.exit(1)
     if ensure_daemon():
         print("Daemon started \u2713 — CLI commands are now instant.")
         print("  slm serve status  — check daemon status")

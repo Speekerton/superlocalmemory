@@ -122,7 +122,8 @@ def list_adapters() -> list[dict]:
     for name in _VALID_ADAPTERS:
         ac = config.get(name, {})
         running, pid = _is_running(name)
-        error = _path_error(name, ac) or setup_error(name, ac)
+        path_error = _path_error(name, ac)
+        error = path_error or setup_error(name, ac)
         child = _CHILDREN.get(name)
         if child is not None and ((pid is not None and child.pid != pid) or not ac.get("enabled")):
             _CHILDREN.pop(name, None)
@@ -130,10 +131,12 @@ def list_adapters() -> list[dict]:
         completed = False
         if child is not None and child.poll() is not None:
             running = False
-            completed = child.poll() == 0
-            error = "" if completed else (
+            # A refused path is the reason: such a worker reads nothing and
+            # exits, which must never read as "completed" or a bare exit.
+            completed = child.poll() == 0 and not path_error
+            error = path_error or ("" if completed else (
                 "The worker exited. Check its setup in Configure, then retry Start."
-            )
+            ))
         result.append({
             "name": name,
             "enabled": ac.get("enabled", False),

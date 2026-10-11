@@ -15,6 +15,12 @@ from fastapi import HTTPException
 from superlocalmemory.ingestion import adapter_manager as manager
 
 
+@pytest.fixture(autouse=True)
+def _no_leftover_workers(monkeypatch):
+    """Each test starts with no remembered worker (a fake one would leak into the next)."""
+    monkeypatch.setattr(manager, "_CHILDREN", {})
+
+
 @pytest.fixture
 def root(tmp_path, monkeypatch):
     data = tmp_path / "data"

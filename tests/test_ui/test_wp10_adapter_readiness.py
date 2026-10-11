@@ -7,6 +7,12 @@ import pytest
 from superlocalmemory.ingestion import adapter_manager as manager
 
 
+@pytest.fixture(autouse=True)
+def _no_leftover_workers(monkeypatch):
+    """Each test starts with no remembered worker (a fake one would leak into the next)."""
+    monkeypatch.setattr(manager, "_CHILDREN", {})
+
+
 def test_configure_route_has_a_real_request_in_the_assembled_api():
     from fastapi import FastAPI
 

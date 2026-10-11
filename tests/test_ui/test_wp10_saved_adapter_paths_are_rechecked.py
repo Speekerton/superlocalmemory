@@ -20,6 +20,12 @@ import pytest
 from superlocalmemory.ingestion import adapter_manager as manager
 
 
+@pytest.fixture(autouse=True)
+def _no_leftover_workers(monkeypatch):
+    """Each test starts with no remembered worker (a fake one would leak into the next)."""
+    monkeypatch.setattr(manager, "_CHILDREN", {})
+
+
 @pytest.fixture
 def root(tmp_path, monkeypatch):
     data = tmp_path / "data"
@@ -139,3 +145,20 @@ def test_the_transcript_worker_exits_cleanly_with_the_reason(root, tmp_path):
     assert done.returncode == 1
     assert "allow-folder" in done.stdout
     assert "Traceback" not in done.stderr
+
+
+@pytest.mark.parametrize("exit_code", [0, 1])
+def test_an_exited_worker_never_hides_a_refused_path(root, tmp_path, monkeypatch, exit_code):
+    """PR 251 re-review N0: a worker whose path was refused reads nothing and exits.
+
+    Its exit must not show "completed" (or "worker exited"): the reason is the path.
+    """
+    from types import SimpleNamespace
+
+    save("gmail", "mbox_path", outside(tmp_path) / "mail.mbox")
+    monkeypatch.setattr(manager, "_is_running", lambda name: (False, None))
+    monkeypatch.setattr(manager, "_CHILDREN",
+                        {"gmail": SimpleNamespace(pid=4242, poll=lambda: exit_code)})
+    row = next(r for r in manager.list_adapters() if r["name"] == "gmail")
+    assert row["state"] == "failed"
+    assert "allow-folder" in row["setup_error"]

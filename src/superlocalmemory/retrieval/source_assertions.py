@@ -11,7 +11,7 @@ _UNCERTAIN = re.compile(
 _QUOTES = re.compile(r'''["“”‘’`]|(?<!\w)'|'(?!\w)''')
 
 
-def affirmative_sentences(memory):
+def assertion_sentences(memory):
     # A quote can span several sentences. Conservatively leave such documents
     # to the classifier instead of losing the context at a sentence boundary.
     if _QUOTES.search(memory):
@@ -19,5 +19,12 @@ def affirmative_sentences(memory):
     return tuple(
         sentence.rstrip(".! ").strip()
         for sentence in re.findall(r"[^.!?\n]+(?:[.!?]+|$)", memory)
-        if "?" not in sentence and not _UNCERTAIN.search(sentence)
+        if "?" not in sentence and not re.search(
+            r"\b(draft|rejected|quoted|said|claims?|rumored|imagined|hypothetical)\b",
+            sentence, re.I)
     )
+
+
+def affirmative_sentences(memory):
+    return tuple(sentence for sentence in assertion_sentences(memory)
+                 if not _UNCERTAIN.search(sentence))

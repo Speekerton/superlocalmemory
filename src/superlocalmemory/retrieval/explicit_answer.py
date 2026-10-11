@@ -32,7 +32,7 @@ def attribution_support(question: str, memory: str) -> bool:
     if not required or not required <= _anchors(memory):
         return False
     for sentence in affirmative_sentences(memory):
-        match = _APPROVAL.search(sentence)
+        match = _APPROVAL.fullmatch(sentence)
         if match is None:
             continue
         obj = _matching_object(required, match, memory)

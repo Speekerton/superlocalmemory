@@ -43,7 +43,7 @@ def _rule_verdict() -> SufficiencyVerdict:
 def test_every_surface_says_a_rule_answered_it() -> None:
     response = _response(_rule_verdict())
     metadata = recall_response_metadata(response)  # what HTTP, MCP and the CLI read
-    assert metadata["calibration_id"] == BASE_ID + "+permission-rule-v1"
+    assert metadata["calibration_id"] == BASE_ID + forms.RULE_SUFFIX
     assert metadata["answerability"] == "supported"
     assert answer_check_line(response) == RULE_LINE
     assert answer_check_line(metadata) == RULE_LINE
@@ -68,7 +68,7 @@ def test_a_reused_rule_verdict_keeps_both_facts() -> None:
 
 
 def test_the_suffix_is_only_on_verdicts_the_rule_settled() -> None:
-    assert forms.calibration_id_for(BASE_ID, (0,)) == BASE_ID + "+permission-rule-v1"
+    assert forms.calibration_id_for(BASE_ID, (0,)) == BASE_ID + forms.RULE_SUFFIX
     assert forms.calibration_id_for(BASE_ID, ()) == BASE_ID
     assert forms.settled_by_rule(BASE_ID + forms.RULE_SUFFIX) is True
     assert forms.settled_by_rule(BASE_ID) is False

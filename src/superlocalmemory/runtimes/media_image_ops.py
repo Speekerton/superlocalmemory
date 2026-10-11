@@ -136,7 +136,8 @@ def prepare_image(src: str, out_dir: str, *, thumb_edge: int = 320, thumb_max_by
         try:
             mime, ext = _FORMATS[fmt]
             result = {"mime": mime, "width": upright.width, "height": upright.height, "exif": fields,
-                      "phash": str(imagehash.phash(upright.convert("RGB")))}
+                      "phash": str(imagehash.phash(upright.convert("RGB"))),
+                      "visual_summary": visual_summary(upright) + _apple_subjects(src)}
             written.append(_write_private(out_dir, ext, _encode_original(upright, fmt, icc)))
             result.update(stored_path=written[0], stored_ext=ext)
             written.append(_write_private(out_dir, ".webp", _encode_thumb(upright, thumb_edge, thumb_max_bytes)))
@@ -176,6 +177,31 @@ def _apple_vision(path: str) -> str | None:
     return "\n".join(lines)
 
 
+def _apple_subjects(path: str) -> str:
+    """Use the installed offline Vision classifier for a bounded subject caption.
+
+    Apple's VNClassifyImageRequest supplies identifier/confidence observations:
+    https://developer.apple.com/documentation/vision/vnclassifyimagerequest
+    No downloads; unsupported hosts retain the measured pixel summary and OCR.
+    """
+    if sys.platform != "darwin":
+        return ""
+    try:
+        vision = importlib.import_module("Vision")
+        foundation = importlib.import_module("Foundation")
+        handler = vision.VNImageRequestHandler.alloc().initWithURL_options_(
+            foundation.NSURL.fileURLWithPath_(path), None)
+        request = vision.VNClassifyImageRequest.alloc().init()
+        ok, _ = handler.performRequests_error_([request], None)
+        if not ok:
+            return ""
+        subjects = [str(obs.identifier()).replace('_', ' ') for obs in (request.results() or [])
+                    if float(obs.confidence()) >= .8][:3]
+        return " Image classifier subjects: " + ", ".join(subjects) + "." if subjects else ""
+    except (ImportError, AttributeError, RuntimeError):
+        return ""
+
+
 def _rapidocr(path: str) -> str | None:
     """Only when the package and its model files are already installed; never downloads."""
     try:
@@ -198,3 +224,29 @@ def ocr_image(path: str, *, engine: str = "auto") -> dict:
         if text is not None:
             return {"engine": name, "text": text}
     return {"engine": "none", "text": ""}
+
+
+_COLORS = {
+    "black": (0, 0, 0), "white": (255, 255, 255), "gray": (128, 128, 128),
+    "red": (255, 0, 0), "green": (0, 128, 0), "blue": (0, 0, 255),
+    "yellow": (255, 255, 0), "cyan": (0, 255, 255), "magenta": (255, 0, 255),
+}
+
+
+def visual_summary(image):
+    """Describe measured dimensions and dominant colors of a small RGB sample."""
+    sample = image.convert("RGB")
+    try:
+        sample.thumbnail((32, 32))
+        counts = dict.fromkeys(_COLORS, 0)
+        for pixel in sample.getdata():
+            color = min(_COLORS, key=lambda key: sum(
+                (a - b) ** 2 for a, b in zip(pixel, _COLORS[key])))
+            counts[color] += 1
+        total = sum(counts.values())
+        colors = sorted(counts, key=lambda key: (-counts[key], key))[:3]
+        measured = ", ".join(f"{color} ({round(100 * counts[color] / total)}%)"
+                             for color in colors if counts[color])
+        return f"Image {image.width} by {image.height} pixels. Dominant pixel colors: {measured}."
+    finally:
+        sample.close()

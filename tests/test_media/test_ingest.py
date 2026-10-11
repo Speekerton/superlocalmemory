@@ -139,7 +139,8 @@ def test_happy_path(env):
     adm = env.runtime.requests[0]
     assert adm.content == "receipt from the cafe\n\n[Text in image]\nInvoice 42 total"
     assert adm.source_type == "media" and adm.profile_id == "p1"
-    assert adm.metadata["_slm_source"] == {"type": "media", "media_id": r.media_id, "origin": "tool"}
+    assert adm.metadata["_slm_source"] == {"type": "media", "media_id": r.media_id, "origin": "tool",
+                                            "content_sha256": hashlib.sha256(png()).hexdigest()}
     assert r.extracted_text_preview == "Invoice 42 total"
     assert env.store.knn([1.0] + [0.0] * (DIM - 1), "p1", 1)[0][0] == r.media_id
     assert not list((env.root / "media" / "tmp").iterdir())

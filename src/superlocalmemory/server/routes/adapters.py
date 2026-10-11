@@ -66,12 +66,28 @@ async def configure_adapter_api(body: AdapterSetup, request: Request):
     return {"ok": True, "message": "Setup saved. Retry Start."}
 
 
+#: Fields of an adapter row that name a local file or folder.
+_PATH_FIELDS = ("watch_dir", "mbox_path", "ics_path")
+
+
 @router.get("/api/adapters")
-async def list_adapters_api():
-    """List all adapters with their enabled/running status."""
+async def list_adapters_api(request: Request):
+    """List all adapters with their enabled/running status.
+
+    Any reader gets the cards. Configured paths are local filesystem details,
+    shown only to a caller with installation-wide MANAGE (the people who may
+    change them); everyone else gets them blank and ``paths_hidden``.
+    """
+    from superlocalmemory.access.rbac import Permission
     from superlocalmemory.ingestion.adapter_manager import list_adapters
+    from superlocalmemory.server import rbac_enforce
+
+    rbac_enforce.require_permission(request, Permission.READ)
     adapters = list_adapters()
-    return {"adapters": adapters}
+    hidden = not rbac_enforce.has_global_manage(request)
+    if hidden:
+        adapters = [{**row, **{f: "" for f in _PATH_FIELDS if f in row}} for row in adapters]
+    return {"adapters": adapters, "paths_hidden": hidden}
 
 
 @router.post("/api/adapters/enable")

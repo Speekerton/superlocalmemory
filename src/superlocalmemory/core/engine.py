@@ -573,7 +573,10 @@ class MemoryEngine:
         shared_with: list[str] | None = None,
         profile_id: str | None = None,
     ) -> list[str]:
-        """Store content and extract structured facts. Returns fact_ids.
+        """Durably admit content and return its queryable fact_ids.
+
+        Enrichment is materialized separately. Admission must work offline
+        and must not wait for a cold embedding model to load.
 
         Multi-scope: ``scope`` sets the visibility (personal/shared/global).
         ``shared_with`` is a list of profile_ids for shared scope.
@@ -602,7 +605,7 @@ class MemoryEngine:
             session_date=session_date,
             speaker=speaker,
             role=role,
-            require_complete=True,
+            require_complete=False,
             profile_id=profile_id,
         )
 

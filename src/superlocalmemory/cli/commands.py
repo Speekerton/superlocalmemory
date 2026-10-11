@@ -558,6 +558,12 @@ def _cmd_features_dispatch(args: Namespace) -> None:
     cmd_features(args)
 
 
+def _cmd_outcome_dispatch(args: Namespace) -> None:
+    """4.1.25: report an outcome through the shared writer (cli/outcome_cmd.py)."""
+    from superlocalmemory.cli.outcome_cmd import run
+    run(args)
+
+
 def _cmd_corrections_dispatch(args: Namespace) -> None:
     """4.1.22: corrections a user action overtook (cli/corrections_cmd.py)."""
     from superlocalmemory.cli.corrections_cmd import run
@@ -725,6 +731,7 @@ def dispatch(args: Namespace) -> None:
         "features": _cmd_features_dispatch,
         "view": _cmd_view_dispatch,
         "corrections": _cmd_corrections_dispatch,
+        "outcome": _cmd_outcome_dispatch,
         "models": _cmd_models_dispatch,
         "embedder": _cmd_embedder_dispatch,
     }
@@ -3057,6 +3064,7 @@ _COMMAND_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
         ("embedder", "Switch the embedding model in the background"),
         ("models", "Installed Ollama models, recommendations, hosted catalogue"),
         ("corrections", "Corrections your own delete, replace or edit closed"),
+        ("outcome", "Report whether recalled memories helped (trains ranking)"),
     ]),
     ("Privacy & compliance", [
         # gdpr shipped in 4.0.6 but was never listed here, so `slm help` did not

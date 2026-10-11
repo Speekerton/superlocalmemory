@@ -3909,6 +3909,7 @@ def create_app() -> FastAPI:
     # -- Middleware --
     from superlocalmemory.server.profile_runtime import ProfileRuntimeMiddleware
     from superlocalmemory.server.daemon_cors import DaemonCORSMiddleware
+    from superlocalmemory.server.origin import daemon_browser_origins
     from superlocalmemory.server.security_middleware import SecurityHeadersMiddleware
     application.add_middleware(
         ProfileRuntimeMiddleware,
@@ -3918,12 +3919,8 @@ def create_app() -> FastAPI:
     application.add_middleware(GZipMiddleware, minimum_size=1000)
     application.add_middleware(
         DaemonCORSMiddleware,
-        allow_origins=[
-            # start_server resolves getsockname() before constructing the app.
-            # The legacy TCP redirect is never a dashboard browser origin.
-            f"http://{host}:{identity_port}" for host in ("localhost", "127.0.0.1")
-            if identity_port != 8767
-        ],
+        # start_server resolves getsockname() before constructing the app.
+        allow_origins=daemon_browser_origins(identity_port),
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
         allow_headers=[

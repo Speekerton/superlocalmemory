@@ -7,6 +7,13 @@ from urllib.parse import urlsplit
 from superlocalmemory.server.loopback import is_loopback as _is_loopback_host
 
 
+def daemon_browser_origins(port: int) -> tuple[str, ...]:
+    """The HTTP browser origins owned by this listener (never the redirect)."""
+    if not 1 <= port <= 65535 or port == 8767:
+        return ()
+    return (f"http://localhost:{port}", f"http://127.0.0.1:{port}")
+
+
 def origin_is_loopback(origin: str) -> bool:
     """Return whether an Origin is absent or an exact HTTP(S) loopback URL.
 

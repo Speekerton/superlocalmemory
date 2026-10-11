@@ -152,7 +152,7 @@ def _scrub_delta(delta_dir: Path, profile_id: str) -> int:
 def cover_profile_erasure(data_root: Path, profile_id: str, *, erasure_id: str,
                           store: Any, retention_days: int) -> dict[str, int]:
     """Erase ``profile_id`` from every delta; register every safety copy holding it."""
-    from superlocalmemory.infra.backup_obligations import scan_backup_snapshots_for_profile
+    from superlocalmemory.infra.backup_obligations import scan_backup_snapshots
 
     data_root = Path(data_root)
     scrubbed = 0
@@ -162,11 +162,12 @@ def cover_profile_erasure(data_root: Path, profile_id: str, *, erasure_id: str,
             if delta.is_dir() and not delta.is_symlink():
                 scrubbed += _scrub_delta(delta, profile_id)
     registered = 0
-    for snap_path, epoch in scan_backup_snapshots_for_profile(data_root / SAFETY_DIR,
-                                                              profile_id):
-        store.record(profile_id=profile_id, erasure_id=erasure_id, snapshot_path=snap_path,
-                     snapshot_epoch=epoch, retention_days=retention_days)
-        registered += 1
+    report = scan_backup_snapshots(data_root / SAFETY_DIR, profile_id)
+    for kind, found in (("contains", report.hits), ("unreadable", report.unreadable)):
+        for snap_path, epoch in found:
+            store.record(profile_id=profile_id, erasure_id=erasure_id, snapshot_path=snap_path,
+                         snapshot_epoch=epoch, retention_days=retention_days, kind=kind)
+            registered += 1
     return {"restore_delta_rows_erased": scrubbed, "pre_restore_copies_registered": registered}
 
 

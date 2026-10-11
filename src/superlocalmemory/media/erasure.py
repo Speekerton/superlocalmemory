@@ -134,6 +134,7 @@ class MediaErasureOwner:
         self._memories: dict[str, set[str]] = {}
         self._left: dict[str, list[tuple[str, str]]] = {}
         self._pages: dict[str, tuple[list[str], list[str]]] = {}
+        self._sources: dict[str, list[tuple[str, str]]] = {}
 
     def _data_root(self) -> Path | None:
         if self._root is not None:
@@ -178,6 +179,7 @@ class MediaErasureOwner:
                     out = erase_pages_of_memories(store, root, context.profile_id, memories,
                                                   context.fact_ids, anchor_ids=ids)
                     self._pages[context.operation_id] = (out["picture_ids"], out["touched"])
+                    self._sources[context.operation_id] = list(out.get("sources", []))
                 finally:
                     store.close()
                 residue = list(out["residue"])
@@ -208,6 +210,10 @@ class MediaErasureOwner:
                     for sha, rel in self._left.get(context.operation_id, []):
                         if not store.file_in_use(rel) and not _gone(root, rel):
                             residue.append(f"file:{sha[:12]}")
+                    # A document that lost a page must not keep a PDF that still holds it.
+                    for sha, rel in self._sources.get(context.operation_id, []):
+                        if not _gone(root, rel) or store.document_file_in_use(rel):
+                            residue.append(f"source:{sha[:12]}")
                 finally:
                     store.close()
         except Exception as exc:  # noqa: BLE001

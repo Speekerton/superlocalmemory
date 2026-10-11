@@ -526,13 +526,33 @@ class VectorOwner(_FactScopedOwner):
 
     def _remove(self, context: OperationContext, fact_id: str) -> None:
         if self._vector_store is not None and hasattr(self._vector_store, "delete"):
-            self._vector_store.delete(fact_id)
+            from superlocalmemory.retrieval.vector_store import classify_delete
+
+            # A failed delete is an error of this owner, not "nothing to remove":
+            # the erasure receipt must not read as clean on the strength of it.
+            if classify_delete(self._vector_store.delete(fact_id)).failed:
+                raise RuntimeError(f"vector delete failed for {fact_id}")
         else:
-            self._db.execute(
-                "DELETE FROM embedding_metadata WHERE fact_id = ?", (fact_id,)
-            )
+            self._remove_without_store(fact_id)
         if self._ann_index is not None and hasattr(self._ann_index, "remove"):
             self._ann_index.remove(fact_id)
+
+    def _remove_without_store(self, fact_id: str) -> None:
+        """No ``VectorStore`` here (a command-line erasure): remove the vector itself.
+
+        Deleting the bookkeeping rows alone left the vector in the index with
+        nothing pointing at it, which is exactly the copy an erasure is asked to
+        remove.
+        """
+        db_path = getattr(self._db, "db_path", None)
+        if db_path is not None:
+            from superlocalmemory.retrieval import vector_physical
+
+            outcome = vector_physical.purge_facts(db_path, [fact_id])
+            if outcome.remaining:
+                raise RuntimeError(f"vector of {fact_id} is still in the index")
+            return
+        self._db.execute("DELETE FROM embedding_metadata WHERE fact_id = ?", (fact_id,))
 
 
 def _admission_owners(engine: Any) -> dict[str, Any]:

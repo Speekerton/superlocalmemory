@@ -22,6 +22,14 @@ from superlocalmemory.infra.daemon_identity import (
 )
 
 
+def _local_request():
+    """A minimal local GET /status request: the handler now checks who is asking."""
+    from starlette.requests import Request
+
+    return Request({"type": "http", "method": "GET", "path": "/status", "headers": [],
+                    "query_string": b"", "client": ("127.0.0.1", 50000),
+                    "server": ("127.0.0.1", 8765), "scheme": "http"})
+
 def test_health_preserves_compatibility_and_adds_owned_identity(
     tmp_path: Path, monkeypatch,
 ) -> None:
@@ -35,7 +43,7 @@ def test_health_preserves_compatibility_and_adds_owned_identity(
 
     app = unified_daemon.create_app()
     route = next(route for route in app.routes if getattr(route, "path", None) == "/health")
-    payload = asyncio.run(route.endpoint())
+    payload = asyncio.run(route.endpoint(_local_request()))
 
     assert payload["status"] == "ok"
     assert payload["engine"] in {"initialized", "unavailable"}
@@ -165,7 +173,7 @@ def test_status_reports_the_legacy_port_only_when_actually_bound(
     }
     route = next(route for route in app.routes if getattr(route, "path", None) == "/status")
 
-    payload = asyncio.run(route.endpoint())
+    payload = asyncio.run(route.endpoint(_local_request()))
 
     assert payload["legacy_port"] == 8767
     assert payload["legacy_port_reason"] == "default data root"
@@ -190,7 +198,7 @@ def test_status_reports_null_legacy_port_when_not_bound(
     }
     route = next(route for route in app.routes if getattr(route, "path", None) == "/status")
 
-    payload = asyncio.run(route.endpoint())
+    payload = asyncio.run(route.endpoint(_local_request()))
 
     assert payload["legacy_port"] is None
     assert "not the default data root" in payload["legacy_port_reason"]
@@ -210,7 +218,7 @@ def test_status_legacy_port_defaults_to_null_before_startup_runs(
     app = unified_daemon.create_app()
     route = next(route for route in app.routes if getattr(route, "path", None) == "/status")
 
-    payload = asyncio.run(route.endpoint())
+    payload = asyncio.run(route.endpoint(_local_request()))
 
     assert payload["legacy_port"] is None
     assert payload["legacy_port_reason"] == "unknown"
@@ -229,5 +237,5 @@ def test_status_reports_the_actual_runtime_port(tmp_path: Path, monkeypatch) -> 
         route for route in app.routes if getattr(route, "path", None) == "/status"
     )
 
-    payload = asyncio.run(route.endpoint())
+    payload = asyncio.run(route.endpoint(_local_request()))
     assert payload["port"] == 43134

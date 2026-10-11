@@ -291,4 +291,37 @@ def scrub(db: Any, profile_id: str, fact_id: str,
     return counts
 
 
-__all__ = ["ERASED_NOTE", "entities_of", "prepare", "scrub"]
+_EVENT_ID_KEYS = ("fact_id", "memory_id", "operation_id")
+
+
+def _payload_ids(payload: dict) -> set[str]:
+    named = {str(payload[key]) for key in _EVENT_ID_KEYS if payload.get(key)}
+    named.update(_ids(payload.get("fact_ids", [])))
+    return named
+
+
+def scrub_profile_events(db: Any, profile_id: str, ids: set[str]) -> int:
+    """Blank the previews of every event that belongs to an erased profile.
+
+    ``ids`` are the profile's fact, memory and operation ids. Events are matched
+    by those ids as well as by their own ``profile_id``, because the HTTP event
+    path files every event under ``default`` whatever profile the memory is in
+    (see :func:`_scrub_events`), so a profile-scoped sweep never reaches them.
+    One pass over the events that carry a preview, not one scan per fact.
+    """
+    blanked = 0
+    for row in _rows(db, "SELECT id, profile_id, payload FROM memory_events "
+                         "WHERE payload LIKE '%content_preview%'"):
+        try:
+            payload = json.loads(row["payload"])
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(payload, dict) or "content_preview" not in payload:
+            continue
+        if row["profile_id"] == profile_id or (_payload_ids(payload) & ids):
+            _blank_preview(db, row["id"], payload)
+            blanked += 1
+    return blanked
+
+
+__all__ = ["ERASED_NOTE", "entities_of", "prepare", "scrub", "scrub_profile_events"]

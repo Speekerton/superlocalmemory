@@ -194,10 +194,13 @@ def _tag_entity(engine, fact_ids: list[str], name: str) -> None:
 
 
 def _entity_erasure_id(engine, name: str) -> str:
+    from superlocalmemory.compliance.erasure_outcome import subject_ref
+
+    # The receipt names the erasure by a reference, never by the erased name.
     rows = engine._db.execute(
         "SELECT erasure_id FROM erasure_receipts WHERE subject_type = 'entity' "
         "AND subject_id = ?",
-        (name,),
+        (subject_ref("entity", name),),
     )
     return dict(rows[0])["erasure_id"]
 

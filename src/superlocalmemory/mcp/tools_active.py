@@ -121,6 +121,7 @@ def _sqlite_emergency_recall(
             if conn is not None:
                 conn.close()
         from types import MappingProxyType
+
         from superlocalmemory.server.recall_serializer import recall_response_metadata
         metadata = MappingProxyType(recall_response_metadata(fidelity))
         # FTS5 rank is negative (lower = better). Normalize to [0.3, 0.9].

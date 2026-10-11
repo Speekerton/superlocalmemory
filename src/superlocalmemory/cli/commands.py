@@ -4039,8 +4039,8 @@ def cmd_trace(args: Namespace) -> None:
         if hasattr(r, "channel_scores") and r.channel_scores:
             for ch, sc in r.channel_scores.items():
                 print(f"       {ch}: {sc:.3f}")
-    from superlocalmemory.server.recall_serializer import recall_response_metadata
     from superlocalmemory.cli.recall_text import empty_result_line, fidelity_line
+    from superlocalmemory.server.recall_serializer import recall_response_metadata
     metadata = recall_response_metadata(response)
     if not response.results:
         print(empty_result_line(metadata))

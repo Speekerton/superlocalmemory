@@ -49,7 +49,14 @@ def engine(tmp_path: Path) -> Iterator[MemoryEngine]:
             embedding=EmbeddingConfig(model_name="nomic-embed-text", dimension=768),
         )
     )
-    eng._ensure_init()
+    # These are deadline/adapter unit tests, not requests to shared Ollama.
+    # Seed with a cold local double, then each test supplies its own behaviour.
+    from unittest.mock import patch
+    cold = _local_embedder_mock()
+    cold._available = False
+    cold.embed.return_value = None
+    with patch('superlocalmemory.core.engine_wiring.init_embedder', return_value=cold):
+        eng._ensure_init()
     yield eng
     eng.close()
 

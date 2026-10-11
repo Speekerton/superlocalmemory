@@ -258,7 +258,11 @@ def build_immediate_admission_handler(
         fact.embedding = None
         fact.fisher_mean = None
         fact.fisher_variance = None
-        memory_id = fact.memory_id or uuid.uuid4().hex
+        from superlocalmemory.storage.source_identity import reuse_source
+
+        reused = None if isinstance(prebuilt_payload, dict) else reuse_source(
+            db, request, metadata, fact)
+        memory_id = reused or fact.memory_id or uuid.uuid4().hex
         existing = db.execute(
             "SELECT profile_id FROM memories WHERE memory_id = ?",
             (memory_id,),
@@ -286,6 +290,9 @@ def build_immediate_admission_handler(
                 shared_with=list(request.shared_with) or None,
             )
             fact.memory_id = db.store_memory(record)
+        if gate.truncated:
+            from superlocalmemory.core.source_excerpt import attach_source_pointer
+            fact = attach_source_pointer(fact, content, max_verbatim_chars)
         return [store_fact_keeping_kind(db, fact, metadata=metadata, request=request)]
 
     return write_queryable

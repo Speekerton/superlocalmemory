@@ -30,11 +30,12 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from superlocalmemory.encoding.assertion_support import assertion_reasons
+from superlocalmemory.encoding.speaker_spans import normalized_spans
 from superlocalmemory.encoding.typed_values import (
     ISO_DATE_TOKEN_RE,
     bare_numbers,
     has_relative_time,
-    typed_number_cores,
 )
 
 _MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
@@ -61,7 +62,8 @@ _NEGATION_RE = re.compile(
 )
 _ORDER_RE = re.compile(r"\b(before|after|ahead of|prior to|followed by)\b", re.IGNORECASE)
 _PAST_RE = re.compile(
-    r"\b(?:previously|formerly|used to|no longer|earlier|originally|once was)\b", re.IGNORECASE,
+    r"\b(?:previously|formerly|used to|no longer|earlier|originally|once was)\b",
+    re.IGNORECASE,
 )
 _STATUS_MARKER_RE = re.compile(
     r"\b(?:previously|formerly|used to|no longer|earlier|originally|past|was|were|had|"
@@ -141,6 +143,12 @@ def _source_dates(source: str) -> tuple[set[str], set[int], set[tuple[int, int]]
         month = _MONTHS.index(match.group(2).lower()[:3]) + 1
         months.add(month)
         month_days.add((month, int(match.group(1))))
+    for _, year, month, day in _fact_dates(source):
+        value = f"{year:04d}-{month:02d}"
+        full.add(value + (f"-{day:02d}" if day else ""))
+        months.add(month)
+        if day:
+            month_days.add((month, day))
     return full, months, month_days
 
 
@@ -173,7 +181,7 @@ def _fact_dates(fact: str) -> list[tuple[str, int, int, int | None]]:
         found.append((match.group(0), int(match.group(1)), int(match.group(2)), day))
     for match in _WRITTEN_DATE_RE.finditer(fact):
         text = match.group(0)
-        has_day = bool(re.search(r"\d{1,2}(?:st|nd|rd|th)?\b(?!\d)", text[: -4]))
+        has_day = bool(re.search(r"\d{1,2}(?:st|nd|rd|th)?\b(?!\d)", text[:-4]))
         try:
             parsed = _date_parser().parse(text, fuzzy=True)
         except (ValueError, OverflowError):
@@ -182,11 +190,14 @@ def _fact_dates(fact: str) -> list[tuple[str, int, int, int | None]]:
     return found
 
 
-def _check_dates(fact: str, source: str) -> list[str]:
+def _check_dates(fact: str, source: str, reference_date: str | None = None) -> list[str]:
     reasons: list[str] = []
     full, months, month_days = _source_dates(source)
     days_named = {month for month, _ in month_days}
     relative = has_relative_time(source)
+    from superlocalmemory.encoding.relative_support import relative_dates
+
+    resolved = relative_dates(source, reference_date)
     components = _number_components(source)
     lowered = source.lower()
     for written, year, month, day in _fact_dates(fact):
@@ -201,21 +212,41 @@ def _check_dates(fact: str, source: str) -> list[str]:
         ):
             reasons.append("number_became_date")
             continue
+        named = {value[:7] for value in full if value[5:7] == f"{month:02d}"}
+        if named and iso[:7] not in named:
+            reasons.append("unsupported_date")
+            continue
+        if day is not None and iso[:7] in full:
+            # A named month alone does not license a claimed specific day.
+            if not any(value.startswith(iso[:7]) and len(value) == 10 for value in full):
+                reasons.append("unsupported_date")
+                continue
         if relative:
-            continue  # a resolved "yesterday" / "next Tuesday"
+            if any(d.startswith(iso) for d in resolved):
+                continue
+            reasons.append("unsupported_date")
+            continue
         if (day is not None and (month, day) in month_days) or (
             month in months and (day is None or month not in days_named)
         ):
             continue  # the source names this day, or the month without a day
         reasons.append("unsupported_date")
-    return reasons + _check_years(fact, source, components, relative)
+    if relative and reference_date:
+        source_years = {m.group(1) for m in _YEAR_RE.finditer(source)}
+        allowed_years = {date[:4] for date in resolved} | source_years
+        if any(m.group(1) not in allowed_years for m in _YEAR_RE.finditer(fact)):
+            reasons.append("unsupported_date")
+    return reasons + _check_years(fact, source, components, relative and bool(reference_date))
 
 
 _YEAR_RE = re.compile(r"(?<![\d.,\-/])((?:19|20)\d{2})(?![\d\-/]|[.,]\d)")
 
 
 def _check_years(
-    fact: str, source: str, components: list[set[int]], relative: bool,
+    fact: str,
+    source: str,
+    components: list[set[int]],
+    relative: bool,
 ) -> list[str]:
     """A bare year the source never states ("in 2004" from "2004.6 ms")."""
     reasons: list[str] = []
@@ -232,7 +263,9 @@ def _check_years(
     return reasons
 
 
-def date_is_supported(iso_date: str | None, source_text: str) -> bool:
+def date_is_supported(
+    iso_date: str | None, source_text: str, reference_date: str | None = None
+) -> bool:
     """True when the source states, reformats or relatively implies this date.
 
     For a date a model put in a fact's date field: "2004.6 ms" does not
@@ -241,14 +274,26 @@ def date_is_supported(iso_date: str | None, source_text: str) -> bool:
     """
     if not iso_date:
         return True
-    return not _check_dates(str(iso_date)[:10], source_text or "")
+    return not _check_dates(str(iso_date)[:10], source_text or "", reference_date)
 
 
 def _check_numbers(fact: str, source: str) -> list[str]:
     fact_dates = {m.group(0) for m in ISO_DATE_TOKEN_RE.finditer(fact)}
     support = bare_numbers(source)
-    for core in typed_number_cores(fact):
-        if core in support or any(core in d for d in fact_dates):
+    # Bare cardinal values must be checked too; calendar components are
+    # already checked as dates and must not become number false positives.
+    undated = fact
+    for written, *_ in _fact_dates(fact):
+        undated = undated.replace(written, " ")
+    for core in bare_numbers(undated):
+        if (
+            core in support
+            or any(core in d for d in fact_dates)
+            or (
+                re.fullmatch(r"(?:19|20)\d{2}", core)
+                and (has_relative_time(source) or _check_dates(core, source))
+            )
+        ):
             continue
         return ["unsupported_number"]
     return []
@@ -282,7 +327,24 @@ def _negation_lost(fact: str, sentence: str) -> bool:
 
     Clause level, so "we do not use A; we use B" does not flag a fact about B.
     """
+    # A trailing restriction such as ", never on Fridays" qualifies the
+    # preference in the preceding clause, even when it has one content word.
+    restriction = re.search(r"\bnever\b[^.!?]*", sentence, re.I)
+    if restriction and _content_words(fact) & _content_words(restriction.group(0)):
+        return not bool(_NEGATION_RE.search(fact))
     clause = _best_match(fact, _clauses(sentence)) or sentence
+    equivalents = (
+        ("enabled", "disabled"),
+        ("allow", "disallowed"),
+        ("support", "unsupported"),
+        ("available", "unavailable"),
+        ("public", "private"),
+        ("weekends", "weekdays"),
+        ("failed", "passed"),
+        ("without", "requires"),
+    )
+    if any(a in clause.lower() and b in fact.lower() for a, b in equivalents):
+        return False
     return bool(_NEGATION_RE.search(clause)) and not _NEGATION_RE.search(fact)
 
 
@@ -297,7 +359,7 @@ def _order(text: str) -> tuple[str, str] | None:
     if not match:
         return None
     left = [w.strip(".'’") for w in _words(text[: match.start()])[-2:]]
-    right = [w.strip(".'’") for w in _words(text[match.end():])[:2]]
+    right = [w.strip(".'’") for w in _words(text[match.end() :])[:2]]
     left_only = [w for w in left if w and w not in right]
     right_only = [w for w in right if w and w not in left]
     if not left_only or not right_only:
@@ -312,10 +374,10 @@ def _split_past_clause(sentence: str) -> tuple[set[str], set[str]]:
     """(words only in a "previously ..." clause, words only in the rest of the sentence)."""
     past_text, spans = "", []
     for match in _PAST_RE.finditer(sentence):
-        rest = sentence[match.end():]
+        rest = sentence[match.end() :]
         end = _CLAUSE_END_RE.search(rest)
         stop = match.end() + (end.start() if end else len(rest))
-        past_text += " " + sentence[match.end():stop]
+        past_text += " " + sentence[match.end() : stop]
         spans.append((match.start(), stop))
     if not spans:
         return set(), set()
@@ -327,7 +389,7 @@ def _split_past_clause(sentence: str) -> tuple[set[str], set[str]]:
 
 
 def _check_polarity(fact: str, source: str) -> list[str]:
-    sentence = _best_sentence(fact, source)
+    sentence = _best_sentence(fact, "\n".join(normalized_spans(source)))
     if sentence is None:
         return []
     reasons: list[str] = []
@@ -347,14 +409,28 @@ def _check_polarity(fact: str, source: str) -> list[str]:
     return reasons
 
 
-def check_fact_against_source(fact_text: str, source_text: str) -> FidelityReport:
+def check_fact_against_source(
+    fact_text: str, source_text: str, *, reference_date: str | None = None
+) -> FidelityReport:
     """Check one derived fact against the memory it was derived from."""
     fact = (fact_text or "").strip()
     source = (source_text or "").strip()
-    if not fact or not source or fact in source:
+    from superlocalmemory.encoding.source_spans import exact_span
+
+    if not fact or not source or exact_span(fact, source) is not None:
         return FidelityReport(ok=True)
-    reasons = _check_dates(fact, source) + _check_numbers(fact, source)
-    reasons += _check_polarity(fact, source)
+    dated_source = _best_sentence(fact, source) or source
+    from superlocalmemory.core.source_excerpt import is_source_excerpt
+
+    if is_source_excerpt(fact, source):
+        return FidelityReport(ok=True)
+    reasons = _check_dates(fact, dated_source, reference_date) + _check_numbers(fact, source)
+    normalized_source = "\n".join(normalized_spans(source))
+    reasons += _check_polarity(fact, normalized_source)
+    reasons += assertion_reasons(fact, source)
+    sentence = _best_sentence(fact, "\n".join(normalized_spans(source)))
+    if sentence and _NEGATION_RE.search(fact) and not _NEGATION_RE.search(sentence):
+        reasons.append("negation_added")
     unique = tuple(dict.fromkeys(reasons))
     return FidelityReport(ok=not unique, reasons=unique)
 

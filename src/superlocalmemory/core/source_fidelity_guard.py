@@ -2,24 +2,13 @@
 # Licensed under AGPL-3.0-or-later - see LICENSE file
 # Part of SuperLocalMemory V3 | https://qualixar.com | https://varunpratap.com
 
-"""Withhold or flag a derived fact that changes what its source memory said.
+"""Withhold unsupported derived assertions while retaining their source.
 
-Runs where a remember is checkpointed, for every final fact that is not an
-exact span of the raw text the caller sent.
-
-* A fact that turns a source number into a date (``number_became_date``, the
-  proven 4.1.21 harm: "2004.6 ms" stored as June 2004) is withheld
-  (``quarantined = 1``); its lineage reason is ``source_fidelity:<reasons>``.
-* Every other finding — a date or measurement the source never stated, a
-  dropped "never", a reversed order, a lost "previously" — is a heuristic with
-  known faithful-paraphrase hits ("is not enabled" -> "is disabled"). The fact
-  stays in answers; its lineage reason is ``source_fidelity_unverified:<reasons>``
-  and recall marks it unverified (``retrieval/source_fidelity_flags.py``).
-
-Withholding is reversible and loses nothing. The row, its text and its
-provenance stay on disk; the memory's own verbatim fact, which is an exact
-copy of what the caller sent, stays searchable. ``slm db fidelity`` lists what
-was withheld and releases a fact the user judges correct.
+Deterministic names, attribution, numbers, dates, polarity and qualifier
+checks run before a derived row can enter answers. Failed checks quarantine
+that row reversibly and record the reason in derivation lineage. Exact raw
+source spans and mechanically verified clamped source excerpts remain usable.
+The user's explicit release decision is preserved across later checkpoints.
 """
 
 from __future__ import annotations
@@ -37,8 +26,12 @@ REASON_PREFIX = "source_fidelity:"
 RELEASED_PREFIX = "source_fidelity_released:"
 #: Prefix for a fact that stays in answers, marked unverified.
 FLAGGED_PREFIX = "source_fidelity_unverified:"
-#: The only findings precise enough to take a fact out of answers.
-WITHHOLD_REASONS = frozenset({"number_became_date"})
+#: Deterministic failures withheld from answers; originals remain retrievable.
+WITHHOLD_REASONS = frozenset({
+    "number_became_date", "unsupported_date", "unsupported_number",
+    "unsupported_entity", "unsupported_assertion", "attribution_changed",
+    "negation_lost", "negation_added", "order_reversed", "status_lost",
+})
 
 
 def _released_reason(db: Any, profile_id: str, fact_id: str) -> str | None:
@@ -77,10 +70,22 @@ def judge_fidelity(
     ``withhold`` is applied inside it by ``withhold_fact``. Never raises.
     """
     try:
-        report = check_fact_against_source(content, raw_content)
+        rows = db.execute(
+            "SELECT f.observation_date, m.speaker, m.role, m.content AS source_content "
+            "FROM atomic_facts f "
+            "LEFT JOIN memories m ON m.memory_id=f.memory_id "
+            "WHERE f.fact_id=? AND f.profile_id=?", (fact_id, profile_id))
+        row = dict(rows[0]) if rows else {}
+        raw_content = row.get("source_content") or raw_content
+        from superlocalmemory.core.source_excerpt import is_source_excerpt
+        from superlocalmemory.encoding.speaker_spans import with_actor
+        source = (raw_content if is_source_excerpt(content, raw_content) else with_actor(
+            raw_content, row.get("speaker") or "", row.get("role") or "user"))
+        report = check_fact_against_source(content, source,
+                                           reference_date=row.get("observation_date"))
     except Exception as exc:  # pragma: no cover - defensive, pure function
         logger.warning("source fidelity check failed for %s: %s", fact_id[:16], exc)
-        return None, False
+        return REASON_PREFIX + "check_failed", True
     if report.ok:
         return None, False
     released = _released_reason(db, profile_id, fact_id)

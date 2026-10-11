@@ -15,7 +15,9 @@ def assertion_sentences(memory):
     # A quote can span several sentences. Conservatively leave such documents
     # to the classifier instead of losing the context at a sentence boundary.
     context = r"(draft|rejected|quoted|said|claims?|rumored|imagined|hypothetical|denied|false)"
-    if _QUOTES.search(memory) or re.search(context, memory, re.I):
+    # The reader clips at 1800 characters. A source at that limit may have
+    # lost its question/quotation terminator, so it cannot prove an assertion.
+    if len(memory) >= 1800 or _QUOTES.search(memory) or re.search(context, memory, re.I):
         return ()
     return tuple(
         sentence.rstrip(".! ").strip()

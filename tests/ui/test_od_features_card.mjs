@@ -36,7 +36,7 @@ describe('turn-on card', () => {
         await h.mount();
         const t = h.host.textContent;
         assert.match(t, /Turn on images and documents/);
-        assert.match(t, /1\.5 GB/);
+        assert.match(t, /2\.8 GB/);
         assert.match(t, /stays on this computer/);
         assert.ok(btn(h, 'Turn on'));
         assert.equal(h.host.querySelectorAll('input[type=file]').length, 0);
@@ -144,7 +144,7 @@ describe('the 16 GB gate on the turn-on card', () => {
         await h.mount();
         assert.ok(h.host.textContent.includes(MESSAGE));
         assert.match(h.host.textContent, /Turn on images and documents/);
-        assert.match(h.host.textContent, /1\.5 GB/);
+        assert.match(h.host.textContent, /2\.8 GB/);
         assert.equal(btn(h, 'Turn on').disabled, true);
     });
 

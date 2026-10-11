@@ -276,7 +276,7 @@ function loadDashboardSources(stats) {
         'cli-sync': 'CLI sync',
         'unknown': 'Unclassified'
     };
-    var COLORS = ['var(--violet)', 'var(--cyan)', 'var(--warn,#f59e0b)', 'var(--fg-3)'];
+    var COLORS = ['var(--violet)', 'var(--cyan)', 'var(--warn,#f59e0b)', 'var(--fg-2)'];
     var total = sources.reduce(function(sum, source) {
         return sum + (Number(source.count) || 0);
     }, 0);
@@ -352,8 +352,11 @@ function setTextById(id, val) {
 function answerCheckSummaryText(status) {
     var jev = status.jev || {};
     var providerName = jev.provider === 'openrouter' ? 'OpenRouter' : 'TypeSafe';
+    if (status.laya && status.laya.state === 'failed') {
+        return 'On this Mac · failed' + (status.laya.error ? ': ' + status.laya.error : '');
+    }
     if (status.active === 'laya') {
-        return 'On this Mac · ready' + (status.mode === 'auto' ? ' (turned on by itself)' : '');
+        return 'On this Mac · configured' + (status.mode === 'auto' ? ' (turned on by itself)' : '');
     }
     if (status.active === 'jev') {
         var line = 'Online (' + providerName + ') · ready';
@@ -361,7 +364,7 @@ function answerCheckSummaryText(status) {
         return line;
     }
     // Nothing runs. Say why when something was chosen.
-    if (status.mode === 'laya') return 'On this Mac · ' + status.laya.state;
+    if (status.mode === 'laya') return 'On this Mac · not checking';
     if (status.mode === 'jev') return 'Online (' + providerName + ') · off';
     if (status.laya.state === 'installing') return 'On this Mac · setting up';
     return null;
@@ -409,7 +412,9 @@ async function loadDashboard() {
 
         setTextById('dashboard-mode',     'Mode ' + data.mode.toUpperCase());
         // #112: the mode's own wording; the provider has its own row below.
-        setTextById('dashboard-mode-desc', data.mode_tagline || data.mode_name);
+        setTextById('dashboard-mode-desc', data.mode === 'a' ?
+            'Core memory extraction runs locally without a language model. Optional answer checks and background work use their own model settings.' :
+            data.mode_tagline || data.mode_name);
         setTextById('dashboard-memory-count', data.fact_count || data.memory_count || '0');
         setTextById('dashboard-provider', data.provider === 'none' ? 'None' : data.provider);
         setTextById('dashboard-model',    data.model || '');

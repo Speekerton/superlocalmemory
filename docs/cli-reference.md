@@ -812,7 +812,7 @@ Versioned, checksummed JSONL bundles of memory evidence.
 slm evidence export /path/to/bundle.jsonl --profile default
 slm evidence verify /path/to/bundle.jsonl
 slm evidence import /path/to/bundle.jsonl --execute
-slm evidence import /path/to/bundle.jsonl --replace --execute
+slm evidence import /path/to/bundle.jsonl --replace --rollback-dir ./slm-rollback --execute
 slm evidence rebuild --execute   # Rebuild derived lexical state
 ```
 

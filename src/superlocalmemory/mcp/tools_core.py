@@ -47,6 +47,11 @@ async def _runtime_profile(get_engine: Callable, explicit: str = "") -> str:
     """Resolve an MCP default profile from daemon runtime truth."""
     if explicit:
         return explicit
+    from superlocalmemory.server.profile_runtime import current_request_profile
+
+    pinned = current_request_profile()
+    if pinned:
+        return str(pinned)
     import asyncio
 
     try:
@@ -1114,7 +1119,7 @@ def register_core_tools(server, get_engine: Callable) -> None:
             return {"success": False, "error": str(exc)}
 
     @server.tool()
-    @admits(OperationKind.PROFILE_SWITCH)
+    @admits(OperationKind.PROFILE_SWITCH, http_kind=OperationKind.RECALL)
     async def switch_profile(profile_id: str) -> dict:
         """Switch the active memory profile. All operations scope to this profile."""
         try:
@@ -1122,6 +1127,12 @@ def register_core_tools(server, get_engine: Callable) -> None:
 
             engine = get_engine()
             old = engine.profile_id
+            from superlocalmemory.server.caller_workspace import switch_http_workspace
+
+            if switch_http_workspace(profile_id):
+                return {"success": True, "previous_profile": old,
+                        "current_profile": profile_id, "active_profile": profile_id,
+                        "scope": "session"}
             authorization = authorize_mcp_mutation(
                 engine,
                 "update",
@@ -1175,6 +1186,10 @@ def register_core_tools(server, get_engine: Callable) -> None:
                             f"this process's local profile store"
                         ),
                     }
+                if result.get("scope") == "session":
+                    authorization.complete()
+                    return {**result, "previous_profile": old,
+                            "current_profile": acknowledged}
                 generation = int(result.get("generation", 0))
                 # Sync target is the DAEMON-CONFIRMED value, never the raw
                 # caller-supplied profile_id, even though they are equal

@@ -584,7 +584,7 @@ def refusal_result(reason: str) -> dict:
     }
 
 
-def admits(kind: OperationKind):
+def admits(kind: OperationKind, *, http_kind: OperationKind | None = None):
     """Decorator that gates an async MCP tool function via the policy registry.
 
     Usage (inside register_*_tools):
@@ -612,8 +612,14 @@ def admits(kind: OperationKind):
             actor, mode = caller_actor(
                 Transport.MCP, str(kwargs.get("profile_id", "") or ""),
             )
+            effective_kind = kind
+            if http_kind is not None:
+                from superlocalmemory.server.profile_runtime import current_request_pin
+
+                if current_request_pin() is not None:
+                    effective_kind = http_kind
             try:
-                admit(kind, actor, mode=mode)
+                admit(effective_kind, actor, mode=mode)
             except AdmissionDenied as exc:
                 return refusal_result(exc.decision.reason)
             return await fn(*args, **kwargs)

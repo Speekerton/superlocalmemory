@@ -53,10 +53,10 @@ def get_engine():
     """
     global _engine
     if _engine is not None:
-        return _engine
+        return _request_engine(_engine)
     with _engine_lock:
         if _engine is not None:
-            return _engine
+            return _request_engine(_engine)
         from superlocalmemory.core.config import SLMConfig
         from superlocalmemory.core.engine import MemoryEngine
         from superlocalmemory.core.engine_capabilities import Capabilities
@@ -65,7 +65,27 @@ def get_engine():
         new_engine = MemoryEngine(config, capabilities=Capabilities.LIGHT)
         new_engine.initialize()
         _engine = new_engine
-    return _engine
+    return _request_engine(_engine)
+
+
+def _request_engine(engine):
+    """A lightweight engine view whose default workspace is pinned to this request.
+
+    Storage and services remain shared. Only the routing fields are copied;
+    a caller cannot mutate the singleton's profile or config through this view.
+    """
+    from copy import copy
+
+    from superlocalmemory.server.profile_runtime import current_request_pin
+
+    pin = current_request_pin()
+    if pin is None:
+        return engine
+    view = copy(engine)
+    view._profile_id = pin.profile_id
+    view._config = copy(engine._config)
+    view._config.active_profile = pin.profile_id
+    return view
 
 
 def reset_engine():

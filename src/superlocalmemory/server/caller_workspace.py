@@ -27,6 +27,7 @@ generation it is admitted under.
 
 from __future__ import annotations
 
+import contextvars
 import hashlib
 import logging
 import threading
@@ -41,6 +42,7 @@ PIN_KEY = "caller_workspace"
 _MAX_BOUND_SESSIONS = 10_000
 _SESSION_HEADER = b"x-slm-user-session"
 _SESSION_COOKIE = "slm_session"
+_REQUEST_STATE: contextvars.ContextVar[Any] = contextvars.ContextVar("slm_workspace_state", default=None)
 
 
 @dataclass(frozen=True)
@@ -177,6 +179,23 @@ def route_to_bound(engine_profile: str) -> str:
     return bound if bound and bound != engine_profile else ""
 
 
+def switch_http_workspace(profile_id: str) -> bool:
+    """Bind only this authenticated HTTP session after checking target READ."""
+    from superlocalmemory.access.rbac import Permission
+    from superlocalmemory.core.caller_session import presented_session
+
+    state = _REQUEST_STATE.get()
+    if state is None:
+        return False
+    token = presented_session()
+    rbac = getattr(state, "rbac", None)
+    user = rbac.resolve_session(token) if rbac is not None and token else None
+    if user is None or not rbac.has_permission(user["user_id"], profile_id, Permission.READ):
+        raise PermissionError("A viewer role or higher on the target workspace is required.")
+    session_workspaces(state).bind(token, profile_id)
+    return True
+
+
 class CallerWorkspaceMiddleware:
     """Resolve and pin the caller's workspace before any gate runs."""
 
@@ -185,7 +204,7 @@ class CallerWorkspaceMiddleware:
         self._app_state = app_state
 
     async def __call__(self, scope, receive, send) -> None:
-        if scope.get("type") != "http" or str(scope.get("path", "")).startswith("/mcp"):
+        if scope.get("type") != "http":
             await self._app(scope, receive, send)
             return
         import asyncio
@@ -199,8 +218,12 @@ class CallerWorkspaceMiddleware:
             await self._app(scope, receive, send)
             return
         scope.setdefault("state", {})[PIN_KEY] = pin
-        with pin_request_workspace(pin):
-            await self._app(scope, receive, send)
+        state_token = _REQUEST_STATE.set(self._app_state)
+        try:
+            with pin_request_workspace(pin):
+                await self._app(scope, receive, send)
+        finally:
+            _REQUEST_STATE.reset(state_token)
 
 
 __all__ = [

@@ -497,9 +497,10 @@ def _eager_warmup() -> None:
 
         if ensure_daemon():
             _logger.info("Daemon auto-started by MCP server")
-            from superlocalmemory.mcp.tools_mesh import auto_register_mesh
+        # Even when the daemon is not up yet, the session keeps retrying to join.
+        from superlocalmemory.mcp.tools_mesh import auto_register_mesh
 
-            auto_register_mesh()
+        auto_register_mesh()
     except Exception as exc:
         _logger.warning("Daemon auto-start failed: %s", exc)
 

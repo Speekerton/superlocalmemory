@@ -17,7 +17,7 @@ import time
 import unicodedata
 from collections import deque
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from .envelope import check_hop, next_hop, validate_refs
 
@@ -86,6 +86,26 @@ def upsert_profile(conn: sqlite3.Connection, peer_id: str, *, kind: str,
         "authorization_ref=excluded.authorization_ref, updated_at=excluded.updated_at",
         (peer_id, kind, app_name, display_name, authorization_ref, _now()),
     )
+
+
+def register_identity(conn: sqlite3.Connection, peer_id: str, app_name: str,
+                      display_name: str) -> None:
+    """Record which app a local session belongs to without overriding the owner.
+
+    The app follows the latest registration; a name the owner (or an earlier
+    registration) already set is kept.
+    """
+    app, name = clean_name(app_name), clean_name(display_name)
+    if not app and not name:
+        return
+    _ensure_profile(conn, peer_id)
+    if app:
+        conn.execute("UPDATE mesh_peer_profiles SET app_name=?, updated_at=? "
+                     "WHERE peer_id=? AND kind='local'", (app, _now(), peer_id))
+    if name:
+        conn.execute("UPDATE mesh_peer_profiles SET display_name=?, updated_at=? "
+                     "WHERE peer_id=? AND kind='local' AND COALESCE(display_name,'')=''",
+                     (name, _now(), peer_id))
 
 
 def peer_exists(conn: sqlite3.Connection, peer_id: str, profile_id: str) -> bool:
@@ -184,15 +204,40 @@ def peer_overview(conn: sqlite3.Connection, profile_id: str) -> list[dict]:
         "WHERE p.profile_id=? AND q.retired_at IS NULL "
         "ORDER BY p.last_heartbeat DESC", (profile_id,),
     ).fetchall()
-    return [{
-        "peer_id": r["peer_id"],
-        "display_name": r["display_name"] or "",
-        "kind": r["kind"] or "local",
-        "app": r["app_name"] or r["agent_type"] or "",
-        "muted": bool(r["muted"]),
-        "last_seen": r["last_heartbeat"],
-        "status": r["status"],
-    } for r in rows]
+    now = datetime.now(timezone.utc)
+    out = []
+    for r in rows:
+        kind = r["kind"] or "local"
+        status = r["status"]
+        if kind != "web":
+            # Liveness is read from the last heartbeat, so a session that stopped
+            # beating shows as stale (5 minutes) and then drops off (30 minutes)
+            # without waiting for the cleanup sweep.
+            age = _heartbeat_age(r["last_heartbeat"], now)
+            if age is not None:
+                if age >= timedelta(minutes=30):
+                    continue
+                status = "active" if age < timedelta(minutes=5) else "stale"
+        out.append({
+            "peer_id": r["peer_id"],
+            "display_name": r["display_name"] or "",
+            "kind": kind,
+            "app": r["app_name"] or r["agent_type"] or "",
+            "muted": bool(r["muted"]),
+            "last_seen": r["last_heartbeat"],
+            "status": status,
+        })
+    return out
+
+
+def _heartbeat_age(value: object, now: datetime) -> timedelta | None:
+    try:
+        stamp = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return now - stamp
 
 
 def is_retired_ref(conn: sqlite3.Connection, ref: str) -> bool:

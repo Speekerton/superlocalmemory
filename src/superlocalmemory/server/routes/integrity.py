@@ -40,14 +40,13 @@ def _db_path(request: Request) -> Path:
 
 
 def _manage(request: Request) -> None:
-    from superlocalmemory.access.rbac import Permission
     from superlocalmemory.server import write_identity
-    from superlocalmemory.server.rbac_enforce import require_permission
+    from superlocalmemory.server.rbac_enforce import require_global_manage
 
     write_identity.require_write_actor(
         request, getattr(request.app.state, "daemon_descriptor", None),
         actor_kind="integrity-repair")
-    require_permission(request, Permission.MANAGE)
+    require_global_manage(request)
 
 
 @router.get("")

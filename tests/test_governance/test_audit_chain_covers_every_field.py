@@ -126,7 +126,8 @@ def test_an_older_chain_upgrades_in_place_and_is_reported_as_legacy(tmp_path):
     audit.log("store", agent_id="b", metadata={"fact_ids": ["new"]})
     report = audit.verify_report()
     assert report["ok"] is True
-    assert (report["legacy"], report["fully_covered"]) == (3, 1)
+    assert (report["legacy"], report["fully_covered"]) == (3, 2)
+    assert audit.count(operation="anchor_initialized_on_upgrade") == 1
 
     # A legacy entry's metadata is not covered, and the report says so rather
     # than claiming it: the edit passes, the summary still counts it as legacy.

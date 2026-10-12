@@ -54,7 +54,7 @@ def test_registered_eager_on_learning_and_additive() -> None:
     m = next(m for m in mr.MIGRATIONS if m.name == M055.NAME)
     assert m.db_target == "learning" == M055.DB_TARGET
     assert _MODULES[M055.NAME] is M055
-    assert sv.SUPPORTED_SCHEMA_VERSION == 58  # M055 plus the WP-4b recall migrations
+    assert sv.SUPPORTED_SCHEMA_VERSION == 59  # M055, the WP-4b recall migrations and M059 erasure visibility
     assert M055.BREAKING_VERSION == 0 and M055.DOWNGRADE_FLOOR == 51
 
 

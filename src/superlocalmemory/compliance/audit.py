@@ -42,6 +42,9 @@ from typing import Any, Optional, Union
 logger = logging.getLogger(__name__)
 
 _GENESIS_HASH = "genesis"
+# This database is audit-owned. Its header records that anchoring has ever
+# occurred, independently of the marker table and even of the retained rows.
+_ANCHOR_SCHEMA_VERSION = 1
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS audit_chain (
@@ -55,6 +58,10 @@ CREATE TABLE IF NOT EXISTS audit_chain (
     event_hash TEXT NOT NULL,
     metadata TEXT DEFAULT '{}',
     hash_version INTEGER NOT NULL DEFAULT 2
+);
+CREATE TABLE IF NOT EXISTS audit_anchor_state (
+    singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+    created_at TEXT NOT NULL
 );
 """
 
@@ -196,8 +203,59 @@ class AuditChain:
                     "INTEGER NOT NULL DEFAULT 1"
                 )
             conn.commit()
+            self._upgrade_anchor(conn)
         finally:
             self._release_conn(conn)
+
+    def _upgrade_anchor(self, conn: sqlite3.Connection) -> None:
+        """Initialize a pre-anchor store once, recording the upgrade in its chain."""
+        if self._is_memory:
+            return
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            recorded = conn.execute("SELECT 1 FROM audit_anchor_state").fetchone()
+            anchored_schema = conn.execute("PRAGMA user_version").fetchone()[0]
+            if recorded or anchored_schema >= _ANCHOR_SCHEMA_VERSION:
+                self._record_anchor_created(conn)
+                conn.commit()
+                return
+            anchor, problem = self._anchor_state()
+            if anchor is not None:
+                self._record_anchor_created(conn)
+            elif problem == "missing":
+                rows = [dict(row) for row in conn.execute("SELECT * FROM audit_chain ORDER BY id")]
+                if rows and self._link_failure(rows) is None:
+                    head = self._append_event(conn, "anchor_initialized_on_upgrade", "system", "",
+                                              "", {"previous_entries": len(rows)})
+                    self._record_anchor_created(conn)
+                    self._write_anchor(len(rows) + 1, head)
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+
+    @staticmethod
+    def _record_anchor_created(conn: sqlite3.Connection) -> None:
+        # Dropping audit_anchor_state cannot turn an anchored store into a
+        # legacy one. Restore its table marker on reopen without re-anchoring.
+        if conn.execute("PRAGMA user_version").fetchone()[0] < _ANCHOR_SCHEMA_VERSION:
+            conn.execute(f"PRAGMA user_version = {_ANCHOR_SCHEMA_VERSION}")
+        conn.execute("INSERT OR IGNORE INTO audit_anchor_state VALUES (1, ?)",
+                     (datetime.now(timezone.utc).isoformat(),))
+
+    def _append_event(self, conn, operation, agent_id, profile_id, content_hash, metadata):
+        ts = datetime.now(timezone.utc).isoformat()
+        metadata_str = json.dumps(metadata or {}, sort_keys=True, default=str)
+        prev_hash = self._get_last_hash(conn)
+        event_hash = _compute_hash_v2(prev_hash, operation, agent_id or "", profile_id or "",
+                                      content_hash or "", ts, metadata_str)
+        conn.execute(
+            "INSERT INTO audit_chain (timestamp, operation, agent_id, profile_id, "
+            "content_hash, prev_hash, event_hash, metadata, hash_version) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (ts, operation, agent_id or "", profile_id or "", content_hash or "",
+             prev_hash, event_hash, metadata_str, HASH_VERSION))
+        return event_hash
 
     def _get_last_hash(self, conn: sqlite3.Connection) -> str:
         """Get the hash of the most recent entry, or genesis."""
@@ -266,37 +324,22 @@ class AuditChain:
         Returns:
             The SHA-256 event hash for this entry.
         """
-        ts = datetime.now(timezone.utc).isoformat()
-        metadata_str = json.dumps(metadata or {}, sort_keys=True, default=str)
-
         with self._lock:
             conn = self._get_conn()
             try:
-                # BEGIN IMMEDIATE: another process appending at the same moment
-                # waits here, so two entries never claim the same predecessor.
                 if not self._is_memory:
                     conn.execute("BEGIN IMMEDIATE")
-                prev_hash = self._get_last_hash(conn)
-                event_hash = _compute_hash_v2(
-                    prev_hash, operation, agent_id or "", profile_id or "",
-                    content_hash or "", ts, metadata_str,
-                )
-                conn.execute(
-                    "INSERT INTO audit_chain "
-                    "(timestamp, operation, agent_id, profile_id, "
-                    " content_hash, prev_hash, event_hash, metadata, hash_version) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        ts, operation, agent_id or "", profile_id or "",
-                        content_hash or "", prev_hash, event_hash, metadata_str,
-                        HASH_VERSION,
-                    ),
-                )
-                cnt = conn.execute("SELECT COUNT(*) FROM audit_chain").fetchone()[0]
+                recorded = conn.execute("SELECT 1 FROM audit_anchor_state").fetchone()
+                _, problem = self._anchor_state()
+                event_hash = self._append_event(conn, operation, agent_id, profile_id,
+                                                content_hash, metadata)
+                count = conn.execute("SELECT COUNT(*) FROM audit_chain").fetchone()[0]
+                if not self._is_memory and not (recorded and problem):
+                    self._record_anchor_created(conn)
+                    # Keep the database writer lock through the anchor update so
+                    # concurrent processes cannot publish an older head last.
+                    self._write_anchor(int(count), event_hash)
                 conn.commit()
-                # Update the external truncation anchor (chain length + head),
-                # still under the lock so anchors are written in chain order.
-                self._write_anchor(int(cnt), event_hash)
                 return event_hash
             except BaseException:
                 conn.rollback()
@@ -433,7 +476,12 @@ class AuditChain:
         """
         anchor, problem = self._anchor_state()
         if anchor is None:
-            if problem and rows:
+            conn = self._get_conn()
+            try:
+                recorded = conn.execute("SELECT 1 FROM audit_anchor_state").fetchone()
+            finally:
+                self._release_conn(conn)
+            if problem and (rows or recorded):
                 return None, f"no anchor ({problem}): truncation cannot be checked"
             return None
         count = int(anchor.get("count", 0))

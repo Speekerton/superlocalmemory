@@ -235,6 +235,8 @@ def test_embedding_config_mutation_starts_from_running_daemon_config(
         json=AsyncMock(return_value={"provider": "openai", "model_name": "qwen3"}),
     )
     monkeypatch.setattr(rbac_enforce, "require_manage", lambda request: None)
+    # Embedding settings are installation-wide, so the route asks for global manage.
+    monkeypatch.setattr(rbac_enforce, "require_global_manage", lambda request: None)
     monkeypatch.setattr(v3_api, "_apply_runtime_config", AsyncMock())
     monkeypatch.setattr(
         SLMConfig,

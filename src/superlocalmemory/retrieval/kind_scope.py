@@ -96,6 +96,8 @@ class KindMembership(ChangeTrackedCache[_Kinds]):
         if profile_id not in self._parts or not self._lock.acquire(blocking=False):
             return None
         try:
+            if not self.available:
+                return None
             return len(self._fresh(profile_id).raw)
         except Exception:  # noqa: BLE001 -- the SQL count stays the authority
             return None

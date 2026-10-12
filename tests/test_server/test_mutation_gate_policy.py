@@ -358,7 +358,7 @@ def test_personal_mode_the_operator_still_changes_settings_and_restarts(personal
                           headers=who["token"])
     switch = client.post("/api/profiles/default/switch", headers=who["token"])
 
-    assert restart.status_code == 200 and len(spawned) == 1
+    assert restart.status_code == 200 and len(spawned) == 1, spawned
     assert optimize.status_code == 200, optimize.text
     assert switch.status_code == 200, switch.text
     assert refused == []

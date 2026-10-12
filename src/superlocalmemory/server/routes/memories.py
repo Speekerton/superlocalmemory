@@ -5,19 +5,23 @@
 Routes: /api/memories, /api/graph, /api/search, /api/clusters, /api/clusters/{id}
 Uses V3 MemoryEngine for store/recall. Falls back to direct DB for list/graph.
 """
-from anyio.from_thread import run as _on_loop  # body of a sync route
 import json
 import logging
 import re
 import uuid
 from typing import TYPE_CHECKING, Optional
 
+from anyio.from_thread import run as _on_loop  # body of a sync route
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from superlocalmemory.core.config import BROWSE_PAGE_SIZE
 from superlocalmemory.retrieval import remote_view
 from superlocalmemory.storage.database import (
     visible_fact_clause_for_connection,
+)
+from superlocalmemory.storage.erasure_visibility import (
+    aggregate_erasure_clause,
+    memory_erasure_clause,
 )
 
 from .helpers import (
@@ -389,7 +393,7 @@ def _fetch_graph_data(
     if use_v3:
         # Recency-first: get the most recent nodes, then find their edges.
         # LEFT JOIN fact_importance for graph metrics (v3.4.1 — additive only).
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT af.fact_id as id, af.content, af.fact_type as category,
                    af.confidence as importance, af.session_id as project_name,
                    af.created_at,
@@ -398,6 +402,7 @@ def _fetch_graph_data(
             LEFT JOIN fact_importance fi
                 ON af.fact_id = fi.fact_id AND fi.profile_id = ?
             WHERE af.profile_id = ? AND af.confidence >= ?
+            {visible_fact_clause_for_connection(cursor.connection, "af")}
             ORDER BY af.created_at DESC
             LIMIT ?
         """, (profile, profile, min_importance / 10.0, max_nodes))
@@ -441,9 +446,10 @@ def _fetch_graph_data(
         # Compute clusters from memory_scenes
         clusters = []
         try:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT scene_id, theme, fact_ids_json
                 FROM memory_scenes WHERE profile_id = ?
+                {aggregate_erasure_clause(cursor.connection, "memory_scenes")}
             """, (profile,))
             for row in cursor.fetchall():
                 fact_ids = []
@@ -1126,12 +1132,15 @@ async def search_memories(request: Request, body: SearchRequest):
             abandoned_channel_metadata, keyword_match_sql)
         sql = keyword_match_sql(body.query, column="content")
         rows = [] if sql is None else cursor.execute(f"""
-            SELECT fact_id, content, confidence as memory_confidence,
+            SELECT fact_id, memory_id, profile_id, content, confidence as memory_confidence,
                    fact_type as category, created_at{kind_select}
             FROM atomic_facts WHERE profile_id = ? AND {sql[0]}{kind_clause}
+            {visible_fact_clause_for_connection(conn)}
             ORDER BY {sql[2]}, confidence DESC LIMIT ?
         """, (active_profile, *sql[1], *kind_params, *sql[3], body.limit)).fetchall()
-        conn.close()
+        from superlocalmemory.retrieval.fallback_fidelity import admit_fallback
+        from superlocalmemory.server.recall_serializer import recall_response_metadata
+        rows, fidelity = admit_fallback(rows, conn, active_profile, close_db=True)
 
         if has_kind_columns:
             from superlocalmemory.core.kind_query import engine_display_min_confidence
@@ -1148,6 +1157,7 @@ async def search_memories(request: Request, body: SearchRequest):
 
         return {
             "query": body.query, "results": results, "total": len(results),
+            **recall_response_metadata(fidelity),
             "query_type": "text_search", "retrieval_time_ms": 0,
             "retrieval_mode": "degraded_lexical", **abandoned_channel_metadata(),
             "score_contract_version": "2",
@@ -1177,10 +1187,11 @@ def get_clusters(request: Request):
 
         # V3 schema: memory_scenes stores fact_ids_json (JSON array)
         if _has_table(cursor, 'memory_scenes'):
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT scene_id as cluster_id, theme, fact_ids_json,
                        entity_ids_json, created_at as first_memory
                 FROM memory_scenes WHERE profile_id = ?
+                {aggregate_erasure_clause(cursor.connection, "memory_scenes")}
                 ORDER BY created_at DESC
             """, (profile,))
             raw_scenes = cursor.fetchall()
@@ -1217,7 +1228,8 @@ def get_clusters(request: Request):
                 except (json.JSONDecodeError, TypeError):
                     pass
             total_facts = cursor.execute(
-                "SELECT COUNT(*) as c FROM atomic_facts WHERE profile_id = ?",
+                "SELECT COUNT(*) as c FROM atomic_facts WHERE profile_id = ?"
+                f"{visible_fact_clause_for_connection(conn)}",
                 (profile,),
             ).fetchone()['c']
             unclustered = total_facts - len(all_scene_fact_ids)
@@ -1270,7 +1282,8 @@ def get_cluster_detail(
             # Get fact IDs from the scene's JSON array
             cursor.execute(
                 "SELECT fact_ids_json, theme FROM memory_scenes "
-                "WHERE scene_id = ? AND profile_id = ?",
+                "WHERE scene_id = ? AND profile_id = ?"
+                f"{aggregate_erasure_clause(conn, 'memory_scenes')}",
                 (cluster_id, profile),
             )
             scene_row = cursor.fetchone()
@@ -1287,6 +1300,7 @@ def get_cluster_detail(
                                confidence as importance, created_at
                         FROM atomic_facts
                         WHERE profile_id = ? AND fact_id IN ({ph})
+                        {visible_fact_clause_for_connection(conn)}
                         ORDER BY confidence DESC
                     """, [profile] + fact_ids[:limit])
                 else:
@@ -1369,6 +1383,10 @@ def get_memory_facts(request: Request, memory_id: str):
         )
         original = mem_map.get(memory_id, "")
         facts = engine._db.get_facts_by_memory_id(memory_id, active_profile)
+        if memory_id not in mem_map and not facts:
+            probe = getattr(type(engine._db), "is_memory_erasing", None)
+            if callable(probe) and probe(engine._db, memory_id, active_profile):
+                raise HTTPException(status_code=404, detail="Memory not found")
         fact_list = [
             {
                 "fact_id": f.fact_id,
@@ -1407,7 +1425,8 @@ def get_memory_detail(request: Request, memory_id: str):
         cursor.execute(
             "SELECT memory_id, content, session_id, speaker, role, "
             "session_date, created_at, metadata_json "
-            "FROM memories WHERE memory_id = ? AND profile_id = ?",
+            "FROM memories WHERE memory_id = ? AND profile_id = ?"
+            f"{memory_erasure_clause(conn)}",
             (memory_id, active_profile),
         )
         mem = cursor.fetchone()
@@ -1418,7 +1437,8 @@ def get_memory_detail(request: Request, memory_id: str):
         cursor.execute(
             "SELECT fact_id, content, fact_type, confidence, importance, "
             "access_count, created_at, entities_json "
-            "FROM atomic_facts WHERE memory_id = ? AND profile_id = ? "
+            "FROM atomic_facts WHERE memory_id = ? AND profile_id = ?"
+            f"{visible_fact_clause_for_connection(conn)} "
             "ORDER BY created_at ASC",
             (memory_id, active_profile),
         )
@@ -1461,8 +1481,10 @@ def get_fact_detail(request: Request, fact_id: str):
             "f.entities_json, f.canonical_entities_json, f.session_id, "
             "m.content AS source_memory_content "
             "FROM atomic_facts f "
-            "LEFT JOIN memories m ON f.memory_id = m.memory_id "
-            "WHERE f.fact_id = ? AND f.profile_id = ?",
+            "LEFT JOIN memories m ON f.memory_id = m.memory_id AND f.profile_id = m.profile_id"
+            f"{memory_erasure_clause(conn, 'm')} "
+            "WHERE f.fact_id = ? AND f.profile_id = ?"
+            f"{visible_fact_clause_for_connection(conn, 'f')}",
             (fact_id, active_profile),
         )
         row = cursor.fetchone()

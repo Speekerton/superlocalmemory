@@ -146,11 +146,11 @@ class SLMFastMCP(MCPServer):
         install_streamable_http_resource_guard()
         # Q9: every tool result goes out compact, not pretty-printed.
         install_compact_mcp_json()
-        self._slm_allowed = None
         # UX-13: a tool's {"success": false} answer is reported as isError.
         from superlocalmemory.mcp.tool_gate import install_tool_error_results
 
         install_tool_error_results()
+        self._slm_allowed = None
 
     def add_tool(self, fn, *args, **kwargs):
         """Register ``fn`` behind the default READ gate (mcp/tool_gate, OPS-17).

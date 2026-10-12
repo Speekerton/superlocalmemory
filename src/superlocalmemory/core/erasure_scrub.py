@@ -147,7 +147,14 @@ def _drop_archive_copies(db: Any, fact_id: str) -> int:
 
 
 def _drop_derived_summaries(db: Any, profile_id: str, fact_id: str) -> int:
-    removed = 0
+    from superlocalmemory.storage.erasure_derived import (
+        drop_personas_quoting, retheme_scenes_quoting)
+
+    # Defence in depth behind the tombstone write: the persona is removed while
+    # the community rows that link it to the fact still exist, and a scene theme
+    # that quotes the fact is recomputed (storage/erasure_derived.py).
+    removed = drop_personas_quoting(db.execute, profile_id, fact_id)
+    retheme_scenes_quoting(db.execute, profile_id, fact_id)
     for table, column in (("core_memory_blocks", "source_fact_ids"),
                           ("community_summaries", "fact_ids_json"),
                           ("consolidated_summaries", "source_fact_ids")):

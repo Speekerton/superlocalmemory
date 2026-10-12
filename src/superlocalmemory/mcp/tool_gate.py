@@ -50,7 +50,7 @@ def _refused(kind, profile_id: str) -> dict | None:
     try:
         admit(kind, actor, mode=mode)
     except AdmissionDenied as exc:
-        return refusal_result(exc.decision.reason)
+        return refusal_result(exc.decision.reason, kind)
     return None
 
 

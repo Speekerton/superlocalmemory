@@ -460,11 +460,27 @@ configuration. Run it after any install or upgrade.
 
 ```bash
 slm doctor
-slm doctor --quick   # dependencies and configuration only
+slm doctor --quick   # fast checks, including daemon health
 slm doctor --deep    # read every database page (slow on a large store)
 slm doctor --fix     # re-download missing models and install sqlite-vec first
 slm doctor --json
 ```
+
+Every mode checks the daemon descriptor and makes at most one short `/health`
+probe (0.5-second timeout). Doctor never starts the daemon. A missing descriptor
+warns with `slm serve start`; a dead recorded process, invalid descriptor or
+unhealthy daemon fails with `slm restart`. A `/health` reply that is streaming,
+oversized or never completes counts as unhealthy (FAIL), still within the 1-second
+diagnostic deadline. If only the optional feature probe overruns, the Daemon row
+stays PASS and a separate "Daemon features" row warns. The check appears in JSON
+output too.
+
+The whole run has one overall deadline (180 seconds; 900 with `--deep` or `--fix`).
+If a check hangs, doctor prints the report so far plus a failing "Doctor deadline"
+row naming the check that did not finish, and exits 1.
+
+Exit codes: **0** when checks pass or report warnings only; **1** when any check
+fails. Doctor prints the complete report before exiting, including with `--json`.
 
 Doctor also reads the same failure counts as `slm ops status`: a "Failed saves"
 row warns when saves were given up on after repeated attempts (dead-lettered, so
@@ -792,6 +808,8 @@ for structured output.
 slm decay                   # Preview Ebbinghaus zone transitions
 slm decay --execute         # Apply them
 slm quantize --execute      # Apply embedding precision changes
+slm quantize --repair-sketches           # Preview QJL sketch repairs only
+slm quantize --repair-sketches --execute # Repair sketches without precision changes
 slm consolidate --cognitive # Include CCQ cognitive consolidation
 slm consolidate --dry-run
 slm soft-prompts            # List auto-learned soft prompts
@@ -799,6 +817,22 @@ slm soft-prompts            # List auto-learned soft prompts
 
 `decay`, `quantize`, `consolidate` and `soft-prompts` accept `--profile` and
 `--json`.
+
+`quantize --repair-sketches` repairs legacy or incompatible QJL sketches from
+retained original vectors. It preserves canonical vectors, base quantized bytes,
+bit widths and lifecycle state, and starts no embedding model. The default is a
+read-only preview; add `--execute` to apply repairs. Rows without usable original
+vectors are reported as needing re-embedding. Repeating the repair skips sketches
+that are already compatible.
+Repair uses the existing rotation matrix, including a legacy polar matrix when
+appropriate. If that matrix is missing or incompatible, restore it from backup
+before applying repairs.
+
+The full `quantize --execute` cycle also changes precision according to retention.
+Before applying, it prints preview counts for sketch repairs, precision downgrades,
+precision upgrades and forgotten-state transitions (whose vectors are kept).
+Counts can change if memories change concurrently. With `--json`, the preview is
+printed to stderr before execution and included as `data.plan` in the final JSON.
 
 ---
 

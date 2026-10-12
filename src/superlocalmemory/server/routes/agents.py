@@ -207,10 +207,17 @@ def _recent_rows(conn, pid: str, limit: int) -> list[dict]:
     agent name, say whether the connection vouched for it, and keep a short
     fingerprint of the authenticated writer.
     """
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(ingestion_operations)")}
+    if "raw_metadata_json" in columns:
+        agent_name = "NULLIF(json_extract(raw_metadata_json, '$.agent_id'), ''), "
+        agent_source = "json_extract(raw_metadata_json, '$.agent_id_source')"
+    else:
+        # Legacy ingestion tables have no connection-attribution metadata.
+        agent_name = ""
+        agent_source = "NULL"
     rows = conn.execute(
-        "SELECT COALESCE(NULLIF(json_extract(raw_metadata_json, '$.agent_id'), ''),"
-        " NULLIF(trusted_actor_id, ''), 'unknown') AS agent_id, "
-        "json_extract(raw_metadata_json, '$.agent_id_source') AS agent_id_source, "
+        "SELECT COALESCE(" + agent_name + "NULLIF(trusted_actor_id, ''), 'unknown') AS agent_id, "
+        + agent_source + " AS agent_id_source, "
         "trusted_actor_id, substr(raw_content, 1, 160) AS snippet, "
         "created_at, source_type, session_id "
         "FROM ingestion_operations WHERE profile_id=? "

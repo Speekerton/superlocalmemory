@@ -692,6 +692,7 @@ def run_store(
     facts, protected_source_ids = source_fact_set(
         facts, content, record, queryable_facts,
         getattr(config.store, "max_verbatim_chars", 24000),
+        db=db,
     )
 
     if not facts:

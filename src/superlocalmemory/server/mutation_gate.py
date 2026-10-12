@@ -98,7 +98,14 @@ _EXACT: dict[str, Rule] = {
     # Installation-wide state: one setting for every workspace.
     **{path: _GLOBAL for path in (
         "/api/rbac/policy",
+        "/api/memory-kinds/settings",
+        "/api/learning/backup",
+        "/api/learning/migrate-legacy",
+        "/maintenance/run",
+        "/maintenance/compact",
         "/api/daemon/restart",
+        "/api/daemon/doctor",
+        "/api/daemon/repair",
         "/api/v3/components/heal",
         "/api/v3/ide/connect",
         "/api/v3/ollama/validate",
@@ -124,6 +131,9 @@ _EXACT: dict[str, Rule] = {
         "/api/evolution/disable",
         "/api/evolution/config",
     )},
+    **{path: Rule(Permission.MANAGE, "active") for path in (
+        "/api/evolution/run", "/api/evolution/approve", "/api/evolution/rollback",
+    )},
     "/api/profiles/create": Rule(Permission.MANAGE, "any"),
     # Writes into the active workspace that name no workspace of their own.
     "/observe": _WRITE_ACTIVE,
@@ -136,6 +146,8 @@ _EXACT: dict[str, Rule] = {
 
 #: Path prefixes, in order.
 _PREFIXES: tuple[tuple[str, Rule], ...] = (
+    ("/api/v3/local-apps/", _GLOBAL),
+    ("/api/integrity/repair", _GLOBAL),
     ("/api/optimize", _GLOBAL),
     ("/api/v3/provider", _GLOBAL),
     ("/api/v3/embedding", _GLOBAL),

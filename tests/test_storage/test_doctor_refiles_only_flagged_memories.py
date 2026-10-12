@@ -123,7 +123,7 @@ class TestRefile:
 
 class TestDoctorCommand:
     def _run(self, db: Path, **flags) -> list[dict]:
-        from superlocalmemory.cli.commands import cmd_doctor
+        from tests.helpers.doctor import run_doctor_report
 
         captured: list[dict] = []
         cfg = type("C", (), {"db_path": db})
@@ -131,7 +131,7 @@ class TestDoctorCommand:
             "superlocalmemory.cli.json_output.json_print",
             side_effect=lambda event, data=None, **kw: captured.append(data or {}),
         ), patch("superlocalmemory.core.config.SLMConfig.load", return_value=cfg):
-            cmd_doctor(argparse.Namespace(json=True, quick=True, **flags))
+            run_doctor_report(argparse.Namespace(json=True, quick=True, **flags))
         return captured
 
     def test_refile_flag_is_a_dry_run_without_yes(self, tmp_path: Path) -> None:

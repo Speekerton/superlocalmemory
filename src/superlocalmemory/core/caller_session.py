@@ -43,6 +43,11 @@ def presented_session() -> str:
     return os.environ.get(SESSION_ENV, "").strip()
 
 
+def http_session_bound() -> bool:
+    """Whether this call belongs to HTTP (including an empty presented session)."""
+    return _http_session.get() is not None
+
+
 def session_from_scope(scope: dict[str, Any]) -> str:
     """The session an ASGI HTTP request carries: header first, then the cookie."""
     cookie_header = ""
@@ -101,6 +106,7 @@ __all__ = [
     "SESSION_ENV",
     "bind_session",
     "presented_session",
+    "http_session_bound",
     "session_from_scope",
     "unbind_session",
 ]

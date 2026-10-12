@@ -193,8 +193,18 @@ class _Lane:
 
     def tool(self, name: str, **arguments) -> dict:
         reply = self.mcp.call("tools/call", {"name": name, "arguments": arguments})
-        assert reply.get("result", {}).get("isError") is not True, reply
-        return json.loads(reply["result"]["content"][0]["text"])
+        assert "error" not in reply, reply
+        result = reply["result"]
+        body = json.loads(result["content"][0]["text"])
+        if body.get("success") is False:
+            assert result.get("isError") is True, reply
+            assert body.get("code") in {"CONFLICT", "IDEMPOTENCY_CONFLICT"}, reply
+            assert body.get("retryable") is False, reply
+        else:
+            assert result.get("isError") is not True, reply
+        if result.get("structuredContent") is not None:
+            assert result["structuredContent"] == body, reply
+        return body
 
     def restart(self) -> None:
         self.close_mcp()

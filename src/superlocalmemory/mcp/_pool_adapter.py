@@ -137,6 +137,12 @@ def pool_recall(query: str, limit: int = 10, **kwargs: Any) -> PoolRecallRespons
     # a caller inside ``skip_answer_check()`` is covered by the proxy itself.
     if kwargs.get("answer_check") is False:
         _recall_kwargs["answer_check"] = False
+    if not _recall_kwargs.get("profile_id"):
+        from superlocalmemory.server.profile_runtime import current_request_profile
+
+        pinned = current_request_profile()
+        if pinned:
+            _recall_kwargs["profile_id"] = pinned
     raw = _pool().recall(**_recall_kwargs)
     _unwrap_error(raw, "recall")
     items = raw.get("results", []) if isinstance(raw, dict) else []

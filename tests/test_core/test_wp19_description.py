@@ -3,10 +3,25 @@
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import pytest
+
 from superlocalmemory.core.enriched_fact import enrich
 from superlocalmemory.core.kind_assignment import assign_kinds
 from superlocalmemory.encoding.temporal_parser import TemporalParser
 from superlocalmemory.storage.models import AtomicFact, MemoryRecord
+
+
+def _LOCAL_SHOW(host, model, timeout):  # noqa: N802 - a constant-like test double
+    """Ollama's /api/show for a model this machine runs (no remote_* fields)."""
+    return {'details': {'family': 'llama'}}
+
+
+@pytest.fixture(autouse=True)
+def _fresh_model_verdicts():
+    from superlocalmemory.encoding import local_description_kinds
+    local_description_kinds._VERDICTS.clear()
+    yield
+    local_description_kinds._VERDICTS.clear()
 
 
 def test_missing_entities_are_extracted_without_accepting_junk():
@@ -37,7 +52,8 @@ def test_local_kind_classifier_uses_a_bounded_local_call():
     from superlocalmemory.encoding.local_description_kinds import LocalDescriptionKinds
     llm = SimpleNamespace(provider='ollama', _ollama_host='http://localhost:11434', model='local')
     request = Mock(return_value={'kind': 'fact'})
-    classifier = LocalDescriptionKinds(delegate=None, llm_supplier=lambda: llm, request=request)
+    classifier = LocalDescriptionKinds(delegate=None, llm_supplier=lambda: llm, request=request,
+                                       show=_LOCAL_SHOW)
     result = classifier.suggest([AtomicFact(content='Zephyr uses PostgreSQL.')], caller_kind=None)
     assert result[0].source.value == 'model:llm'
     assert request.call_args.kwargs['timeout'] <= 1.0
@@ -57,7 +73,8 @@ def test_local_model_cannot_bypass_correction_or_strong_rule_cues():
     from superlocalmemory.encoding.local_description_kinds import LocalDescriptionKinds
     llm = SimpleNamespace(provider='ollama', _ollama_host='http://localhost:11434', model='local')
     classifier = LocalDescriptionKinds(delegate=None, llm_supplier=lambda: llm,
-                                       request=Mock(return_value={'kind': 'correction'}))
+                                       request=Mock(return_value={'kind': 'correction'}),
+                                       show=_LOCAL_SHOW)
     result = classifier.suggest([AtomicFact(content='Always use PostgreSQL.')], caller_kind=None)
     assert result[0].kind.value == 'rule'
     assert result[0].source.value == 'rules'

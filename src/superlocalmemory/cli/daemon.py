@@ -1177,6 +1177,12 @@ def describe_daemon_unavailability() -> dict[str, str]:
 def _describe_daemon_unavailability() -> dict[str, str]:
     from superlocalmemory.cli import daemon_diagnosis
 
+    blocked = _recovery_block()
+    if blocked:
+        # A restore left the stores mixed: that is why nothing starts, and the
+        # fix is the recovery command, not `slm serve start`.
+        return {"reason": "recovery_needed", "message": blocked,
+                "hint": "Run `slm backup restore-safety-copy`, then `slm serve start`."}
     return daemon_diagnosis.describe(sys.modules[__name__])
 
 

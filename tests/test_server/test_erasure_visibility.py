@@ -158,3 +158,123 @@ def test_tombstone_write_invalidates_summaries_that_include_the_fact(dashboard):
     assert write_tombstones(db, "default", ("erasuremarker",), "e-1", time.time(), "erasuremarker")
     left = db.execute("SELECT COUNT(*) AS n FROM consolidated_summaries")
     assert dict(list(left)[0])["n"] == 0
+
+
+# -- other derived stores that quote a fact's words ---------------------------
+
+_WORDS = "The copper compass is hidden in the attic chest."
+
+
+def _erase(db, fact_id="erasuremarker"):
+    db.execute("INSERT INTO projection_tombstones(profile_id,fact_id,erasure_id,created_at) "
+               "VALUES ('default',?, 'synthetic-erasure', ?)", (fact_id, time.time()))
+
+
+def _add_block(db):
+    import json
+
+    db.execute("INSERT INTO core_memory_blocks(block_id,profile_id,block_type,content,"
+               "source_fact_ids,char_count) VALUES ('b1','default','user_profile',?,?,?)",
+               (_WORDS, json.dumps(["erasuremarker", "controlmarker"]), len(_WORDS)))
+
+
+def test_core_memory_blocks_are_withheld_while_a_source_is_erasing(dashboard):
+    client, headers, db = dashboard
+    _add_block(db)
+    assert "copper compass" in client.get("/api/v3/core-memory", headers=headers).text
+    _erase(db)
+    during = client.get("/api/v3/core-memory", headers=headers)
+    assert during.status_code == 200 and "copper compass" not in during.text, during.text
+
+
+def test_soft_prompt_extractor_ignores_blocks_with_an_erasing_source(dashboard):
+    from superlocalmemory.parameterization.pattern_extractor import PatternExtractor
+
+    _, _, db = dashboard
+    _add_block(db)
+    extractor = PatternExtractor.__new__(PatternExtractor)
+    extractor._db = db
+    extractor._config = __import__("types").SimpleNamespace(min_confidence=0.1)
+    assert extractor._extract_from_core_memory("default")
+    _erase(db)
+    assert extractor._extract_from_core_memory("default") == []
+
+
+def _add_entity_profile(db):
+    import json
+
+    db.execute("INSERT INTO canonical_entities(entity_id,canonical_name,profile_id,entity_type) "
+               "VALUES ('ent1','Compass Entity','default','concept')")
+    db.execute("INSERT INTO entity_profiles(profile_entry_id,entity_id,profile_id,"
+               "knowledge_summary,fact_ids_json,compiled_truth,project_name) "
+               "VALUES ('ep1','ent1','default',?,?,?, '')",
+               (_WORDS, json.dumps(["erasuremarker"]), _WORDS))
+
+
+def test_entity_profile_text_is_withheld_while_a_source_is_erasing(dashboard):
+    client, headers, db = dashboard
+    _add_entity_profile(db)
+    for path in ("/api/entity/Compass%20Entity", "/api/entity/list"):
+        assert "copper compass" in client.get(path, headers=headers).text, path
+    _erase(db)
+    for path in ("/api/entity/Compass%20Entity", "/api/entity/list",
+                 "/api/entity/list?search=copper"):
+        during = client.get(path, headers=headers)
+        assert during.status_code in (200, 404), during.text
+        assert "copper compass" not in during.text, (path, during.text)
+
+
+def test_database_scene_reads_withhold_erasing_sources(dashboard):
+    import json
+
+    _, _, db = dashboard
+    _add_entity_profile(db)
+    db.execute("INSERT INTO memory_scenes(scene_id,profile_id,theme,fact_ids_json) "
+               "VALUES ('s1','default',?,?)", (_WORDS, json.dumps(["erasuremarker"])))
+    assert db.get_scenes_for_fact("erasuremarker", "default")
+    assert db.get_scenes_for_facts_batch(["erasuremarker"], "default")
+    _erase(db)
+    assert db.get_scenes_for_facts_batch(["erasuremarker"], "default") == {}
+    assert db.get_scenes_for_fact("erasuremarker", "default", include_erasing=True)
+    assert db.get_scenes_for_fact("erasuremarker", "default") == []
+
+
+def test_persona_is_withheld_while_a_community_source_is_erasing(dashboard):
+    import json
+
+    client, headers, db = dashboard
+    db.execute("INSERT INTO community_summaries(profile_id,community_id,summary,fact_ids_json) "
+               "VALUES ('default',7,?,?)", (_WORDS, json.dumps(["erasuremarker"])))
+    db.execute("INSERT INTO persona_summary(profile_id,summary,community_ids_json) "
+               "VALUES ('default',?,?)", (_WORDS, json.dumps([7])))
+    assert "copper compass" in client.get("/api/v3/abstraction/persona", headers=headers).text
+    _erase(db)
+    during = client.get("/api/v3/abstraction/persona", headers=headers)
+    assert during.status_code == 200 and "copper compass" not in during.text, during.text
+
+
+def test_tombstone_write_invalidates_soft_prompts_built_from_a_quoting_block(dashboard):
+    import json
+
+    from superlocalmemory.core.transactions.tombstones import write_tombstones
+
+    _, _, db = dashboard
+    _add_block(db)
+    for pid, sources in (("sp-from-block", ["b1"]), ("sp-unrelated", ["other-pattern"])):
+        db.execute("INSERT INTO soft_prompt_templates(prompt_id,profile_id,category,content,"
+                   "source_pattern_ids) VALUES (?, 'default', ?, ?, ?)",
+                   (pid, "identity" if pid == "sp-from-block" else "custom", _WORDS,
+                    json.dumps(sources)))
+    assert write_tombstones(db, "default", ("erasuremarker",), "e-2", time.time(), "erasuremarker")
+    left = {dict(r)["prompt_id"] for r in db.execute("SELECT prompt_id FROM soft_prompt_templates")}
+    assert left == {"sp-unrelated"}
+
+
+def test_cli_context_injection_skips_blocks_with_an_erasing_source(dashboard):
+    from superlocalmemory.cli.commands import _core_block_rows
+
+    _, _, db = dashboard
+    _add_block(db)
+    assert len(_core_block_rows(db.db_path, "default")) == 1
+    _erase(db)
+    assert _core_block_rows(db.db_path, "default") == []

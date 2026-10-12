@@ -23,14 +23,26 @@ TOMBSTONE_ERROR = "error"
 
 
 def _invalidate_display_summaries(conn: object, profile_id: str, fact_id: str) -> None:
-    """Drop display summaries that quote the fact the moment its erasure starts.
+    """Drop derived text that quotes the fact the moment its erasure starts.
 
-    ``consolidated_summaries`` rows are derived text that the consolidator
-    regenerates, so removing them here costs nothing on heal and means no
+    ``consolidated_summaries`` rows and the soft prompts built from a core block
+    that quotes the fact are derived text that their owners regenerate, so removing them here costs nothing on heal and means no
     reader can ever see the fact's words through a summary. The read path also
     withholds them by tombstone (storage/erasure_visibility.py) for tombstones
     written by other paths.
     """
+    try:
+        # Soft prompts record the core-memory block ids their text was built
+        # from (parameterization/soft_prompt_generator.py source_pattern_ids).
+        conn.execute(
+            "DELETE FROM soft_prompt_templates WHERE profile_id = ? AND EXISTS ("
+            "SELECT 1 FROM json_each(soft_prompt_templates.source_pattern_ids) p "
+            "JOIN core_memory_blocks b ON b.block_id = p.value AND b.profile_id = ? "
+            "JOIN json_each(b.source_fact_ids) f ON f.value = ?)",
+            (profile_id, profile_id, fact_id))
+    except Exception as exc:  # noqa: BLE001 - tables absent on older schemas
+        if "no such table" not in str(exc).lower() and "malformed json" not in str(exc).lower():
+            raise
     try:
         conn.execute(
             "DELETE FROM consolidated_summaries WHERE profile_id = ? AND EXISTS "

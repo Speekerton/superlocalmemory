@@ -2229,6 +2229,7 @@ async def get_core_memory(request: Request, profile: str = ""):
     pid = _resolve_profile(request, profile)
     try:
         from superlocalmemory.server.routes.helpers import DB_PATH
+        from superlocalmemory.storage.erasure_visibility import aggregate_erasure_clause
         import sqlite3
 
         if not DB_PATH.exists():
@@ -2240,7 +2241,10 @@ async def get_core_memory(request: Request, profile: str = ""):
         rows = conn.execute(
             "SELECT block_id, block_type, content, char_count, version, "
             "compiled_by, updated_at FROM core_memory_blocks "
-            "WHERE profile_id = ? ORDER BY block_type",
+            "WHERE profile_id = ?"
+            + aggregate_erasure_clause(
+                conn, "core_memory_blocks", column="source_fact_ids")
+            + " ORDER BY block_type",
             (pid,),
         ).fetchall()
 

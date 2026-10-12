@@ -4818,11 +4818,7 @@ def cmd_session_context(args: Namespace) -> None:
 
         # Core Memory blocks (compiled high-value context)
         try:
-            cm_rows = _read_rows(
-                "SELECT block_type, content FROM core_memory_blocks "
-                "WHERE profile_id = ? ORDER BY block_type",
-                (pid,),
-            )
+            cm_rows = _core_block_rows(db_path, pid)
             for r in cm_rows:
                 content = f"[{r['block_type']}] {r['content']}"
                 inj_mems.append(InjectableMemory(
@@ -5400,3 +5396,18 @@ def cmd_reap(args: Namespace) -> None:
     if dry_run and orphans > 0:
         print("\n  Use --force to kill orphaned processes.")
         print("  Use --all to kill ALL slm mcp sessions (after IDE switch).")
+
+
+def _core_block_rows(db_path: object, profile_id: str) -> list:
+    """Core-memory blocks for context injection, minus any that quote a fact
+    whose erasure has started (projection_tombstones)."""
+    from superlocalmemory.storage.erasure_visibility import aggregate_erasure_clause
+    from superlocalmemory.storage.memory_write import memory_read
+
+    with memory_read(db_path) as conn:
+        return conn.execute(
+            "SELECT block_type, content FROM core_memory_blocks WHERE profile_id = ?"
+            + aggregate_erasure_clause(conn, "core_memory_blocks", column="source_fact_ids")
+            + " ORDER BY block_type",
+            (profile_id,),
+        ).fetchall()

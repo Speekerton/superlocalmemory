@@ -2271,6 +2271,10 @@ class DatabaseManager:
         self, entity_id: str, profile_id: str,
     ) -> list[EntityProfile]:
         """All profile entries for an entity within a profile scope."""
+        # Not summary-fenced here: the only caller (retrieval/profile_channel)
+        # uses fact ids, which it passes through filter_authorized_results, so a
+        # mixed profile still yields its retained facts. Summary TEXT is fenced
+        # at the entity routes.
         rows = self.execute(
             "SELECT * FROM entity_profiles WHERE entity_id = ? AND profile_id = ? "
             "ORDER BY last_updated DESC",
@@ -2329,12 +2333,19 @@ class DatabaseManager:
         return [self._row_to_scene(r) for r in rows]
 
     def get_scenes_for_fact(
-        self, fact_id: str, profile_id: str,
+        self, fact_id: str, profile_id: str, *, include_erasing: bool = False,
     ) -> list[MemoryScene]:
-        """All scenes whose fact_ids JSON array contains *fact_id*."""
+        """All scenes whose fact_ids JSON array contains *fact_id*.
+
+        Scenes naming a fact whose erasure has started are withheld from
+        readers. ``include_erasing`` is for the erasure/mutation path itself,
+        which must still find the scene in order to remove the fact from it.
+        """
+        erasure = "" if include_erasing else aggregate_erasure_clause_for_db(
+            self, "memory_scenes")
         rows = self.execute(
             "SELECT * FROM memory_scenes WHERE profile_id = ? "
-            "AND fact_ids_json LIKE ? ORDER BY last_updated DESC",
+            f"AND fact_ids_json LIKE ?{erasure} ORDER BY last_updated DESC",
             (profile_id, f'%"{fact_id}"%'),
         )
         return [self._row_to_scene(r) for r in rows]
@@ -2357,8 +2368,9 @@ class DatabaseManager:
         params: list[str] = []
         for fid in fact_ids:
             params.extend((profile_id, f'%"{fid}"%'))
+        erasure = aggregate_erasure_clause_for_db(self, "memory_scenes")
         rows = self.execute(
-            f"SELECT * FROM memory_scenes WHERE {clauses} ORDER BY last_updated DESC",
+            f"SELECT * FROM memory_scenes WHERE ({clauses}){erasure} ORDER BY last_updated DESC",
             tuple(params),
         )
         out: dict[str, list[MemoryScene]] = {}
@@ -3276,7 +3288,7 @@ class DatabaseManager:
         Fail-soft: any exception is logged and ignored.
         """
         try:
-            scenes = self.get_scenes_for_fact(fact_id, profile_id)
+            scenes = self.get_scenes_for_fact(fact_id, profile_id, include_erasing=True)
             for scene in scenes:
                 new_ids = [fid for fid in (scene.fact_ids or []) if fid != fact_id]
                 if new_ids:

@@ -58,7 +58,8 @@ def _daemon_unavailable(command: str, use_json: bool) -> None:
         "reason": diagnosis["reason"],
         "message": f"Owned daemon is unavailable: {diagnosis['message']}",
         "hint": diagnosis["hint"],
-        "retryable": True,
+        # Retrying never clears a store that needs recovery; it does end a restore.
+        "retryable": diagnosis["reason"] != "recovery_needed",
     }
     if use_json:
         from superlocalmemory.cli.json_output import json_print
@@ -930,6 +931,12 @@ def cmd_serve(args: Namespace) -> None:
         return
 
     print("Starting SLM daemon (engine warming up)...")
+    from superlocalmemory.cli.daemon import _recovery_block
+
+    blocked = _recovery_block()
+    if blocked:
+        print(blocked)
+        sys.exit(1)
     if ensure_daemon():
         print("Daemon started \u2713 — CLI commands are now instant.")
         print("  slm serve status  — check daemon status")

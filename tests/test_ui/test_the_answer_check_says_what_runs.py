@@ -79,9 +79,27 @@ def test_an_explicit_choice_is_shown_as_chosen_even_when_it_cannot_run():
 def test_the_online_check_and_its_reordering():
     (out,) = _run(_status(mode="jev", active="jev", jev={
         "provider": "openrouter", "has_key": True,
-        "rerank": {"enabled": True, "active": True, "k": 20}}))
-    assert out["card"] == "Online (OpenRouter) · ready · reordering on"
+        "rerank": {"enabled": True, "active": True, "k": 20}},
+        tests={"jev": {"ok": True, "message": "Answered", "at": "2026-10-12T09:00:00+00:00"}}))
+    assert out["card"] == "Online (OpenRouter) · last test passed · reordering on"
     assert out["radio"] == "jev"
+
+
+def test_the_online_check_claims_no_health_the_api_did_not_report():
+    """PR 251 review, finding 8: "ready" was shown with no live health signal.
+
+    The status carries only the last Test result; the card says that, or that
+    no test has run, and never "ready".
+    """
+    untested, failed = _run(
+        _status(mode="jev", active="jev", jev={"provider": "typesafe", "has_key": True}),
+        _status(mode="jev", active="jev", jev={"provider": "typesafe", "has_key": True},
+                tests={"jev": {"ok": False, "message": "Key refused"}}),
+    )
+    assert untested["card"] == "Online (TypeSafe) · not tested yet"
+    assert failed["card"] == "Online (TypeSafe) · last test failed: Key refused"
+    for out in (untested, failed):
+        assert "ready" not in out["card"]
 
 
 def test_a_status_without_its_jev_block_does_not_throw():

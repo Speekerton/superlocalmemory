@@ -2192,6 +2192,23 @@ async def lifespan(application: FastAPI):
         logger.debug("early config load for migration paths failed: %s", _cfg_exc)
         _path_config = None
 
+    # A dashboard restore holds the store (writer lease) from stop to restart.
+    # A daemon started meanwhile (a hook, a CLI call) must not run migrations
+    # or open the store under it; it exits and the next start proceeds.
+    if _path_config is not None:
+        from superlocalmemory.server.backup_restore_txn import restore_in_progress
+
+        _restore_busy = restore_in_progress(
+            Path(_memory_db_for_config(_path_config)).parent)
+        if _restore_busy:
+            logger.error("Not starting: %s", _restore_busy)
+            raise SystemExit(_restore_busy)
+        try:  # copies an interrupted restore left behind (never one it kept)
+            from superlocalmemory.server.backup_rollback import sweep_stale
+
+            sweep_stale(Path(_memory_db_for_config(_path_config)).parent)
+        except Exception as _sweep_exc:  # never block start-up on clean-up
+            logger.warning("could not remove stale restore copies: %s", _sweep_exc)
     try:
         from superlocalmemory.storage.backup import InsufficientDiskSpaceError
         from superlocalmemory.storage.migration_runner import apply_all

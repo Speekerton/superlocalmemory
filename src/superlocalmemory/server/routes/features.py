@@ -62,6 +62,9 @@ def _media_view(status: dict[str, Any], root: Path) -> dict[str, Any]:
         "precheck": status.get("precheck", {}),
     }
     view["ram"] = _ram_view()
+    from superlocalmemory.server.media_size import installed_bytes
+    view["installed_bytes"] = installed_bytes(root / "runtimes" / "media")
+    view["install_estimate_bytes"] = int(2.8 * 1024 ** 3)
     refusal = _ram_refusal(status.get("precheck") or {})
     view["ram_ok"], view["ram_message"] = not refusal, refusal
     if env.get("error_kind"):

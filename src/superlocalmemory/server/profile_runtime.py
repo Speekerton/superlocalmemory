@@ -498,6 +498,9 @@ def reconfigure_daemon_engine(app_state, new_config, *, mode_change: bool) -> No
         # Direct route/unit usage without a resident daemon retains the
         # established persistence-only behavior.
         new_config.save(mode_change=mode_change)
+        if mode_change:
+            from superlocalmemory.server.mode_selection import publish_selection
+            publish_selection(new_config)
         return
     runtime = get_profile_runtime(app_state)
 
@@ -506,6 +509,9 @@ def reconfigure_daemon_engine(app_state, new_config, *, mode_change: bool) -> No
         # switch. Runtime truth always wins over that stale config snapshot.
         new_config.active_profile = snapshot.profile_id
         callback(new_config, mode_change=mode_change)
+        if mode_change:
+            from superlocalmemory.server.mode_selection import publish_selection
+            publish_selection(new_config)
 
     runtime.reconfigure(_commit)
 

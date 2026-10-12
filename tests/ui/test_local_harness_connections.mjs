@@ -119,7 +119,7 @@ describe('Health controls and live connections', () => {
     const { dom, window, document } = boot(status());
     window.fetch = async path => ({ ok: true, json: async () => path === '/api/v3/daemon/config'
       ? { port: 19781, configured_port: 19281, legacy_port: 19282, enable_legacy_port: false } : {} });
-    window.eval(readFileSync(new URL('od-settings.js', ui), 'utf8'));
+    ['od-settings-models.js','od-settings-groups.js','od-settings.js'].forEach(name => window.eval(readFileSync(new URL(name, ui), 'utf8')));
     window.odRenderSettings(document.getElementById('health')); await settle();
     assert.equal(document.getElementById('od-s-dmn-port').value, '19281');
     assert.match(document.getElementById('od-s-dmn-live-port').textContent, /19781/);

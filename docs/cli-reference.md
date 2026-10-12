@@ -891,7 +891,7 @@ Versioned, checksummed JSONL bundles of memory evidence.
 slm evidence export /path/to/bundle.jsonl --profile default
 slm evidence verify /path/to/bundle.jsonl
 slm evidence import /path/to/bundle.jsonl --execute
-slm evidence import /path/to/bundle.jsonl --replace --execute
+slm evidence import /path/to/bundle.jsonl --replace --rollback-dir ./slm-rollback --execute
 slm evidence rebuild --execute   # Rebuild derived lexical state
 ```
 
@@ -910,12 +910,15 @@ memory content, no secrets) for manual inspection or support. `reliability
 Bayesian learner has moved off its prior and whether each schema-guarded path has
 ever run against this store.
 
-### `slm backup status|recovery-key|decrypt`
+### `slm backup status|recovery-key|decrypt|restore-safety-copy|clear-recovery-needed`
 
 Cloud backups are encrypted. `status` shows the encryption state;
 `recovery-key` shows the recovery key, or with `--import` reads one from stdin
 for a new computer; `decrypt <file> [-o OUT] [--recovery-key-stdin] [--force]`
-turns a downloaded backup into a plain `.db` file. See [Cloud
+turns a downloaded backup into a plain `.db` file;
+`restore-safety-copy [--id POINT]` puts back the safety copy a failed dashboard
+restore kept, with the service stopped; `clear-recovery-needed` lets the service
+start again after you repaired the stores yourself. See [Cloud
 backup](cloud-backup.md).
 
 ### `slm gdpr status|export|erase|verify`
@@ -984,7 +987,16 @@ slm adapters start gmail
 slm adapters status gmail
 slm adapters stop gmail
 slm adapters disable gmail
+slm adapters folders                    # where the dashboard may point importers
+slm adapters allow-folder ~/Meetings    # approve one more folder (this computer only)
 ```
+
+The dashboard's Configure button only accepts a file or folder inside an import
+folder: `imports/` (or the older `import/` drop folder) in the data folder, or a
+folder approved here. Symlinks out of those folders, hidden folders and the rest
+of the data folder are refused. A path saved earlier, or edited by hand in
+`adapters.json`, is checked again on Start and by the importer itself; one that
+fails the check is not read, and the adapter says what to do.
 
 ### `slm ingest [--source ecc|jsonl]`
 

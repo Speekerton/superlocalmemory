@@ -507,8 +507,7 @@
     return '<span style="display:inline-block;vertical-align:middle;width:70px;height:6px;border-radius:99px;background:var(--card-2);overflow:hidden;margin-right:7px"><span style="display:block;height:100%;width:' + (v / max * 100) + '%;background:linear-gradient(90deg,var(--cyan),var(--violet))"></span></span>';
   }
   function field(k, v) { return '<div class="field"><div class="k">' + k + '</div><div class="v">' + v + '</div></div>'; }
-  function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
-  function escAttr(s) { return esc(s).replace(/"/g, '&quot;'); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 
   function selectById(id) {
     var n = idx[id];
@@ -550,7 +549,7 @@
     }
     var nb = LINKS.filter(function (l) { return l.s === n.id || l.t === n.id; }).slice(0, 6).map(function (l) {
       var o = idx[l.s === n.id ? l.t : l.s]; if (!o) return '';
-      return '<div class="list-row" style="padding:8px 0;cursor:pointer" data-act-click="odg-select" data-odg-id="' + escAttr(o.id) + '">' +
+      return '<div class="list-row" style="padding:8px 0;cursor:pointer" data-act-click="odg-select" data-odg-id="' + esc(o.id) + '">' +
         '<span style="width:9px;height:9px;border-radius:50%;background:' + nodeColor(o) + '"></span>' +
         '<span style="flex:1;font-size:12.5px">' + esc(o.label.replace('…', '')) + '</span>' +
         '<span class="badge neutral" style="font-size:10px">' + esc(l.rt) + '</span></div>';
@@ -580,7 +579,7 @@
         var cites = items.slice(0, 4).map(function (it) {
           var id = String(it.id || it.fact_id || '');
           var lbl = esc(shortWords(it.content || it.text || it.summary || 'fact', 4));
-          return '<span class="cite"' + (idx[id] ? ' data-act-click="odg-select" data-odg-id="' + escAttr(id) + '"' : '') + '>◈ ' + lbl + '</span>';
+          return '<span class="cite"' + (idx[id] ? ' data-act-click="odg-select" data-odg-id="' + esc(id) + '"' : '') + '>◈ ' + lbl + '</span>';
         }).join('');
         t.innerHTML = ans + (cites ? '<div style="margin-top:8px">' + cites + '</div>' : '');
       })

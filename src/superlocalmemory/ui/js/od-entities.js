@@ -31,10 +31,8 @@
 
   // CRIT-1: Local escapeHtml to prevent XSS if core.js loads after this module.
   function _esc(s) {
-    if (typeof escapeHtml === 'function') return escapeHtml(s);
-    var d = document.createElement('div');
-    d.textContent = String(s == null ? '' : s);
-    return d.innerHTML;
+    // Quote-safe: the result is used inside attribute values too.
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   function _fmt(iso) {
@@ -296,23 +294,29 @@
       return;
     }
 
+    var focused = document.activeElement;
+    var restoreName = listEl.contains(focused) && focused.dataset.ename;
     listEl.innerHTML = filtered.map(function (e) {
       var av     = (e.name || '?').charAt(0).toUpperCase();
       var color  = _typeVar(e.type);
       var isAct  = _st.selected === e.name;
-      return '<div class="od-ent-row' + (isAct ? ' active' : '') + '" ' +
-          'data-od-act="select-entity" data-ename="' +
-          _esc(e.name).replace(/"/g, '&quot;') + '">' +
-        '<div class="od-ent-av" style="background:' + color + '">' + _esc(av) + '</div>' +
+      return '<button type="button" aria-pressed="' + isAct + '" class="od-ent-row' + (isAct ? ' active' : '') + '" ' +
+          'aria-label="Show entity ' + _esc(e.name) + '" data-od-act="select-entity" data-ename="' +
+          _esc(e.name) + '">' +
+        '<div aria-hidden="true" class="od-ent-av" style="background:' + color + '">' + _esc(av) + '</div>' +
         '<div style="flex:1;min-width:0">' +
           '<div style="font-weight:600;white-space:nowrap;overflow:hidden;' +
             'text-overflow:ellipsis">' + _esc(e.name) + '</div>' +
-          '<div style="font-size:11.5px;color:var(--fg-3)">' +
+          '<div style="font-size:11.5px;color:var(--fg-2)">' +
             _esc(e.type) + ' · ' + _esc(String(e.fact_count || 0)) + ' facts' +
           '</div>' +
         '</div>' +
-      '</div>';
+      '</button>';
     }).join('');
+    if (restoreName) {
+      var replacement = Array.from(listEl.querySelectorAll('button')).find(function (b) { return b.dataset.ename === restoreName; });
+      if (replacement) replacement.focus();
+    }
   }
 
   function _renderPag(id, total, offset) {
@@ -380,7 +384,7 @@
       '<div class="card">' +
         '<div class="card-pad">' +
           '<div style="display:flex;align-items:center;gap:14px">' +
-            '<div class="od-ent-av" style="width:48px;height:48px;border-radius:11px;' +
+            '<div aria-hidden="true" class="od-ent-av" style="width:48px;height:48px;border-radius:11px;' +
               'font-size:18px;background:' + color + '">' + _esc(av) + '</div>' +
             '<div>' +
               '<h2 style="font-size:20px">' + _esc(d.entity_name || '') + '</h2>' +
@@ -476,7 +480,7 @@
       }
 
       if (synth.length === 0) {
-        return '<div style="color:var(--fg-3);font-size:13px;padding:8px 0">' +
+        return '<div style="color:var(--fg-2);font-size:13px;padding:8px 0">' +
           'No temporal events recorded yet. ' +
           facts.length + ' source fact' + (facts.length === 1 ? '' : 's') + ' indexed.' +
           // TODO: /api/entity/{name}/timeline — per-fact temporal history not yet exposed
@@ -506,12 +510,12 @@
     };
     return '<div class="od-tl">' +
       items.map(function (item) {
-        var col = COLORS[item.kind] || 'var(--fg-3)';
+        var col = COLORS[item.kind] || 'var(--fg-2)';
         return '<div class="od-tl-item">' +
           '<div class="od-tl-dot" style="background:' + col + '"></div>' +
           '<div>' +
             '<div style="display:flex;gap:8px;align-items:center">' +
-              '<span class="mono dim" style="font-size:12px">' +
+              '<span class="mono muted-info" style="font-size:12px">' +
                 _esc(_fmt(item.ts)) +
               '</span>' +
               '<span class="badge neutral" style="font-size:10px">' +

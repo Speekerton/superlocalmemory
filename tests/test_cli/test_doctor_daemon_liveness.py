@@ -18,7 +18,9 @@ def probes(monkeypatch):
     health = MagicMock(return_value=None)
     request = MagicMock(return_value={})
     def fetch(record, path, timeout):
-        assert 0 < timeout <= doctor_daemon.HEALTH_TIMEOUT
+        limit = (doctor_daemon.HEALTH_TIMEOUT if path == "/health"
+                 else doctor_daemon.FEATURES_TIMEOUT)
+        assert 0 < timeout <= limit
         return health(record.port, timeout=timeout) if path == "/health" else request(record)
 
     monkeypatch.setattr(doctor_daemon, "_fetch_json", fetch)
@@ -156,3 +158,105 @@ def test_zombie_record_is_dead_without_health(probes, free_port, monkeypatch):
     check = check_daemon()
     assert check.status == "FAIL" and "no longer running" in check.detail
     probes[0].assert_not_called()
+
+
+def test_features_timeout_on_a_fresh_daemon_retries_then_says_still_starting(
+        probes, monkeypatch, free_port):
+    import time
+
+    from superlocalmemory.cli.doctor_daemon import ProbeTimeout
+
+    record = build_descriptor(port=free_port, version="4.1.25", pid=os.getpid())
+    write_descriptor(record)
+    budgets = []
+
+    def fetch(rec, path, timeout):
+        if path == "/health":
+            return rec.public_health_fields()
+        budgets.append(timeout)
+        raise ProbeTimeout
+
+    monkeypatch.setattr(doctor_daemon, "_fetch_json", fetch)
+    result = doctor_daemon._inspect_daemon(time.monotonic() + doctor_daemon.CHECK_TIMEOUT)
+    assert result.status == "PASS" and result.feature_warning == ""
+    assert budgets == [doctor_daemon.FEATURES_TIMEOUT, doctor_daemon.WARMUP_TIMEOUT]
+    assert "still starting" in result.feature_note and "slm doctor again" in result.feature_note
+
+
+def test_a_fresh_daemon_whose_features_answer_on_the_retry_is_clean(monkeypatch, free_port):
+    import time
+
+    from superlocalmemory.cli.doctor_daemon import ProbeTimeout
+
+    write_descriptor(build_descriptor(port=free_port, version="4.1.25", pid=os.getpid()))
+    calls = []
+
+    def fetch(rec, path, timeout):
+        if path == "/health":
+            return rec.public_health_fields()
+        calls.append(timeout)
+        if len(calls) == 1:
+            raise ProbeTimeout
+        return {"media": {}}
+
+    monkeypatch.setattr(doctor_daemon, "_fetch_json", fetch)
+    result = doctor_daemon._inspect_daemon(time.monotonic() + doctor_daemon.CHECK_TIMEOUT)
+    assert (result.feature_warning, result.feature_note) == ("", "")
+
+
+def test_an_old_daemon_that_does_not_answer_still_warns_without_retry(monkeypatch, free_port):
+    import time
+
+    from superlocalmemory.cli.doctor_daemon import ProbeTimeout
+
+    old = time.time() - 3600
+    write_descriptor(build_descriptor(
+        port=free_port, version="4.1.25", pid=os.getpid(), started_at=old))
+    calls = []
+
+    def fetch(rec, path, timeout):
+        if path == "/health":
+            return rec.public_health_fields()
+        calls.append(timeout)
+        raise ProbeTimeout
+
+    monkeypatch.setattr(doctor_daemon, "_fetch_json", fetch)
+    result = doctor_daemon._inspect_daemon(time.monotonic() + doctor_daemon.CHECK_TIMEOUT)
+    assert len(calls) == 1
+    assert "did not answer within" in result.feature_warning and result.feature_note == ""
+
+
+def test_doctor_prints_still_starting_as_a_pass_with_no_restart_advice(
+        probes, capsys, monkeypatch):
+    note = "Optional feature status is still starting - run slm doctor again in a minute"
+    monkeypatch.setattr(doctor_daemon, "check_daemon", lambda: doctor_daemon.DaemonCheck(
+        "PASS", "Running and healthy (pid 1)", feature_note=note))
+    from tests.helpers.doctor import run_doctor_report
+
+    run_doctor_report(Namespace(json=True, quick=True))
+    rows = {c["name"]: c for c in json.loads(capsys.readouterr().out)["data"]["checks"]}
+    assert rows["Daemon features"]["status"] == "PASS"
+    assert rows["Daemon features"]["detail"] == note
+    assert rows["Daemon features"]["fix"] == ""
+
+
+def test_features_get_a_sane_budget_and_slowness_never_says_restart(
+        monkeypatch, free_port, capsys, probes):
+    import time
+
+    from superlocalmemory.cli.doctor_daemon import ProbeTimeout
+
+    assert doctor_daemon.FEATURES_TIMEOUT >= 2.0 > doctor_daemon.HEALTH_TIMEOUT
+    assert doctor_daemon.CHECK_TIMEOUT >= doctor_daemon.FEATURES_TIMEOUT + doctor_daemon.HEALTH_TIMEOUT
+    write_descriptor(build_descriptor(port=free_port, version="4.1.25", pid=os.getpid(),
+                                      started_at=time.time() - 3600))
+    slow = doctor_daemon.DaemonCheck(
+        "PASS", "Running and healthy (pid 1)",
+        feature_warning="Optional feature status did not answer within 2s")
+    monkeypatch.setattr(doctor_daemon, "check_daemon", lambda: slow)
+    from tests.helpers.doctor import run_doctor_report
+
+    run_doctor_report(Namespace(json=True, quick=True))
+    rows = {c["name"]: c for c in json.loads(capsys.readouterr().out)["data"]["checks"]}
+    assert rows["Daemon features"]["status"] == "WARN"
+    assert "restart" not in rows["Daemon features"]["fix"]

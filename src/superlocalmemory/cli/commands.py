@@ -3322,7 +3322,12 @@ def _cmd_doctor_checks(args: Namespace, state: dict) -> None:
     _check("Daemon", daemon_check.status, daemon_check.detail, daemon_check.fix)
     if daemon_check.feature_warning:
         # Optional probe trouble is its own line; it never rewrites the daemon verdict.
-        _check("Daemon features", "WARN", daemon_check.feature_warning, "slm restart")
+        # Slowness alone is never a reason to restart the daemon.
+        _check("Daemon features", "WARN", daemon_check.feature_warning,
+               "run slm doctor again; if it keeps timing out, check 'slm status'")
+    elif daemon_check.feature_note:
+        # A daemon that only just started: nothing is wrong, so no restart advice.
+        _check("Daemon features", "PASS", daemon_check.feature_note)
 
     _stage("Auto-repair (--fix)")
     # v3.8.2 `--fix`: run the component healer (the SAME repair the daemon

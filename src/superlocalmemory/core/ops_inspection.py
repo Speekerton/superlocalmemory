@@ -88,13 +88,28 @@ def _profile_clause(column: str, profiles: Iterable[str] | None) -> tuple[str, l
     return f" AND {column} IN ({','.join('?' * len(names))})", names
 
 
+#: A dead-letter row whose operation later completed is a record of an old failure,
+#: not a failed save. Readers skip it; ``slm ops repair-saves`` removes it.
+NOT_STALE = (
+    "NOT EXISTS (SELECT 1 FROM ingestion_operations o "
+    "WHERE o.operation_id = dead_letter_operations.original_op_id AND o.state = 'complete')"
+)
+
+
 def _dead_letter_rows(conn, profiles) -> list[dict]:
     clause, params = _profile_clause("profile_id", profiles)
-    rows = conn.execute(
+    sql = (
         "SELECT original_op_id, error, attempt_count, profile_id, dead_lettered_at "
-        f"FROM dead_letter_operations WHERE 1=1{clause} "
-        "ORDER BY dead_lettered_at DESC LIMIT 200", params,
-    ).fetchall()
+        "FROM dead_letter_operations WHERE {live}1=1" + clause +
+        " ORDER BY dead_lettered_at DESC LIMIT 200"
+    )
+    try:
+        rows = conn.execute(sql.format(live=NOT_STALE + " AND "), params).fetchall()
+    except sqlite3.OperationalError as exc:
+        if not _missing_table(exc):
+            raise
+        # A store without ingestion_operations has no completed operations to skip.
+        rows = conn.execute(sql.format(live=""), params).fetchall()
     return [{
         "category": "dead_letter",
         "operation_id": row["original_op_id"],
@@ -235,7 +250,8 @@ def get_failure_counts(db_path: str | Path) -> dict[str, Any]:
         "dead_letter_count": 0, "degraded_operations": 0, "exhausted_obligations": 0,
     }
     queries = (
-        ("dead_letter_count", "SELECT COUNT(*) AS c FROM dead_letter_operations", ()),
+        ("dead_letter_count",
+         f"SELECT COUNT(*) AS c FROM dead_letter_operations WHERE {NOT_STALE}", ()),
         ("degraded_operations",
          "SELECT COUNT(*) AS c FROM completion_manifests WHERE state = 'DEGRADED'", ()),
         ("exhausted_obligations",
@@ -257,6 +273,14 @@ def get_failure_counts(db_path: str | Path) -> dict[str, Any]:
                 row = conn.execute(sql, params).fetchone()
                 counts[key] = int(row["c"]) if row else 0
             except Exception as exc:  # noqa: BLE001 - classified below
+                if key == "dead_letter_count" and _missing_table(exc):
+                    # No ingestion_operations to say which saves completed: count them all.
+                    try:
+                        counts[key] = int(conn.execute(
+                            "SELECT COUNT(*) AS c FROM dead_letter_operations").fetchone()["c"])
+                        continue
+                    except Exception as inner:  # noqa: BLE001
+                        exc = inner
                 if not _missing_table(exc):
                     logger.warning("get_failure_counts: %s unreadable: %s", key, exc)
                     unavailable.append(key)

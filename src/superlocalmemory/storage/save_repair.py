@@ -39,7 +39,8 @@ memory (``metadata.ingestion_operation_id``) and decides:
 :func:`apply` does all of it in one transaction, each write guarded by the
 state it expects, then resets the operation to ``queryable`` (attempts 0) and
 removes its dead-letter rows, so the materializer enriches it as new. The
-other memory's fact is not touched. The same command backfills a missing agent
+other memory's fact is not touched. It also clears dead-letter rows whose operation
+has since completed, which only record an old failure. The same command backfills a missing agent
 name on a memory from its own operation, where the operation recorded one.
 """
 
@@ -55,6 +56,8 @@ REASONS = (
     "queryable ingestion memory scope mismatch",
     "queryable ingestion memory content mismatch",
     "queryable ingestion fact profile mismatch or missing fact",
+    # The spelling the enrichment step raises today (core/engine_ingestion).
+    "queryable fact profile mismatch or missing fact",
     "queryable ingestion shared scope mismatch",
     "queryable ingestion fact belongs to another memory",
 )
@@ -92,6 +95,8 @@ class SavePlan:
     review: tuple[tuple[str, str], ...]          # (operation_id, why)
     attribution: tuple[tuple[str, str], ...]     # (memory_id, agent_id from its operation)
     unattributed_by_source: dict = field(default_factory=dict)
+    #: Dead-letter rows whose operation has since completed (old failures, not failed saves).
+    stale_dead_letters: int = 0
 
     def summary(self) -> dict:
         actions: dict[str, int] = {}
@@ -100,7 +105,8 @@ class SavePlan:
         return {"saves_to_refile": len(self.refile), "by_action": actions,
                 "left_for_review": len(self.review),
                 "agent_names_to_backfill": len(self.attribution),
-                "memories_still_without_agent": dict(self.unattributed_by_source)}
+                "memories_still_without_agent": dict(self.unattributed_by_source),
+                "stale_dead_letters": self.stale_dead_letters}
 
 
 def _candidates(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -110,6 +116,16 @@ def _candidates(conn: sqlite3.Connection) -> list[sqlite3.Row]:
         f"last_error IN ({marks}) OR operation_id IN (SELECT original_op_id FROM "
         f"dead_letter_operations WHERE error IN ({marks}))) ORDER BY created_at",
         REASONS + REASONS).fetchall()
+
+
+STALE_DEAD_LETTERS = (
+    "dead_letter_operations WHERE original_op_id IN "
+    "(SELECT operation_id FROM ingestion_operations WHERE state='complete')"
+)
+
+
+def count_stale_dead_letters(conn: sqlite3.Connection) -> int:
+    return int(conn.execute(f"SELECT COUNT(*) FROM {STALE_DEAD_LETTERS}").fetchone()[0])
 
 
 def _same_audience(stored: str | None, op_json: str | None) -> bool:
@@ -191,7 +207,9 @@ def plan(conn: sqlite3.Connection) -> SavePlan:
         decided = _classify(conn, op)
         (refile if isinstance(decided, RefileItem) else review).append(decided)
     fill, unknown = _attribution(conn)
-    return SavePlan(tuple(refile), tuple(review), tuple(fill), unknown)
+    return SavePlan(tuple(refile), tuple(review), tuple(fill), unknown,
+                    count_stale_dead_letters(conn))
 
 
-__all__ = ["REASONS", "RefileItem", "SavePlan", "plan"]
+__all__ = ["REASONS", "RefileItem", "STALE_DEAD_LETTERS", "SavePlan",
+           "count_stale_dead_letters", "plan"]

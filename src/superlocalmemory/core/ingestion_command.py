@@ -557,6 +557,9 @@ class IngestionOperationRepository:
                     raise InvalidStateTransition(
                         "enriching lease ownership was lost"
                     )
+                if target is IngestionState.COMPLETE:
+                    # A save that finished has no failure left to report.
+                    self._clear_dead_letters(operation_id)
                 if is_exhausted:
                     # Fix E: INSERT dead-letter row inside the same transaction.
                     # Failure to write (e.g. M031 not yet migrated) must NOT
@@ -628,6 +631,20 @@ class IngestionOperationRepository:
                     "enriching lease ownership was lost"
                 ) from exc
         return self._from_row(rows[0])
+
+    def _clear_dead_letters(self, operation_id: str) -> None:
+        """Remove the dead-letter rows of ``operation_id`` (an earlier failed attempt).
+
+        A store without the table (not migrated yet) has none to remove.
+        """
+        try:
+            self.db.execute(
+                "DELETE FROM dead_letter_operations WHERE original_op_id=?",
+                (operation_id,),
+            )
+        except sqlite3.OperationalError as exc:
+            if "no such table" not in str(exc).lower():
+                raise
 
     def defer_enriching(
         self,

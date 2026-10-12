@@ -133,3 +133,45 @@ test('after an undo the card says how many changes were restored', async () => {
   for (let i = 0; i < 12; i += 1) await tick();
   assert.match(card.textContent, /Undone: 27 changes restored\. 2 kept because they were changed since\./);
 });
+
+const SAVES = { action: 'repair-saves', found: 3, label: 'saves that did not finish', sentence: "3 saves didn't finish.", button: 'Fix', undoable: false, note: "Fixing this can't be undone. A safety copy of your memories is taken first, and your memories stay as they are until you confirm." };
+
+test('saves that did not finish read in plain words with a Fix button that asks first', async () => {
+  const f = await mount(() => ({
+    enrichment: { status: 'completed', processed: 12, total: 12, changed: 0 },
+    suggestions: [SAVES],
+    runs: [],
+  }));
+  assert.match(f.card.textContent, /3 saves didn't finish\./);
+  assert.match(f.card.textContent, /can't be undone/);
+  assert.deepEqual(buttons(f.card), ['Fix']);
+  f.card.querySelector('button').click();
+  for (let i = 0; i < 6; i += 1) await tick();
+  assert.ok(!f.calls.some((c) => c.method === 'POST'), 'the first press only asks');
+  assert.deepEqual(buttons(f.card), ['Yes, fix them', 'Cancel']);
+  [...f.card.querySelectorAll('button')][0].click();
+  for (let i = 0; i < 6; i += 1) await tick();
+  const post = f.calls.find((c) => c.method === 'POST');
+  assert.deepEqual(JSON.parse(post.body), { action: 'repair', repair: 'repair-saves', confirm: true });
+});
+
+test('cancelling the confirm sends nothing', async () => {
+  const f = await mount(() => ({
+    enrichment: { status: 'completed', processed: 12, total: 12 },
+    suggestions: [SAVES],
+  }));
+  f.card.querySelector('button').click();
+  for (let i = 0; i < 6; i += 1) await tick();
+  [...f.card.querySelectorAll('button')][1].click();
+  for (let i = 0; i < 6; i += 1) await tick();
+  assert.ok(!f.calls.some((c) => c.method === 'POST'));
+  assert.deepEqual(buttons(f.card), ['Fix']);
+});
+
+test('a re-filed-saves run never gets the Undo button', async () => {
+  const f = await mount(() => ({
+    enrichment: { status: 'completed', processed: 12, total: 12 },
+    runs: [{ run_id: 's1', kind: 'repair', status: 'completed', changed: 3, undoable: false, label: 'saves re-filed' }],
+  }));
+  assert.deepEqual(buttons(f.card), []);
+});

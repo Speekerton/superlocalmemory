@@ -114,12 +114,16 @@ def _refile(db, item: RefileItem) -> bool:
     return True
 
 
-def apply(db_path: Path, save_plan: SavePlan) -> SaveRepairResult:
-    """Back up ``db_path``, then apply ``save_plan`` in one transaction."""
+def apply(db_path: Path, save_plan: SavePlan, *, backup: bool = True) -> SaveRepairResult:
+    """Back up ``db_path``, then apply ``save_plan`` in one transaction.
+
+    ``backup=False`` is for a caller that has already taken the product's shared
+    safety copy (Memory health); ``slm ops repair-saves`` always backs up.
+    """
     from superlocalmemory.storage.database import DatabaseManager
     from superlocalmemory.storage.save_repair import plan
 
-    copy = backup_store(db_path)
+    copy = backup_store(db_path) if backup else None
     db = DatabaseManager(db_path)
     refiled = skipped = filled = 0
     try:
@@ -151,7 +155,7 @@ def apply(db_path: Path, save_plan: SavePlan) -> SaveRepairResult:
                 filled += int(db.execute("SELECT changes() AS n")[0]["n"])
     finally:
         db.close()
-    return SaveRepairResult(refiled, skipped, filled, str(copy))
+    return SaveRepairResult(refiled, skipped, filled, str(copy) if copy else "")
 
 
 __all__ = ["SaveRepairResult", "apply", "backup_store"]

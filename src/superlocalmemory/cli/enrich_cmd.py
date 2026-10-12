@@ -14,7 +14,9 @@ import sys
 
 from superlocalmemory.cli.daemon import DaemonUnprocessable, daemon_request
 
-FIXES = ('entity-links', 'refile-hidden')
+FIXES = ('entity-links', 'refile-hidden', 'repair-saves')
+#: No undo record: the confirmation says so, and the service insists on it.
+NO_UNDO = ('repair-saves',)
 NOT_RUNNING = 'Your memory service did not answer. Start it with: slm serve'
 
 
@@ -70,20 +72,23 @@ def _confirmed(args, question):
 
 
 def _latest_changing_run(status):
-    return next((r for r in status.get('runs') or [] if r.get('status') != 'undone'), None)
+    return next((r for r in status.get('runs') or []
+                 if r.get('status') != 'undone' and r.get('undoable', True)), None)
 
 
 def _print_status(result):
     print(result.get('summary', ''))
     print(f"Status: {result.get('state', '')}")
     for item in result.get('suggestions') or []:
-        print(f"Can be fixed: {item['found']} {item['label']} "
+        print(f"Can be fixed: {item.get('sentence') or str(item['found']) + ' ' + item['label']} "
               f"(slm enrich fix {item['action']})")
     runs = result.get('runs') or []
     if runs:
         print('Runs that changed something (newest first):')
     for run in runs:
         undone = '  (undone)' if run.get('status') == 'undone' else ''
+        if run.get('undoable') is False:
+            undone = "  (can't be undone)"
         print(f"  {run['run_id']}  {(run.get('created_at') or '')[:16].replace('T', ' ')}  "
               f"{run.get('changed', 0)} {run.get('label', '')}{undone}")
 
@@ -108,14 +113,22 @@ def _undo(args):
 
 
 def _fix(args):
-    if not _confirmed(args, f'Fix {args.repair.replace("-", " ")} now? You can undo it later.'):
+    name = args.repair.replace('-', ' ')
+    undoable = args.repair not in NO_UNDO
+    question = (f'Fix {name} now? You can undo it later.' if undoable else
+                f"Fix {name} now? This can't be undone; a safety copy is taken first.")
+    if not _confirmed(args, question):
         _fail('Nothing was changed.', 1)
     body = {'action': 'repair', 'repair': args.repair}
+    if not undoable:
+        body['confirm'] = True
     if getattr(args, 'include_undone', False):
         body['include_undone'] = True
     result = _request('POST', '/api/memory-health/action', body)
-    return result, (f"Fixed {result.get('fixed', 0)} of {result.get('found', 0)}. "
-                    f"Undo with: slm enrich undo {result.get('run_id', '')}".rstrip())
+    done = f"Fixed {result.get('fixed', 0)} of {result.get('found', 0)}."
+    if not undoable:
+        return result, f"{done} This can't be undone."
+    return result, f"{done} Undo with: slm enrich undo {result.get('run_id', '')}".rstrip()
 
 
 def cmd_enrich(args):

@@ -22,8 +22,9 @@ class Action(BaseModel):
     model_config = ConfigDict(extra='forbid')
     action: Literal['pause', 'resume', 'undo', 'repair']
     run_id: str = Field('', max_length=64, pattern=r'^[a-zA-Z0-9_-]*$')
-    repair: Literal['refile-hidden', 'qjl-sketches', 'entity-links'] | None = None
+    repair: Literal['refile-hidden', 'qjl-sketches', 'entity-links', 'repair-saves'] | None = None
     include_undone: bool = False  # `slm enrich fix --include-undone`
+    confirm: bool = False  # required by a repair that cannot be undone (repair-saves)
 
 
 def _engine(request):
@@ -62,7 +63,7 @@ def change_health(body: Action, request: Request):
             if not body.repair:
                 raise ValueError('Choose the repair action.')
             return repair_action(engine, body.repair, dry_run=False,
-                                 include_undone=body.include_undone)
+                                 include_undone=body.include_undone, confirmed=body.confirm)
         if not body.run_id:
             raise ValueError('An improvement run is required.')
         if body.action == 'undo':

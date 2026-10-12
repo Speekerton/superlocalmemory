@@ -522,7 +522,12 @@ slm enrich undo                # undo the most recent run that changed something
 slm enrich undo <run> --yes    # a specific run, without asking (scripts need --yes)
 slm enrich fix entity-links    # apply a suggested repair (asks first; undoable)
 slm enrich fix entity-links --include-undone   # also apply items from a run you undid
+slm enrich fix repair-saves    # re-file saves that did not finish (asks first; NOT undoable)
 ```
+
+`repair-saves` is `slm ops repair-saves --apply` (same code) behind the shared
+safety copy. It keeps no undo record, so the dashboard card and the command say so
+and ask for a confirm; the idle worker only suggests it, never runs it.
 
 `slm doctor` reports metadata coverage (tags, kind confirmed vs guessed, dates,
 entities), whether the improvements are running or up to date, and any

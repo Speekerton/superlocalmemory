@@ -28,7 +28,19 @@ STATES = {
 WAITING = 'Some improvements are waiting and will be tried again.'
 LABELS = {'enrichment': 'memory descriptions', 'entity-links': 'entity links',
           'refile-hidden': 'hidden memories that are still in use',
-          'qjl-sketches': 'search sketches'}
+          'qjl-sketches': 'search sketches', 'repair-saves': 'saves re-filed'}
+#: Repairs with no undo (core/health_repairs.NOT_UNDOABLE): the card says so
+#: and asks first. Kept as literals so this read-only module imports nothing heavy.
+NOT_UNDOABLE = ('repair-saves',)
+NO_UNDO_NOTE = ("Fixing this can't be undone. A safety copy of your memories is taken "
+                'first, and your memories stay as they are until you confirm.')
+
+
+def sentence(action, found):
+    """How a suggestion reads: one plain sentence, singular or plural."""
+    if action == 'repair-saves':
+        return f"{found} save{'' if found == 1 else 's'} didn't finish."
+    return f"{found} {LABELS.get(action, action)} can be fixed."
 
 
 def coverage(db):
@@ -83,15 +95,23 @@ def runs(db, limit=50):
                     'AND fixed>0')]
     for run in out:
         run['label'] = LABELS.get(run['action'], run['action'])
+        run['undoable'] = run['action'] not in NOT_UNDOABLE
     return sorted(out, key=lambda r: r['created_at'] or '', reverse=True)[:limit]
+
+
+def _suggestion(action, found):
+    item = {'action': action, 'found': found, 'label': LABELS.get(action, action),
+            'sentence': sentence(action, found), 'undoable': action not in NOT_UNDOABLE}
+    if action == 'repair-saves':
+        item.update(button='Fix', label='saves that did not finish', note=NO_UNDO_NOTE)
+    return item
 
 
 def suggestions(db):
     """Repairs that delete or move things: shown with a Fix button, never automatic."""
     if not _has_table(db, 'memory_health_repairs'):
         return []
-    return [{'action': r['action'], 'found': r['found'],
-             'label': LABELS.get(r['action'], r['action'])}
+    return [_suggestion(r['action'], r['found'])
             for r in db.execute("SELECT action,found FROM memory_health_repairs "
                                 "WHERE status='suggested' AND found>0 ORDER BY action")]
 
@@ -131,8 +151,9 @@ def doctor_checks(data):
                'slm enrich status' if waiting else '')]
     for item in data.get('suggestions') or []:
         checks.append(('Memory repairs', 'WARN',
-                       f"{item['found']} {item['label']} can be fixed. Nothing is changed "
-                       'until you choose to (dashboard Memory health, or the command below).',
+                       f"{item.get('sentence') or str(item['found']) + ' ' + item['label']}"
+                       ' Nothing is changed until you choose to (dashboard Memory health, '
+                       'or the command below).',
                        f"slm enrich fix {item['action']}"))
     return checks
 

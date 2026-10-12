@@ -23,6 +23,8 @@
     unavailable: 'Not available on this machine.'
   };
   var notice = '';
+  var confirming = '';
+  var lastData = {};
 
   function call(method, payload) {
     var fetcher = window.slmFetch || window.fetch;
@@ -41,12 +43,19 @@
       });
     });
   }
-  function button(parent, label, action) {
+  function button(parent, label, action, local) {
     var node = el('button', label);
     node.className = 'btn secondary';
     node.disabled = mutationBusy;
     node.addEventListener('click', function () {
       if (mutationBusy) return;
+      if (local) {
+        // A step that sends nothing: it only changes what the card shows next.
+        local();
+        render(lastData);
+        return;
+      }
+      confirming = '';
       mutationBusy = true;
       requestNumber += 1;
       node.disabled = true;
@@ -64,6 +73,7 @@
   }
   function render(data) {
     if (!mounted || !mounted.isConnected) return;
+    lastData = data;
     mounted.replaceChildren();
     var run = data.enrichment || {};
     var status = run.status || 'waiting_for_idle';
@@ -78,15 +88,30 @@
     }
     // Repairs that delete or move things never run on their own: one Fix each.
     (data.suggestions || []).forEach(function (item) {
-      mounted.appendChild(el('p', item.found + ' ' + item.label +
-                             ' can be fixed. Nothing changes until you choose to.'));
-      button(mounted, 'Fix ' + item.found + ' ' + item.label,
-             { action: 'repair', repair: item.action });
+      mounted.appendChild(el('p', item.sentence || (item.found + ' ' + item.label +
+                             ' can be fixed. Nothing changes until you choose to.')));
+      // A repair with no undo says so plainly and asks before it runs.
+      if (item.undoable === false) {
+        mounted.appendChild(el('p', item.note || "Fixing this can't be undone."));
+      }
+      if (confirming === item.action) {
+        button(mounted, 'Yes, fix them', { action: 'repair', repair: item.action, confirm: true });
+        button(mounted, 'Cancel', null, function () { confirming = ''; });
+        return;
+      }
+      var label = item.button || ('Fix ' + item.found + ' ' + item.label);
+      if (item.undoable === false) {
+        button(mounted, label, null, function () { confirming = item.action; });
+      } else {
+        button(mounted, label, { action: 'repair', repair: item.action });
+      }
     });
     if ((data.repairs || []).some(function (r) { return r.status === 'error'; })) {
       mounted.appendChild(el('p', 'Some repairs are waiting and will be tried again.'));
     }
-    var latest = (data.runs || []).find(function (r) { return r.status !== 'undone'; });
+    var latest = (data.runs || []).find(function (r) {
+      return r.status !== 'undone' && r.undoable !== false;
+    });
     if (latest) {
       button(mounted, 'Undo the last change (' + latest.changed + ' ' + latest.label + ')',
              { action: 'undo', run_id: latest.run_id });

@@ -7,8 +7,14 @@ Two kinds, and the line between them is the point (WP-19 review H1):
 * AUTO_ACTIONS only ADD what is missing (a search sketch rebuilt from the
   stored vector). The idle worker may run them, in small batches.
 * EXPLICIT_ACTIONS delete or move things (entity aliases and junk entities,
-  lifecycle zones). The idle worker only counts them and stores a suggestion;
-  they run when the user presses Fix (dashboard) or runs ``slm enrich fix``.
+  lifecycle zones, saves re-filed onto their own memory). The idle worker only
+  counts them and stores a suggestion; they run when the user presses Fix
+  (dashboard) or runs ``slm enrich fix``.
+
+``repair-saves`` is ``slm ops repair-saves --apply`` (storage/save_repair): the
+same plan and apply code, behind the shared safety copy. It keeps no undo
+record, so it is in NOT_UNDOABLE: a Fix needs an explicit confirm and the run
+refuses an undo with a plain sentence.
 
 An undone run is final until the user says otherwise: an action whose latest run
 was undone is never run automatically again, and the items an undone run touched
@@ -32,7 +38,9 @@ from superlocalmemory.storage import enrichment_ledger as ledger
 logger = logging.getLogger(__name__)
 
 AUTO_ACTIONS = ('qjl-sketches',)
-EXPLICIT_ACTIONS = ('refile-hidden', 'entity-links')
+EXPLICIT_ACTIONS = ('refile-hidden', 'entity-links', 'repair-saves')
+NOT_UNDOABLE = ('repair-saves',)
+NO_UNDO = "Re-filed saves can't be undone: the repair keeps no undo record."
 ACTIONS = (*EXPLICIT_ACTIONS, *AUTO_ACTIONS)
 AUTO_BATCH = 25
 CHECK_INTERVAL_S = 1800
@@ -202,17 +210,49 @@ def _entities(engine, dry_run, idle, skip=frozenset()):
     return {'found': found, 'fixed': fixed, 'run_id': run_id}
 
 
-_RUNNERS = {'refile-hidden': _refile, 'qjl-sketches': _qjl, 'entity-links': _entities}
+def _saves(engine, dry_run, idle, skip=frozenset()):
+    import sqlite3
+    from contextlib import closing
+
+    from superlocalmemory.storage import save_repair
+    from superlocalmemory.storage.save_repair_apply import apply
+
+    db = engine._db
+    uri = f'{Path(db.db_path).absolute().as_uri()}?mode=ro'
+    with closing(sqlite3.connect(uri, uri=True)) as conn:
+        have = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE name IN "
+            "('ingestion_operations','dead_letter_operations')")}
+        if len(have) < 2:  # a store that never recorded saves has none to repair
+            return {'found': 0, 'fixed': 0}
+        proposed = save_repair.plan(conn)  # always the dry run first
+    found = len(proposed.refile)
+    if dry_run or not found or not idle():
+        return {'found': found, 'fixed': 0}
+    # The shared safety copy (once per store) replaces apply()'s own copy; the
+    # apply re-checks every reviewed save inside its write transaction.
+    run_id = _new_run(db, 'repair-saves')
+    result = apply(Path(db.db_path), proposed, backup=False)
+    _record(db, run_id, 'repair-saves', found, result.refiled)
+    return {'found': found, 'fixed': result.refiled, 'skipped': result.skipped, 'run_id': run_id}
 
 
-def repair_action(engine, action, *, dry_run=True, idle=lambda: True, include_undone=False):
+_RUNNERS = {'refile-hidden': _refile, 'qjl-sketches': _qjl, 'entity-links': _entities,
+            'repair-saves': _saves}
+
+
+def repair_action(engine, action, *, dry_run=True, idle=lambda: True, include_undone=False,
+                  confirmed=False):
     """The user's explicit repair (dashboard Fix, ``slm enrich fix``) or a dry run.
 
     Items an earlier, undone run touched are left out unless ``include_undone``
     (``slm enrich fix <repair> --include-undone``) says the user wants them again.
+    A repair with no undo (NOT_UNDOABLE) only runs when ``confirmed``.
     """
     if action not in ACTIONS:
         raise ValueError('Unknown memory health action')
+    if action in NOT_UNDOABLE and not dry_run and not confirmed:
+        raise ValueError(f'{NO_UNDO} Confirm to go ahead; a safety copy is taken first.')
     hidden = undone_items(engine._db, action)
     skip = frozenset() if include_undone else hidden
     result = {'action': action, **_RUNNERS[action](engine, dry_run, idle, skip)}
@@ -310,6 +350,8 @@ def _native_total(native):
 def undo_action(engine, run_id):
     db = engine._db
     rows = db.execute('SELECT * FROM memory_health_repairs WHERE run_id=?', (run_id,))
+    if rows and rows[0]['action'] in NOT_UNDOABLE:
+        raise ValueError(NO_UNDO)
     if rows and rows[0]['status'] == 'undone':
         raise ValueError('That run was already undone.')
     if rows and rows[0]['status'] != 'completed':

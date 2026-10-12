@@ -9,7 +9,7 @@ Copilot, Grok Bot, Hermes and Antigravity, see [Editor and agent plugins](plugin
 
 ---
 
-## Transport Options (v3.6.7+)
+## Transport Options
 
 SLM ships with **two MCP transports**. Pick the one that fits your tool.
 
@@ -81,7 +81,7 @@ claude-code` prints these two commands and writes no MCP config; `slm setup`
 can run them for you. Use the manual config below only if you don't want the
 plugin.
 
-**Manual — HTTP (recommended, v3.6.7+):**
+**Manual — HTTP (recommended):**
 
 ```bash
 claude mcp add --transport http superlocalmemory http://127.0.0.1:8765/mcp/
@@ -138,7 +138,7 @@ environment otherwise.
 
 Claude Desktop uses a separate config file from Claude Code CLI.
 
-**Manual — HTTP (recommended, v3.6.7+):**
+**Manual — HTTP (recommended):**
 
 Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS), `%APPDATA%\Claude\claude_desktop_config.json` (Windows) or `~/.config/Claude/claude_desktop_config.json` (Linux):
 
@@ -178,7 +178,7 @@ Restart the Claude Desktop app after editing. Config is not hot-reloaded.
 slm connect cursor
 ```
 
-**Manual — HTTP (recommended, v3.6.7+):**
+**Manual — HTTP (recommended):**
 
 Add to `~/.cursor/mcp.json`:
 
@@ -219,7 +219,7 @@ Restart Cursor. The memory tools appear in the tool list automatically.
 slm connect vscode-copilot --here
 ```
 
-**Manual — HTTP (recommended, v3.6.7+):**
+**Manual — HTTP (recommended):**
 
 Save to `.vscode/mcp.json` in your project (the same path as `--here`):
 
@@ -257,7 +257,7 @@ Save to `.vscode/mcp.json` in your project (the same path as `--here`):
 slm connect windsurf
 ```
 
-**Manual — HTTP (recommended, v3.6.7+):**
+**Manual — HTTP (recommended):**
 
 Add to `~/.windsurf/mcp.json`:
 
@@ -296,7 +296,7 @@ Add to `~/.windsurf/mcp.json`:
 slm connect gemini-cli
 ```
 
-**Manual — HTTP (recommended, v3.6.7+):**
+**Manual — HTTP (recommended):**
 
 Add to `~/.gemini/settings.json`:
 
@@ -329,7 +329,7 @@ Add to `~/.gemini/settings.json`:
 
 Antigravity IDE and the `agy` CLI both read from `~/.gemini/config/mcp_config.json`.
 
-**HTTP (recommended, v3.6.7+):**
+**HTTP (recommended):**
 
 ```json
 {
@@ -410,7 +410,7 @@ SLM_AGENT_ID = "grok"
 
 ## Hermes Agent
 
-**HTTP (recommended, v3.6.7+):**
+**HTTP (recommended):**
 
 Edit `~/.hermes/config.yaml`:
 
@@ -439,7 +439,7 @@ Both Hermes CLI and Hermes Desktop read the same `~/.hermes/config.yaml`. Restar
 
 ## Kimi
 
-**HTTP (recommended, v3.6.7+):**
+**HTTP (recommended):**
 
 Add to `~/.kimi/mcp.json`:
 
@@ -470,7 +470,7 @@ Add to `~/.kimi/mcp.json`:
 
 ## CommandCode AICLI
 
-**HTTP (recommended, v3.6.7+):**
+**HTTP (recommended):**
 
 Add to `~/.commandcode/mcp.json`:
 
@@ -573,7 +573,7 @@ slm connect zed
 
 ---
 
-## Framework Adapters (v3.8.0)
+## Framework Adapters
 
 Nine Python packages back their framework's native memory interface with the local SLM data root. Install alongside the framework; no running daemon is required for core usage.
 

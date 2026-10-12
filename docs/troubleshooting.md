@@ -210,15 +210,18 @@ slm mode a    # No language model (fastest)
 ### Migration failed or was interrupted
 
 ```bash
-# Check if backup exists
-ls ~/.superlocalmemory/backups/
+# See which schema migrations ran and which did not
+slm db migrate --status
 
-# Roll back to V2
-slm migrate --rollback
+# An update that changes the store takes a restore point first; list it
+slm db restore-points
 
-# Try migration again
-slm migrate
+# Start the service again; unfinished migrations resume in order
+slm restart
 ```
+
+Schema migrations are additive and forward-only: there is no rollback command. To go back,
+restore the restore point (`slm db restore <point_id>`) or a verified complete backup.
 
 ### "Database is locked"
 
@@ -229,10 +232,10 @@ Close all IDE sessions that might be accessing SLM, then retry:
 lsof ~/.superlocalmemory/memory.db
 
 # Close IDEs, then retry
-slm migrate
+slm restart
 ```
 
-### Migration succeeded but recall quality seems worse
+### An upgrade finished but recall quality seems worse
 
 Embeddings and the graph are rebuilt from existing data, which can take a moment
 on a large database. Check and complete them:
@@ -350,7 +353,7 @@ kinds of work go there:
 - **Matrix factorizations** (QR, Cholesky, SVD and the solvers built on
   them). Accelerate has reported defects here on recent macOS releases: QR
   writes outside its memory for square matrices of roughly 576 to 1,000 rows
-  (found by us; before 4.1.20 it could crash SLM at random), Cholesky can
+  (found by us, and the reason SLM avoids it), Cholesky can
   crash at very large sizes ([scipy#26145](https://github.com/scipy/scipy/issues/26145)), SVD can
   hang on a matrix that contains an infinite value
   ([numpy#32591](https://github.com/numpy/numpy/issues/32591)), and one
@@ -363,7 +366,7 @@ What SLM does about it:
   The test suite counts every call into Accelerate's factorization routines
   while it saves, recalls and maintains a store, and fails if there is one.
 - The random rotation used to compress embeddings is computed without
-  Accelerate's QR since 4.1.20.
+  Accelerate's QR.
 - One feature still uses a factorization: learning the match threshold of the
   experimental semantic cache in SLM Optimize (off by default). Its matrix is
   never larger than 10 x 10, far below any reported failure size, and a test

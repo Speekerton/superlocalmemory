@@ -95,7 +95,7 @@ message and wait for the reply (`mesh_peers`, `mesh_send`, `mesh_wait`) after
 you tick **Allow talking to your other bots** and switch on **Let these apps
 message your other bots** in Connected apps (see "Bot messages and the two new
 permissions" below). Because ChatGPT keeps the scopes it saw when the plugin was
-created, a plugin made before 4.1.25 does not list these tools: uninstall it and
+created, a plugin made before you allowed bot messages does not list these tools: uninstall it and
 create it again.
 
 ## ChatGPT dots
@@ -157,7 +157,7 @@ for your agents and bots".
 3. Connect, sign in with GitHub on the approval page and tick **Allow saving
    memories** if wanted.
 
-After 4.1.25 (or after you allow bot messages or pictures), run a manual
+After you update SLM (or after you allow bot messages or pictures), run a manual
 toolkit re-sync in Composio so it lists the new tools (`mesh_*`, `remember_media`,
 `remember_document`, `get_media`, `media_status`, `media_upload_link`).
 

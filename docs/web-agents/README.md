@@ -27,7 +27,7 @@ they tell it to save only lasting facts, one per call, with a
 save secrets. They also say what to do when your computer is asleep, when the
 free daily allowance is used up, and when a permission was not granted.
 
-Since 4.1.25 they also cover two optional groups of tools. For **pictures and
+They also cover two optional groups of tools. For **pictures and
 PDFs**, the agent passes a ChatGPT attachment straight to `remember_media` or
 `remember_document`, and otherwise asks for a one-time upload link
 (`media_upload_link`), shows it to you and does not say the file was saved until

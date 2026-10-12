@@ -124,10 +124,10 @@ recall hooks (Claude Code's UserPromptSubmit and Codex's prompt hook), and
 `capture_session_summary` switches the summary saved when a session ends; each
 is also off while its section's `enabled` is `false`.
 
-Upgrading to 4.1.25: earlier versions saved `"on_every_prompt": false` with every
-Settings change even though nothing read it. That stored value is dropped once,
-on the first read after the upgrade, so per-prompt recall keeps running; set it
-to `false` again (the file then carries `"rules_version": 2`) to turn it off. The hook scripts for Claude Code and Codex are installed or removed with
+A stored `"on_every_prompt": false` from an older release is dropped once, on the
+first read after an upgrade, because older Settings saves wrote it although nothing read it;
+set it to `false` again (the file then carries `"rules_version": 2`) to turn per-prompt recall
+off. The hook scripts for Claude Code and Codex are installed or removed with
 `slm hooks install` and `slm hooks remove`. When auto-capture or auto-recall is
 off, `slm remember` and `slm recall` still work.
 
@@ -189,8 +189,7 @@ reorder recall.
 You can see what the system has learned in the **Living Brain** panel of the
 dashboard (`slm dashboard`), which reads the same store.
 
-> **Note:** the `slm patterns`, `slm useful` and `slm learning` commands
-> described in some older V2 documentation do not exist. Use `report_feedback`
+> **Note:** there are no `slm patterns`, `slm useful` or `slm learning` commands. Use `report_feedback`
 > and the dashboard instead.
 
 ## Privacy

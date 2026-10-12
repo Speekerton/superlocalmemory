@@ -134,8 +134,8 @@ project by background maintenance.
 | `--known-as-of TIME` | Only facts SLM knew by that time |
 | `--valid-at TIME` | Only facts that were true at that time |
 
-`TIME` is ISO-8601, for example `2026-01-01T00:00:00+00:00`. Facts saved before
-4.0.2 have no recorded time; add `--include-unknown` to include them in the
+`TIME` is ISO-8601, for example `2026-01-01T00:00:00+00:00`. Facts saved by older releases
+have no recorded time; add `--include-unknown` to include them in the
 strict `--known-as-of` and `--valid-at` filters. A time that cannot be read
 stops the command before any search.
 

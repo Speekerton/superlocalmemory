@@ -1,12 +1,12 @@
 # Hermes native integration
 
-SuperLocalMemory 4.1.25 ships a native Hermes plugin. It is a companion to,
+SuperLocalMemory ships a native Hermes plugin. It is a companion to,
 not a replacement for, Hermes's built-in memory provider and configuration.
 
 Install the owning runtime first:
 
 ```bash
-python -m pip install --upgrade superlocalmemory==4.1.25
+python -m pip install --upgrade superlocalmemory==4.2.0
 slm doctor
 ```
 
@@ -67,8 +67,8 @@ written into them, so give Hermes a profile that holds only what it should see.
 Every tool Hermes can call (recall, saves, search, list, update, delete,
 session and lifecycle capture, status, kinds and the rest) works on the key's
 profile whatever profile the server is using, and never moves the server's
-active profile. A key made before 4.1.20 is bound to the profile active when
-the server is upgraded; `slm remote keys list` shows which.
+active profile. A key that was made without a profile is bound, once, to the profile
+active when the server is upgraded; `slm remote keys list` shows which.
 
 **On the Hermes computer**, put the key in your Hermes secrets as
 `SLM_REMOTE_KEY`, then in `~/.hermes/config.yaml`:

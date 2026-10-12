@@ -438,8 +438,8 @@ Sources are read-only: SLM mirrors Markdown, text, canvas files, PDFs and PNG, J
 
 ### `slm migrate`
 
-Migrate a database from the older storage layout to the current schema. It is a
-one-shot command with no `--dry-run`.
+Migrate a memory folder written by the original SuperLocalMemory layout (`~/.claude-memory/`)
+to the current layout. It is a one-shot command with no `--dry-run`.
 
 ```bash
 slm migrate                # Run migration

@@ -49,7 +49,8 @@ async def test_known_key_full_output_hash_and_redacted_excerpt(
     leaked = any(value in json.dumps(receipt) or value in receipt['evidence']
                  for value in representations)
     assert not leaked
-    assert len(evidence['stdout_excerpt']) <= 2048 and len(evidence['stderr_excerpt']) <= 2048
+    # Receipts carry hashes only: no form of the output can leak through them.
+    assert not any(k.endswith('_excerpt') for k in evidence)
     assert evidence['stderr_sha256'] == hashlib.sha256(key).hexdigest()
     assert len(evidence['output_sha256']) == 64
     assert vault.stat().st_mode & 0o777 == 0o600

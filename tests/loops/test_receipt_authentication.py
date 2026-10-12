@@ -23,7 +23,7 @@ def test_authentication_binds_all_measurement_and_job_fields(receipt_db, tmp_pat
     if field in {'output', 'revision_digest', 'definition_digest'}:
         value = json.loads(receipt['evidence'])
         if field == 'output':
-            value['stdout_excerpt'] += 'forged output'
+            value['stdout_sha256'] = '0' * 64
         else:
             value['admission'][field] = '0' * 64
         receipt['evidence'] = json.dumps(value, sort_keys=True)

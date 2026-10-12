@@ -102,8 +102,8 @@ def _measurement(profile_id, task_id, run_id, producer, digest, exit_code, stdou
         stop_reason = stop_reason or 'Independent check exposed admission key material'
     measurement = dict(exit_code=exit_code, **output)
     if stop_reason:
-        measurement['stop_reason'] = output_evidence(
-            '', stop_reason, secret_material)['stderr_excerpt']
+        # Product-written text, never check output.
+        measurement['stop_reason'] = str(stop_reason)[:512]
     evidence = json.dumps(measurement, sort_keys=True)
     receipt = dict(
         receipt_id=uuid.uuid4().hex,

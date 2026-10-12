@@ -92,7 +92,19 @@ are not copied into the run directory.
 
 DONE means that the newest eligible, authenticated receipt reports exit code
 zero from the operator's pinned check on the copied, hashed inputs, and that a
-fresh copy of the current declared inputs has the same revision. The receipt
+fresh copy of the current declared inputs has the same revision. It does not
+mean more than that: code the check runs (for example the project's own source
+imported by its tests) runs with your user rights, and such code can make its
+own check pass, or change another loop's private copy while that loop's check
+runs. The gate stops a check's leftover processes and halts when it can see
+them, but a process that deliberately detaches and hides is outside what a
+same-user tool can stop. When the result matters, keep the check's own code
+out of the folder the agent can write, and run one loop at a time.
+
+Receipts record the exit status and hashes of the check's output, never the
+output itself, so no form of a secret the check prints can reach a receipt,
+the loop history or an MCP reply. To read the output, run the pinned command
+yourself. The receipt
 binds the job, command, pinned definition, input revision, exit status and output
 hashes. Changing declared files requires another check. Changing the check
 requires another registration. A newer registration supersedes the previous

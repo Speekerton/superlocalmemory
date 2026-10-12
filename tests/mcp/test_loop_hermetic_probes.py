@@ -441,7 +441,7 @@ def test_binary_output_is_hashed_without_raw_receipt_output(db, tmp_path):
     evidence = json.loads(receipt['evidence'])
     assert evidence['stdout_sha256'] == hashlib.sha256(b'\xff\xfe').hexdigest()
     assert 'stdout' not in evidence
-    assert evidence['stdout_excerpt'] == '\ufffd\ufffd'
+    assert not any(k.endswith('_excerpt') for k in evidence)
     assert len(receipts(db)) == 1
 
 

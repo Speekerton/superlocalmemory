@@ -1,12 +1,14 @@
 # Copyright (c) 2026 Varun Pratap Bhardwaj / Qualixar
 # Licensed under AGPL-3.0-or-later
-"""Hash complete checker output; publish only bounded, redacted excerpts."""
+"""Hash complete checker output. Receipts never carry the output itself.
+
+Redacting secrets out of arbitrary text cannot be complete (any encoding of a
+key slips past a pattern list), so receipts keep only hashes and the exit status.
+To read a check's output, run the same pinned command yourself.
+"""
 
 import base64
 import hashlib
-import re
-
-_EXCERPT_LIMIT = 2048
 
 
 def _bytes(value):
@@ -22,15 +24,6 @@ def _secret_forms(secret_material):
     return tuple(value for value in values if value)
 
 
-def _excerpt(raw, forms):
-    for value in forms:
-        raw = raw.replace(value, b'[REDACTED]')
-    text = raw.decode('utf-8', errors='replace')
-    # Include hashes, encoded keys and other unbroken key-length material.
-    text = re.sub(r'\S{32,}', '[REDACTED]', text)
-    return text[:_EXCERPT_LIMIT]
-
-
 def output_evidence(stdout, stderr, secret_material=()):
     out, err = _bytes(stdout), _bytes(stderr)
     forms = _secret_forms(secret_material)
@@ -39,7 +32,5 @@ def output_evidence(stdout, stderr, secret_material=()):
         stdout_sha256=hashlib.sha256(out).hexdigest(),
         stderr_sha256=hashlib.sha256(err).hexdigest(),
         output_sha256=hashlib.sha256(full).hexdigest(),
-        stdout_excerpt=_excerpt(out, forms),
-        stderr_excerpt=_excerpt(err, forms),
         key_exposed=any(value in out or value in err for value in forms),
     )

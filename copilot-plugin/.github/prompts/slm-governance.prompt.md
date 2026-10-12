@@ -1,7 +1,7 @@
 ---
 name: slm-governance
 description: Governed-workspace behavior for SuperLocalMemory. Covers roles (admin/member/viewer) and company mode, who administers a company-mode workspace (a signed-in admin, or `slm team` on the SLM computer), `slm token show` in strict mode, what remote web apps can never see or change, retention and lifecycle settings, the audit trail, GDPR export and erasure, and how agents must behave when operating under workspace governance. The audit and retention tools need the power MCP profile. Agents must never bypass governance controls.
-version: "4.1.25"
+version: "4.2.0"
 agent: agent
 tools:
   - audit_trail
@@ -55,7 +55,7 @@ there is no `slm user` or `slm role` command. The only company-mode commands
 are `slm team status` and `slm team policy` (next section).
 
 Roles apply to every route that touches data, not only to `remember` and
-`recall`. In 4.1.25 that includes pictures, documents, connected folders and
+`recall`. That includes pictures, documents, connected folders and
 turning features on: reading a file by path, connecting a folder
 (`slm sources add`), turning on pictures and documents and cleaning up with
 `slm media gc --apply` or `slm media repair` need the owner or an admin. SLM's
@@ -276,4 +276,4 @@ Before running any destructive or state-changing operation (`forget`,
 
 ---
 
-*SuperLocalMemory v4.1.25 · Qualixar · AGPL-3.0-or-later*
+*SuperLocalMemory v4.2.0 · Qualixar · AGPL-3.0-or-later*

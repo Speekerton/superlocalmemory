@@ -1,7 +1,7 @@
 ---
 name: slm-media
 description: Save pictures and PDFs in SuperLocalMemory and find them again by describing them. Covers when to save a picture or document, remember_media, remember_document, get_media, media_status and media_upload_link, how recall returns pictures and PDF pages, the limits, what stays private, turning the feature on with `slm media` (16 GB of memory needed), connecting folders with `slm sources`, and how web apps add files through one-time upload links. Off by default.
-version: "4.1.25"
+version: "4.2.0"
 agent: agent
 tools:
   - remember_media
@@ -246,7 +246,7 @@ Rules for reading them:
   personal data. Folders connected with `slm sources` are never shown to web
   apps. A web app cannot change, delete, pin or replace a memory it is not
   allowed to see: it is answered as if that memory did not exist.
-- Pictures saved before 4.1.25 are re-checked in the background and become
+- Pictures saved before 4.2.0 are re-checked in the background and become
   visible to web apps once their text is clean. They stay fully searchable on
   this computer.
 
@@ -332,4 +332,4 @@ command prints the reason. Offer it; do not run it unasked.
 
 ---
 
-*SuperLocalMemory v4.1.25 · Qualixar · AGPL-3.0-or-later*
+*SuperLocalMemory v4.2.0 · Qualixar · AGPL-3.0-or-later*

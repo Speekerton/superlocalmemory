@@ -53,7 +53,7 @@ there is no `slm user` or `slm role` command. The only company-mode commands
 are `slm team status` and `slm team policy` (next section).
 
 Roles apply to every route that touches data, not only to `remember` and
-`recall`. In 4.1.25 that includes pictures, documents, connected folders and
+`recall`. That includes pictures, documents, connected folders and
 turning features on: reading a file by path, connecting a folder
 (`slm sources add`), turning on pictures and documents and cleaning up with
 `slm media gc --apply` or `slm media repair` need the owner or an admin. SLM's
@@ -274,4 +274,4 @@ Before running any destructive or state-changing operation (`forget`,
 
 ---
 
-*SuperLocalMemory v4.1.25 · Qualixar · AGPL-3.0-or-later*
+*SuperLocalMemory v4.2.0 · Qualixar · AGPL-3.0-or-later*

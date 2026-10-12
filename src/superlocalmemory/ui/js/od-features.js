@@ -234,7 +234,7 @@
   // Two equal tiles that say what is on and what is not, so the card never offers
   // something that is already done. The state comes from the same features read the
   // Documents & Images pane makes.
-  var WHATSNEW_KEY = 'slm.whatsnew.4.1.25';
+  var WHATSNEW_KEY = 'slm.whatsnew.4.2.0';
   var OPEN_MEDIA = 'Open Documents & Images';
 
   // Storage can be missing or throw (private windows, blocked site data).

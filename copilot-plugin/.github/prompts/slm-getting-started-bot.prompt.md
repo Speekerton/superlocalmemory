@@ -1,7 +1,7 @@
 ---
 name: slm-getting-started-bot
 description: First-session orientation for SuperLocalMemory on a headless bot host (Grok Bot, or any Cursor-format plugin install with no hooks, no dashboard, and no interactive setup wizard). What is different here vs. Claude Code/Codex, which 19 tools are actually available, and the first three calls to make.
-version: "4.1.25"
+version: "4.2.0"
 agent: agent
 tools:
   - session_init
@@ -71,9 +71,9 @@ no one to review should prefer `replaces` over `update_memory`.
 
 ---
 
-## Pictures, PDFs and bot messages (4.1.25) are not in this tool set
+## Pictures, PDFs and bot messages are not in this tool set
 
-SuperLocalMemory 4.1.25 can keep pictures and PDFs (`remember_media`,
+SuperLocalMemory can keep pictures and PDFs (`remember_media`,
 `remember_document`, `get_media`, `media_status`) and lets bots message each
 other (`mesh_peers`, `mesh_send`, `mesh_inbox`, `mesh_wait`). None of these is in
 the 18-tool core set this plugin ships, and pictures need a computer with 16 GB
@@ -193,4 +193,4 @@ quality on a shared box.
 
 ---
 
-*SuperLocalMemory v4.1.25 · Qualixar · AGPL-3.0-or-later*
+*SuperLocalMemory v4.2.0 · Qualixar · AGPL-3.0-or-later*

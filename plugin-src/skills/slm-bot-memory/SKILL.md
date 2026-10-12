@@ -121,10 +121,10 @@ user before storing anything derived from it.
 
 ---
 
-## Bots that talk to each other, and bots on the web (4.1.25)
+## Bots that talk to each other, and bots on the web
 
-Everything above is about bots that run on the same computer. Two things in
-4.1.25 reach further, and both are opt-in by the owner:
+Everything above is about bots that run on the same computer. Two things
+reach further, and both are opt-in by the owner:
 
 **Bot messages.** Agents on this computer use `mesh_peers`, `mesh_send`,
 `mesh_inbox` and `mesh_wait` (full and mesh tool sets, not core). A web app
@@ -178,4 +178,4 @@ store every local bot on that computer can reach.
 
 ---
 
-*SuperLocalMemory v4.1.25 · Qualixar · AGPL-3.0-or-later*
+*SuperLocalMemory v4.2.0 · Qualixar · AGPL-3.0-or-later*

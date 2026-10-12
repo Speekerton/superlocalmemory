@@ -1,7 +1,7 @@
 ---
 name: slm-bot-memory
 description: Cross-bot memory on a shared computer (Grok Bot, Cursor plugin, any host where several agents share one machine). Explains agent_id attribution vs. profile/scope access, how to namespace by agent_id + profile + scope, and what must never be written to memory. Read this before the first remember/recall on a new Grok-Bot-style host.
-version: "4.1.25"
+version: "4.2.0"
 agent: agent
 tools:
   - remember
@@ -120,10 +120,10 @@ user before storing anything derived from it.
 
 ---
 
-## Bots that talk to each other, and bots on the web (4.1.25)
+## Bots that talk to each other, and bots on the web
 
-Everything above is about bots that run on the same computer. Two things in
-4.1.25 reach further, and both are opt-in by the owner:
+Everything above is about bots that run on the same computer. Two things
+reach further, and both are opt-in by the owner:
 
 **Bot messages.** Agents on this computer use `mesh_peers`, `mesh_send`,
 `mesh_inbox` and `mesh_wait` (full and mesh tool sets, not core). A web app
@@ -177,4 +177,4 @@ store every local bot on that computer can reach.
 
 ---
 
-*SuperLocalMemory v4.1.25 · Qualixar · AGPL-3.0-or-later*
+*SuperLocalMemory v4.2.0 · Qualixar · AGPL-3.0-or-later*

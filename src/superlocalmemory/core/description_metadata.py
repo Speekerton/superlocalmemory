@@ -57,6 +57,8 @@ def fact_description(fact, memory: dict) -> dict:
                           created_at=memory['created_at'])
     dates = temporal_fields(fact, record, TemporalParser(fact.created_at))
     return {
+        # When the memory was recorded: a stand-in for a missing observation
+        # date, labelled inferred by the runner and never used as an event start.
         'observation_date': fact.observation_date or fact.created_at,
         'referenced_date': fact.referenced_date or dates.get('referenced_date'),
         'interval_start': fact.interval_start or dates.get('interval_start'),

@@ -58,17 +58,21 @@ def write(db, table, target_id, profile_id, field, value):
                    (value, target_id, profile_id))
 
 
+INFERRED = 'inferred'  # a value enrichment filled in that the fact never carried itself
+
+
 def record(db, run_id, profile_id, table, target_id, field, before, after,
-           *, fact_id=None, memory_id=None):
+           *, fact_id=None, memory_id=None, source='enrichment'):
     db.execute(
         'INSERT INTO enrichment_changes(run_id,profile_id,fact_id,memory_id,target_table,'
         'target_id,field,before_json,after_json,source,enrichment_version) '
-        "VALUES (?,?,?,?,?,?,?,?,?,'enrichment',?)",
+        'VALUES (?,?,?,?,?,?,?,?,?,?,?)',
         (run_id, profile_id, fact_id, memory_id, table, target_id, field,
-         dumps(before), dumps(after), VERSION))
+         dumps(before), dumps(after), source, VERSION))
 
 
-def add(db, run_id, profile_id, table, target_id, field, value, *, replace_guess=False):
+def add(db, run_id, profile_id, table, target_id, field, value, *, replace_guess=False,
+        source='enrichment'):
     if value is None:
         return False
     before, exists = read(db, table, target_id, profile_id, field)
@@ -76,7 +80,7 @@ def add(db, run_id, profile_id, table, target_id, field, value, *, replace_guess
         return False
     record(db, run_id, profile_id, table, target_id, field, before, value,
            fact_id=target_id if table != 'memories' else None,
-           memory_id=target_id if table == 'memories' else None)
+           memory_id=target_id if table == 'memories' else None, source=source)
     write(db, table, target_id, profile_id, field, value)
     return True
 

@@ -12,6 +12,12 @@ independent of system transaction time, which records when the product learned
 the fact. Unknown event dates stay
 unknown; enrichment does not invent dates or labels to meet a coverage percentage.
 
+Enrichment may fill a missing observation date from `created_at` (when the memory
+was recorded). That value is written to the ledger with source `inferred` and is
+never used as `valid_from`: only the fact's own event date, or the observation
+date it carried before enrichment, can start its validity. As-of recall is
+therefore the same before and after enrichment.
+
 Implementation order, each with a failing regression then a passing commit:
 
 1. Repair event-time anchoring in the canonical fact writer and materializer.

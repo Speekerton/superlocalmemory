@@ -216,14 +216,19 @@ class EnrichmentRunner:
                 continue  # the user's "this is an answer" always wins
             if field == 'entities_json':
                 value = json.dumps(list(dict.fromkeys([*fact.entities, *value])))
+            inferred = field == 'observation_date' and not fact.observation_date
             changed += add('atomic_facts', fact.fact_id, field, value,
-                           replace_guess=field == 'entities_json')
+                           replace_guess=field == 'entities_json',
+                           source=ledger.INFERRED if inferred else 'enrichment')
         for field, value in labels.items():
             changed += add('memories', fact.memory_id, field, value)
         current = dict(self.db.execute(
             'SELECT * FROM atomic_facts WHERE fact_id=? AND profile_id=?',
                                         (fact.fact_id, fact.profile_id))[0])
-        start = current['referenced_date'] or current['observation_date']  # never save time
+        # Event time comes only from the fact's own dates: its event date, else
+        # the observation date it carried BEFORE this pass. An observation date
+        # enrichment filled from created_at is save time and never a start.
+        start = current['referenced_date'] or fact.observation_date
         changed += add('atomic_facts', fact.fact_id, 'valid_from', start)
         # A missing temporal row is legacy_unknown (storage/database.py): it is
         # never created here, because its transaction time would be invented.

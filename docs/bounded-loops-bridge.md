@@ -135,13 +135,19 @@ or pinned configuration can still load.
 Checks are serialized per data root with an exclusive lock held through
 validation and receipt publication. After a check exits or times out, the
 runner sends SIGKILL to its process group. It then compares the user's process
-table with the baseline captured at check start. It attempts to kill any new
-process still alive, including processes that escaped with `setsid` or were
+table with the baseline captured at check start. It tracks parent chains and
+the session and process group IDs recorded at spawn, and gives each check a
+private random `SLM_LOOP_RUN_TOKEN` inherited by its children. It reads same-user
+process environments when available and attempts to kill surviving descendants
+or token holders, including processes that escaped with `setsid` or were
 reparented to init or launchd. Observing such a process makes the receipt FAIL
 and the watcher HALT, even if termination succeeds. The reason identifies its
 name and PID. A process that resists termination can remain alive; the runner
-cannot promise that every descendant was stopped. An unrelated process of the
-same user that starts during the check can also cause this conservative HALT.
+cannot promise that every descendant was stopped. Unrelated processes without
+the token or an observed ancestry, session or process group link are ignored.
+The lingering-process check is best-effort against code that deliberately scrubs
+its environment and leaves the session, consistent with the stated limit that
+code executed by the check runs with the user's rights.
 An unreadable process table refuses PASS. The runner checks the private input
 and definition hashes after this sweep.
 

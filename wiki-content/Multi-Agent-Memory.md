@@ -44,7 +44,7 @@ The mesh lets live agent sessions on one machine see each other, exchange messag
 
 ## Bounded loops
 
-A bounded loop lets one agent wait, within strict iteration and time limits, for something another agent will write into memory. Agent A saves "review complete: PR #42 is approved"; agent B runs `slm_loop_run` with the gate query "PR #42 approved", and the loop ends on the first lap where recall returns a confident match. Neither agent polls a file or a queue. Every lap is saved as a memory tagged `loop:<name>`. See [Bounded Loops](Bounded-Loops).
+A bounded loop lets one agent wait, within strict iteration and time limits, until an independent check passes. Memory locates the work: agent A saves "review complete: PR #42 is approved", and agent B runs `slm_loop_run` with the gate query "PR #42 approved". Memory alone never completes the loop, though. It ends only when recall finds that locator and an operator-registered check has produced a passing receipt for the current files, a receipt the waiting agent cannot produce itself. Every lap is saved as a memory tagged `loop:<name>`. See [Bounded Loops](Bounded-Loops).
 
 ## Choosing a mechanism
 

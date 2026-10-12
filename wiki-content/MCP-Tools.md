@@ -65,8 +65,8 @@ In the tables, a parameter followed by `?` is optional. The Profiles column says
 | `session_init` | `project_path`?, `query`?, `max_results`?, `max_age_days`?, `session_id`?, `agent_id`?, `profile_id`? | Load relevant memory context at the start of a session. Call it once; `project_path` ranks that project's memories higher, `max_age_days` (default 30) hides stale ones unless strongly relevant | core, code, full, power | write |
 | `observe` | `content`, `agent_id`?, `session_id`?, `profile_id`? | Offer conversation content for automatic capture of decisions, fixes and preferences. Low-confidence content is not stored | full, power | write |
 | `close_session` | `session_id`?, `profile_id`? | Close a session and create its temporal summaries (default: the most recent session) | core, code, full, power | write |
-| `report_feedback` | `fact_id`, `feedback`?, `query`?, `profile_id`? | Say whether a recalled memory helped: `feedback` is `relevant` (default), `irrelevant` or `partial`. Trains the adaptive ranker | code, full, power | write |
-| `report_outcome` | `memory_ids`, `outcome`, `context`?, `recall_query_id`?, `profile_id`? | Report how using recalled memories went: `outcome` is `success`, `failure` or `partial`; `memory_ids` is comma-separated; `recall_query_id` ties the report to one recall | code, full, power | write |
+| `report_feedback` | `fact_id`, `feedback`?, `query`?, `profile_id`?, `recall_query_id`? | Say whether a recalled memory helped: `feedback` is `relevant` (default), `irrelevant` or `partial`. Recorded in the learning store; it reorders recall only when adaptive ranking is switched on. With `recall_query_id` it is also stored as the outcome of that exact recall ([Active Memory](Active-Memory)) | code, full, power | write |
+| `report_outcome` | `memory_ids`, `outcome`, `context`?, `recall_query_id`?, `profile_id`?, `agent_id`?, `report_id`? | Report how using recalled memories went: `outcome` is `success`, `failure` or `partial`; `memory_ids` is comma-separated; `recall_query_id` ties the report to one recall; `agent_id` names the reporter; `report_id` makes a retry record nothing new | code, full, power | write |
 | `log_tool_event` | `tool_name`, `event_type`?, `input_summary`?, `output_summary`?, `duration_ms`?, `metadata`?, `session_id`?, `agent_id`?, `project_path`?, `profile_id`? | Log a tool-use event for behavioural learning (`event_type`: invoke, complete, error or correction). Passive; no model call | full, power | write |
 | `settle_session_outcomes` | `session_id`, `agent_id`?, `finalize`?, `profile_id`? | Settle pending recall outcomes for one exact host session; `session_id` must be explicit | whole only | write |
 | `get_assertions` | `min_confidence`?, `category`?, `project_path`?, `limit`?, `profile_id`? | Learned behavioural assertions, filtered by confidence, category and project | full, power | read |
@@ -150,7 +150,7 @@ In the tables, a parameter followed by `?` is optional. The Profiles column says
 
 | Tool | Parameters | What it does | Profiles | Remote |
 |---|---|---|---|---|
-| `slm_loop_run` | `name`, `gate_query`, `gate_min_score`?, `max_iterations`?, `max_wallclock_s`?, `poll_interval_s`?, `max_tokens`?, `no_progress_window`?, `require_support`? | Run one bounded loop that ends only when an independent gate (a recall of `gate_query`) passes or a bound trips | code, full, power | host only |
+| `slm_loop_run` | `name`, `gate_query`, `gate_contract`?, `gate_min_score`?, `max_iterations`?, `max_wallclock_s`?, `poll_interval_s`?, `max_tokens`?, `no_progress_window`?, `require_support`? | Run one bounded loop that ends only when an independent gate passes or a bound trips: a recall of `gate_query` finds a locator memory and, through `gate_contract={"job_id": ...}`, an operator-registered check has a passing receipt for the current files | code, full, power | host only |
 | `slm_loop_history` | `name`, `limit`?, `profile_id`? | Recorded runs for a loop name, newest first | code, full, power | read |
 | `slm_loop_show` | `run_id`, `limit`?, `profile_id`? | Every lap of one run, in order | code, full, power | read |
 
@@ -247,7 +247,7 @@ Web access is narrower than this table: an app connected through the dashboard r
 
 ## Notes on specific tools
 
-`slm_loop_run` blocks while it polls its gate, up to `max_wallclock_s` (default 15 seconds, at most 120), and writes every lap to memory under the tag `loop:NAME`. Its gate is a recall of `gate_query` that returns a confident match, and `require_support=true` also needs the [answer check](Answer-Check) to judge the memories sufficient. Setting `SLM_LOOP_KILL` to any non-empty value stops loops. See [Bounded Loops](Bounded-Loops).
+`slm_loop_run` blocks while it polls its gate, up to `max_wallclock_s` (default 15 seconds, at most 120), and writes every lap to memory under the tag `loop:NAME`. Its gate needs both a recall of `gate_query` that returns a confident match and an independent execution receipt named by `gate_contract`; without a valid contract it cannot reach DONE. `require_support=true` also needs the [answer check](Answer-Check) to judge the memories sufficient. Setting `SLM_LOOP_KILL` to any non-empty value stops loops. See [Bounded Loops](Bounded-Loops).
 
 The Optimize tools cache and compress only what you route through them. They do not intercept the main conversation turn without the proxy ([Optimize](Optimize)). Do not cache secrets, and treat a `ccr_id` like a capability.
 

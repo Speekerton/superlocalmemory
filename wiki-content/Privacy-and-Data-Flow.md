@@ -41,7 +41,7 @@ Two limits matter. The gate screens credential shapes only: it does **not** reda
 
 | Feature | Stays on this computer | Can leave | Controlled by |
 |---|---|---|---|
-| Remember and recall, Mode A | Everything. No language model runs. Embeddings, reranking and extraction are local | Only if you set the embedding provider to an OpenAI-compatible endpoint, or Ollama on another host. Then the text being embedded goes there | The mode and the embedding provider setting |
+| Remember and recall, Mode A | Everything. No language model is used to save or recall. Embeddings, reranking and extraction are local (the optional on-device answer check is listed separately) | Only if you set the embedding provider to an OpenAI-compatible endpoint, or Ollama on another host. Then the text being embedded goes there | The mode and the embedding provider setting |
 | Remember and recall, Mode B | Text, queries and prompts, while the model is on this computer (Ollama on localhost by default) | If the model server or Ollama is on another machine, prompts go there, credentials redacted | The mode and the LLM and embedding provider settings |
 | Remember and recall, Mode C | The database, vectors and graph | Memory text in extraction prompts at save, the query and top candidates during recall refinement, and answer prompts go to your provider (default OpenRouter; also OpenAI, Anthropic, Azure or your own). Credentials are redacted; personal data is not | The mode, provider, endpoint and key |
 | Answer check, Laya | The question, the memories and the verdict. It runs in a local worker and is forbidden from using the network at run time | Nothing at run time. The one-time setup downloads the model and package | `sufficiency_judge` (`auto`, `laya`, `jev`, `off`) |
@@ -54,11 +54,11 @@ Two limits matter. The gate screens credential shapes only: it does **not** reda
 | Embedding providers | With the default local model, everything | The text being embedded, to the endpoint you set. Credentials redacted unless it is on this computer | Provider and endpoint settings |
 | Memory-kind typing | Rules-based typing is local and always on | With the `jev` backend only: batches of 8 memories during a "Classify my memories" run | `memory_kinds.json`, and Jev consent. `auto` never resolves to Jev |
 | Ingestion adapters | Fetched content is posted to the local daemon | Gmail over IMAP or the Gmail API, and Calendar over its API, are network connections you configure. Mbox, ICS and transcript folders are local | Per-adapter opt-in |
-| Optimize proxy | Cache and metrics in a local store | Your client's own requests, unchanged except for cache and compress hooks, to the provider that client already uses | `proxy_enabled`; the client must be pointed at the proxy |
+| Optimize proxy | Cache and metrics in a local store | Your client's own requests, changed only by the cache and compress hooks and by the outbound gate (credential-shaped text in the body is replaced), to the provider that client already uses | `proxy_enabled`; the client must be pointed at the proxy |
 
 ## What "nothing leaves this device" means
 
-The Mode A description says no language model runs and nothing leaves the device. That is true with the default local embedder and no optional features turned on. It is a statement about SLM's default configuration, not a flag that blocks the network: the mode capability flags in the code are descriptive, and what actually leaves depends on the endpoints you configure. If you point Mode A's embedding provider at a remote endpoint, text goes there. Check the provider settings, not only the mode.
+The Mode A description reads "Memories are saved and recalled without a language model — nothing leaves this device." That is true with the default local embedder and no optional features turned on. It is a statement about SLM's default configuration, not a flag that blocks the network: the mode capability flags in the code are descriptive, and what actually leaves depends on the endpoints you configure. If you point Mode A's embedding provider at a remote endpoint, text goes there. Check the provider settings, not only the mode.
 
 ## Hosted redaction in detail
 

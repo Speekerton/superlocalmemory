@@ -72,72 +72,72 @@ Every variable below was found by searching the source. The default is stated on
 
 | Variable | Effect | Default | Source |
 |---|---|---|---|
-| `SLM_DATA_DIR`, `SL_MEMORY_PATH`, `SLM_HOME` | Data folder, first one set wins. | `~/.superlocalmemory` | `infra/data_root.py:19` |
-| `SLM_AGENT_ID` | Agent name attached to MCP calls on stdio. | `mcp_client` | `mcp/agent_context.py:52` |
-| `SLM_USER_SESSION` | A dashboard user session the CLI sends to the daemon in `X-SLM-User-Session`, for governed workspaces. | unset | `cli/daemon.py:719` |
-| `SLM_PII_REDACTION` | A truthy value turns on PII redaction when saving (also the `pii_redaction` config key and the deployment policy). | off | `memory_core/save_path.py:57` |
-| `SLM_REQUIRE_CREDENTIALS` | `1` makes even loopback writes present a daemon capability, install token or API key. | off | `server/write_identity.py:38` |
-| `SLM_REQUIRE_API_KEY_LOOPBACK` | When set and an `api_key` file exists, loopback writes must also send a matching `X-SLM-API-Key`. | off | `infra/auth_middleware.py:35` |
-| `SLM_DISABLE` | Any value other than `0`, `false`, `no` or `off` makes SLM do nothing, like the `.disabled` file. | unset | `core/slm_disabled.py:29` |
-| `SLM_NON_INTERACTIVE` | Makes the setup wizard treat the session as non-interactive. | unset | `cli/setup_wizard.py:52` |
-| `SLM_PYTHON` | Python interpreter the npm installer uses; it must be 3.12 to 3.14. | searched automatically | `scripts/postinstall.js:90` |
+| `SLM_DATA_DIR`, `SL_MEMORY_PATH`, `SLM_HOME` | Data folder, first one set wins. | `~/.superlocalmemory` | `infra/data_root.py` |
+| `SLM_AGENT_ID` | Agent name attached to MCP calls on stdio. | `mcp_client` | `mcp/agent_context.py` |
+| `SLM_USER_SESSION` | A dashboard user session the CLI sends to the daemon in `X-SLM-User-Session`, for governed workspaces. | unset | `cli/daemon.py` |
+| `SLM_PII_REDACTION` | A truthy value turns on PII redaction when saving (also the `pii_redaction` config key and the deployment policy). | off | `memory_core/save_path.py` |
+| `SLM_REQUIRE_CREDENTIALS` | `1` makes even loopback writes present a daemon capability, install token or API key. | off | `server/write_identity.py` |
+| `SLM_REQUIRE_API_KEY_LOOPBACK` | When set and an `api_key` file exists, loopback writes must also send a matching `X-SLM-API-Key`. | off | `infra/auth_middleware.py` |
+| `SLM_DISABLE` | Any value other than `0`, `false`, `no` or `off` makes SLM do nothing, like the `.disabled` file. | unset | `core/slm_disabled.py` |
+| `SLM_NON_INTERACTIVE` | Makes the setup wizard treat the session as non-interactive. | unset | `cli/setup_wizard.py` |
+| `SLM_PYTHON` | Python interpreter the npm installer uses; it must be 3.12 to 3.14. | searched automatically | `scripts/postinstall.js` |
 
 ### MCP
 
 | Variable | Effect | Default | Source |
 |---|---|---|---|
-| `SLM_MCP_PROFILE` | Tool profile: `core`, `code`, `full`, `power`, `mesh`, `whole`. See [Profiles](Profiles). | the default set, equal to `full` | `mcp/server.py:201` |
-| `SLM_MCP_TOOLS` | Comma-separated allowlist of tool names. | unset | `mcp/server.py:181` |
-| `SLM_MCP_ALL_TOOLS` | `1` registers every tool. | unset | `mcp/server.py:174` |
-| `SLM_MCP_MESH_TOOLS` | `1` or `true` exposes the mesh tools even if mesh is off in config. | follows `mesh_enabled` (on) | `mcp/server.py:144` |
-| `SLM_MCP_STATEFUL` | `1` opts out of stateless Streamable HTTP and uses session ids. | stateless | `core/remote_mode.py:67` |
-| `SLM_DISABLE_WARMUP_SIDE_EFFECTS` | `1` skips the dependency check and warm-up side effects at import. | unset | `__init__.py:80` |
+| `SLM_MCP_PROFILE` | Tool profile: `core`, `code`, `full`, `power`, `mesh`, `whole`. See [Profiles](Profiles). | the default set, equal to `full` | `mcp/server.py` |
+| `SLM_MCP_TOOLS` | Comma-separated allowlist of tool names. | unset | `mcp/server.py` |
+| `SLM_MCP_ALL_TOOLS` | `1` registers every tool. | unset | `mcp/server.py` |
+| `SLM_MCP_MESH_TOOLS` | `1` or `true` exposes the mesh tools even if mesh is off in config. | follows `mesh_enabled` (on) | `mcp/server.py` |
+| `SLM_MCP_STATEFUL` | `1` opts out of stateless Streamable HTTP and uses session ids. | stateless | `core/remote_mode.py` |
+| `SLM_DISABLE_WARMUP_SIDE_EFFECTS` | `1` skips the dependency check and warm-up side effects at import. | unset | `__init__.py` |
 
 ### Daemon, memory and request limits
 
 | Variable | Effect | Default | Source |
 |---|---|---|---|
-| `SLM_DAEMON_PORT` | Daemon port. | 8765 | `server/unified_daemon.py:550` |
-| `SLM_DAEMON_HOST` (or `SLM_HOST`) | Address the daemon binds. Anything beyond loopback logs a warning unless `SLM_REQUIRE_CREDENTIALS=1`. | `127.0.0.1` | `server/unified_daemon.py:6898` |
-| `SLM_DAEMON_IDLE_TIMEOUT` | Seconds idle before the daemon stops; 0 never. Falls back to `daemon_idle_timeout`. | 0 | `server/unified_daemon.py:3247` |
-| `SLM_DISABLE_LEGACY_PORT` | `1` or `true` turns off the 8767 redirect. | on | `server/legacy_port.py:33` |
-| `SLM_RSS_BUDGET_MB` | Total memory budget for the health monitor; 0 computes 40 percent of RAM. | 0 | `server/unified_daemon.py:3121` |
-| `SLM_MAX_WORKER_MB` | Per-worker size limit checked by the memory watchdog. | 2500 | `server/unified_daemon.py:6387` |
-| `SLM_EMBED_WORKER_RSS_LIMIT_MB` | Resident-size cap for the embedding worker. | 2500 | `core/embedding_worker.py:78` |
-| `SLM_RATE_LIMIT_WRITE`, `SLM_RATE_LIMIT_READ`, `SLM_RATE_LIMIT_WINDOW` | Per-client request limits and window in seconds. Loopback gets `max(300, 10 x write)` writes and `max(2000, 20 x read)` reads. | 30, 120, 60 | `core/remote_mode.py:186` |
-| `SLM_DB_BUSY_TIMEOUT_MS` | How long a database call waits for a writer. | 10000 | `storage/database.py:264` |
-| `SLM_LOOP_KILL` | Any non-empty value stops bounded loops. | unset | `loops/engine.py:55` |
+| `SLM_DAEMON_PORT` | Daemon port. | 8765 | `server/unified_daemon.py` |
+| `SLM_DAEMON_HOST` (or `SLM_HOST`) | Address the daemon binds. Anything beyond loopback logs a warning unless `SLM_REQUIRE_CREDENTIALS=1`. | `127.0.0.1` | `server/unified_daemon.py` |
+| `SLM_DAEMON_IDLE_TIMEOUT` | Seconds idle before the daemon stops; 0 never. Falls back to `daemon_idle_timeout`. | 0 | `server/unified_daemon.py` |
+| `SLM_DISABLE_LEGACY_PORT` | `1` or `true` turns off the 8767 redirect. | on | `server/legacy_port.py` |
+| `SLM_RSS_BUDGET_MB` | Total memory budget for the health monitor; 0 computes 40 percent of RAM. | 0 | `server/unified_daemon.py` |
+| `SLM_MAX_WORKER_MB` | Per-worker size limit checked by the memory watchdog. | 2500 | `server/unified_daemon.py` |
+| `SLM_EMBED_WORKER_RSS_LIMIT_MB` | Resident-size cap for the embedding worker. | 2500 | `core/embedding_worker.py` |
+| `SLM_RATE_LIMIT_WRITE`, `SLM_RATE_LIMIT_READ`, `SLM_RATE_LIMIT_WINDOW` | Per-client request limits and window in seconds. Loopback gets `max(300, 10 x write)` writes and `max(2000, 20 x read)` reads. | 30, 120, 60 | `core/remote_mode.py` |
+| `SLM_DB_BUSY_TIMEOUT_MS` | How long a database call waits for a writer. | 10000 | `storage/database.py` |
+| `SLM_LOOP_KILL` | Any non-empty value stops bounded loops. | unset | `loops/engine.py` |
 
 ### Web Access and remote use
 
 | Variable | Effect | Default | Source |
 |---|---|---|---|
-| `SLM_REMOTE` | Opts the daemon into LAN and distributed mode. | off | `core/remote_mode.py:48` |
-| `SLM_MCP_ALLOWED_HOSTS` | Comma-separated trusted clients: `*`, IP, CIDR or prefix wildcard. | unset | `core/remote_mode.py:85` |
-| `SLM_ALLOWED_HOSTS` | Host names the daemon accepts in the `Host` header, as a DNS-rebinding guard; `*.suffix` allowed. | localhost and IP literals | `server/host_guard.py:62` |
-| `SLM_REMOTE_LISTEN` | Address for the TLS remote listener; overrides the `listen` value in `remote/remote.json`. | unset | `server/remote_listener.py:42` |
-| `SLM_REMOTE_TLS_CERT`, `SLM_REMOTE_TLS_KEY` | Certificate and key for that listener. | unset | `server/remote_listener.py:43` |
-| `SLM_REMOTE_ALLOW_PLAINTEXT` | `1` allows remote callers over plain HTTP; SLM logs that keys and memory are then readable on the network. | off | `server/remote_access.py:42` |
+| `SLM_REMOTE` | Opts the daemon into LAN and distributed mode. | off | `core/remote_mode.py` |
+| `SLM_MCP_ALLOWED_HOSTS` | Comma-separated trusted clients: `*`, IP, CIDR or prefix wildcard. | unset | `core/remote_mode.py` |
+| `SLM_ALLOWED_HOSTS` | Host names the daemon accepts in the `Host` header, as a DNS-rebinding guard; `*.suffix` allowed. | localhost and IP literals | `server/host_guard.py` |
+| `SLM_REMOTE_LISTEN` | Address for the TLS remote listener; overrides the `listen` value in `remote/remote.json`. | unset | `server/remote_listener.py` |
+| `SLM_REMOTE_TLS_CERT`, `SLM_REMOTE_TLS_KEY` | Certificate and key for that listener. | unset | `server/remote_listener.py` |
+| `SLM_REMOTE_ALLOW_PLAINTEXT` | `1` allows remote callers over plain HTTP; SLM logs that keys and memory are then readable on the network. | off | `server/remote_access.py` |
 
 ### Retrieval, ranking and caching
 
 | Variable | Effect | Default | Source |
 |---|---|---|---|
-| `SLM_CROSS_ENCODER_API_KEY` | Bearer token for a remote rerank endpoint; overrides the config value. | unset | `retrieval/remote_reranker.py:71` |
-| `SLM_REMOTE_RERANK_DEADLINE_S` | Time limit for one remote rerank call, retries included. | 1.0 | `retrieval/remote_reranker.py:99` |
-| `SLM_RERANKER_ENABLED` | Process-only override of `use_cross_encoder`; `0`, `false`, `no`, `off` disable. | the config value | `core/config.py:530` |
-| `SLM_RANKING` | Adaptive ranking: `v1`, `v2` or `v2-ensemble`. | off | `core/recall_pipeline.py:360` |
+| `SLM_CROSS_ENCODER_API_KEY` | Bearer token for a remote rerank endpoint; overrides the config value. | unset | `retrieval/remote_reranker.py` |
+| `SLM_REMOTE_RERANK_DEADLINE_S` | Time limit for one remote rerank call, retries included. | 1.0 | `retrieval/remote_reranker.py` |
+| `SLM_RERANKER_ENABLED` | Process-only override of `use_cross_encoder`; `0`, `false`, `no`, `off` disable. | the config value | `core/config.py` |
+| `SLM_RANKING` | Adaptive ranking: `v1`, `v2` or `v2-ensemble`. | off | `core/recall_pipeline.py` |
 | `SLM_RECALL_NO_SUPPORT_GATE` | `1`, `true` or `yes` turns the support check off and restores the older recall behaviour; the setting `retrieval.answer_support_gate` set to false does the same. | on | `retrieval/support_gate.py` (`switched_off`) |
 | `SLM_SKIP_LAYA` | `1`, `true`, `yes` or `on` stops setup and upgrades installing the on-device answer check; `slm setup --no-laya` does the same for one run. | off | `cli/laya_offer.py` (`opted_out`) |
-| `SLM_BANDIT_DISABLED` | `1` skips bandit re-ranking and its background loops. | off | `core/recall_pipeline.py:992` |
-| `SLM_TRUST_READ_GATE` | `1` enables the trust check on reads. | off | `trust/gate.py:42` |
-| `SLM_CACHE_BACKEND` | `tiered` or `sqlite` for the derived cache. | `tiered` | `cache/factory.py:36` |
-| `SLM_CACHE_DB` | Path of the active-brain cache database. | `active_brain_cache.db` in the data folder | `core/context_cache.py:409` |
-| `SLM_DERIVE_CACHE_MAX_MB` | Size cap of the derived cache. | 2048 | `cache/sqlite_store.py:53` |
-| `SLM_AUTO_PROMOTE_MIN_EDGES` | Graph edges before the scale engine auto-promotes. | 100000 | `core/backend_orchestrator.py:272` |
-| `SLM_REINDEX_BATCH`, `SLM_REINDEX_PAUSE_S`, `SLM_REINDEX_DUTY_REST` | Batch size, pause between batches in seconds, and rest as a fraction of batch time during a model switch. | 32, 0.02, 1.0 | `core/embedding_reindex_steps.py:34` |
-| `SLM_EVOLUTION_BACKEND` | `claude-cli` runs skill evolution through the Claude CLI. | Anthropic API | `evolution/llm_dispatch.py:384` |
-| `SLM_EVO_AUTO_APPROVE` | `1` or `true` auto-approves skill evolutions. `EvolutionConfig` has no field for it, so the variable decides. | off | `evolution/skill_evolver.py:191` |
+| `SLM_BANDIT_DISABLED` | `1` skips bandit re-ranking and its background loops. | off | `core/recall_pipeline.py` |
+| `SLM_TRUST_READ_GATE` | `1` enables the trust check on reads. | off | `trust/gate.py` |
+| `SLM_CACHE_BACKEND` | `tiered` or `sqlite` for the derived cache. | `tiered` | `cache/factory.py` |
+| `SLM_CACHE_DB` | Path of the active-brain cache database. | `active_brain_cache.db` in the data folder | `core/context_cache.py` |
+| `SLM_DERIVE_CACHE_MAX_MB` | Size cap of the derived cache. | 2048 | `cache/sqlite_store.py` |
+| `SLM_AUTO_PROMOTE_MIN_EDGES` | Graph edges before the scale engine auto-promotes. | 100000 | `core/backend_orchestrator.py` |
+| `SLM_REINDEX_BATCH`, `SLM_REINDEX_PAUSE_S`, `SLM_REINDEX_DUTY_REST` | Batch size, pause between batches in seconds, and rest as a fraction of batch time during a model switch. | 32, 0.02, 1.0 | `core/embedding_reindex_steps.py` |
+| `SLM_EVOLUTION_BACKEND` | `claude-cli` runs skill evolution through the Claude CLI. | Anthropic API | `evolution/llm_dispatch.py` |
+| `SLM_EVO_AUTO_APPROVE` | `1` or `true` auto-approves skill evolutions. `EvolutionConfig` has no field for it, so the variable decides. | off | `evolution/skill_evolver.py` |
 
 `SLM_EVOLUTION_ENABLED` also exists, but the daemon sets it for its hooks from `evolution.enabled`, so set the config key instead.
 
@@ -145,23 +145,23 @@ Every variable below was found by searching the source. The default is stated on
 
 | Variable | Effect | Default | Source |
 |---|---|---|---|
-| `SLM_MEDIA_ALLOW_LOW_RAM` | `1` lets images and documents turn on below the 15 GiB check. | off | `runtimes/media_env.py:47` |
-| `SLM_MEDIA_WORKER_RSS_LIMIT_MB` | Overrides the picture worker's size cap. | per model (4500 MB for EmbeddingGemma 2) | `runtimes/media_models.py:77` |
-| `SLM_MEDIA_SPACE_MODE` | `paired` or `separate` picture search space. | `separate` | `runtimes/space_plan.py:29` |
-| `SLM_DOC_MAX_MB` | Largest PDF accepted, in MB. | 100 | `documents/submit.py:65` |
-| `SLM_DOC_MAX_PAGES` | Most pages in one PDF. | 500 | `documents/runner.py:52` |
-| `SLM_MEDIA_URL_HOSTS` | Extra hosts a connected web app may fetch attached files from. | none | `core/media_fetch.py:55` |
+| `SLM_MEDIA_ALLOW_LOW_RAM` | `1` lets images and documents turn on below the 15 GiB check. | off | `runtimes/media_env.py` |
+| `SLM_MEDIA_WORKER_RSS_LIMIT_MB` | Overrides the picture worker's size cap. | per model (4500 MB for EmbeddingGemma 2) | `runtimes/media_models.py` |
+| `SLM_MEDIA_SPACE_MODE` | `paired` or `separate` picture search space. | `separate` | `runtimes/space_plan.py` |
+| `SLM_DOC_MAX_MB` | Largest PDF accepted, in MB. | 100 | `documents/submit.py` |
+| `SLM_DOC_MAX_PAGES` | Most pages in one PDF. | 500 | `documents/runner.py` |
+| `SLM_MEDIA_URL_HOSTS` | Extra hosts a connected web app may fetch attached files from. | none | `core/media_fetch.py` |
 
 ### Mesh
 
 | Variable | Effect | Default | Source |
 |---|---|---|---|
-| `SLM_MESH_HOST` | Address the mesh listener binds. | `127.0.0.1` | `mesh/broker.py:68` |
-| `SLM_MESH_SHARED_SECRET` | Shared bearer token; required when the host is not local. | unset | `mesh/broker.py:69` |
-| `SLM_MESH_WS_PORT` | Port used for mDNS announcement. | 7900 | `mesh/broker.py:71` |
-| `SLM_MESH_DISCOVERY` | `off` disables mDNS discovery, which only applies off-host. | on | `mesh/broker.py:72` |
-| `SLM_MESH_PEER_URL` | Full URL of a remote SLM instance. | unset | `mesh/broker.py:75` |
-| `SLM_MESH_TLS` | `1`, `on`, `true` or `yes` uses TLS for discovered peers. | off | `mesh/remote_sync.py:850` |
+| `SLM_MESH_HOST` | Address the mesh listener binds. | `127.0.0.1` | `mesh/broker.py` |
+| `SLM_MESH_SHARED_SECRET` | Shared bearer token; required when the host is not local. | unset | `mesh/broker.py` |
+| `SLM_MESH_WS_PORT` | Port used for mDNS announcement. | 7900 | `mesh/broker.py` |
+| `SLM_MESH_DISCOVERY` | `off` disables mDNS discovery, which only applies off-host. | on | `mesh/broker.py` |
+| `SLM_MESH_PEER_URL` | Full URL of a remote SLM instance. | unset | `mesh/broker.py` |
+| `SLM_MESH_TLS` | `1`, `on`, `true` or `yes` uses TLS for discovered peers. | off | `mesh/remote_sync.py` |
 
 Provider keys are read from `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `AZURE_OPENAI_API_KEY` and `OPENROUTER_API_KEY` when set (`core/config.py` provider table, `llm/backbone.py`).
 

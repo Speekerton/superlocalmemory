@@ -36,7 +36,7 @@ The trust gate then acts on the score. A write needs trust of at least 0.3 and a
 
 ## Compliance
 
-**Audit chain.** Governed actions are recorded in a SHA-256 hash chain that lives in its own SQLite connection, so it survives damage to the main database. `verify_integrity()` detects tampering. You can read it from the dashboard, from `GET /api/compliance/audit`, or through the MCP `audit_trail` tool (power and whole profiles).
+**Audit chain.** Governed actions are recorded in a SHA-256 hash chain that lives in its own SQLite connection, so it survives damage to the main database. `verify_integrity()` detects tampering, and it also checks for truncation against an anchor kept beside the chain: a chain that has entries but a missing or unreadable anchor is reported as failing, with the reason "no anchor (missing|unreadable): truncation cannot be checked", and the dashboard badge is not green. An empty chain needs no anchor. You can read it from the dashboard, from `GET /api/compliance/audit`, or through the MCP `audit_trail` tool (power and whole profiles).
 
 **Retention.** A retention rule has a name, a number of days, a framework label (`custom` by default, or GDPR or HIPAA as labels), an action of `archive`, `tombstone` or `notify`, and an optional filter on scope, fact type, signal type or session. A background scheduler enforces rules every hour, and you can enforce on demand with `POST /api/compliance/retention/enforce`.
 

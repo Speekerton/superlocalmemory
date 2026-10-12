@@ -38,7 +38,7 @@ Hermes is reported `verified` if its existing mapping is present, and the mappin
 
 Naming a host that is not yet connected is a first-time connection, not an upgrade: `slm upgrade-hosts --host windsurf --apply` writes the MCP entry the same way `slm connect windsurf` does. That path is never reached by `--all-detected`.
 
-After applying, restart the affected applications and run `slm doctor` to check SLM itself. If nothing is detected, the command says so and suggests `slm setup` for first-time setup.
+The command ends with a line, "Apps to restart or reconnect", that names the hosts you just applied plus any host whose running MCP session reports an older version than the installed SLM, and points to the dashboard's Connected apps page for reconnecting live sessions. Restart or reconnect those applications, then run `slm doctor` to check SLM itself. If nothing is detected, the command says so and suggests `slm setup` for first-time setup.
 
 ## Your memory store after an upgrade
 

@@ -18,6 +18,10 @@ The proxy is not a separate process. It is a set of routes the SLM daemon mounts
 
 Turning it on has one non-obvious step. The proxy routes are mounted only when the daemon boots, so after you enable the proxy you must run `slm restart`. `slm proxy` sets `proxy_enabled` and prints "Proxy ready" as soon as the daemon answers its health check, which is true even before the routes exist; if `/v1/messages` returns 404, restart. The master switch is a different thing: `slm optimize on` sets `enabled`, cache and compress, but does not set `proxy_enabled`, and the master `enabled` flag gates only the in-process SDK wrapper `withSLM(...)`. The proxy ignores it.
 
+### Who may use the proxy
+
+The proxy is on the daemon's port, so it guards itself. Every request must carry the provider credential a real client sends (`x-api-key` or a bearer token for the Anthropic routes, `x-goog-api-key` or a bearer token for the Gemini ones, a bearer token elsewhere); without one it answers 401 "provider credential required". A request that carries a browser `Origin` other than the daemon's own dashboard origins is refused with 403 "cross-origin request rejected", so a web page cannot use your proxy. When the proxy forwards a call to the provider it sends only the headers each provider needs, never your dashboard cookies or SLM's own keys, and the request body goes through the same outbound gate as every other call that leaves the computer, so credential-shaped text in it is replaced by a bare `redacted` marker before it reaches a non-local provider ([Privacy and Data Flow](Privacy-and-Data-Flow)).
+
 ### Pointing a client at it
 
 `slm wrap <agent>` is a registry of how each agent accepts a base URL. Run `slm wrap --list` for the table.

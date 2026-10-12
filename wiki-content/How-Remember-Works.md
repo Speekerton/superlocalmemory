@@ -33,11 +33,11 @@ sequenceDiagram
 
 [Download as PNG](images/remember-sequence.png)
 
-Code: `server/unified_daemon.py:5178` (the route), `memory_core/submit.py`, `core/remember_admission.py`, `core/remember_runtime.py`, `storage/admission_journal.py`, `daemon/materializer.py`.
+Code: `server/unified_daemon.py` (the route), `memory_core/submit.py`, `core/remember_admission.py`, `core/remember_runtime.py`, `storage/admission_journal.py`, `daemon/materializer.py`.
 
 ## Step by step
 
-**1. Every client reaches the same route.** MCP tools, the CLI and the dashboard all end at the daemon's `POST /remember`. A stdio MCP server does not write on its own; it forwards to the daemon (`mcp/_daemon_proxy.py:288`). That keeps one process in charge of the database, which is what makes the rest of the guarantees possible.
+**1. Every client reaches the same route.** MCP tools, the CLI and the dashboard all end at the daemon's `POST /remember`. A stdio MCP server does not write on its own; it forwards to the daemon (`mcp/_daemon_proxy.py`). That keeps one process in charge of the database, which is what makes the rest of the guarantees possible.
 
 **2. The checks run before anything is written.** The daemon identifies the write actor, routes the call to the right profile, and requires the `WRITE` permission on that profile (and `SHARE` when the memory is shared with other profiles). Only after the permission gate does it tell a caller that a profile does not exist, so an unauthorised caller cannot probe which profiles are there (404 versus 403). The trust policy and the deterministic admission checks also run here. See [Security, Company Mode and Teams](Security-Company-Mode-and-Teams).
 

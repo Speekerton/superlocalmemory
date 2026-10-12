@@ -49,7 +49,7 @@ A query is first classified, and the classification sets the weight each produce
 | Hopfield | Associative recall over stored representations | Linked decisions and technical context |
 | Picture channel | What a picture or PDF page shows | "The slide with the quarterly numbers" |
 
-The picture channel only exists when pictures and documents are on, `media.db` exists and the profile has at least one picture vector. Otherwise it is not even submitted, and a recall is exactly what it was without it. Its query vector comes from a media worker that is already warm, asked at most once and for at most a third of a second. If the worker is cold, it starts in the background, this recall goes on without pictures and says so with a `warming` status. Why: a recall must never wait for a model to load.
+The picture channel only exists when pictures and documents are on, `media.db` exists and the profile has at least one picture vector. Otherwise it is not even submitted, and a recall is exactly what it was without it. Its query vector comes from a media worker that is already warm, asked at most once and for at most 0.3 seconds. If the worker is cold, it starts in the background, this recall goes on without pictures and says so with a `warming` status. Why: a recall must never wait for a model to load.
 
 The entity graph is not a producer. It scores and boosts fused candidates afterwards, when enabled and within the time budget.
 

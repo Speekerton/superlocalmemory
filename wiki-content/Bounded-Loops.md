@@ -20,40 +20,48 @@ Report the exact status. A `HALT` is not a success with an excuse attached; it m
 
 Autonomy is set by a rung. `L1` (report) exits on a passing gate with no approval. `L2` (assisted) and `L3` (unattended) require approval before a passing gate becomes `DONE`, unless the bounds force the posture either way. The MCP and CLI entry points below run at `L1`.
 
-## Waiting on another agent: `slm_loop_run`
+## Waiting for a verified check: `slm_loop_run`
 
-Over MCP the gate is an SLM recall. `slm_loop_run` converges on the first lap where recalling `gate_query` returns a confident match scoring at least `gate_min_score`. That makes it a shell-free coordination primitive: one agent waits, under strict bounds, for a memory another agent will write.
+Over MCP, `slm_loop_run` is a watcher. It waits, under hard bounds, until two independent things are true on the same lap. First, recalling `gate_query` returns a memory that is not one of the loop's own ledger rows (a locator: it says where the work is or what the task is), clears the evidence floor, is not judged insufficient by the [answer check](Answer-Check) and scores at least `gate_min_score`. Second, there is an **independent execution receipt**: proof that an operator-registered check ran against the current files and passed. Recall locates context; related text, a high score or a supported answer can never complete the loop by itself, and a receipt produced by the running agent does not count.
+
+This is the part of the design that stops an agent from marking its own homework. The registration and the run of the check are done by the operator, in Python on the SLM computer, not through MCP: no MCP call can register or execute a check. The operator registers a job with `loops.receipt_jobs.register_job`: the command as an argument list (no shell), the working folder, the check files to pin (tests, scripts, fixtures such as `conftest.py`, configuration) and the mutable artifacts the agent is allowed to change, as paths or globs. Registration copies the check files into a content-addressed store under the data folder and pins their hashes and the command, so later edits to those files change nothing. The operator then runs `run_registered_check`, which executes only that pinned definition in a fresh private directory and records a receipt. The agent calls `slm_loop_run(name=..., gate_query=..., gate_contract={"job_id": "<the registered job id>"})`. The contract must be exactly that one key, a 32-character hex id.
 
 ```python
-# Agent A records the signal
-await remember("review complete: PR #42 is approved", tags="review,pr-42")
+from superlocalmemory.loops.receipt_jobs import register_job, run_registered_check
 
-# Agent B waits for it
-result = await slm_loop_run(
-    name="wait-for-pr-review",
-    gate_query="PR #42 approved",
-    gate_min_score=0.5,
-    max_iterations=30,
-    max_wallclock_s=60.0,
-    poll_interval_s=2.0,
+job = register_job(
+    db, profile_id="default", task_id="build", watcher_name="build",
+    producer="operator-checker", command=[python_executable, "-m", "pytest", "tests"],
+    cwd=project, check_paths=["tests", "pytest.ini"],
+    artifact_paths=["src/**/*.py"], data_root=slm_data_root,
 )
+receipt = run_registered_check(db, job["job_id"], timeout=30)
+
+# the agent waits:
+# slm_loop_run(name="build", gate_query="build status",
+#              gate_contract={"job_id": job["job_id"]})
 ```
 
-The call blocks, polling the gate, until the gate passes or a bound trips, then returns `ok`, `status`, `reason`, `passed`, `laps`, `run_id`, a short ledger and a note that the gate decided. On internal failure it returns `ok: false` with a message instead of raising.
+A receipt counts only when all of these hold: it was produced by someone other than the running agent; it was produced after the watcher started (unless the operator allowed earlier evidence at registration); it is authentic and its output hashes match; it reports exit code 0 for a pass; the job has not expired (a registration lives for at most a day, one hour by default) or been replaced by a newer registration for the same profile and watcher; and a fresh copy of the declared artifacts has the same revision as the one the check ran on. If the files changed, the gate says to run the registered check again. Without a valid `gate_contract` the loop cannot reach `DONE`: it runs to its bound and halts with the reason, such as "operator-registered job_id required", "no execution receipt" or "check FAILED (exit 1)". The reply's `reason` names the refusal rather than only the bound that tripped. On a host that cannot open directories safely without following links, registration is refused and the reason says so.
+
+**What DONE means, and what it does not.** DONE means the newest eligible, authenticated receipt reports exit code zero from the operator's pinned check on the copied and hashed inputs, and that the current declared inputs still match. It does not mean the code is correct. The check runs with your user's rights, so code it imports can make the check pass (a file that exits the process successfully before the tests assert anything, for example), or change another loop's private copy; the check has network access and its verdict can depend on responses SLM does not copy; and a process that deliberately detaches and hides is beyond what a tool running as the same user can stop. SLM stops a check's leftover processes and halts when it can see them. For results that matter, keep the check's own code out of the folder the agent can write, and run one loop at a time. Receipts record the exit status and hashes of the check's output, never the output, so nothing the check prints can reach a receipt, the loop history or an MCP reply; to read the output, run the pinned command yourself.
+
+The call blocks, polling the gate, until the gate passes or a bound trips, then returns `ok`, `status`, `reason`, `bound_reason`, `receipt_reason`, `passed`, `laps`, `run_id`, a short ledger and a note that independent receipts decide completion. On internal failure it returns `ok: false` with a message instead of raising.
 
 | Parameter | Default | Limit |
 |---|---|---|
 | `name` | required | 1 to 128 characters; also the memory tag |
 | `gate_query` | required | 1 to 2,000 characters |
+| `gate_contract` | none | `{"job_id": ...}` from an operator registration; required for `DONE` |
 | `gate_min_score` | 0.0 | Minimum top-result score (0.0 means any confident hit above the evidence floor) |
 | `max_iterations` | 20 | 1 to 200 |
 | `max_wallclock_s` | 15.0 | Capped at 120; 0 removes the wall-clock limit |
 | `poll_interval_s` | 1.0 | At least 0.25 |
 | `max_tokens` | 0 | 0 means no token budget |
 | `no_progress_window` | 0 | Leave at 0 for a pure watcher, which never "changes" and would halt before the gate can pass |
-| `require_support` | false | Pass only when the answer check ran and judged the memories sufficient |
+| `require_support` | false | Also require the answer check to have run and judged the memories sufficient |
 
-Each lap does one recall of at most three memories. Two details keep the gate honest. The loop's own ledger rows are excluded from the gate, because they are stored as memories and would otherwise match the query on the next lap and pass it falsely; only a memory from someone else can satisfy the gate. And when [Answer Check](Answer-Check) is on, a recall the check judged insufficient can never pass, even if its relevance score looks high; with `require_support` true, a recall the check did not or could not run on also fails. With the check on, each lap asks it once about those memories, which with the online check is a request to the provider.
+Each lap does one recall of at most three memories and asks the answer check once, never for a reorder; with the online check that is a request to the provider each lap. The loop's own ledger rows are excluded from the recall gate, because they are stored as memories and would otherwise match the query on the next lap.
 
 `slm_loop_history(name, limit, profile_id)` lists recorded runs (`run_id`, lap count, final decision, time), and `slm_loop_show(run_id, limit, profile_id)` returns every lap with its decision, pass flag, detail, the recorded `agent_claimed_done` and the tokens. Both are read-only. The three tools are in the `code`, `full` and `power` MCP profiles ([MCP Tools](MCP-Tools)).
 
@@ -67,7 +75,7 @@ slm loop history --name my-loop --json
 slm loop show <run_id>
 ```
 
-The CLI is for inspection and the demo only; the demo uses a built-in stub runner. To run a real loop from a host, use the `/slm-loop` command and the `slm-loop` skill in the Claude Code and Codex plugins, which hand the work to the `slm-loop-runner` agent. For a task with a checkable condition such as a test suite, a schema or a linter, the agent runs that command itself each lap; SLM does not execute commands. The runner agent reports the exact terminal status and never dresses up a non-`DONE` result.
+The CLI is for inspection and the demo only; the demo uses a built-in stub runner. To run a real loop from a host, use the `/slm-loop` command and the `slm-loop` skill in the Claude Code and Codex plugins, which hand the work to the `slm-loop-runner` agent. For a task with a checkable condition such as a test suite, a schema or a linter, the agent runs that command itself each lap; SLM does not execute commands for the agent. A loop whose completion must be independently proven uses the registered-check route above. The runner agent reports the exact terminal status and never dresses up a non-`DONE` result.
 
 ## The ledger
 
@@ -83,4 +91,4 @@ This is observation only. The field `eligible_for_learning` must be false, and t
 
 Integrations > Bounded Loops has four parts: Bridge status, How it works, a "Run it" block with the CLI command and MCP call, and Framework adapters. Detection of the separate product uses a PATH lookup for `bounded-loops-mcp`, then a version call with a 1.5-second timeout, and it does not claim the bridge is live. If it is absent the pane says "not installed", which is a normal, complete state. The framework list shows the nine adapters in [Framework Adapters](Framework-Adapters). For coordination between agents without a loop see [Multi-Agent Memory](Multi-Agent-Memory).
 
-Code: `src/superlocalmemory/loops/` (`engine.py`, `models.py`, `rules.py`, `budget.py`, `ledger.py`), `mcp/tools_loops.py`, `cli/loop_cmd.py`, `integrations/bounded_loops_mcp.py`, `mcp/tools_brain.py`, `ui/js/od-boundedloops.js`.
+Code: `src/superlocalmemory/loops/` (`engine.py`, `models.py`, `rules.py`, `budget.py`, `ledger.py`), `loops/receipt_jobs.py`, `loops/receipt_gate.py`, `loops/execution_receipts.py`, `mcp/loop_runner.py`, `mcp/tools_loops.py`, `cli/loop_cmd.py`, `integrations/bounded_loops_mcp.py`, `mcp/tools_brain.py`, `ui/js/od-boundedloops.js`.

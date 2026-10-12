@@ -224,7 +224,7 @@ def test_recovery_worker_stops_before_restore_and_restarts_after(tmp_path, monke
     monkeypatch.setattr(worker, "control", lambda root, action: calls.append(action))
     monkeypatch.setattr(worker, "wait_stopped", lambda pid: calls.append("stopped"))
     monkeypatch.setattr(
-        worker, "restore_atomically", lambda root, point_id: calls.append("restore")
+        worker, "restore_atomically", lambda root, point_id, **kw: calls.append("restore")
     )
     worker.run(tmp_path, point["id"], 123)
     assert calls == ["stop", "stopped", "restore", "start"]
@@ -242,7 +242,7 @@ def test_recovery_worker_never_restores_if_stop_fails(tmp_path, monkeypatch):
         raise RuntimeError("stop refused")
 
     monkeypatch.setattr(worker, "control", refused)
-    monkeypatch.setattr(worker, "restore_atomically", lambda *args: calls.append("restore"))
+    monkeypatch.setattr(worker, "restore_atomically", lambda *args, **kw: calls.append("restore"))
     worker.run(tmp_path, "fixture", 123)
     assert "restore" not in calls
     assert json.loads((tmp_path / "backup-recovery-outcome.json").read_text())["state"] == "failed"
@@ -260,7 +260,7 @@ def test_failed_erasure_replay_never_restarts_a_store_it_could_not_roll_back(
     monkeypatch.setattr(worker, "wait_stopped", lambda pid: None)
     monkeypatch.setattr(worker, "create_point", lambda root: {"id": "0123456789abcdef"})
 
-    def replay_failed(*args):
+    def replay_failed(*args, **kwargs):
         raise RollbackFailed("erasure replay failed, then the rollback failed")
 
     monkeypatch.setattr(worker, "restore_atomically", replay_failed)

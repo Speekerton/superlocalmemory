@@ -30,6 +30,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
+from superlocalmemory.server import recovery_marker
 from superlocalmemory.storage._durable_json import read_json
 
 OUTCOME_NAME = "backup-recovery-outcome.json"
@@ -97,40 +98,29 @@ def _alive(pid) -> bool:
     return True
 
 
-RECOVERY_NEEDED = "recovery-needed.json"
-CLEAR_COMMAND = "slm backup clear-recovery-needed"
+RECOVERY_NEEDED = recovery_marker.NAME
+CLEAR_COMMAND = recovery_marker.CLEAR_COMMAND
 
 
-def mark_recovery_needed(root: Path, reason: str, safety_id: str | None) -> None:
-    """Record that the stores may be mixed; start-up refuses until it is cleared.
-
-    Written when a rollback failed or a worker died while restoring (PR 251
-    re-review N3). Only a successful ``restore-safety-copy`` or the owner's
-    explicit ``clear-recovery-needed`` removes it.
-    """
-    from datetime import UTC, datetime
-
-    from superlocalmemory.storage._durable_json import write_json_atomic
-
-    write_json_atomic(Path(root) / RECOVERY_NEEDED, {
-        "reason": reason, "safety_id": safety_id,
-        "at": datetime.now(UTC).isoformat(timespec="seconds")})
+def mark_recovery_needed(root: Path, reason: str, safety_id: str | None,
+                         kept_copy: str | None = None) -> None:
+    """Record that the stores may be mixed; start-up refuses until it is cleared."""
+    recovery_marker.needs_recovery(root, reason, safety_id, kept_copy)
 
 
 def clear_recovery_needed(root: Path) -> bool:
-    path = Path(root) / RECOVERY_NEEDED
-    existed = path.exists()
-    path.unlink(missing_ok=True)
-    return existed
+    """Remove the marker and any pre-restore copy it kept (owner's explicit choice)."""
+    return recovery_marker.clear(root)
 
 
 def restore_in_progress(root: Path) -> str | None:
     """Why a daemon must not start now, or None. Never raises."""
-    if (Path(root) / RECOVERY_NEEDED).exists():
-        return ("The last restore stopped part-way and the stores may be mixed, so the "
-                f"service will not start on them. Run `{RECOVER_COMMAND}` to put the safety "
-                f"copy back (or, only if you have repaired the stores yourself, "
-                f"`{CLEAR_COMMAND}`), then `slm serve start`.")
+    try:
+        refused = recovery_marker.refusal(root)
+    except Exception:  # noqa: BLE001
+        refused = None
+    if refused:
+        return refused
     try:
         status = read_json(Path(root) / OUTCOME_NAME) or {}
     except Exception:  # noqa: BLE001 - an unreadable note never blocks start-up
@@ -140,30 +130,44 @@ def restore_in_progress(root: Path) -> str | None:
     return None
 
 
-def restore_atomically(root: Path, point_id: str) -> None:
+def restore_atomically(root: Path, point_id: str, *, safety_id: str | None = None) -> None:
     """Restore ``point_id`` as one unit, or leave every covered file as it was.
 
-    The rollback is a file copy taken just before the restore
-    (``backup_rollback.PreRestoreCopy``); it runs none of the restore code, so
-    a failure that repeats cannot fail the rollback too. The copy is kept when
-    even the rollback fails, for manual recovery.
+    ``recovery-needed.json`` is written before anything is touched and removed
+    only after success or a clean rollback, so a process that dies at any
+    point leaves every start refused (``recovery_marker``). The rollback is a
+    file copy taken just before the restore (``backup_rollback``); it runs
+    none of the restore code. When even the rollback fails, the copy is kept
+    and named in the marker.
     """
     from superlocalmemory.server import backup_bundle
     from superlocalmemory.server.backup_rollback import PreRestoreCopy
 
-    copy = PreRestoreCopy.take(Path(root))
+    root = Path(root)
+    previous = recovery_marker.begin(root, safety_id)
     try:
-        backup_bundle.restore_point(Path(root), point_id)
+        copy = PreRestoreCopy.take(root)
+    except Exception:
+        recovery_marker.end_clean(root, previous)  # nothing was written yet
+        raise
+    try:
+        backup_bundle.restore_point(root, point_id)
     except Exception as exc:
         cause = exc
     else:
         copy.discard()
+        recovery_marker.end_clean(root, None)
         return
     try:
         copy.roll_back()
     except Exception as exc:
-        raise RollbackFailed(str(exc)) from cause
+        recovery_marker.needs_recovery(root, "the restore and its rollback both failed",
+                                       safety_id, str(copy.folder))
+        failed = RollbackFailed(str(exc))
+        failed.kept_copy = str(copy.folder)
+        raise failed from cause
     copy.discard()
+    recovery_marker.end_clean(root, previous)
     raise RolledBack(str(cause)) from cause
 
 
@@ -176,8 +180,9 @@ def recover_safety_copy(root: Path, safety_id: str) -> dict:
     with writer_lease(root, wait_s=0.0):
         # The point taken first must never prune the copy it is about to restore.
         before = create_point(root, keep=frozenset({safety_id}))["id"]
-        restore_atomically(root, safety_id)
-        clear_recovery_needed(root)
+        kept = recovery_marker.kept_copies(recovery_marker.read(root))
+        restore_atomically(root, safety_id, safety_id=before)
+        recovery_marker.remove_copies(root, kept)  # the stores are whole again
         write_json_atomic(Path(root) / OUTCOME_NAME, {
             "state": "recovered", "id": safety_id, "safety_id": before,
             "message": "The safety copy was put back. Start the service with `slm serve start`."})
@@ -212,8 +217,9 @@ def settle(status: dict, root: Path, mtime: float | None = None) -> dict:
     stage = status.get("state")
     details = f"Details are in {log_path(root)}."
     if stage == "restoring":
-        mark_recovery_needed(root, "the restore worker ended while restoring",
-                             status.get("safety_id"))
+        if recovery_marker.read(root) is None:  # normally written before the first write
+            mark_recovery_needed(root, "the restore worker ended while restoring",
+                                 status.get("safety_id"))
         message = ("The recovery stopped part-way because its process ended, so the stores "
                    "may be partly restored. Stop the service (`slm serve stop`) and run "
                    f"`{RECOVER_COMMAND}` to put the safety copy back. {details}")

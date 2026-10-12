@@ -29,7 +29,6 @@ from superlocalmemory.server.backup_restore_txn import (
     RECOVER_COMMAND,
     RollbackFailed,
     RolledBack,
-    mark_recovery_needed,
     restore_atomically,
     writer_lease,
 )
@@ -81,7 +80,7 @@ def _restore(root: Path, point_id: str, status: _Outcome) -> None:
     with writer_lease(root):
         status.safety_id = create_point(root)["id"]
         status.write("restoring")
-        restore_atomically(root, point_id)
+        restore_atomically(root, point_id, safety_id=status.safety_id)
 
 
 def run(root: Path, point_id: str, pid: int) -> None:
@@ -94,13 +93,15 @@ def run(root: Path, point_id: str, pid: int) -> None:
         wait_stopped(pid)
         stopped = True
         _restore(root, point_id, status)
-    except RollbackFailed:
+    except RollbackFailed as exc:
         logger.exception("Backup recovery failed and the safety copy could not be put back")
-        mark_recovery_needed(root, "the restore and its rollback both failed", status.safety_id)
+        kept = getattr(exc, "kept_copy", None)
         status.write("failed", (
             "Recovery failed and the previous state could not be put back automatically. "
             "The service stays stopped so nothing writes to a mixed store. Run "
-            f"`{RECOVER_COMMAND}` to put the safety copy back, then `slm serve start`."))
+            f"`{RECOVER_COMMAND}` to put the safety copy back, then `slm serve start`."
+            + (f" The stores as they were before the restore are kept in {kept}." if kept
+               else "")))
         return
     except RolledBack:
         logger.exception("Backup recovery failed; the state before it was put back")

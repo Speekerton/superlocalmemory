@@ -266,32 +266,17 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
-def apply(db_path: str | Path, *, max_changes: int | None = None,
-          idle=None) -> dict[str, Any]:
+def apply(db_path: str | Path) -> dict[str, Any]:
     """Plan and apply in one transaction; returns counts and the run id."""
     from superlocalmemory.storage.write_lock import get_write_lock
 
     started = time.monotonic()
     conn = _connect(Path(db_path))
     try:
-        bounded_plan = None
-        version = None
-        if max_changes is not None:
-            version = conn.execute('PRAGMA data_version').fetchone()[0]
-            bounded_plan = _bounded_plan(elr.plan(conn), max_changes, conn)
-            if idle is not None and not idle():
-                return {'changed': False, 'skipped': 'foreground', 'run_id': ''}
         with get_write_lock(Path(db_path)):
             conn.execute("BEGIN IMMEDIATE")
             try:
-                now_version = conn.execute('PRAGMA data_version').fetchone()[0]
-                if version is not None and now_version != version:
-                    conn.execute('ROLLBACK')
-                    return {'changed': False, 'skipped': 'store changed', 'run_id': ''}
-                if idle is not None and not idle():
-                    conn.execute('ROLLBACK')
-                    return {'changed': False, 'skipped': 'foreground', 'run_id': ''}
-                result = _apply_in(conn, bounded_plan)
+                result = _apply_in(conn)
                 conn.execute("COMMIT")
             except BaseException:
                 conn.execute("ROLLBACK")
@@ -303,8 +288,8 @@ def apply(db_path: str | Path, *, max_changes: int | None = None,
     return result
 
 
-def _apply_in(conn: sqlite3.Connection, the_plan=None) -> dict[str, Any]:
-    the_plan = the_plan if the_plan is not None else elr.plan(conn)
+def _apply_in(conn: sqlite3.Connection) -> dict[str, Any]:
+    the_plan = elr.plan(conn)
     summary: dict[str, Any] = {**the_plan.summary(), "edges_removed": 0,
                                "temporal_events_repointed": 0, "entities_created": 0,
                                "junk_entities_removed": 0}
@@ -327,8 +312,7 @@ def _apply_in(conn: sqlite3.Connection, the_plan=None) -> dict[str, Any]:
 BACKUP_LABEL = "pre-entity-repair"
 
 
-def apply_with_backup(db_path: str | Path, root: str | Path,
-                      *, max_changes: int | None = None, idle=None) -> dict[str, Any]:
+def apply_with_backup(db_path: str | Path, root: str | Path) -> dict[str, Any]:
     """A backup copy of the store first (infra/backup), then ``apply``."""
     from superlocalmemory.infra.backup import BackupManager
 
@@ -336,7 +320,7 @@ def apply_with_backup(db_path: str | Path, root: str | Path,
         label=BACKUP_LABEL)
     if not copy:
         raise RuntimeError("the backup copy could not be made, so nothing was changed")
-    return {**apply(db_path, max_changes=max_changes, idle=idle), "backup": copy}
+    return {**apply(db_path), "backup": copy}
 
 
 class UndoRefused(RuntimeError):
@@ -486,22 +470,3 @@ def _undo_in(conn: sqlite3.Connection, run_id: str) -> dict[str, int]:
 
 __all__ = ["BACKUP_LABEL", "RUNS", "UNDO", "UndoRefused", "apply", "apply_with_backup",
            "count_effects", "undo"]
-
-
-def _bounded_plan(the_plan, limit, conn):
-    """Apply small native repair units; leave still-linked junk for a later pass."""
-    remaining = max(1, min(100, int(limit)))
-    for profile in the_plan.profiles:
-        profile.facts = profile.facts[:remaining]
-        remaining -= len(profile.facts)
-        profile.aliases = profile.aliases[:remaining]
-        remaining -= len(profile.aliases)
-        safe = [entity for entity in profile.junk if not conn.execute(
-            'SELECT 1 FROM fact_entity_associations WHERE entity_id=? LIMIT 1',
-            (entity,)).fetchone()]
-        profile.junk = safe[:remaining]
-        remaining -= len(profile.junk)
-        used = {key for fact in profile.facts for key in fact.new_ids}
-        profile.new_entities = {key: value for key, value in profile.new_entities.items()
-                                if 'new:' + key in used}
-    return the_plan

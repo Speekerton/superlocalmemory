@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS enrichment_changes (
 CREATE TABLE IF NOT EXISTS memory_health_repairs (
     run_id TEXT PRIMARY KEY, action TEXT NOT NULL, status TEXT NOT NULL,
     found INTEGER NOT NULL DEFAULT 0, fixed INTEGER NOT NULL DEFAULT 0,
-    error TEXT, native_run_id TEXT, created_at TEXT NOT NULL
+    error TEXT, native_run_id TEXT, created_at TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 1, last_seen TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_enrichment_changes_run ON enrichment_changes(run_id,change_id);
 CREATE INDEX IF NOT EXISTS idx_enrichment_changes_profile ON enrichment_changes(profile_id);
@@ -43,6 +44,10 @@ def apply(conn: sqlite3.Connection) -> None:
     for statement in DDL.split(';'):
         if statement.strip():
             conn.execute(statement)
+    repairs = {r[1] for r in conn.execute('PRAGMA table_info(memory_health_repairs)')}
+    for column, ddl in (('attempts', 'INTEGER NOT NULL DEFAULT 1'), ('last_seen', 'TEXT')):
+        if column not in repairs:  # a store that ran an earlier draft of M059
+            conn.execute(f'ALTER TABLE memory_health_repairs ADD COLUMN {column} {ddl}')
     columns = {r[1] for r in conn.execute('PRAGMA table_info(atomic_facts)')}
     if columns and 'non_answer' not in columns:
         conn.execute('ALTER TABLE atomic_facts ADD COLUMN non_answer INTEGER DEFAULT 0')

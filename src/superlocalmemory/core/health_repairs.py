@@ -1,27 +1,48 @@
 # Copyright (c) 2026 Varun Pratap Bhardwaj / Qualixar
 # Licensed under AGPL-3.0-or-later
-"""Safe idle repairs, using the product's native repair and undo machinery."""
+"""Memory health repairs, using the product's native repair and undo machinery.
+
+Two kinds, and the line between them is the point (WP-19 review H1):
+
+* AUTO_ACTIONS only ADD what is missing (a search sketch rebuilt from the
+  stored vector). The idle worker may run them, in small batches.
+* EXPLICIT_ACTIONS delete or move things (entity aliases and junk entities,
+  lifecycle zones). The idle worker only counts them and stores a suggestion;
+  they run when the user presses Fix (dashboard) or runs ``slm enrich fix``.
+
+An undone run is final: an action whose latest run was undone is never run
+automatically again, and no item an undone run touched is ever re-applied.
+"""
 
 from __future__ import annotations
 
+import logging
 import time
 import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from superlocalmemory.core.description_metadata import VERSION
 from superlocalmemory.core.enrichment import EnrichmentRunner, now
 from superlocalmemory.storage import enrichment_ledger as ledger
 
-ACTIONS = ('refile-hidden', 'qjl-sketches', 'entity-links')
+logger = logging.getLogger(__name__)
+
+AUTO_ACTIONS = ('qjl-sketches',)
+EXPLICIT_ACTIONS = ('refile-hidden', 'entity-links')
+ACTIONS = (*EXPLICIT_ACTIONS, *AUTO_ACTIONS)
+AUTO_BATCH = 25
+CHECK_INTERVAL_S = 1800
+BACKOFF_BASE_S = 1800
+BACKOFF_MAX_S = 86400
 
 
 def _record(db, run_id, action, found, fixed=0, *, error=None, native=None):
     db.execute("UPDATE enrichment_runs SET status='completed',updated_at=? WHERE run_id=?",
                (now(), run_id))
     db.execute('INSERT INTO memory_health_repairs(run_id,action,status,found,fixed,error,'
-               'native_run_id,created_at) VALUES (?,?,?,?,?,?,?,?)',
-               (run_id, action, 'error' if error else 'completed', found, fixed,
-                error, native, now()))
+               'native_run_id,created_at,last_seen) VALUES (?,?,?,?,?,?,?,?,?)',
+               (run_id, action, 'completed', found, fixed, error, native, now(), now()))
 
 
 def _new_run(db, action):
@@ -46,17 +67,26 @@ def _changes(db, run_id, table, before, fields):
                               field, old[field], after[field], fact_id=old['fact_id'])
 
 
-def _refile(engine, dry_run, idle):
+def undone_items(db, action) -> frozenset:
+    """Every item an undone run of *action* touched: never re-applied."""
+    rows = db.execute(
+        'SELECT DISTINCT c.target_id FROM enrichment_changes c '
+        'JOIN memory_health_repairs r ON r.run_id=c.run_id '
+        "WHERE r.action=? AND r.status='undone'", (action,))
+    return frozenset(r['target_id'] for r in rows)
+
+
+def _refile(engine, dry_run, idle, skip=frozenset()):
     from superlocalmemory.core.lifecycle_state import set_fact_lifecycle_zone
     from superlocalmemory.core.memory_health import refile_hidden
 
     db = engine._db
     plan = refile_hidden(db.db_path, dry_run=True)
-    if dry_run or not plan.fact_ids or not idle():
-        return {'found': len(plan.fact_ids), 'fixed': 0}
-    run_id = _new_run(db, 'refile-hidden')
-    fixed = 0
-    for fact_id in plan.fact_ids[:25]:
+    candidates = [f for f in plan.fact_ids if f not in skip]
+    if dry_run or not candidates or not idle():
+        return {'found': len(candidates), 'fixed': 0}
+    run_id, fixed = _new_run(db, 'refile-hidden'), 0
+    for fact_id in candidates:
         if not idle():
             break
         with db.transaction():
@@ -73,8 +103,8 @@ def _refile(engine, dry_run, idle):
             _changes(db, run_id, 'fact_retention', retention,
                      ('lifecycle_zone', 'last_computed_at'))
             fixed += 1
-    _record(db, run_id, 'refile-hidden', len(plan.fact_ids), fixed)
-    return {'found': len(plan.fact_ids), 'fixed': fixed, 'run_id': run_id}
+    _record(db, run_id, 'refile-hidden', len(candidates), fixed)
+    return {'found': len(candidates), 'fixed': fixed, 'run_id': run_id}
 
 
 def _quantizer(engine):
@@ -89,19 +119,34 @@ def _quantizer(engine):
     return QuantizedEmbeddingStore(engine._db, polar, QJLEncoder(cfg.qjl), cfg), cfg
 
 
-def _qjl(engine, dry_run, idle):
-    from superlocalmemory.storage.qjl_repair import _original_snapshot, _repair_one, repair_rows
+def _qjl_one(db, store, run_id, profile, row, original):
+    from superlocalmemory.storage.qjl_repair import _repair_one
+
+    with db.transaction():
+        snapshots = {table: [dict(r) for r in db.execute(
+            f'SELECT * FROM {table} WHERE fact_id=? AND profile_id=?',
+            (row['fact_id'], profile))]
+            for table in ('polar_embeddings', 'embedding_quantization_metadata')}
+        _repair_one(db, store, row, profile, original[1], original[0])
+        for table, fields in (('polar_embeddings', ('qjl_bits',)),
+                              ('embedding_quantization_metadata', ('compressed_size_bytes',))):
+            _changes(db, run_id, table, snapshots[table], fields)
+
+
+def _qjl(engine, dry_run, idle, skip=frozenset()):
+    from superlocalmemory.storage.qjl_repair import _original_snapshot, repair_rows
+
     db = engine._db
     if not db.execute("SELECT 1 FROM sqlite_master WHERE name='polar_embeddings'"):
         return {'found': 0, 'fixed': 0}
     store, cfg = _quantizer(engine)
     profiles = db.execute('SELECT DISTINCT profile_id FROM polar_embeddings')
     plans = [(r['profile_id'], row) for r in profiles
-             for row in repair_rows(db, r['profile_id'], cfg)]
+             for row in repair_rows(db, r['profile_id'], cfg) if row['fact_id'] not in skip]
     if dry_run or not plans or not idle():
         return {'found': len(plans), 'fixed': 0}
     run_id, fixed, errors = _new_run(db, 'qjl-sketches'), 0, 0
-    for profile, row in plans[:25]:
+    for profile, row in plans[:AUTO_BATCH]:
         if not idle():
             break
         original = _original_snapshot(db, row['fact_id'], profile, store._polar._d)
@@ -109,17 +154,7 @@ def _qjl(engine, dry_run, idle):
             errors += 1
             continue
         try:
-            with db.transaction():
-                snapshots = {table: [dict(r) for r in db.execute(
-                    f'SELECT * FROM {table} WHERE fact_id=? AND profile_id=?',
-                    (row['fact_id'], profile))]
-                    for table in ('polar_embeddings', 'embedding_quantization_metadata')}
-                _repair_one(db, store, row, profile, original[1], original[0])
-                for table, fields in (
-                    ('polar_embeddings', ('qjl_bits',)),
-                    ('embedding_quantization_metadata', ('compressed_size_bytes',)),
-                ):
-                    _changes(db, run_id, table, snapshots[table], fields)
+            _qjl_one(db, store, run_id, profile, row, original)
             fixed += 1
         except (ValueError, TypeError):
             errors += 1
@@ -128,7 +163,7 @@ def _qjl(engine, dry_run, idle):
     return {'found': len(plans), 'fixed': fixed, 'errors': errors, 'run_id': run_id}
 
 
-def _entities(engine, dry_run, idle):
+def _entities(engine, dry_run, idle, skip=frozenset()):
     import sqlite3
     from contextlib import closing
 
@@ -143,48 +178,117 @@ def _entities(engine, dry_run, idle):
     if dry_run or not found or not idle():
         return {'found': found, 'fixed': 0}
     # The shared pre-change safety copy (taken once per store), then the
-    # native repair, whose own run ledger is what undo replays.
+    # native repair, whose own run ledger is what undo replays. Explicit only:
+    # the user asked, so the whole plan is applied in one native transaction.
     run_id = _new_run(db, 'entity-links')
-    result = apply(db.db_path, max_changes=25, idle=idle)
+    result = apply(db.db_path)
     fixed = sum(result.get(k, 0) for k in ('facts_relinked', 'aliases_removed',
                                           'aliases_kept_relabelled', 'junk_entities_removed'))
     _record(db, run_id, 'entity-links', found, fixed, native=result.get('run_id'))
     return {'found': found, 'fixed': fixed, 'run_id': run_id}
 
 
+_RUNNERS = {'refile-hidden': _refile, 'qjl-sketches': _qjl, 'entity-links': _entities}
+
+
 def repair_action(engine, action, *, dry_run=True, idle=lambda: True):
+    """The user's explicit repair (dashboard Fix, ``slm enrich fix``) or a dry run."""
     if action not in ACTIONS:
         raise ValueError('Unknown memory health action')
-    return {'action': action, **{'refile-hidden': _refile, 'qjl-sketches': _qjl,
-                                 'entity-links': _entities}[action](engine, dry_run, idle)}
+    skip = undone_items(engine._db, action)
+    result = {'action': action, **_RUNNERS[action](engine, dry_run, idle, skip)}
+    if not dry_run and action in EXPLICIT_ACTIONS:
+        remaining = _RUNNERS[action](engine, True, lambda: True, skip)
+        _suggest(engine._db, action, remaining['found'])
+    return result
+
+
+def _suggest(db, action, found):
+    db.execute('INSERT INTO memory_health_repairs(run_id,action,status,found,fixed,'
+               "created_at,last_seen) VALUES (?,?,'suggested',?,0,?,?) "
+               'ON CONFLICT(run_id) DO UPDATE SET found=excluded.found,'
+               'last_seen=excluded.last_seen',
+               (f'suggest-{action}', action, int(found), now(), now()))
+
+
+def _record_error(db, action, exc):
+    # Error class only: messages can carry private memory text. One row per
+    # action+error; repeats raise the count and move last_seen (review L2).
+    name = type(exc).__name__
+    logger.warning('Memory health %s deferred (%s)', action, name)
+    db.execute('INSERT INTO memory_health_repairs(run_id,action,status,found,fixed,error,'
+               "created_at,last_seen,attempts) VALUES (?,?,'error',0,0,?,?,?,1) "
+               'ON CONFLICT(run_id) DO UPDATE SET attempts=attempts+1,'
+               'last_seen=excluded.last_seen',
+               (f'error-{action}-{name}'[:64], action, name, now(), now()))
+
+
+def _backed_off(db, action) -> bool:
+    rows = db.execute("SELECT attempts,last_seen FROM memory_health_repairs WHERE action=? "
+                      "AND status='error' ORDER BY last_seen DESC LIMIT 1", (action,))
+    if not rows or not rows[0]['last_seen']:
+        return False
+    wait = min(BACKOFF_BASE_S * 2 ** (max(1, rows[0]['attempts']) - 1), BACKOFF_MAX_S)
+    seen = datetime.fromisoformat(rows[0]['last_seen'])
+    return datetime.now(UTC) - seen < timedelta(seconds=wait)
+
+
+def _latest_undone(db, action) -> bool:
+    rows = db.execute("SELECT status FROM memory_health_repairs WHERE action=? "
+                      "AND status IN ('completed','undone') ORDER BY rowid DESC LIMIT 1",
+                      (action,))
+    return bool(rows) and rows[0]['status'] == 'undone'
+
+
+def _tick_action(engine, action, idle):
+    """One action on an idle tick. Returns True when more batches remain."""
+    db = engine._db
+    if _backed_off(db, action):
+        return False
+    try:
+        if action in EXPLICIT_ACTIONS:
+            found = _RUNNERS[action](engine, True, idle, undone_items(db, action))['found']
+            _suggest(db, action, found)
+            return False
+        if _latest_undone(db, action):
+            return False
+        result = _RUNNERS[action](engine, False, idle, undone_items(db, action))
+        db.execute("DELETE FROM memory_health_repairs WHERE action=? AND status='error'",
+                   (action,))
+        return bool(result.get('fixed')) and result['fixed'] < result['found']
+    except Exception as exc:
+        _record_error(db, action, exc)
+        return False
 
 
 def run_safe_repairs(engine, *, idle):
     last = getattr(engine, '_memory_health_checked', 0.0)
-    if time.monotonic() - last < 1800:
+    if time.monotonic() - last < CHECK_INTERVAL_S:
         return
     engine._memory_health_checked = time.monotonic()
+    more = False
     for action in ACTIONS:
         if not idle():
             return
-        try:
-            result = repair_action(engine, action, dry_run=True, idle=idle)
-            if result['found'] and idle():
-                applied = repair_action(engine, action, dry_run=False, idle=idle)
-                # Continue bounded repair batches on the next idle tick.
-                if applied.get('fixed') and applied['fixed'] < result['found']:
-                    engine._memory_health_checked = 0.0
-                return
-        except Exception as exc:
-            _record(engine._db, uuid.uuid4().hex, action, 0, error=type(exc).__name__)
+        more = _tick_action(engine, action, idle) or more
+    if more:  # continue bounded automatic batches on the next idle tick
+        engine._memory_health_checked = 0.0
 
 
 def undo_action(engine, run_id):
-    rows = engine._db.execute('SELECT * FROM memory_health_repairs WHERE run_id=?', (run_id,))
+    db = engine._db
+    rows = db.execute('SELECT * FROM memory_health_repairs WHERE run_id=?', (run_id,))
+    if rows and rows[0]['status'] == 'undone':
+        raise ValueError('That run was already undone.')
+    if rows and rows[0]['status'] != 'completed':
+        raise ValueError('That is not a run that changed anything.')
     if rows and rows[0]['native_run_id']:
         from superlocalmemory.storage.entity_link_repair_apply import undo
-        result = undo(engine._db.db_path, rows[0]['native_run_id'])
+        result = undo(db.db_path, rows[0]['native_run_id'])
+        db.execute("UPDATE enrichment_runs SET status='undone',updated_at=? WHERE run_id=?",
+                   (now(), run_id))
     else:
-        result = EnrichmentRunner(engine._db, idle=lambda: False).undo(run_id)
-    engine._db.execute("UPDATE memory_health_repairs SET status='undone' WHERE run_id=?", (run_id,))
+        result = EnrichmentRunner(db, idle=lambda: False).undo(run_id)
+    db.execute("UPDATE memory_health_repairs SET status='undone',last_seen=? WHERE run_id=?",
+               (now(), run_id))
     return result

@@ -330,10 +330,15 @@ def _compose_visible_clause(
     has_archive: bool,
     has_quarantine: bool,
     has_non_answer: bool = False,
-    include_non_answer: bool = False,
+    exclude_non_answer: bool = False,
     include_quarantined: bool = False,
 ) -> str:
     """Build the AND-clause from what the store actually has.
+
+    ``exclude_non_answer`` is opt-in and only for RECALL ANSWER paths: a stored
+    stub (operational receipt, session boilerplate) is still a memory every
+    list, count, export and the dashboard shows -- flagged -- but never an
+    answer (WP-19).
 
     Split out from ``DatabaseManager.visible_fact_clause`` so that callers
     holding a bare ``sqlite3.Connection`` produce a byte-identical predicate
@@ -345,7 +350,7 @@ def _compose_visible_clause(
         clause += f" AND COALESCE({table}archive_status, 'live') != 'archived'"
     if not include_quarantined and has_quarantine:
         clause += f" AND COALESCE({table}quarantined, 0) = 0"
-    if has_non_answer and not include_non_answer and not include_quarantined:
+    if has_non_answer and exclude_non_answer:
         clause += f" AND COALESCE({table}non_answer, 0) = 0"
     return clause
 
@@ -380,12 +385,52 @@ def _compose_current_clause(prefix: str, *, has_temporal: bool) -> str:
     )
 
 
+def _column_name(row: object) -> str:
+    """PRAGMA row -> column name, whatever row_factory the caller set.
+
+    Not paranoia: ``server/routes/memories.py`` -- the first caller and the
+    route that was leaking -- sets ``row_factory = dict_factory``, so a
+    positional ``row[1]`` raises KeyError there, and the except below would
+    have swallowed it into "no such column" and silently dropped the filter.
+    That is the same shape of failure this function exists to close.
+    """
+    if isinstance(row, dict):
+        return str(row.get("name", ""))
+    try:
+        return str(row["name"])          # sqlite3.Row
+    except (TypeError, IndexError, KeyError):
+        pass
+    try:
+        return str(row[1])               # plain tuple
+    except (TypeError, IndexError, KeyError):
+        return ""
+
+
+def _connection_has_column(conn: sqlite3.Connection, column: str) -> bool:
+    try:
+        rows = list(conn.execute("PRAGMA table_info(atomic_facts)"))
+    except sqlite3.Error:
+        return False
+    return any(_column_name(r) == column for r in rows)
+
+
+def stub_flag_sql_for_connection(conn: sqlite3.Connection, prefix: str = "") -> str:
+    """SELECT expression for "is this memory a stored stub" (0 when unknown).
+
+    Lists and the dashboard show stubs, flagged; only recall excludes them.
+    """
+    table = f"{prefix}." if prefix else ""
+    if _connection_has_column(conn, "non_answer"):
+        return f"COALESCE({table}non_answer, 0)"
+    return "0"
+
+
 def visible_fact_clause_for_connection(
     conn: sqlite3.Connection,
     prefix: str = "",
     *,
     include_quarantined: bool = False,
-    include_non_answer: bool = False,
+    exclude_non_answer: bool = False,
 ) -> str:
     """``visible_fact_clause`` for a caller that hand-rolls its SQL.
 
@@ -410,39 +455,15 @@ def visible_fact_clause_for_connection(
     were not. The test that matters calls the surface and inspects what it
     served -- tests/test_server/test_a_listed_memory_belongs_to_its_profile.py
     """
-    def _column_name(row: object) -> str:
-        """PRAGMA row -> column name, whatever row_factory the caller set.
-
-        Not paranoia: ``server/routes/memories.py`` -- the first caller and the
-        route that was leaking -- sets ``row_factory = dict_factory``, so a
-        positional ``row[1]`` raises KeyError there, and the except below would
-        have swallowed it into "no such column" and silently dropped the filter.
-        That is the same shape of failure this function exists to close.
-        """
-        if isinstance(row, dict):
-            return str(row.get("name", ""))
-        try:
-            return str(row["name"])          # sqlite3.Row
-        except (TypeError, IndexError, KeyError):
-            pass
-        try:
-            return str(row[1])               # plain tuple
-        except (TypeError, IndexError, KeyError):
-            return ""
-
     def _has(column: str) -> bool:
-        try:
-            rows = list(conn.execute("PRAGMA table_info(atomic_facts)"))
-        except sqlite3.Error:
-            return False
-        return any(_column_name(r) == column for r in rows)
+        return _connection_has_column(conn, column)
 
     return _compose_visible_clause(
         prefix,
         has_archive=_has("archive_status"),
         has_quarantine=_has("quarantined"),
-        has_non_answer=_has("non_answer"),
-        include_non_answer=include_non_answer,
+        has_non_answer=exclude_non_answer and _has("non_answer"),
+        exclude_non_answer=exclude_non_answer,
         include_quarantined=include_quarantined,
     )
 
@@ -452,6 +473,7 @@ def current_fact_clause_for_connection(
     prefix: str = "",
     *,
     include_quarantined: bool = False,
+    exclude_non_answer: bool = False,
 ) -> str:
     """``current_fact_clause`` for a caller that hand-rolls its SQL.
 
@@ -472,6 +494,7 @@ def current_fact_clause_for_connection(
         has_temporal = False
     return visible_fact_clause_for_connection(
         conn, prefix, include_quarantined=include_quarantined,
+        exclude_non_answer=exclude_non_answer,
     ) + _compose_current_clause(prefix, has_temporal=has_temporal)
 
 
@@ -1151,6 +1174,7 @@ class DatabaseManager:
             emotional_arousal=d.get("emotional_arousal", 0.0),
             signal_type=SignalType(d["signal_type"]) if d.get("signal_type") else SignalType.FACTUAL,
             pinned=bool(d.get("pinned", 0)),
+            non_answer=bool(d.get("non_answer") or 0),
             scope=d.get("scope", "personal"),
             shared_with=_jl(d.get("shared_with"), None),
             # 4.1.19 (M052): absent on a row the migration has not reached —
@@ -1376,6 +1400,7 @@ class DatabaseManager:
 
     def current_fact_clause(
         self, prefix: str = "", *, include_quarantined: bool = False,
+        exclude_non_answer: bool = False,
     ) -> str:
         """``visible_fact_clause`` PLUS "and the store still believes it".
 
@@ -1387,13 +1412,14 @@ class DatabaseManager:
         """
         return self.visible_fact_clause(
             prefix, include_quarantined=include_quarantined,
+            exclude_non_answer=exclude_non_answer,
         ) + _compose_current_clause(
             prefix, has_temporal=self._has_temporal_validity_table(),
         )
 
     def visible_fact_clause(
         self, prefix: str = "", *, include_quarantined: bool = False,
-        include_non_answer: bool = False,
+        exclude_non_answer: bool = False,
     ) -> str:
         """AND-clause excluding rows no caller should be shown as a memory.
 
@@ -1421,13 +1447,16 @@ class DatabaseManager:
 
         ``include_quarantined=True`` is for repair, erasure and export — paths
         that must reach a withheld row to act on it.
+
+        ``exclude_non_answer=True`` is for the recall answer paths only (see
+        ``_compose_visible_clause``); everything else lists stubs, flagged.
         """
         from superlocalmemory.encoding.non_answer import has_marker
 
         return _compose_visible_clause(
             prefix,
-            has_non_answer=has_marker(self),
-            include_non_answer=include_non_answer,
+            has_non_answer=exclude_non_answer and has_marker(self),
+            exclude_non_answer=exclude_non_answer,
             has_archive=self._has_archive_status(),
             has_quarantine=self._has_quarantine_column(),
             include_quarantined=include_quarantined,
@@ -1436,7 +1465,6 @@ class DatabaseManager:
     def get_all_facts(
         self, profile_id: str, limit: int | None = None,
         *,
-        include_non_answer: bool = False,
         include_global: bool = False,
         include_shared: bool = False,
     ) -> list[AtomicFact]:
@@ -1459,7 +1487,7 @@ class DatabaseManager:
         # Soft-deleted and withheld rows are not memories a caller may see.
         rows = self.execute(
             f"SELECT * FROM atomic_facts WHERE {where}"
-            f"{self.visible_fact_clause(include_non_answer=include_non_answer)} "
+            f"{self.visible_fact_clause()} "
             "ORDER BY created_at DESC LIMIT ?",
             (*params, int(limit)),
         )
@@ -2140,6 +2168,7 @@ class DatabaseManager:
         include_shared: bool = False,
         *,
         include_quarantined: bool = False,
+        exclude_non_answer: bool = False,
     ) -> list[AtomicFact]:
         """Get multiple facts by their IDs, scoped to a profile.
 
@@ -2176,10 +2205,12 @@ class DatabaseManager:
             include_shared=include_shared,
         )
         placeholders = ",".join("?" for _ in fact_ids)
+        visible = self.visible_fact_clause(include_quarantined=include_quarantined,
+                                           exclude_non_answer=exclude_non_answer)
         rows = self.execute(
             f"SELECT * FROM atomic_facts WHERE fact_id IN ({placeholders}) "
             f"AND {where}"
-            f"{self.visible_fact_clause(include_quarantined=include_quarantined)} "
+            f"{visible} "
             "ORDER BY created_at DESC",
             (*fact_ids, *params),
         )
@@ -2191,6 +2222,7 @@ class DatabaseManager:
         include_shared: bool = False,
         *,
         include_quarantined: bool = False,
+        exclude_non_answer: bool = False,
     ) -> set[str]:
         """Which of *fact_ids* this profile may see. Same rule, no hydration.
 
@@ -2220,7 +2252,8 @@ class DatabaseManager:
             include_global=include_global,
             include_shared=include_shared,
         )
-        visible = self.visible_fact_clause(include_quarantined=include_quarantined)
+        visible = self.visible_fact_clause(include_quarantined=include_quarantined,
+                                           exclude_non_answer=exclude_non_answer)
         unique = list(dict.fromkeys(fact_ids))
         allowed: set[str] = set()
         # Well inside SQLITE_MAX_VARIABLE_NUMBER once the scope parameters are

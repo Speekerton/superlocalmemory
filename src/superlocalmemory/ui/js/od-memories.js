@@ -535,7 +535,10 @@
           '</b>' +
           '<div style="margin-top:2px">' + _esc(preview) + '</div>' +
         '</td>' +
-        '<td><span class="badge ' + _esc(_catCls(kind)) + '">' + _esc(catLabel) + '</span></td>' +
+        '<td><span class="badge ' + _esc(_catCls(kind)) + '">' + _esc(catLabel) + '</span>' +
+          // A stored stub (receipt, session boilerplate): listed, never an answer.
+          (m.stub ? ' <span class="badge neutral" title="Kept, but never used as an answer">stub</span>' : '') +
+        '</td>' +
         '<td class="mono dim" style="font-size:12px">' + _esc(m.project_name || '—') + '</td>' +
         '<td><b class="num">' + imp + '</b>/10</td>' +
         '<td><span class="badge ' + _esc(scoreCls) + '">' + scorePct + '%</span></td>' +

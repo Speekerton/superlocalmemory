@@ -23,7 +23,8 @@ def engine(tmp_path: Path) -> MemoryEngine:
                return_value=_MockEmbedder(768)):
         eng.initialize()
     from tests.conftest import force_sync_enrichment
-    return force_sync_enrichment(eng)
+    yield force_sync_enrichment(eng)
+    eng.close()
 
 
 def _starts(db: Path) -> dict[str, str]:

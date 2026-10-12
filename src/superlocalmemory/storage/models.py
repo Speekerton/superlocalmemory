@@ -221,6 +221,10 @@ class AtomicFact:
     # v3.4.65: Core Memory Block explicit pin (M015)
     pinned: bool = False
 
+    # WP-19 (M059): a stored stub (receipt, session boilerplate). Listed and
+    # counted like any memory, never used as a recall answer.
+    non_answer: bool = False
+
     # 4.1.19 (M052): nine-kind memory typing — all optional, all nullable.
     # NULL/None means untyped: no caller, user, model or rules pass has ever
     # classified this fact. Values and vocabulary live in

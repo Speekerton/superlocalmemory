@@ -107,7 +107,7 @@ def _sqlite_emergency_recall(
                     WHERE fts.atomic_facts_fts MATCH ?
                       AND f.profile_id = ?
                       {age_clause}
-                      {current_fact_clause_for_connection(conn, "f")}
+                      {current_fact_clause_for_connection(conn, "f", exclude_non_answer=True)}
                     ORDER BY fts.rank
                     LIMIT ?""",
                 (safe_query, profile_id, limit * 2),

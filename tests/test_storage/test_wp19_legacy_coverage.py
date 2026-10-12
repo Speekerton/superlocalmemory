@@ -103,10 +103,11 @@ def test_legacy_store_coverage_rises_and_undo_restores_exactly(legacy):
     assert rows['f13']['memory_kind_source'] == 'model:llm'
     assert json.loads(db.execute("SELECT metadata_json FROM memories WHERE memory_id='m33'")[0][
         'metadata_json']) == {'tags': ['caller-tag'], 'project': 'CallerProject'}
-    # Stubs stay stored and findable by the explicit filter, never as answers.
-    assert not any('session ended' in f.content for f in db.get_all_facts('default'))
-    assert len([f for f in db.get_all_facts('default', include_non_answer=True)
-                if 'session ended' in f.content]) == stubs
+    # Stubs stay stored and listed (flagged), never hydrated as recall answers.
+    listed = [f for f in db.get_all_facts('default') if 'session ended' in f.content]
+    assert len(listed) == stubs and all(f.non_answer for f in listed)
+    ids = [f.fact_id for f in listed]
+    assert db.get_facts_by_ids(ids, 'default', exclude_non_answer=True) == []
 
     runner.undo(result['run_id'])
     assert _snapshot(db) == before_rows

@@ -1799,6 +1799,7 @@ def cmd_list(args: Namespace) -> None:
             items.append({
                 "fact_id": f.fact_id, "content": f.content,
                 "fact_type": ftype, "created_at": (f.created_at or "")[:19],
+                "stub": bool(getattr(f, "non_answer", False)),
                 **kind_fields(f, display_min_confidence=_display_min_confidence),
             })
         _data = {"results": items, "count": len(items),
@@ -1824,7 +1825,9 @@ def cmd_list(args: Namespace) -> None:
             date = (f.created_at or "")[:19]
             content = f.content[:100] + ("..." if len(f.content) > 100 else "")
             fields = kind_fields(f, display_min_confidence=_display_min_confidence)
-            print(f"  {i:3d}. [{date}] {_kind_display(fields)}: {content}")
+            # A stored stub is kept and listed, never used as an answer.
+            stub = " (stub)" if getattr(f, "non_answer", False) else ""
+            print(f"  {i:3d}. [{date}] {_kind_display(fields)}{stub}: {content}")
             print(f"       id: {f.fact_id}")
         print("\nChange one with: slm update <id> \"new text\"   "
               "Remove one with: slm delete <id>")

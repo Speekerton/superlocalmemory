@@ -1584,15 +1584,19 @@ def run_recall(
     from superlocalmemory.core import support_stage
     from superlocalmemory.core.answer_check_scope import in_context_load
     # A context load is not a question: it gets its memories, under the
-    # surface's token cap, instead of an abstention.
-    gated = support_stage.enabled(config) and not in_context_load()
+    # surface's token cap, instead of an abstention. Nor is "what am I working
+    # on": its answer is the newest memories (the recency strategy put them
+    # first), which no word of the question appears in, so a word-support test
+    # would call every right answer weak and say "That isn't in memory".
+    recency = getattr(response, "query_type", "") == "recency"
+    gated = support_stage.enabled(config) and not in_context_load() and not recency
     support = support_stage.assess(
         retrieval_engine, query, response, outcome.verdict, profile_id,
         metadata=_metadata_reader(db)) if gated else None
     finalize_score_contract(
-        response, verdict=outcome.verdict, support=support, show_weak=show_weak,
-        include_related=include_related,
-        keep_results=support_stage.explicit_filter(
+        response, verdict=None if recency else outcome.verdict, support=support,
+        show_weak=show_weak, include_related=include_related,
+        keep_results=recency or support_stage.explicit_filter(
             facets, window, as_of=as_of, known_as_of=known_as_of, valid_at=valid_at))
     response.answer_check_status = outcome.status
     response.answer_check_detail = outcome.detail

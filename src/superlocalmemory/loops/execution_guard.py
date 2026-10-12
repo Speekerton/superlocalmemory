@@ -24,8 +24,8 @@ def _read_key(path):
         fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
     with os.fdopen(fd, 'rb') as stream:
         info = os.fstat(stream.fileno())
-        if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077:
-            raise ValueError('Admission key must be an owner-only regular file')
+        if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600:
+            raise ValueError('Admission key must be an owner-only 0600 regular file')
         key = stream.read(33)
     if len(key) != 32:
         raise ValueError('Invalid admission key')

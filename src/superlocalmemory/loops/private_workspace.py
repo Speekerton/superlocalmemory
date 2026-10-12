@@ -82,3 +82,13 @@ def execution_environment(cwd):
                  USERPROFILE=paths['HOME'], PYTHONNOUSERSITE='1',
                  PYTEST_DISABLE_PLUGIN_AUTOLOAD='1')
     return paths
+
+
+@contextmanager
+def run_workspace(job):
+    parent = Path(tempfile.gettempdir()).resolve()
+    forbidden = (Path(job['cwd']), Path(job['store_path']).parent)
+    if any(parent.is_relative_to(root) for root in forbidden):
+        raise ValueError('Check temporary directory must be outside the project and data root')
+    with temporary() as directory:
+        yield directory

@@ -30,7 +30,8 @@ def test_root_lock_covers_validation_and_next_job(receipt_db, tmp_path, monkeypa
     monkeypatch.setattr(receipt_jobs, '_validate_execution', validate)
     copies = tmp_path / 'copies'
     copies.mkdir()
-    monkeypatch.setattr(receipt_jobs, 'temporary', lambda: private_workspace.temporary(copies))
+    monkeypatch.setattr(receipt_jobs, 'run_workspace',
+                        lambda job: private_workspace.temporary(copies))
     with ThreadPoolExecutor(max_workers=2) as workers:
         one = workers.submit(receipt_jobs.run_registered_check, receipt_db, first['job_id'])
         assert validated.wait(5)

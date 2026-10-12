@@ -10,6 +10,7 @@ append-only; its integrity boundary is the owned service, not filesystem admin.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import uuid
 from datetime import UTC, datetime
@@ -80,20 +81,23 @@ def run_check(
     for value in (profile_id, task_id, run_id, producer):
         if not isinstance(value, str) or not value.strip():
             raise ValueError("Execution identity fields must be nonempty strings")
-    exit_code, stdout, stderr = _execution(command, cwd, min(max(float(timeout), 0.1), 60))
+    result = _execution(command, cwd, min(max(float(timeout), 0.1), 60))
+    exit_code, stdout, stderr = result[:3]
     if validate_result is not None:
         validate_result()
     receipt = _measurement(profile_id, task_id, run_id, producer,
-                           command_digest(command, cwd), exit_code, stdout, stderr)
+                           command_digest(command, cwd), exit_code, stdout, stderr,
+                           stop_reason=getattr(result, "reason", None))
     _store(db, receipt)
     return receipt
 
 
 def _measurement(profile_id, task_id, run_id, producer, digest, exit_code, stdout, stderr,
-                 secret_material=()):
+                 secret_material=(), stop_reason=None):
     measurement = dict(exit_code=exit_code, **output_evidence(stdout, stderr, secret_material))
-    if exit_code == -1:
-        measurement['stop_reason'] = measurement['stderr_excerpt']
+    if stop_reason:
+        measurement['stop_reason'] = output_evidence(
+            '', stop_reason, secret_material)['stderr_excerpt']
     evidence = json.dumps(measurement, sort_keys=True)
     receipt = dict(
         receipt_id=uuid.uuid4().hex,
@@ -117,9 +121,12 @@ def _run_registered(db, job, command, cwd, timeout, validate_result):
 
     key = _key(job["store_path"])
     result = _execution(command, cwd, min(max(float(timeout), 0.1), 60))
+    if not hmac.compare_digest(key, _key(job['store_path'])):
+        raise ValueError('Admission key changed during verification')
     validate_result()
     receipt = _measurement(job["profile_id"], job["task_id"], job["run_id"], job["producer"],
-                           job["command_digest"], *result, secret_material=(key,))
+                           job["command_digest"], *result[:3], secret_material=(key,),
+                           stop_reason=getattr(result, "reason", None))
     _sign_receipt(job, receipt)
     _store(db, receipt)
     return receipt

@@ -18,7 +18,12 @@ from superlocalmemory.loops.check_definition import materialize, normalized, pre
 from superlocalmemory.loops.check_lock import exclusive_check
 from superlocalmemory.loops.execution_guard import _key
 from superlocalmemory.loops.execution_receipts import _run_registered, command_digest
-from superlocalmemory.loops.private_workspace import platform_reason, private_dir, temporary
+from superlocalmemory.loops.private_workspace import (
+    platform_reason,
+    private_dir,
+    run_workspace,
+    temporary,
+)
 from superlocalmemory.loops.pytest_config import prepare_pytest, validate_pytest_configuration
 
 _SCHEMA = (
@@ -152,7 +157,7 @@ def run_registered_check(db, job_id, *, timeout=30):
     reason = platform_reason()
     if reason:
         raise ValueError(reason)
-    with exclusive_check(job['store_path']), temporary() as run_dir:
+    with exclusive_check(job['store_path']), run_workspace(job) as run_dir:
         materialize(job, run_dir)
         artifacts, revision = artifact_revision.copy_inputs(
             job['cwd'], json.loads(job['artifact_paths_json']), run_dir, allow_empty=True)

@@ -76,3 +76,43 @@ def test_existing_key_moves_without_invalidating_admission(receipt_db, tmp_path)
     _key(job['store_path'], create=True)
     assert vault.exists() and not old.exists()
     assert verify_admission(job, receipt)
+
+
+def test_timeout_keeps_hash_of_all_captured_output(receipt_db, tmp_path):
+    _, _, job = register(receipt_db, tmp_path, code=(
+        "import sys,time\nprint('before timeout',flush=True)\n"
+        "print('error detail',file=sys.stderr,flush=True)\ntime.sleep(10)\n"))
+    receipt = run_registered_check(receipt_db, job['job_id'], timeout=0.2)
+    evidence = json.loads(receipt['evidence'])
+    assert receipt['verdict'] == 'FAIL'
+    assert evidence['stdout_sha256'] == hashlib.sha256(b'before timeout\n').hexdigest()
+    assert evidence['stderr_sha256'] == hashlib.sha256(b'error detail\n').hexdigest()
+    reason = evidence['stop_reason']
+    assert (reason == 'Independent check timed out'
+            or reason.startswith('a process started by the check is still running:'))
+
+
+def test_escaped_process_keeps_full_output_digest(receipt_db, tmp_path):
+    _, _, job = register(receipt_db, tmp_path, code=(
+        "import os,time\nprint('before escape',flush=True)\n"
+        "if os.fork()==0:\n"
+        "    os.setsid()\n"
+        "    null=os.open(os.devnull,os.O_RDWR)\n"
+        "    for fd in (0,1,2): os.dup2(null,fd)\n"
+        "    time.sleep(10); os._exit(0)\n"))
+    receipt = run_registered_check(receipt_db, job['job_id'])
+    evidence = json.loads(receipt['evidence'])
+    assert receipt['verdict'] == 'FAIL'
+    assert evidence['stdout_sha256'] == hashlib.sha256(b'before escape\n').hexdigest()
+    assert evidence['stop_reason'].startswith('a process started by the check is still running:')
+
+
+def test_observable_admission_key_edit_refuses_receipt(receipt_db, tmp_path):
+    import pytest
+
+    vault = tmp_path / 'slm/loop-admission/admission.key'
+    _, _, job = register(receipt_db, tmp_path, code=(
+        "from pathlib import Path\n"
+        f"Path({str(vault)!r}).write_bytes(b'N' * 32)\n"))
+    with pytest.raises(ValueError, match='Admission key changed during verification'):
+        run_registered_check(receipt_db, job['job_id'])

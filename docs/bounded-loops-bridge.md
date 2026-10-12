@@ -119,8 +119,8 @@ opening a known absolute path elsewhere on the machine.
 Each check uses a fresh temporary directory outside the project and the SLM
 check store. It receives only the pinned files and declared artifacts, closed
 stdin, a restricted environment and private HOME, temp and XDG directories.
-It runs without a shell, in its own session and process group, with a bounded
-timeout. Command paths into the project are relocated into this copy. Check
+A temp setting inside the project or data root is refused. The check runs
+without a shell, in its own session and process group, with a bounded timeout. Command paths into the project are relocated into this copy. Check
 executables inside the project are refused. Scripts must use relative paths
 for their checked inputs; arbitrary embedded paths are not rewritten.
 
@@ -148,7 +148,8 @@ and definition hashes after this sweep.
 Private directories are 0700 and key files are 0600. The per-data-root HMAC key
 lives in `loop-admission`, separate from the temporary copies and definition
 store. Moving it removes the old run-relative key path; it does not deny
-same-user access. Receipts store SHA-256 hashes of complete output and bounded
+same-user access. An observed key change during execution refuses admission.
+Receipts store SHA-256 hashes of complete captured output and bounded
 excerpts with known key bytes and unbroken key-length material redacted. They
 do not retain raw stdout or stderr. The public `execution_receipts.run_check`
 writer produces diagnostic receipts without admission; its callback cannot

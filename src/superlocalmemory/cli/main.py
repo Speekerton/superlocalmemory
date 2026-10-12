@@ -221,6 +221,11 @@ def main() -> None:
                     "  note: data migration check failed — run `slm doctor` to diagnose.",
                     file=sys.stderr,
                 )
+            # 4.1.25: offer the answer check the way setup does (setup and
+            # init run their own step; the offer goes to stderr only).
+            if len(sys.argv) < 2 or sys.argv[1] not in ("setup", "init"):
+                from superlocalmemory.cli import laya_offer
+                laya_offer.after_upgrade()
 
     parser = argparse.ArgumentParser(
         prog="slm",
@@ -252,6 +257,10 @@ def main() -> None:
     setup_p.add_argument(
         "--auto", action="store_true",
         help="Non-interactive mode: use defaults (for CI/scripts)",
+    )
+    setup_p.add_argument(
+        "--no-laya", action="store_true",
+        help="Don't install the local answer check (installed by default on Apple Silicon)",
     )
 
     mode_p = sub.add_parser("mode", help="Get or set operating mode (a/b/c)")

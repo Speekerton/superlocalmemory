@@ -1543,7 +1543,7 @@ def cmd_setup(args: Namespace) -> None:
     """Run the interactive setup wizard."""
     from superlocalmemory.cli.setup_wizard import run_wizard
 
-    run_wizard(auto=getattr(args, "auto", False))
+    run_wizard(auto=getattr(args, "auto", False), no_laya=getattr(args, "no_laya", False))
     sys.exit(0)  # Force clean exit (background threads from imports may linger)
 
 

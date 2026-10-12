@@ -86,11 +86,13 @@ def alias_terms(db: Any, profile_id: str, query: str) -> list[str]:
         return []
     marks = ",".join("?" for _ in grams)
     try:
+        # Both lookups use the NOCASE indexes (canonical name per profile, alias).
         rows = execute(
-            "SELECT DISTINCT c.entity_id AS entity_id FROM canonical_entities c "
-            "LEFT JOIN entity_aliases a ON a.entity_id = c.entity_id "
-            f"WHERE c.profile_id = ? AND (lower(c.canonical_name) IN ({marks}) "
-            f"OR lower(a.alias) IN ({marks}))", (profile_id, *grams, *grams))
+            "SELECT entity_id FROM canonical_entities WHERE profile_id = ? "
+            f"AND canonical_name COLLATE NOCASE IN ({marks}) "
+            "UNION SELECT entity_id FROM entity_aliases "
+            f"WHERE alias COLLATE NOCASE IN ({marks}) AND profile_id = ?",
+            (profile_id, *grams, *grams, profile_id))
         ids = [dict(r)["entity_id"] for r in rows]
         if not ids:
             return []

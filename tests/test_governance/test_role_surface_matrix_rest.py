@@ -271,6 +271,8 @@ INSTALLATION_WIDE = (
     ("POST", "/api/v3/answer-check/save"),
     ("POST", "/api/backup/configure"),
     ("POST", "/api/backup/create"),
+    ("POST", "/api/learning/backup"),
+    ("POST", "/api/learning/migrate-legacy"),
     ("POST", "/api/backup/recovery-key"),
     ("POST", "/api/upgrade/restore"),
     ("POST", "/api/adapters/enable"),

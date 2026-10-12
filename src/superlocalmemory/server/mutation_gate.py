@@ -99,6 +99,8 @@ _EXACT: dict[str, Rule] = {
     **{path: _GLOBAL for path in (
         "/api/rbac/policy",
         "/api/memory-kinds/settings",
+        "/api/learning/backup",
+        "/api/learning/migrate-legacy",
         "/maintenance/run",
         "/maintenance/compact",
         "/api/daemon/restart",

@@ -709,7 +709,9 @@ def get_patterns():
 @router.post("/api/learning/backup")
 def learning_backup(request: Request):
     """Backup learning.db to a timestamped file."""
-    _require_manage(request)
+    from superlocalmemory.server.rbac_enforce import require_global_manage
+
+    require_global_manage(request)
     try:
         if not LEARNING_DB.exists():
             return {"success": False, "error": "No learning.db found"}
@@ -823,7 +825,9 @@ def learning_migrate_legacy(request: Request):
     with ``is_synthetic=1`` to preserve provenance; the trainer must be
     invoked with ``include_synthetic=True`` to use them.
     """
-    _require_manage(request)
+    from superlocalmemory.server.rbac_enforce import require_global_manage
+
+    require_global_manage(request)
     if not LEARNING_AVAILABLE:
         return {"success": False, "error": "Learning system not available"}
     try:

@@ -20,7 +20,8 @@ from superlocalmemory.server import recall_core
 
 
 def _call(fast: bool = False) -> recall_core.RecallCall:
-    return recall_core.RecallCall(query="q", limit=3, session_id="", agent_id="t", fast=fast)
+    return recall_core.RecallCall(query="q", limit=3, session_id="", agent_id="t", fast=fast,
+                                  skip_answer_check=True)  # the bounded hook path
 
 
 @pytest.fixture

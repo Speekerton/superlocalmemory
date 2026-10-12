@@ -278,48 +278,156 @@ def _layers(engine: Any, call: RecallCall, results: list[dict]) -> tuple[list[di
                 engine._db, pid, str(item.get("fact_id", ""))))
 
 
+#: An explicit question (an agent's recall tool, the CLI, the dashboard) may
+#: wait this long for a free slot before it is told the daemon is busy. The run
+#: itself keeps the normal budget once it starts. Hooks and context loads block
+#: a prompt, so they keep the three-second ceiling and the keyword fallback.
+EXPLICIT_QUEUE_S = 12.0
+#: Extra time an explicit run that has started may take on a loaded machine
+#: before it is reported busy; the work it began is never thrown away.
+EXPLICIT_RUN_GRACE_S = 4.0
+#: Never longer than this from arrival to answer (the HTTP ingress clock).
+EXPLICIT_CEILING_S = EXPLICIT_QUEUE_S + 3.0 + EXPLICIT_RUN_GRACE_S
+_explicit_waiting = 0
+
+
+def is_explicit(call: RecallCall) -> bool:
+    """A question someone is waiting on, not a prompt-blocking context load.
+
+    ``fast`` (skip the internal agentic round, the agent default) does not
+    matter here: an agent's recall tool is fast and explicit.
+    """
+    return not (call.skip_answer_check or call.context_load
+                or call.budget_s is not None or call.depth == 0)
+
+
+def busy(call: RecallCall, snapshot: Any, *, retry_after_s: float) -> dict:
+    """The honest answer when every slot is taken: ask again shortly.
+
+    Never a keyword guess dressed as recall. ``detail`` carries the code in the
+    shape the daemon client reads from a 503 body.
+    """
+    seconds = max(1, int(math.ceil(retry_after_s)))
+    message = (f"SuperLocalMemory is answering other questions right now. "
+               f"Ask again in about {seconds} seconds; nothing was lost.")
+    return {
+        "ok": False, "success": False, "code": "RECALL_BUSY", "retryable": True,
+        "retry_after_s": seconds, "error": message, "message": message,
+        "query": call.query,
+        "profile": call.profile_id or getattr(snapshot, "profile_id", ""),
+        "results": [], "count": 0, "result_count": 0,
+        "detail": {"code": "RECALL_BUSY", "message": message},
+    }
+
+
+def _retry_after() -> float:
+    # Three runs at a time, about a second each on a loaded machine.
+    return 2.0 + _explicit_waiting / 3.0
+
+
+def as_http(envelope: Any) -> Any:
+    """A busy reply becomes HTTP 503 with ``Retry-After``; anything else is unchanged."""
+    if isinstance(envelope, dict) and envelope.get("code") == "RECALL_BUSY":
+        from starlette.responses import JSONResponse
+
+        return JSONResponse(envelope, status_code=503, headers={
+            "Retry-After": str(envelope.get("retry_after_s", 5))})
+    return envelope
+
+
 async def run_recall(engine: Any, call: RecallCall, *, app_state: Any) -> dict:
-    """One deadline covers queue admission, worker execution and response assembly."""
+    """One deadline covers queue admission, worker execution and response assembly.
+
+    Identical questions in flight share one run, and a complete answer is kept
+    for a few seconds while nothing is written (``server.recall_cache``).
+    """
+    from superlocalmemory.server import recall_cache
+
+    return await recall_cache.recall_once(
+        call, call.profile_id or getattr(engine, "profile_id", ""),
+        lambda: _run_recall(engine, call, app_state=app_state))
+
+
+async def _run_recall(engine: Any, call: RecallCall, *, app_state: Any) -> dict:
     from superlocalmemory.server.profile_runtime import get_profile_runtime
     from superlocalmemory.server.recall_admission import foreground_admission
     from superlocalmemory.server.recall_deadline import timed_out
 
+    explicit = is_explicit(call)
     budget = effective_budget_s(call)
     from superlocalmemory.server.recall_ingress import remaining_deadline
     public_deadline = remaining_deadline(budget)
     worker_deadline = public_deadline - min(0.20, budget * 0.25)
+    queue_deadline = remaining_deadline(EXPLICIT_QUEUE_S) if explicit else worker_deadline
     runtime = get_profile_runtime(app_state)
     snapshot = runtime.snapshot
-    async with foreground_admission(runtime, worker_deadline) as admitted:
+    async with foreground_admission(runtime, queue_deadline) as admitted:
         if not admitted:
+            if explicit:
+                return busy(call, snapshot, retry_after_s=_retry_after())
             return timed_out(call, snapshot)
         snapshot = runtime.snapshot
         return await _run_admitted(
-            engine, call, app_state, runtime, snapshot, public_deadline, worker_deadline)
+            engine, call, app_state, runtime, snapshot, public_deadline, worker_deadline,
+            queue_deadline if explicit else None)
+
+
+async def _acquire_slot(call, loop, worker_deadline, queue_deadline):
+    """Wait for a full-recall slot; an explicit question may queue longer."""
+    global _explicit_waiting
+    until = queue_deadline if queue_deadline is not None else worker_deadline
+    if queue_deadline is not None:
+        _explicit_waiting += 1
+    try:
+        await asyncio.wait_for(RECALL_SEMAPHORE.acquire(), max(0, until - loop.time()))
+        return True
+    except asyncio.TimeoutError:
+        return False
+    finally:
+        if queue_deadline is not None:
+            _explicit_waiting -= 1
 
 
 async def _run_admitted(engine, call, app_state, runtime, snapshot,
-                        public_deadline, worker_deadline):
+                        public_deadline, worker_deadline, queue_deadline=None):
     from superlocalmemory.core.recall_gate import RecallHold
     from superlocalmemory.server.recall_deadline import submit, wait_until
 
     loop = asyncio.get_running_loop()
+    explicit = queue_deadline is not None
     hold, acquired = RecallHold(), False
     try:
-        if not call.fast:
-            try:
-                await asyncio.wait_for(RECALL_SEMAPHORE.acquire(),
-                                       max(0, worker_deadline - loop.time()))
-                acquired = True
-            except asyncio.TimeoutError:
+        # Explicit questions always take a slot: a dozen engine runs at once on
+        # one machine each overrun their channels and all degrade together.
+        if not call.fast or explicit:
+            acquired = await _acquire_slot(call, loop, worker_deadline, queue_deadline)
+            if not acquired:
+                if explicit:
+                    return busy(call, snapshot, retry_after_s=_retry_after())
                 return await _bounded_fallback(
                     engine, call, app_state, public_deadline, snapshot, hold, runtime)
+            if explicit:
+                # The run gets the full budget from the moment it starts, not
+                # what is left after queueing; the clock is the ingress clock.
+                from superlocalmemory.server.recall_ingress import remaining_deadline
+                budget = effective_budget_s(call)
+                public_deadline = remaining_deadline(budget)
+                worker_deadline = public_deadline - min(0.20, budget * 0.25)
         # The engine thread reads monotonic time; the loop's clock may differ.
         call = dataclasses.replace(call, answer_deadline=time.monotonic() + max(
             0.0, worker_deadline - loop.time()))
         future = submit(loop, hold, runtime, app_state, engine, _engine_call, engine, call)
-        response = await wait_until(future, worker_deadline)
+        run_deadline = worker_deadline
+        if explicit:
+            from superlocalmemory.server.recall_ingress import remaining_deadline
+            run_deadline = remaining_deadline(
+                max(0.0, worker_deadline - loop.time()) + EXPLICIT_RUN_GRACE_S)
+            public_deadline = max(public_deadline, run_deadline + 0.15)
+        response = await wait_until(future, run_deadline)
         if response is None:
+            if explicit:
+                logger.warning("Explicit recall overran its run budget; reporting busy")
+                return busy(call, snapshot, retry_after_s=_retry_after())
             logger.warning("Recall deadline reached; trying unjudged keyword fallback")
             return await _bounded_fallback(
                     engine, call, app_state, public_deadline, snapshot, hold, runtime)
@@ -385,10 +493,14 @@ def _fallback(engine: Any, call: RecallCall, app_state: Any) -> dict:
 
 
 __all__ = [
+    "EXPLICIT_CEILING_S",
     "RECALL_BUDGET_FLOOR_S",
     "RECALL_SEMAPHORE",
     "RecallCall",
+    "as_http",
+    "busy",
     "effective_budget_s",
+    "is_explicit",
     "parse_budget_s",
     "recall_budget_s",
     "run_recall",

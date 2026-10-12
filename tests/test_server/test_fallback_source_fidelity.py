@@ -63,7 +63,8 @@ def test_timeout_never_returns_damaged_unchecked_derivatives(
         app = create_app()
         app.state.engine = engine
         response = TestClient(app).get(
-            "/recall", params={"q": "publish approval", "limit": 10})
+            "/recall", params={"q": "publish approval", "limit": 10,
+                            "answer_check": "skip"})  # the hook path keeps the fallback
     else:
         from superlocalmemory.server.routes import memories
         from superlocalmemory.storage.read_connection import ReadConnectionFactory

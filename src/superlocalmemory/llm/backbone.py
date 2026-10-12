@@ -86,6 +86,28 @@ class LLMResponse:
 # Main class
 # ---------------------------------------------------------------------------
 
+#: Longest a background generation waits for recalls to finish before it goes
+#: ahead anyway, so steady recall load can never park extraction for good.
+LLM_YIELD_MAX_S = 20.0
+
+
+def _yield_to_recall() -> None:
+    """Background generation (Mode B extraction, summaries) waits while a recall runs.
+
+    A local model serves one request at a time; a background prompt that takes
+    the model first makes every recall behind it wait for a whole generation.
+    Foreground calls (a recall's own answer check) never wait here.
+    """
+    from superlocalmemory.core import recall_gate
+
+    if not recall_gate.is_background_work() or recall_gate.in_flight() == 0:
+        return
+    import time as _time
+
+    with recall_gate.idle_wait_deadline(_time.monotonic() + LLM_YIELD_MAX_S):
+        recall_gate.wait_for_foreground_idle()
+
+
 class LLMBackbone:
     """Unified LLM interface driven by LLMConfig.
 
@@ -205,6 +227,7 @@ class LLMBackbone:
                 f"Set {_ENV_KEYS.get(self._provider, 'API_KEY')} or pass api_key=."
             )
 
+        _yield_to_recall()
         temp = temperature if temperature is not None else self._default_temperature
         tokens = max_tokens if max_tokens is not None else self._default_max_tokens
         url, headers, payload = self._build_request(prompt, system, tokens, temp, think)

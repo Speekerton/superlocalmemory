@@ -2175,12 +2175,22 @@ def cmd_recall(args: Namespace) -> None:
                 facet_qs += "&project_strict=true"
             facet_qs += _tags_qs(args)
             kind_qs = f"&kind={quote(_kind)}" if _kind else ""
-            result = daemon_request(
-                "GET",
-                f"/recall?q={quote(args.query)}&limit={args.limit}"
-                f"&session_id={quote(session_id)}{fast_qs}{scope_qs}{window_qs}{as_of_qs}"
-                f"{known_as_of_qs}{valid_at_qs}{unknown_qs}{facet_qs}{kind_qs}",
-            )
+            from superlocalmemory.cli.daemon_errors import DaemonServerError
+            try:
+                result = daemon_request(
+                    "GET",
+                    f"/recall?q={quote(args.query)}&limit={args.limit}"
+                    f"&session_id={quote(session_id)}{fast_qs}{scope_qs}{window_qs}{as_of_qs}"
+                    f"{known_as_of_qs}{valid_at_qs}{unknown_qs}{facet_qs}{kind_qs}",
+                    preserve_server_error=True,
+                )
+            except DaemonServerError as busy_exc:
+                if busy_exc.code != "RECALL_BUSY":
+                    raise
+                # The daemon is running and every slot is taken: say so, and do
+                # not start a second engine on this machine to compete with it.
+                print(busy_exc.message, file=sys.stderr)
+                sys.exit(75)
             if result and "results" in result:
                 # Format daemon response same as engine response
                 if use_json:

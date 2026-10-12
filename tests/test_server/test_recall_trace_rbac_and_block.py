@@ -162,7 +162,9 @@ def test_trace_says_why_a_recall_was_not_checked(app, monkeypatch) -> None:
     assert "only the verdict is missing" in body["answer_check_note"]
 
 
-def test_recall_lab_uses_the_same_bounded_deadline_as_agent_recall(app, monkeypatch):
+def test_recall_lab_waits_for_the_full_answer_instead_of_a_keyword_guess(app, monkeypatch):
+    """The Recall Lab is an explicit question: a run that is slow on a loaded
+    machine is waited for (within its grace), never swapped for a keyword guess."""
     import asyncio
     import time
 
@@ -172,9 +174,11 @@ def test_recall_lab_uses_the_same_bounded_deadline_as_agent_recall(app, monkeypa
 
     monkeypatch.setattr(recall_core, "effective_budget_s", lambda call: 0.1)
     real = app.state.engine.recall
+    calls = []
 
     def slow(*a, **kw):
         time.sleep(0.3)
+        calls.append(1)
         return real(*a, **kw)
 
     app.state.engine.recall = slow
@@ -185,8 +189,10 @@ def test_recall_lab_uses_the_same_bounded_deadline_as_agent_recall(app, monkeypa
         ) as client:
             start = time.monotonic()
             response = await client.post(TRACE, json={"query": "Who approved the release?"})
-            assert time.monotonic() - start < 0.2
-            assert response.json()["answerability"] == "unjudged"
+            assert time.monotonic() - start < recall_core.EXPLICIT_RUN_GRACE_S
+            assert response.status_code == 200
+            assert response.json().get("degraded_reason") is None
+            assert calls == [1]
 
     asyncio.run(check())
 

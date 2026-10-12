@@ -258,6 +258,18 @@ def closes_admission_journals(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _fresh_recall_cache():
+    """Each test asks its own questions: kept recall answers never cross tests."""
+    cache = sys.modules.get("superlocalmemory.server.recall_cache")
+    if cache is not None:
+        cache.clear()
+    yield
+    cache = sys.modules.get("superlocalmemory.server.recall_cache")
+    if cache is not None:
+        cache.clear()
+
+
+@pytest.fixture(autouse=True)
 def _reset_daemon_enrichment_pool():
     """Give back the daemon's enrichment pool a test created (audit C-5).
 

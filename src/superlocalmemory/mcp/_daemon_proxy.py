@@ -225,6 +225,7 @@ class DaemonPoolProxy:
                 f"/recall?{params}",
                 timeout_seconds=self._timeout,
                 preserve_not_found=True,
+                preserve_server_error=True,
             )
         except DaemonRefused as exc:
             # 401/403 is an answer, not an outage: retrying cannot change it.
@@ -241,6 +242,15 @@ class DaemonPoolProxy:
             # to DAEMON_UNAVAILABLE. Never retried: 404s don't heal.
             # Discriminated by shape, not by name, so a failed import can
             # never hit an unbound reference here.
+            if type(exc).__name__ == "DaemonServerError" and getattr(exc, "code", "") == "RECALL_BUSY":
+                # Every slot is taken: an honest "ask again shortly", never an outage.
+                return {
+                    "ok": False,
+                    "success": False,
+                    "code": "RECALL_BUSY",
+                    "retryable": True,
+                    "error": getattr(exc, "message", "") or "SuperLocalMemory is busy; ask again shortly.",
+                }
             if type(exc).__name__ == "DaemonNotFound" and hasattr(exc, "code"):
                 return {
                     "ok": False,

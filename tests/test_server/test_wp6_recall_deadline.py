@@ -1,4 +1,9 @@
-"""Three seconds includes admission; generous legacy environment values cannot widen it."""
+"""Three seconds includes admission; generous legacy environment values cannot widen it.
+
+These are the prompt-blocking recalls (hooks, context loads), which keep the
+three-second clock and the keyword fallback. An explicit question may queue
+instead (test_explicit_recall_queue.py).
+"""
 
 import asyncio
 from types import SimpleNamespace
@@ -46,6 +51,7 @@ def test_admission_is_part_of_the_same_deadline(monkeypatch):
             agent_id="test",
             profile_id="default",
             fast=False,
+            skip_answer_check=True,
         )
         task = asyncio.create_task(
             recall_core.run_recall(engine, call, app_state=SimpleNamespace())
@@ -86,7 +92,7 @@ def test_slow_response_assembly_is_also_bounded(monkeypatch):
             return {"answerability": "supported"}
 
         monkeypatch.setattr(recall_core, "_envelope", slow)
-        call = recall_core.RecallCall("a question?", 3, "", "test", True)
+        call = recall_core.RecallCall("a question?", 3, "", "test", True, skip_answer_check=True)
         started = time.monotonic()
         result = await recall_core.run_recall(object(), call, app_state=SimpleNamespace())
         assert time.monotonic() - started < 0.2
@@ -133,7 +139,7 @@ def test_executor_work_is_counted_and_transition_leased_until_it_finishes(monkey
     engine = object()
 
     async def run():
-        call = recall_core.RecallCall("a question?", 3, "", "test", True)
+        call = recall_core.RecallCall("a question?", 3, "", "test", True, skip_answer_check=True)
         baseline = recall_gate.in_flight()
         try:
             await recall_core.run_recall(engine, call, app_state=SimpleNamespace(engine=engine))
@@ -157,7 +163,7 @@ def test_paused_background_work_does_not_refuse_foreground_recall(monkeypatch):
         monkeypatch.setattr(recall_core, '_envelope', lambda *a: {'worked': True})
         engine = object()
         result = await recall_core.run_recall(engine,
-            recall_core.RecallCall('a question?', 3, '', 'test', True),
+            recall_core.RecallCall('a question?', 3, '', 'test', True, skip_answer_check=True),
             app_state=SimpleNamespace(engine=engine))
         assert result == {'worked': True}
     asyncio.run(run())
@@ -189,7 +195,7 @@ def test_the_keyword_fallback_keeps_its_floor_after_a_short_budget(monkeypatch):
 
         monkeypatch.setattr(recall_core, "_engine_call", slow_engine)
         monkeypatch.setattr(recall_core, "_fallback", fallback)
-        call = recall_core.RecallCall("a question?", 3, "", "test", True)
+        call = recall_core.RecallCall("a question?", 3, "", "test", True, skip_answer_check=True)
         started = time.monotonic()
         result = await recall_core.run_recall(object(), call, app_state=SimpleNamespace())
         assert result["results"] == [{"content": "checked source"}]

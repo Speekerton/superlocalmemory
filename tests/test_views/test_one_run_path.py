@@ -101,24 +101,27 @@ def test_one_view_gives_one_answer_on_every_surface(daemon, capsys) -> None:
     assert [r["fact_id"] for r in direct.json()["results"]] == dashboard["result_ids"]
 
 
-def test_the_over_budget_keyword_answer_is_shared_too(daemon, capsys, monkeypatch) -> None:
-    """Past the recall budget /recall serves its keyword answer; so does a view,
-    from the same function, on every surface."""
+def test_the_over_budget_answer_is_shared_too(daemon, monkeypatch) -> None:
+    """Past its budget an explicit question is told to ask again (503 busy),
+    never handed a keyword guess; a view runs the same function, so it says the
+    same thing."""
     import time
 
+    from superlocalmemory.server import recall_core
+
     def slow(*a, **k):
-        time.sleep(0.6)
+        time.sleep(0.8)
         raise RuntimeError("never reached in time")
     monkeypatch.setattr(daemon.engine, "recall", slow)
-    # The budget now includes middleware and view-history assembly. Keep
-    # those available while the 600 ms primary recall still times out.
     monkeypatch.setenv("SLM_SEARCH_RECALL_TIMEOUT_S", "0.5")
-    runs = [_dashboard(daemon), _cli(capsys), _mcp(daemon)]
-    assert all(r["retrieval_mode"] == "degraded_lexical" for r in runs), runs
-    assert runs[0]["result_ids"] == runs[1]["result_ids"] == runs[2]["result_ids"]
-    assert runs[0]["result_ids"]
-    direct = daemon.client.get("/recall", params={"q": "widget release", "limit": 4}).json()
-    assert [r["fact_id"] for r in direct["results"]] == runs[0]["result_ids"]
+    monkeypatch.setattr(recall_core, "EXPLICIT_RUN_GRACE_S", 0.05)
+    view = daemon.client.get("/api/v3/views/run", params={"name": "Widget"})
+    direct = daemon.client.get("/recall", params={"q": "widget release", "limit": 4})
+    for res in (view, direct):
+        assert res.status_code == 503, res.text
+        assert int(res.headers["Retry-After"]) >= 1
+        assert res.json()["code"] == "RECALL_BUSY"
+        assert res.json()["results"] == []
 
 
 def test_the_history_says_which_surface_ran_the_view(daemon, capsys, monkeypatch) -> None:

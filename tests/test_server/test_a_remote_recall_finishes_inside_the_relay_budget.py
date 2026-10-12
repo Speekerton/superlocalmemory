@@ -75,8 +75,9 @@ def test_a_call_budget_never_extends_the_default_budget(slow_engine, monkeypatch
 
 
 def test_without_a_call_budget_the_default_budget_applies_unchanged(slow_engine, monkeypatch):
+    """A prompt-blocking load (no call budget) keeps the default clock."""
     monkeypatch.setenv("SLM_SEARCH_RECALL_TIMEOUT_S", "0.4")
-    body, took = _serve(_call())
+    body, took = _serve(_call(skip_answer_check=True))
     assert body["fallback"] is True
     assert body["answerability"] == "unjudged"
     assert body["answer_check_status"] == "skipped"

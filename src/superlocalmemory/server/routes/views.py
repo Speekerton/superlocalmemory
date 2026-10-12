@@ -238,7 +238,12 @@ async def run_view(request: Request, name: _Name, via: _VIA = "dashboard",
     try:
         call = view_recall_call(engine, view, profile, actor=actor, via=via,
                                 caller_view=remote_view.parse_view(caller_view))
-        return shape_run(view, await run_recall(engine, call, app_state=request.app.state))
+        result = await run_recall(engine, call, app_state=request.app.state)
+        if isinstance(result, dict) and result.get("code") == "RECALL_BUSY":
+            from superlocalmemory.server.recall_core import as_http
+
+            return as_http(result)
+        return shape_run(view, result)
     except Exception:  # noqa: BLE001
         return _internal_error()
 

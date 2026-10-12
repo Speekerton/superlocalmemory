@@ -12,6 +12,25 @@ def is_recall(scope):
     return scope.get("type") == "http" and scope.get("path", "").rstrip("/") in _RECALL_PATHS
 
 
+def explicit_scope(scope):
+    """The request is a question someone waits on (``recall_core.is_explicit``).
+
+    Hook and context loads say so in the query string (``answer_check=skip`` or
+    ``context``, ``depth=0``, or a ``budget_s``); they keep the short clock.
+    """
+    if scope.get("path", "").rstrip("/") != "/recall":
+        return True
+    from urllib.parse import parse_qs
+
+    params = parse_qs((scope.get("query_string") or b"").decode("latin-1"))
+    first = {k: (v[0] if v else "") for k, v in params.items()}
+    if first.get("answer_check", "").strip().lower() in ("skip", "context"):
+        return False
+    if first.get("budget_s", "").strip() or first.get("depth", "").strip() == "0":
+        return False
+    return True
+
+
 def remaining_deadline(budget):
     deadline = asyncio.get_running_loop().time() + budget
     ingress = _DEADLINE.get()
@@ -32,11 +51,20 @@ def fallback_deadline(public_deadline, floor_s):
 async def serve(app, state, scope, receive, send):
     from starlette.responses import JSONResponse
 
-    from superlocalmemory.server.recall_core import RECALL_BUDGET_FLOOR_S, recall_budget_s
+    from superlocalmemory.server.recall_core import (
+        EXPLICIT_CEILING_S,
+        RECALL_BUDGET_FLOOR_S,
+        recall_budget_s,
+    )
 
+    # An explicit question may queue for a slot (recall_core.EXPLICIT_QUEUE_S);
+    # a prompt-blocking recall keeps its own three-second budget inside this.
     # A budget shortened below the floor gives up on full recall sooner; the
     # keyword fallback that answers then still needs the floor (recall_core).
-    deadline = remaining_deadline(max(recall_budget_s(), RECALL_BUDGET_FLOOR_S))
+    ceiling = max(recall_budget_s(), RECALL_BUDGET_FLOOR_S)
+    if explicit_scope(scope):
+        ceiling = max(ceiling, EXPLICIT_CEILING_S + 0.5)
+    deadline = remaining_deadline(ceiling)
     token = _DEADLINE.set(deadline)
     messages = []
 
@@ -50,11 +78,14 @@ async def serve(app, state, scope, receive, send):
         # Admission never completed: do not reveal a profile or touch its store.
         response = JSONResponse({
             "ok": False, "results": [], "count": 0, "result_count": 0,
+            "code": "RECALL_BUSY", "retryable": True, "retry_after_s": 5,
+            "detail": {"code": "RECALL_BUSY",
+                       "message": "SuperLocalMemory is busy; ask again in a few seconds."},
             "degraded_reason": "recall_budget_exceeded", "answerability": "unjudged",
             "answer_check_status": "skipped", "answer_check_detail": "budget",
             "answer_check_note": ("Recall timed out before full results were available; "
                                   "it was not checked."),
-        }, status_code=503)
+        }, status_code=503, headers={"Retry-After": "5"})
         await response(scope, receive, send)
     else:
         for message in messages:

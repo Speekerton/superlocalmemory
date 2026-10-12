@@ -5349,7 +5349,9 @@ def _register_daemon_routes(application: FastAPI) -> None:
             caller_view=parse_view(caller_view),
         )
         try:
-            return await run_recall(engine, call, app_state=application.state)
+            from superlocalmemory.server.recall_core import as_http
+
+            return as_http(await run_recall(engine, call, app_state=application.state))
         except Exception:
             # L3-06: never let str(exc) leave the server — it can carry a
             # local path, a stack value, or other internal detail that is

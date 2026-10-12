@@ -46,7 +46,8 @@ def test_keyword_fallback_honours_kind_and_project_over_http(
     # facet assertions while the one-second primary recall still times out.
     monkeypatch.setenv("SLM_SEARCH_RECALL_TIMEOUT_S", "0.5")
     with _client(engine) as client:
-        r = client.get("/recall", params={"q": "deploy", "kind": "decision", "project": "zeus"})
+        r = client.get("/recall", params={"q": "deploy", "kind": "decision", "project": "zeus",
+                                       "answer_check": "skip"})  # the hook path
 
     assert r.status_code == 200, r.text
     body = r.json()

@@ -782,6 +782,9 @@ class WriteCoordinator:
                 conn.rollback()
                 return
             conn.commit()
+            from superlocalmemory.storage import write_generation
+
+            write_generation.bump()
         except WriteCoordinatorError as exc:
             conn.rollback()
             item.error = exc

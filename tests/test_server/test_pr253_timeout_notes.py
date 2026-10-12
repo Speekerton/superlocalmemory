@@ -45,7 +45,8 @@ def test_completed_retrieval_survives_slow_source_context_assembly(monkeypatch):
 
     monkeypatch.setattr(recall_core, "_envelope", slow)
     payload = asyncio.run(recall_core.run_recall(
-        object(), RecallCall("Who approved?", 3, "", "test", True), app_state=SimpleNamespace()))
+        object(), RecallCall("Who approved?", 3, "", "test", True, skip_answer_check=True),
+        app_state=SimpleNamespace()))
     assert payload["results"][0]["content"] == "Alice approved the deployment."
     assert payload["results"][0]["id"] == "source"
     assert payload["degraded_reason"] == "recall_assembly_budget_exceeded"

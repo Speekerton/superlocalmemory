@@ -82,7 +82,9 @@ async def recall_trace(request: Request):
         origin="dashboard",
         trace=True,
     )
-    return await run_recall(engine, call, app_state=request.app.state)
+    from superlocalmemory.server.recall_core import as_http
+
+    return as_http(await run_recall(engine, call, app_state=request.app.state))
 
 
 def envelope(engine, call, response):

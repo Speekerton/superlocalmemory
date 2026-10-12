@@ -1,4 +1,7 @@
-"""PR-253 #4: real transition/middleware admission is inside the HTTP clock."""
+"""PR-253 #4: real transition/middleware admission is inside the HTTP clock.
+
+A hook's recall (``answer_check=skip``) keeps the three-second clock.
+"""
 import asyncio
 import json
 import threading
@@ -32,7 +35,7 @@ def test_exact_review_transition_cannot_keep_http_recall_waiting_3300ms(monkeypa
 
         async def route(scope, receive, send):
             payload = await recall_core.run_recall(
-                engine, recall_core.RecallCall("a question?", 3, "", "test", True),
+                engine, recall_core.RecallCall("a question?", 3, "", "test", True, skip_answer_check=True),
                 app_state=state,
             )
             await send({"type": "http.response.start", "status": 200, "headers": []})
@@ -46,7 +49,8 @@ def test_exact_review_transition_cannot_keep_http_recall_waiting_3300ms(monkeypa
 
         start = time.monotonic()
         await ProfileRuntimeMiddleware(route, app_state=state)(
-            {"type": "http", "path": "/recall", "method": "GET"}, receive, send,
+            {"type": "http", "path": "/recall", "method": "GET",
+             "query_string": b"q=a+question%3F&answer_check=skip"}, receive, send,
         )
         assert time.monotonic() - start < 3.2
         assert json.loads(messages[-1]["body"])["degraded_reason"] == "recall_budget_exceeded"

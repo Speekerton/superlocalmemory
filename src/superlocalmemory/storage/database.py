@@ -59,6 +59,8 @@ from superlocalmemory.storage.models import (
 from superlocalmemory.storage.read_connection import read_only_snapshot
 from superlocalmemory.storage.write_lock import get_write_lock
 
+from superlocalmemory.storage import write_generation as _write_generation
+
 logger = logging.getLogger(__name__)
 
 _MISSING = object()
@@ -702,6 +704,7 @@ class DatabaseManager:
         finally:
             self._txn_state.conn = None
             self._txn_state.coordinator_bound = False
+            _write_generation.bump()
 
     @contextmanager
     def transaction(self) -> Generator[None, None, None]:
@@ -717,6 +720,7 @@ class DatabaseManager:
             try:
                 yield
                 conn.commit()
+                _write_generation.bump()
             except Exception:
                 conn.rollback()
                 raise
@@ -745,6 +749,7 @@ class DatabaseManager:
             try:
                 yield conn
                 conn.commit()
+                _write_generation.bump()
             except Exception:
                 conn.rollback()
                 raise
@@ -816,7 +821,10 @@ class DatabaseManager:
         # Fast path: already inside a transaction — use its connection directly.
         transaction_conn = getattr(self._txn_state, "conn", None)
         if transaction_conn is not None:
-            return transaction_conn.execute(sql, params).fetchall()
+            rows = transaction_conn.execute(sql, params).fetchall()
+            if transaction_conn.in_transaction:
+                _write_generation.bump()
+            return rows
 
         # Determine if this is a write operation that needs serialisation.
         from superlocalmemory.storage import read_connection_pool as _rcp
@@ -824,7 +832,10 @@ class DatabaseManager:
         # A WITH clause can introduce a write (WITH ... DELETE): that is a write.
         if first_word in self._DML_PREFIXES or _rcp.is_write_with(sql):
             with self._lock:
-                return self._execute_one(sql, params)
+                try:
+                    return self._execute_one(sql, params)
+                finally:
+                    _write_generation.bump()
         else:
             # Read-only path: concurrent reads are safe in WAL mode. A plain
             # read reuses this thread's connection (storage/read_connection_pool).

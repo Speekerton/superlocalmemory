@@ -6,7 +6,7 @@ for names and counts. An MCP-compatible client still decides when to call a
 tool.
 
 > **Current V4 profile counts (from `CHANGELOG.md` and the MCP exposure contract `tests/test_mcp/test_mcp_exposure_contract.py` / `tests/mcp/test_profile_selector.py`):**
-> `core` **18**, `code` **38** (installed coding agents), `full` **57**, `power` **69**, `whole` **109** (all registered), plus `mesh` **9**. The unrestricted default surface is the same **57** tools as `full`. See also `src/superlocalmemory/mcp/profiles.py`.
+> `core` **19**, `code` **39** (installed coding agents), `full` **58**, `power` **70**, `whole` **110** (all registered), plus `mesh` **9**. The unrestricted default surface is the same **58** tools as `full`. See also `src/superlocalmemory/mcp/profiles.py`.
 
 > **Optimize tools:** `slm_compress`, `slm_retrieve`, `slm_cache_set`,
 > `slm_cache_get`, and `slm_optimize_stats` provide explicit compression and
@@ -137,12 +137,12 @@ Set the active profile via the `SLM_MCP_PROFILE` environment variable (or `SLM_M
 
 | Profile | Tool count | Included surfaces |
 |---|---|---|
-| `core` | **18** | Store, recall, search, sessions, optimize, and correction review |
-| `code` | **38** | Core + portable Brain evidence + code graph + `switch_profile` + 3 bounded-loop tools + memory-kind management |
-| `full` | **57** | All everyday memory, portable Brain evidence, optimize, mesh, and memory-kind tools (also the no-profile default) |
-| `power` | **69** | Full + governance and behavioral analysis tools |
+| `core` | **19** | Store, recall, search, sessions, optimize, and correction review |
+| `code` | **39** | Core + portable Brain evidence + code graph + `switch_profile` + 3 bounded-loop tools + memory-kind management |
+| `full` | **58** | All everyday memory, portable Brain evidence, optimize, mesh, and memory-kind tools (also the no-profile default) |
+| `power` | **70** | Full + governance and behavioral analysis tools |
 | `mesh` | **9** | SLM-Mesh coordination only |
-| `whole` | **109** | All registered tools (raw server) — verified by `tests/test_mcp/test_mcp_exposure_contract.py` `whole == 109` |
+| `whole` | **110** | All registered tools (raw server) — verified by `tests/test_mcp/test_mcp_exposure_contract.py` `whole == 110` |
 
 > **Why 110:** 4.1.19 adds memory-kind management tools (`set_memory_kind`, `memory_kinds_status`, `review_memory_kinds`, `confirm_memory_kinds`) to `code`, `full`, and `power`; 4.1.21 adds saved views (`run_view`, `manage_view`) to `full` and `power`; 4.1.25 adds the image tools `remember_media` and `get_media` and the document tools `remember_document` and `media_status` to `whole`, plus the one-time upload link `media_upload_link` for web apps and the bounded mesh wait `mesh_wait`, and the layered-recall tool `expand`. Apps on this computer can use the image and document tools; a remote app can use them only when its connection was approved with the `slm:media` permission and its key has opted in to media; saving an image or document remotely also needs `slm:write` and a write key. Earlier `whole81`/`whole84`/`whole91`/`whole92`/`whole94` aliases still resolve to `whole`; `110` names the current registered surface.
 

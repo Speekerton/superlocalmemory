@@ -582,8 +582,8 @@ def register_core_tools(server, get_engine: Callable) -> None:
         """Search memories through hybrid retrieval, RRF fusion, and reranking.
 
         When nothing in memory supports the question, recall returns NO results
-        and ``abstention_note`` says so in plain words ("Nothing in memory
-        supports this question."). Do not invent an answer then. Pass
+        and ``abstention_note`` says so in plain words ("That isn't in
+        SuperLocalMemory."). Do not invent an answer then. Pass
         ``depth``: 0 glance (ids, tier, one-line previews -- cheapest), 1 recall
         (full facts, the default), 2 context (+ source memory, same-session
         neighbours, facts about the same entities, the correction that replaced

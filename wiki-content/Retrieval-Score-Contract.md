@@ -18,7 +18,7 @@ For one compatibility release the legacy field `score` aliases `relevance_score`
 
 ## Response fields
 
-Every canonical recall response declares the contract version and the state of the answer check. With nothing configured, the defaults look like this:
+Every canonical recall response declares the contract version and the state of the answer check. A response that never reached the pipeline starts with `tier` empty and `answer_check_status` set to `skipped`. A completed recall with no answer check sets `answer_check_status` to `off`. `tier` stays empty until the support check labels the recall, and it is `supported` only when that check finds support. The object below is that completed, supported case with the answer check off. It is not the unset default:
 
 ```json
 {
@@ -61,7 +61,7 @@ Alongside it, the response carries `answer_check_ran` (true only when the status
 
 ### Support tier and notes
 
-Whether a memory supports the question is decided by the support check described in [How Recall Works](How-Recall-Works), and the response reports it in these fields. The example above shows the defaults for a recall that found support.
+Whether a memory supports the question is decided by the support check described in [How Recall Works](How-Recall-Works), and the response reports it in these fields. The example above is a completed recall the support check labelled `supported`, with the answer check off.
 
 | Field | Meaning |
 |---|---|
@@ -76,12 +76,12 @@ The `support` numbers are a diagnostic of one recipe version, not a probability 
 
 ### Abstention
 
-When no result survives the evidence floor, or the support check finds no memory that supports the question, `abstained` is `true` and `abstention_reason` is `evidence_floor`. When candidate generation returns nothing, the reason is `no_candidates`. Neither case involves judging results; there were none to judge. The code picks between the two by whether the response recorded a no-confident-match condition.
+`abstained` is true when the returned list is empty, when a judged verdict says the results do not answer, or when a support check did not label the recall `supported`. The support check overrides the other two: a supported recall is not abstaining, even if an earlier verdict was insufficient. The reason is then chosen in order. A judged-insufficient verdict is `judged_insufficient`. An unsupported support check that recorded probabilities is `unsupported`. If results are still in the list, the reason is `judged_insufficient`. If the evidence floor removed every result, the reason is `evidence_floor`. If candidate generation returned nothing, the reason is `no_candidates`.
 
 | `abstention_reason` | When |
 |---|---|
-| `evidence_floor` | Results were found but none cleared the evidence floor |
-| `no_candidates` | Candidate generation returned nothing |
+| `evidence_floor` | The evidence floor removed every result. The returned list is empty |
+| `no_candidates` | Candidate generation returned nothing, and the floor did not record that it removed every result |
 | `unsupported` | Results were found but the support check found none that supports the question; recall returns no results, or only labelled related ones |
 | `judged_insufficient` | The answer check ran and judged that none of the results answer the question |
 | `null` | Not abstaining |
@@ -90,7 +90,7 @@ When no result survives the evidence floor, or the support check finds no memory
 
 When the [Answer Check](Answer-Check) is running (on-device and installed by default on Apple Silicon, otherwise off), a separate decision runs on the top results. It asks not "is this relevant" but "does this answer the question". Its verdict fills `calibration_status`, `calibration_id` and `answer_confidence` with real values instead of the uncalibrated defaults, and may set `abstention_reason` to `judged_insufficient`. `calibration_status` distinguishes a measured calibration from one that has not yet been measured for the current backend and settings, so treat an unmeasured verdict as a signal, not a guarantee. The verdict alone removes nothing and is reported next to the results. It does feed the support check, which can leave a recall with no results or only labelled related ones.
 
-The daemon's `GET /recall` accepts an `answer_check` query parameter with three values: `full` (the default, the complete check with the optional reorder when that is on), `no_reorder` (the verdict only, never the reorder, which is what the bounded-loop gate asks for) and `skip` (no check, for a recall that is not a question, such as context loading or a health probe). Any other value is refused with HTTP 400.
+The daemon's `GET /recall` takes an `answer_check` query parameter. An empty value and `full` run the complete check, including the optional reorder when that is on. `no_reorder` runs the verdict only and never the reorder, which is what the bounded-loop gate asks for. `skip` runs no check. `context` also skips the check, and it skips the answer-support gate, which is the form used for context loading. Any other value is refused with HTTP 400. That error names `skip`, `no_reorder` and `full`; it does not name `context`, which is accepted before the check.
 
 ## How the ranking is built
 

@@ -1186,7 +1186,9 @@ def register_core_tools(server, get_engine: Callable) -> None:
                             f"this process's local profile store"
                         ),
                     }
-                if result.get("scope") == "session":
+                from superlocalmemory.core.caller_session import http_session_bound
+
+                if result.get("scope") == "session" and http_session_bound():
                     authorization.complete()
                     return {**result, "previous_profile": old,
                             "current_profile": acknowledged}

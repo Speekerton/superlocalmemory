@@ -257,3 +257,29 @@ def test_mcp_workspace_resolution_error_never_reaches_a_resource(store, monkeypa
         )
     assert response.status_code == 503
     assert reached == []
+
+
+def test_stdio_session_acknowledgement_still_switches_its_local_engine(store, monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+
+    from superlocalmemory.mcp import server as srv
+
+    rbac, ids = store
+    monkeypatch.setenv("SLM_USER_SESSION", rbac.create_session(ids["admin_b"]))
+    monkeypatch.setattr("superlocalmemory.cli.daemon.is_daemon_running", lambda: True)
+    monkeypatch.setattr(
+        "superlocalmemory.cli.daemon.daemon_request",
+        lambda *_args, **_kwargs: {"success": True, "active_profile": "sales", "scope": "session"},
+    )
+    recycled = []
+    monkeypatch.setattr(
+        "superlocalmemory.core.worker_pool.WorkerPool.shared",
+        lambda: SimpleNamespace(shutdown=lambda: recycled.append(True)),
+    )
+    engine = srv.get_engine()
+    result = asyncio.run(srv.server.call_tool("switch_profile", {"profile_id": "sales"}))
+    assert result.is_error is False
+    assert engine.profile_id == "sales"
+    assert engine._config.active_profile == "sales"
+    assert recycled == [True]

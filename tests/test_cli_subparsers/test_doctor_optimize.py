@@ -16,7 +16,6 @@ from argparse import Namespace
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -226,6 +225,7 @@ def test_embedding_probe_does_not_use_posix_select():
     pipe reader helper instead of select.select(proc.stdout, ...).
     """
     import io
+
     from superlocalmemory.cli import commands
     from superlocalmemory.cli.commands import _readline_with_timeout
 
@@ -239,7 +239,7 @@ def test_embedding_probe_does_not_use_posix_select():
 
 
 # ---------------------------------------------------------------------------
-# Test 6 — existing checks unchanged; Optimize (Surface B) is last
+# Test 6 — existing checks unchanged; initialized MCP presence is last
 # ---------------------------------------------------------------------------
 
 def test_existing_doctor_checks_unchanged():
@@ -254,10 +254,12 @@ def test_existing_doctor_checks_unchanged():
     tail instead of blocking it, and 'Optimize (Surface B)' keeps a
     presence-only assertion.
 
-    Moved for 4.0.10's 'Memory answer-ability' check, which asks the only
-    question none of the others did: can the owner's memories be found?
+    WP-8 adds initialized MCP presence after the memory answer-ability check.
+    Keep both checks present and acknowledge the new tail explicitly.
     """
-    required_existing = {"Python", "Core deps", "Database", "Optimize (Surface B)"}
+    required_existing = {
+        "Python", "Core deps", "Database", "Optimize (Surface B)", "Memory answer-ability",
+    }
 
     checks = _run_doctor_json()
 
@@ -267,7 +269,7 @@ def test_existing_doctor_checks_unchanged():
     missing = required_existing - names_set
     assert not missing, f"Pre-existing checks missing from doctor output: {missing}"
 
-    assert names[-1] == "Memory answer-ability", (
-        f"'Memory answer-ability' must be last check, but last is {names[-1]!r}. "
+    assert names[-1] == "Connected MCP apps", (
+        f"'Connected MCP apps' must be last check, but last is {names[-1]!r}. "
         f"All checks: {names}"
     )

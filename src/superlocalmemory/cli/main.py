@@ -51,7 +51,7 @@ quick start:
   slm remember "some fact"    Store a memory
   slm recall "search query"   Semantic search across memories
   slm list -n 20              Show 20 most recent memories
-  slm dashboard               Open web dashboard at localhost:8765
+  slm dashboard               Open web dashboard on the configured daemon port
 
 ide integration:
   slm mcp                     Start MCP server (used by IDEs)
@@ -338,9 +338,9 @@ def main() -> None:
     connect_p.add_argument(
         "--port",
         type=int,
-        default=8765,
+        default=None,
         dest="daemon_port",
-        help="SLM daemon port for http/http-mcp-remote transport (default: 8765)",
+        help="SLM daemon port for http/http-mcp-remote transport (default: configured instance)",
     )
     connect_p.add_argument(
         "--verify",
@@ -747,7 +747,7 @@ def main() -> None:
 
     dashboard_p = sub.add_parser("dashboard", help="Open web dashboard")
     dashboard_p.add_argument(
-        "--port", type=int, default=8765, help="Port (default 8765)",
+        "--port", type=int, default=None, help="Port (default: configured instance)",
     )
 
     # V3.3.21: Daemon serve mode
@@ -864,6 +864,9 @@ def main() -> None:
         help="Apply precision changes",
     )
     quantize_p.add_argument("--profile", default="", help="Target profile")
+    quantize_p.add_argument("--repair-sketches", action="store_true",
+                            help="Repair QJL sketches only; preserve embedding precision "
+                                 "(preview by default)")
     quantize_p.add_argument("--json", action="store_true", help="Output structured JSON (agent-native)")
 
     consolidate_p = sub.add_parser("consolidate", help="Run memory consolidation pipeline")

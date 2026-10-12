@@ -184,7 +184,10 @@ class MediaWorkerClient(MediaEmbedderPort):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 self._kill()
-                raise MediaWorkerError("The image model took too long and was stopped (timed out).")
+                raise MediaWorkerError(
+                    "The model worker timed out and was stopped. "
+                    "Run slm doctor to check setup, then try again with a shorter text "
+                    "or smaller file.")
             try:
                 return self._replies.get(timeout=min(self.watch_interval_s, remaining) if cap_mb > 0 else remaining)
             except queue.Empty:
@@ -244,12 +247,24 @@ class MediaWorkerClient(MediaEmbedderPort):
         except RuntimeError as exc:
             if isinstance(exc, MediaWorkerError):
                 raise
-            raise MediaWorkerError("Not enough free memory to load the image model right now.") from exc
+            if "timeout" in str(exc).lower():
+                raise MediaWorkerError(
+                    f"Waited {self.load_timeout_s:g} seconds for another model load to release "
+                    "the memory reservation. Try again when that load finishes; "
+                    "check slm doctor if it stays busy.") from exc
+            raise MediaWorkerError(
+                f"Not enough free memory to load the model right now ({exc}). "
+                "Close other large applications, then try again.") from exc
         except OSError as exc:
-            raise MediaWorkerError("The image model could not be started.") from exc
+            raise MediaWorkerError(
+                "The model worker could not be started. Run slm media enable to repair "
+                "the managed environment, then try again.") from exc
         if not reply.get("ok"):
             self._kill()
-            raise MediaWorkerError("The image model could not be loaded.")
+            raise MediaWorkerError(
+                f"The model could not be loaded: "
+                f"{reply.get('error') or 'worker refused the load'}. "
+                "Run slm media enable to repair the environment and weights, then try again.")
         self.dim, self._loaded = int(reply.get("dim", 0)), True
 
     # -- requests -------------------------------------------------------------
@@ -265,11 +280,15 @@ class MediaWorkerClient(MediaEmbedderPort):
                 except _Dead:
                     self._kill()
                     if attempt or not retry or self._halted:
-                        raise MediaWorkerError("The image model stopped unexpectedly.") from None
+                        raise MediaWorkerError("The model worker stopped unexpectedly. "
+                                               "Run slm doctor, then try again.") from None
         finally:
             self._after_request()
         if not reply.get("ok"):
-            raise MediaWorkerError("The image model could not process that.")
+            raise MediaWorkerError(
+                f"The model worker could not process the request: "
+                f"{reply.get('error') or 'worker refused the request'}. "
+                "Check slm doctor; try a shorter text or smaller file.")
         return reply
 
     def _request(self, cmd: str, retry: bool = True, **fields: Any) -> dict:

@@ -21,6 +21,7 @@ from superlocalmemory.core import answer_check_state as _answer_check_state
 from superlocalmemory.core import config_upgrades as _config_upgrades
 from superlocalmemory.core import memory_kind_config as _memory_kind_config
 from superlocalmemory.core import model_catalog as _catalog
+from superlocalmemory.core.hopfield_config import HopfieldConfig, load_hopfield_config
 from superlocalmemory.core.memory_kind_config import MemoryKindConfig
 from superlocalmemory.infra.data_root import DynamicStatePath, canonical_data_root
 from superlocalmemory.storage.models import Mode
@@ -706,45 +707,6 @@ class ForgettingConfig:
     scheduler_interval_minutes: int = 30  # How often to recompute retentions
     # Immunity
     core_memory_immune: bool = True  # Core Memory blocks never forget
-
-
-@dataclass(frozen=True)
-class HopfieldConfig:
-    """Modern Continuous Hopfield Network configuration (Ramsauer et al., 2020).
-
-    Energy: E(xi) = -log(sum_i exp(B * xi' * x_i)) + B/2 * ||xi||^2
-    Update: xi_new = X' @ softmax(B * X @ xi)
-    Beta:   B = 1/sqrt(d) where d = dimension
-    Storage capacity: O(e^{d/2}) -- exponential in dimension.
-    """
-
-    enabled: bool = True
-    dimension: int = 768
-    max_iterations: int = 1
-    convergence_epsilon: float = 1e-6
-    prefilter_threshold: int = 10_000
-    # How many candidates the index hands to this stage. This stage decides final
-    # membership, so a fact ranked past this number by the index never reaches it
-    # and can never be returned — the size of this pool is a direct limit on which
-    # memories are reachable at all.
-    #
-    #
-    # Chosen by measurement against the 2 s recall ceiling, on a 517 MB store:
-    #   150 -> p95   998 ms, 0 channel timeouts
-    #   300 -> p95 1054 ms, 0
-    #   500 -> p95 1140 ms, 0      <- here: 3.3x the reachability of 150 for +142 ms
-    #   750 -> p95 1278 ms, 0
-    #  1000 -> p95 1947-2737 ms, 2-25 timeouts
-    #
-    # 1000 is excluded twice over: it breaches the ceiling, and a channel that
-    # misses its deadline contributes nothing to fusion — so whether it lands
-    # varies with machine load and the same question stops returning the same
-    # answer. 500 keeps ~860 ms of headroom, which is several times the observed
-    # run-to-run variance, and stays clear of the region where the cost curve
-    # turned non-linear for reasons that were never explained.
-    prefilter_candidates: int = 500
-    skip_threshold: int = 100_000
-    cache_ttl_seconds: float = 60.0
 
 
 @dataclass(frozen=True)
@@ -1473,6 +1435,7 @@ class SLMConfig:
             config.scale_auto_promote_min_edges = 100_000
 
         # V3.3 config fields (additive — defaults work if missing from JSON)
+        config.hopfield = load_hopfield_config(data.get("hopfield"))
         fg = data.get("forgetting", {})
         if fg:
             config.forgetting = ForgettingConfig(**{
@@ -1876,6 +1839,7 @@ class SLMConfig:
         # restart and then silently reverted to the dataclass default, with
         # nothing said. Reported as #124.
         for _section, _obj in (
+            ("hopfield", self.hopfield),
             ("forgetting", self.forgetting),
             ("quantization", self.quantization),
             ("sagq", self.sagq),
@@ -1883,7 +1847,11 @@ class SLMConfig:
             ("math", self.math),
             ("channel_weights", self.channel_weights),
         ):
+            # Saving to a new path has no on-disk section yet: start from the
+            # section this config was loaded with so unknown keys survive.
             _base = existing.get(_section)
+            if not isinstance(_base, dict):
+                _base = (getattr(self, "_raw_preserved", None) or {}).get(_section)
             _merged = dict(_base) if isinstance(_base, dict) else {}
             _merged.update(asdict(_obj))
             data[_section] = _merged

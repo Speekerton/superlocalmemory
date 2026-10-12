@@ -93,7 +93,7 @@ def test_doctor_reports_legacy_and_unrecoverable_counts(
     row = next(row for row in captured[-1]["checks"] if row["name"] == "QJL sketches")
     assert row["status"] == "WARN"
     assert "2" in row["detail"] and "1" in row["detail"]
-    assert "slm quantize --execute" in row["fix"] and "re-embed" in row["fix"]
+    assert "slm quantize --repair-sketches --execute" in row["fix"] and "re-embed" in row["fix"]
 
 
 @pytest.mark.parametrize("payload", [b"QJL1broken", b"QJL1" + b"\0" * 16, None, b""])
@@ -192,7 +192,7 @@ def test_doctor_classifies_prior_configuration_header_before_legacy_size(legacy_
         status, detail, fix = qjl_finding(db.db_path)
     assert status == "WARN"
     assert detail == "2 need repair (1 legacy, 1 incompatible); 1 need re-embedding"
-    assert "slm quantize --execute" in fix
+    assert "slm quantize --repair-sketches --execute" in fix
     assert scheduler.run_eap_cycle("default")["repaired"] == 1
 
 

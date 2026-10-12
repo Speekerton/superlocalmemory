@@ -11,10 +11,10 @@ The gate as defined:
 
 * every nonsense question abstains -- the hand-written set without exception;
   the fresh half except the questions named in ``OPEN_NONSENSE``, which the
-  shipped recipe (answer-support-v2) still answers. They stay named here until
-  the owner chooses the stricter threshold (it would lose a real question
-  recall answers today, see support_recipe) or a later recipe abstains on
-  them. A nonsense question answered that is NOT named fails the test.
+  shipped recipe (answer-support-v2 at its strict threshold) still answers:
+  a stored term plus one or two ordinary words. They stay named here until a
+  later recipe abstains on them. A nonsense question answered that is NOT
+  named fails the test.
 * no real question is lost: every real question recall answered before the
   answer-support gate still has its memory in the top 5. The ones recall
   missed before are named in ``RETRIEVAL_MISSES_BEFORE``; they are retrieval
@@ -38,13 +38,13 @@ ROOT = Path(__file__).resolve().parents[2]
 #: baseline: 104/109 hand-written, 94/94 fresh). r-sem-1 is answered now.
 RETRIEVAL_MISSES_BEFORE = frozenset({"r-sem-1", "r-sem-3", "r-sem-5", "r-sem-7", "r-sem-8"})
 #: Fresh nonsense answer-support-v2 still answers (stored term plus one or two
-#: ordinary words; one Katakana made-up phrase).
+#: ordinary words), from the 4.1.25 round-3 warm run. The Katakana phrase
+#: (gf-n-non_latin-8) abstains since unspaced scripts are judged on pairs.
 OPEN_NONSENSE = frozenset({
     "gf-n-term_plus_words-36",  # "exclusion GDPR"
     "gf-n-term_plus_words-48",  # "SLM_RECALL_NO_FLOOR seventieth"
     "gf-n-term_plus_words-50",  # "denigrate rrf_k"
     "gf-n-term_plus_words-54",  # "FSRS nuclei"
-    "gf-n-non_latin-8",         # Katakana made-up words
 })
 
 

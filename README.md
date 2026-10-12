@@ -7,11 +7,9 @@
 
 <p align="center"><img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/assets/mascot/slm-mascot-hero.png" width="180" alt="SuperLocalMemory mascot, a fluffy caped helper with the SLM logo, arms open"></p>
 
-### The governed memory system for AI agents. On your computer, honest when it doesn't know.
+### Memory for AI agents that knows when it doesn't know.
 
-Claude Code, Codex, Cursor, ChatGPT, Grok Bot and other MCP clients share one memory that lives on your machine. It learns from use, controls who may read and erase what, and says "That isn't in SuperLocalMemory." instead of guessing. It remembers **pictures and documents** you can find by describing them, looks after its own older memories with **Memory health**, and lets **your bots talk to each other** through the same governed memory.
-
-It works with any harness that speaks MCP or can run a command (`slm remember`, `slm recall`). The six packaged plugins (Claude Code, Codex, GitHub Copilot, Antigravity, Hermes and the Cursor-format plugin for Grok Bot) are examples of that, not a list of what is supported.
+**One private memory that lives on your machine, for every agent you use.** Claude Code, Codex, Cursor, Copilot, ChatGPT and any MCP client remember together, and when the answer isn't there, SuperLocalMemory says so instead of feeding your agent a confident guess. In Mode A, core remember and recall make no model-provider call. Anything that sends data out is a choice you make.
 
 [![PyPI](https://img.shields.io/pypi/v/superlocalmemory)](https://pypi.org/project/superlocalmemory/)
 [![npm](https://img.shields.io/npm/v/superlocalmemory)](https://www.npmjs.com/package/superlocalmemory)
@@ -21,399 +19,97 @@ It works with any harness that speaks MCP or can run a command (`slm remember`, 
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](https://github.com/qualixar/superlocalmemory/blob/main/LICENSE)
 [![Research: 4 arXiv papers](https://img.shields.io/badge/arXiv-4_papers-b31b1b)](#research)
 
-**[Install](https://www.superlocalmemory.com/install)** · **[Product walkthrough](https://www.superlocalmemory.com/demo)** · **[Demo video](https://www.youtube.com/watch?v=pyAu_vaIYZQ)** · **[CLI proof](https://github.com/qualixar/superlocalmemory/blob/main/docs/QUICK_PROOF.md)** · **[Docs](#documentation)** · **[Release notes](https://github.com/qualixar/superlocalmemory/blob/main/CHANGELOG.md)**
+**[Install](#install-in-a-minute)** · **[What's new in 4.2](#whats-new-in-42)** · **[Demo video](https://www.youtube.com/watch?v=pyAu_vaIYZQ)** · **[Docs](#documentation)** · **[Website](https://www.superlocalmemory.com)**
 
-<img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/docs/assets/gifs/recall-tiers.gif" alt="Recall in the dashboard: a real answer for how to roll back the API; a gibberish question gets 'That isn't in SuperLocalMemory.'; a real question memory cannot answer exactly gets the closest memories, labelled" width="820">
+<img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/docs/assets/gifs/recall-tiers.gif" alt="Recall in the dashboard: a real question gets its answer; a gibberish question gets 'That isn't in SuperLocalMemory.'; a real question memory cannot answer exactly gets the closest memories, labelled" width="820">
 
 </div>
 
-**Most agent memory is a vector store with a save button. SuperLocalMemory is a governed memory system:** every save passes an admission check and gets a receipt, every read respects roles, profiles and scopes, every erasure is provable, every recall can be checked for whether it actually answers the question, and all of it runs on your own computer with no model call required.
-
-## New: pictures and documents, and bots that talk to each other
-
-| Remember what you see | Let your bots talk to each other |
-|---|---|
-| Save a screenshot, a photo or a PDF, then find it weeks later by describing it: "the slide with the quarterly numbers", "the error dialog from the deploy". A picture model on your computer matches your words to the picture, OCR reads the text inside it, and each PDF page is indexed by its picture and its text. No generative model looks at your files and nothing leaves your machine.<br><br>Built in and **off by default**: one click in the dashboard, one question in the npm installer or upgrader, or `slm media enable`. Your existing memories and embeddings are never changed. Needs a computer with 16 GB of memory; the first set-up downloads about 1.5 GB. Connect a folder or an Obsidian vault with `slm sources`. | ChatGPT, Claude on the web, Grok Bot, Muse and Composio, connected through [Web access](#web-apps-and-bots-web-access), now join SLM-Mesh beside the agents on your computer (Claude Code, Codex, Hermes, Antigravity). They see each other with `mesh_peers`, send a named bot a message, read their inbox and read shared state.<br><br>Honest about real time: a message lands in the inbox at once, but a web app reads it when its next turn starts; SLM never pretends to wake a chat window. Each app needs two yeses: a box you tick when you connect it, and a switch on the **Web access** row in Connected apps (or `slm remote keys allow <key> mesh`). The **Bot messages** tab shows every bot by name. |
-
-[How pictures and documents work](#pictures-and-documents) · [Requirements and limits](https://github.com/qualixar/superlocalmemory/blob/main/docs/pictures-and-documents.md) · [How bot messaging works](#bot-to-bot-messaging)
-
-**Recall tells you when memory cannot answer.** Every recall comes back in one of three tiers. *Supported*: at least one memory is strong enough evidence for the question. *Closest memories*: nothing supports it, but the question is a real one and a few memories are close, so you see up to three, labelled, under "I don't have this exactly — here are the closest memories." *Not in memory*: nonsense, or nothing close, and recall returns nothing under "That isn't in SuperLocalMemory." While SLM is still warming up after a start it says so and shows what it has found, and never claims the memory is empty ([how recall decides](https://github.com/qualixar/superlocalmemory/blob/main/docs/recall.md#when-memory-cannot-answer)).
-
-**An on-device answer check, installed for you where it can run.** On Apple Silicon, setup installs **Laya** (about 1.1 GB) by default, with no terminal question in unattended runs; it judges on your Mac whether the memories found answer the question and nothing leaves the machine. Opt out with `slm setup --no-laya` or `SLM_SKIP_LAYA=1`. **Jev**, the online check, stays off until you choose it and tick its consent ([answer check](#answer-check-laya-and-jev)).
-
-**Your bots and web apps can use the same memory.** Local agents connect over MCP, including the Grok Bot plugin on a shared bot computer. ChatGPT, Claude on the web, Muse, Composio and other web MCP clients can reach it through optional [Web access](#web-apps-and-bots-web-access): you sign in with GitHub for each app, choose whether it may only read or also save, and remove any app at once.
-
-Mode A saves and recalls memories without a language model, and nothing leaves the device unless you turn on the online answer check (Jev). Anything that sends data out is a choice you make, and the docs say exactly what goes.
-
+## Install in a minute
 
 ```bash
-npm install -g superlocalmemory   # primary route (Node 18+, Python 3.12+); or: pipx install superlocalmemory
+npm install -g superlocalmemory   # or: pipx install superlocalmemory   (Python 3.12+, Node 18+ for npm)
 slm setup                         # pick Mode A to keep everything on this machine
-slm connect cursor                # or codex, windsurf, zed, claude-desktop, jetbrains, opencode ... (Claude Code uses the plugin)
+slm connect cursor                # or codex, windsurf, zed, claude-desktop, jetbrains ... (Claude Code uses the plugin)
 ```
 
-npm installs SLM into a package-owned virtual environment. The other primary route is pip in a Python virtual environment you activate: `python3 -m venv .venv`, activate it, then `python -m pip install superlocalmemory`. Repository clone: `./scripts/install.sh install` (macOS, Linux) or `.\scripts\install.ps1 -Action Install` (Windows); see [CONTRIBUTING.md](https://github.com/qualixar/superlocalmemory/blob/main/CONTRIBUTING.md).
+npm installs SLM into a package-owned virtual environment; pipx does the same. Prefer pip? `python -m pip install superlocalmemory` inside a Python virtual environment you activate. Repository clone: `./scripts/install.sh install` (macOS, Linux) or `.\scripts\install.ps1 -Action Install` (Windows). Claude Code: `claude plugin install superlocalmemory@qualixar` ([Works with your agents](#works-with-your-agents)).
 
-Runs on Windows, Linux and macOS ([platforms](#platform-support)). No Docker, no required graph database, no API key.
-
-## What it does
-
-| If you are | You get | Where |
-|---|---|---|
-| Anyone | One memory on your computer that every connected agent shares: Claude Code, Codex, Cursor, Copilot, Antigravity, Hermes, ChatGPT and more | [Works with your agents](#works-with-your-agents) |
-| Anyone | Recall in three honest tiers: supported, closest memories, or "That isn't in SuperLocalMemory." Never a confident guess | [Recall](https://github.com/qualixar/superlocalmemory/blob/main/docs/recall.md) |
-| Anyone | An on-device answer check (Laya), installed by default on Apple Silicon; an optional online one (Jev) | [Answer check](https://github.com/qualixar/superlocalmemory/blob/main/docs/answer-check.md) |
-| Anyone | Pictures, screenshots and PDFs you find by describing them; folders and Obsidian vaults mirrored read-only | [Pictures and documents](https://github.com/qualixar/superlocalmemory/blob/main/docs/pictures-and-documents.md) |
-| Anyone | **Memory health**: older memories described and tidied in the background, only ever by adding, with a Fix button and Undo for anything bigger | [Memory health](https://github.com/qualixar/superlocalmemory/blob/main/docs/memory-health.md) |
-| Anyone | A dashboard with search, a knowledge graph, an answer-check view, connected apps, bot messages and governance | [Dashboard](https://github.com/qualixar/superlocalmemory/blob/main/docs/DASHBOARD-COVERAGE.md) |
-| Anyone | Backup that is encrypted before upload, restore points before each store update, and a restore that rolls back if it fails | [Cloud backup](https://github.com/qualixar/superlocalmemory/blob/main/docs/cloud-backup.md), [Restore points](https://github.com/qualixar/superlocalmemory/blob/main/docs/restore-points.md) |
-| Teams | Roles per workspace, company mode with sign-in, personal / shared / global scopes, a hash-chained audit trail, GDPR export and verified erasure that also removes derived copies | [Teams](https://github.com/qualixar/superlocalmemory/blob/main/docs/rbac-teams.md), [Compliance](https://github.com/qualixar/superlocalmemory/blob/main/docs/compliance.md) |
-| Developers | An MCP server (stdio or HTTP) with tool profiles from 9 to 110 tools, a CLI, a REST API and a Python SDK | [MCP tools](https://github.com/qualixar/superlocalmemory/blob/main/docs/mcp-tools.md), [CLI](https://github.com/qualixar/superlocalmemory/blob/main/docs/cli-reference.md), [API](https://github.com/qualixar/superlocalmemory/blob/main/docs/api-reference.md) |
-| Developers | Layered recall: `depth` 0 (ids and one-line previews), 1 (full facts), 2 (with source, neighbours and the correction that replaced it), a hard `max_tokens` cap, and an `expand` tool to drill into one result | [Recall](https://github.com/qualixar/superlocalmemory/blob/main/docs/recall.md#layered-recall) |
-| Developers | Adapters for LangGraph, LangChain, LlamaIndex, CrewAI, AutoGen, Semantic Kernel, Microsoft Agent Framework, Google ADK and the OpenAI Agents SDK | [Framework adapters](https://github.com/qualixar/superlocalmemory/blob/main/docs/framework-adapters.md) |
-| Developers | SLM-Mesh messages, locks and shared state between agent sessions and the web apps you allow; bounded loops that finish only when an independent gate passes | [Multi-machine](https://github.com/qualixar/superlocalmemory/blob/main/docs/multi-machine.md), [Bounded loops](https://github.com/qualixar/superlocalmemory/blob/main/docs/bounded-loops-bridge.md) |
-| Developers | Exact cache and reversible compression of tool output, a proxy or MCP tools, no change to your context window | [Optimize](https://github.com/qualixar/superlocalmemory/blob/main/docs/optimize-overview.md) |
-| Developers | Bi-temporal queries (`--valid-at`, `--known-as-of`), nine memory kinds, saved views and summaries that cite their memory ids | [Recall](https://github.com/qualixar/superlocalmemory/blob/main/docs/recall.md), [Memory kinds](https://github.com/qualixar/superlocalmemory/blob/main/docs/memory-kinds.md) |
-| Operators | Modes A, B and C (no language model, a model on this machine, or your own endpoint), SQLite canonical with optional CozoDB and LanceDB projections, remote access over TLS, `slm doctor` | [Configuration](https://github.com/qualixar/superlocalmemory/blob/main/docs/configuration.md), [Scale engine](https://github.com/qualixar/superlocalmemory/blob/main/docs/scale-engine.md), [Troubleshooting](https://github.com/qualixar/superlocalmemory/blob/main/docs/troubleshooting.md) |
+Windows, Linux and Apple Silicon macOS. [Getting started](https://github.com/qualixar/superlocalmemory/blob/main/docs/getting-started.md) · [Platform support](#platform-support)
 
 ## 30-second example
 
 ```console
 $ slm remember "We deploy the API blue-green; rollback is a DNS flip." --kind decision
-Queryable ✓ 1 facts (operation=ebca8e80...).
-$ slm remember "Always run the migration dry-run before a release." --kind rule
-$ slm remember "Staging DB is Postgres 16 on port 5433."
-
 $ slm recall "how do we roll back the API"
   1. [0.67] We deploy the API blue-green; rollback is a DNS flip.
-  2. [0.53] Always run the migration dry-run before a release.
-  3. [0.52] Staging DB is Postgres 16 on port 5433.
-
-$ slm recall "what did we decide about rollback" --kind decision
-  1. [0.54] We deploy the API blue-green; rollback is a DNS flip.
-
-$ slm remember "Staging DB moved to Postgres 17 on port 5434." --replaces 0f57a17af3dd46e5
-Replaced ✓ 1 fact(s) of 0f57a17af3dd46e5.
-To undo, run:
-  slm review-correction ... rollback 1
-$ slm recall "which port does staging postgres use"
-  1. [0.68] Staging DB moved to Postgres 17 on port 5434.
+$ slm recall "zxqv plorth wimble"
+  That isn't in SuperLocalMemory.
 ```
 
-Real output from a fresh Mode A install, trimmed. Scores rank; they are not probabilities. While the embedding model loads, recall says `Incomplete search`.
+Scores rank memories; they are not probabilities.
 
-### Watch the product film
+## Why it's different
 
-[![Watch the SuperLocalMemory demo: Claude Code and Codex sharing one memory](https://img.youtube.com/vi/pyAu_vaIYZQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=pyAu_vaIYZQ)
-
-Four minutes on a real local install, every dashboard pane: recall, the knowledge graph, the answer check, one memory shared by Claude Code, Codex, Cursor and ChatGPT, SLM Mesh, governance, caching and compression.
-
-### The dashboard
-
-Every recording here is the real dashboard, captured against a throwaway store of fictional project memories on a test install: each answer, tier and button is what SLM returned.
-
-**Memory health:** a repair that deletes or moves something waits for your Fix, and Undo puts it back.
-
-<img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/docs/assets/gifs/memory-health.gif" alt="Memory health card: four hidden memories that are still in use can be fixed; Fix applies the repair, Undo restores exactly what it changed" width="820">
-
-**Knowledge graph:** people, tools and projects resolved from your memories; click a node to see the memory behind it.
-
-<img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/docs/assets/gifs/knowledge-graph.gif" alt="Knowledge graph: nodes settle into clusters, a click on a person shows the memory about them, scrolling zooms" width="820">
-
-**Entity Explorer:** each entity with its facts and a timeline of how what you know changed.
-
-<img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/docs/assets/gifs/entities.gif" alt="Entity Explorer: Orchard, Lumen and Postgres 16 with their facts, then a search for a person" width="820">
-
-| The answer check says the memories answer the question | Web access: which apps may reach your memory |
+| | |
 |---|---|
-| <img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/docs/screenshots/dashboard/answer-check-answered.png" alt="Answer Check: Laya judges that the memories answer 'When is Project Kestrel going live?' with confidence 0.85, in 1.4 s of the 3 s limit"> | <img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/docs/screenshots/dashboard/connected-apps.png" alt="Connected apps: Web access is on, linked with GitHub for the default profile, renews automatically, with a free daily allowance and a button to add an app or turn access off"> |
+| **It admits what it doesn't know** | Every recall is *supported*, *closest memories* (clearly labelled) or *"That isn't in SuperLocalMemory."* Your agent never builds on a memory that doesn't answer the question. |
+| **It runs on your computer** | No cloud account, no API key, no Docker. In Mode A nothing leaves your machine and no language model is called. |
+| **It's governed, not just stored** | Every save gets a receipt, every read respects roles and workspaces, every erasure is provable, every action is in a hash-chained audit trail. |
+| **It looks after itself** | Memory health describes your older memories in the background, only ever by adding, with Fix and Undo for anything bigger. |
+| **It never floods your context** | Layered recall returns a glance, the facts, or the full context, under a hard token budget. Your agent asks for more only when it needs it. |
+| **It's built on published research** | Four arXiv papers: information-geometric retrieval, biologically inspired forgetting, trust against memory poisoning, and governed memory. |
 
-## Why SuperLocalMemory
+## What's new in 4.2
 
-A vector store answers "what is similar". AI agent memory must also answer: is this still true, who may see it, can it be erased with proof, and does the agent actually have the answer?
+| | |
+|---|---|
+| **Recall that knows when it doesn't know** | Three tiers: an answer, the closest memories under "I don't have this exactly", or "That isn't in SuperLocalMemory." While SLM is still starting it says it is warming up and shows what it has, never "empty". [How recall decides](https://github.com/qualixar/superlocalmemory/blob/main/docs/recall.md#when-memory-cannot-answer) |
+| **Layered recall** | `depth` 0 (one-line previews), 1 (the facts), 2 (with source, neighbours and corrections), a hard `max_tokens` cap, and `expand` to dig into one result. [Layered recall](https://github.com/qualixar/superlocalmemory/blob/main/docs/recall.md#layered-recall) |
+| **On-device answer check by default** | Laya, a small model on Apple Silicon, judges whether the memories found actually answer the question. Installed by default, nothing leaves the Mac; opt out with `slm setup --no-laya`. [Answer check](https://github.com/qualixar/superlocalmemory/blob/main/docs/answer-check.md) |
+| **Memory health** | Older memories get their dates, names, tags and kinds filled in while your computer is idle, without touching what you wrote. Repairs that move or delete anything wait for your Fix, and Undo puts them back. [Memory health](https://github.com/qualixar/superlocalmemory/blob/main/docs/memory-health.md) |
+| **Erasure that reaches every copy** | GDPR erasure now removes derived copies too: summaries, personas, scene titles, caches and indexes. [Compliance](https://github.com/qualixar/superlocalmemory/blob/main/docs/compliance.md) |
+| **Safer backup and restore** | A restore keeps a safety copy and rolls back on failure, with plain "wait" or "recover" messages. [Restore points](https://github.com/qualixar/superlocalmemory/blob/main/docs/restore-points.md) |
+| **Workspace governance everywhere** | Maintenance, consolidation and skill approvals act only on the workspace you're in. [Teams](https://github.com/qualixar/superlocalmemory/blob/main/docs/rbac-teams.md) |
 
-**1. Governed memory, not a vector store.** Roles per workspace, personal / shared / global scopes with default-deny cross-profile recall, GDPR erasure with HMAC-verifiable receipts, retention rules and a hash-chained audit log. The [governed-memory paper](https://arxiv.org/abs/2608.08253) measures what the governed write path costs. Code: `src/superlocalmemory/access/`, `compliance/`.
-
-**2. A zero-LLM core built on published math.** Six retrieval channels and fusion run without a language model; the published architecture scored 60.4% on LoCoMo with no LLM anywhere ([benchmarks](#benchmarks)). Fisher-information scoring, sheaf contradiction detection and Langevin lifecycle dynamics added 12.7 points ([architecture paper](https://arxiv.org/abs/2603.14588)).
-
-**3. It says "That isn't in SuperLocalMemory."** Recall scores each memory on several signals together and answers only when one is strong enough; otherwise it shows the closest memories, labelled, or nothing. The [answer check](https://github.com/qualixar/superlocalmemory/blob/main/docs/answer-check.md) adds a second opinion from a model on your Mac (Laya) or online (Jev).
-
-**4. Memory that learns, and cannot quietly get worse (opt-in).** With `SLM_RANKING` set, a Thompson-sampling bandit tunes channel weights and a LightGBM ranker learns from reported outcomes. A retrained ranker is served to half of live recalls and promoted only when an always-valid sequential test (mSPRT, α = 0.05) shows a higher reward from reported outcomes; after promotion it is rolled back automatically if mean settled reward drops 2% or more over a 200-recall watch window. That watch measures outcome reward, not NDCG. Off by default, so a fresh install ranks the same way every time. Code: `learning/shadow_test.py`, `learning/model_rollback.py`.
-
-**5. Memory with a sense of time.** Every fact records when it happened and when SLM learned it. Ask what was true last month (`--valid-at`) or what SLM knew before a date (`--known-as-of`). Unused memories fade and lose vector precision ([lifecycle paper](https://arxiv.org/abs/2604.04514)).
-
-**6. Many agents, one coordinated memory.** Every write records its agent, with Bayesian trust scores against poisoning ([trust paper](https://arxiv.org/abs/2603.02240)). SLM-Mesh gives parallel sessions messages, locks and shared state, and web apps and bots you connect can join it with your permission.
-
-**7. "Done" means a gate passed.** Bounded loops repeat a task until an independent check (tests, a schema, a linter) passes, never on the agent's word, and store every lap as auditable memory.
-
-**8. Context you don't pay for twice.** Exact cache and reversible compression work through MCP tools or a skill, with no proxy, so your full context window stays intact.
-
-**9. Memory that sees.** Screenshots, photos and PDF pages become memories you recall by describing them, with no generative model in the path. A picture counts as evidence only above the model's own similarity floor, so a question about something you never saved does not surface the nearest wrong picture.
-
-SLM is part of Qualixar's AI Reliability Engineering work: agent memory that is observable, bounded and honest about what it doesn't know.
+All changes: [CHANGELOG](https://github.com/qualixar/superlocalmemory/blob/main/CHANGELOG.md)
 
 ## Works with your agents
 
-| Surface | What you get | Docs |
+Any harness that speaks MCP (`slm mcp`, or `http://127.0.0.1:8765/mcp/`) or can run a command (`slm remember`, `slm recall`) can use SuperLocalMemory. The packaged plugins below are ready-made examples, not a limit.
+
+| Host | Connect | You get |
 |---|---|---|
-| Editor plugins | Claude Code, Codex, VS Code / Copilot, Antigravity, Hermes. Each ships 16 skills, 4 sub-agents and session hooks; the npm package carries every plugin folder | [Plugins](https://github.com/qualixar/superlocalmemory/blob/main/docs/plugins.md), [IDE setup](https://github.com/qualixar/superlocalmemory/blob/main/docs/ide-setup.md), [Hermes](https://github.com/qualixar/superlocalmemory/blob/main/docs/hermes.md) |
-| Any other agent | The universal agent rules: one file that teaches any agent when to recall, what to save and how to keep memory clean. Paste it into `AGENTS.md`, `CLAUDE.md`, `.cursorrules` or the agent's system prompt | [Universal agent rules](https://github.com/qualixar/superlocalmemory/blob/main/plugin-src/rules/AGENTS.md) |
-| `slm connect <ide>` | Writes the MCP config for Cursor, Windsurf, Zed, JetBrains, Gemini CLI, Claude Desktop, VS Code / Copilot, Antigravity, OpenCode, Continue and Codex CLI; `slm connect claude-code` points you to the plugin and Hermes installs as a native plugin | [IDE setup](https://github.com/qualixar/superlocalmemory/blob/main/docs/ide-setup.md) |
-| MCP | stdio (`slm mcp`) or HTTP at `http://127.0.0.1:8765/mcp/`; profiles from 9 to 110 tools | [MCP tools](https://github.com/qualixar/superlocalmemory/blob/main/docs/mcp-tools.md) |
-| Framework adapters | LangGraph, LangChain, LlamaIndex, CrewAI, AutoGen, Semantic Kernel, Microsoft Agent Framework, Google ADK, OpenAI Agents | [Framework adapters](https://github.com/qualixar/superlocalmemory/blob/main/docs/framework-adapters.md) |
-| Python SDK and HTTP API | `MemoryEngine` in your code; the local REST API | [API reference](https://github.com/qualixar/superlocalmemory/blob/main/docs/api-reference.md) |
-| Auto-capture hooks | `slm hooks install` for Claude Code, `--agent codex` for Codex | [Auto-memory](https://github.com/qualixar/superlocalmemory/blob/main/docs/auto-memory.md) |
-| Web apps (ChatGPT, Claude on the web, Muse, Composio) | Optional Web access, turned on from the dashboard: OAuth sign-in, read or save per app, and a Connected apps page to remove any app at once. With your permission an app can also message your other bots (`slm:mesh`) and use pictures (`slm:media`). Copy-paste instructions tell the app when to recall and what to save | [Web access](#web-apps-and-bots-web-access), [Host guides](https://github.com/qualixar/superlocalmemory/blob/main/docs/remote-access/hosts.md), [Web agent instructions](https://github.com/qualixar/superlocalmemory/blob/main/docs/web-agents/README.md) |
-| Cursor-format plugin (Grok Bot, Cursor) | A marketplace-distributed plugin — different from `slm connect cursor` above — that runs on a shared, memory-tight computer with no hooks or dashboard | See below |
+| **Claude Code** | `claude plugin marketplace add qualixar/superlocalmemory` then `claude plugin install superlocalmemory@qualixar` | MCP, 16 skills, 4 agents, `/slm-loop`, session hooks |
+| **Codex** | `slm connect codex` then `slm codex install` | MCP, skills, agents, hooks |
+| **GitHub Copilot** | `slm connect vscode-copilot --here` | MCP, prompts, agents, hooks |
+| **Antigravity, Hermes** | Native plugins | MCP, skills, agents, commands |
+| **Cursor, Windsurf, Zed, JetBrains, Gemini CLI, Claude Desktop, OpenCode, Continue** | `slm connect <name>` | MCP |
+| **Grok Bot and other Cursor-format hosts** | Add the `qualixar` plugin marketplace | A bot-sized plugin for shared computers ([guide](https://github.com/qualixar/superlocalmemory/blob/main/docs/plugins.md#grok-bot-and-other-cursor-format-hosts)) |
+| **ChatGPT, Claude on the web, Muse, Composio** | Optional Web access from the dashboard: sign in per app, read-only or read-and-save | Your local memory, from the web ([guide](https://github.com/qualixar/superlocalmemory/blob/main/docs/remote-access/README.md)) |
+| **LangGraph, LangChain, LlamaIndex, CrewAI, AutoGen, Semantic Kernel, Microsoft Agent Framework, Google ADK, OpenAI Agents** | Framework adapters | Memory in your code ([adapters](https://github.com/qualixar/superlocalmemory/blob/main/docs/framework-adapters.md)) |
+| **Anything else** | Paste the [universal agent rules](https://github.com/qualixar/superlocalmemory/blob/main/plugin-src/rules/AGENTS.md) and give it the CLI or MCP | Memory discipline for any agent |
 
-### Set up your platform
-
-SuperLocalMemory has no list of approved hosts. Any harness that speaks MCP can use `slm mcp` (stdio) or `http://127.0.0.1:8765/mcp/`, and any harness that can run a command can call `slm remember` and `slm recall`. Install it once, then connect the host:
-
-| Platform | Set up | What you get | Honest limits |
-|---|---|---|---|
-| Claude Code | `claude plugin marketplace add qualixar/superlocalmemory`, then `claude plugin install superlocalmemory@qualixar` | MCP server, 16 skills, 4 sub-agents, `/slm-loop`, session and recall hooks | The plugin runs the `slm` you installed; on Windows it stops with a plain message when `slm` is not on PATH |
-| Codex | `slm connect codex`, then `slm codex install` (or `codex plugin add superlocalmemory-codex@qualixar`) | MCP server, 16 skills, 4 sub-agents, `/slm-loop`, lifecycle hooks | Review and trust the new hooks with `/hooks`; the agent rules in `codex-plugin/AGENTS.md` are yours to append |
-| GitHub Copilot (VS Code, Visual Studio, JetBrains, Eclipse, CLI) | `slm connect vscode-copilot --here` in the project, then copy the add-ons from `copilot-plugin/.github/` | MCP server, agent rules, 16 prompt files, 4 agents, hooks | MCP is generally available everywhere; prompts, agents and hooks are additive and hooks are a preview in VS Code |
-| Antigravity (`agy`) | `agy plugin install "$(npm root -g)/superlocalmemory/antigravity-plugin"` | MCP server, 16 skills, 4 agents, `/slm-loop`, hooks | `agy plugin install` takes a local folder; with a pip install run `scripts/install-antigravity-plugin.sh` |
-| Hermes | `hermes plugins install 'https://github.com/qualixar/superlocalmemory.git#hermes-plugin'` | 16 skills, advisor child agents, `/slm <command>` and a `/slm-<command>` alias for each | Installed disabled; grant only the `superlocalmemory` MCP server; destructive commands need a `CONFIRM` token; a remote SLM supports a fixed command set |
-| Cursor-format hosts (Grok Bot, Cursor) | Add the `qualixar` marketplace in the Plugins screen, then `superlocalmemory` | MCP server on the 19-tool `core` profile, a bot-sized skill set | No hooks, no dashboard, no interactive setup; designed for a shared, memory-tight computer |
-| Cursor, Windsurf, Zed, JetBrains, Gemini CLI, Claude Desktop, OpenCode, Continue | `slm connect <name>` (`--dry-run` first) | MCP server in that tool's own config format | MCP only: no skills or hooks |
-| ChatGPT, Claude on the web, Muse, Composio, other remote MCP clients | Web access from the dashboard, then the [host guide](https://github.com/qualixar/superlocalmemory/blob/main/docs/remote-access/hosts.md) | Recall and, if you allow it, save, mesh and pictures | Your computer must be online; each app is limited by what you tick |
-| Anything else | Paste the [universal agent rules](https://github.com/qualixar/superlocalmemory/blob/main/plugin-src/rules/AGENTS.md) into its instructions and give it the CLI or MCP | Memory discipline for any agent | You wire the hooks yourself, if it has any |
-
-`slm connect` lists every host it can write for with `slm connect --list`. Hosts that update on their own schedule are checked by `slm upgrade-hosts`, which previews and changes nothing until you add `--apply`.
-
-### What the packaged plugins contain
-
-All six plugins are generated from one source, `plugin-src/`, so they carry the same skills and agents adapted to each host. The skills teach an agent when and how to use SLM; the agents are bounded helpers it can hand a job to; the hooks run at session events without the agent doing anything.
-
-| Skill | What it teaches |
-|---|---|
-| `slm-recall` | Searching memory: filters, kinds, time windows, the three recall tiers, `depth`, `max_tokens`, `expand` |
-| `slm-remember` | What is worth saving, memory kinds, `replaces`, corrections |
-| `slm-session` | Session start and close, pinned items and standing rules |
-| `slm-status` | Health, `slm doctor`, `slm db integrity` and `repair`, optimize counters |
-| `slm-governance` | Roles, company mode, retention, audit, GDPR export and erasure, what remote apps never see |
-| `slm-scope`, `slm-profile` | Personal, shared and global memory; switching memory profiles and tool sets |
-| `slm-graph` | The knowledge graph and code graph tools |
-| `slm-mesh` | Messages, `mesh_wait`, locks and shared state between sessions and allowed web apps |
-| `slm-loop` | Bounded loops with SLM as the ledger |
-| `slm-cache`, `slm-compress` | KV cache and reversible compression |
-| `slm-web-access` | Setting up and diagnosing Web access, Connected apps and upload links |
-| `slm-media` | Pictures, PDFs and folders: `remember_media`, `remember_document`, `media_upload_link`, `slm media`, `slm sources` |
-| `slm-bot-memory`, `slm-getting-started-bot` | Several bots on one computer; first-session orientation on a headless bot host |
-
-| Sub-agent | Job |
-|---|---|
-| `slm-memory-advisor` | When to remember or recall, how to phrase a query, how to keep memory clean |
-| `slm-optimize-advisor` | Compress and cache to stretch the context window; advisory and fail-open |
-| `slm-governance-advisor` | Scope, roles, retention and erasure decisions; never bypasses a control |
-| `slm-loop-runner` | Runs a task as a bounded loop until an independent gate passes |
-
-The Claude Code plugin's hooks, in the order they matter: at session start one hook prints the `session_init` guidance, another injects project context, and the launcher makes sure the environment exists. `checkpoint` records files you edit. `post_tool_outcome` and `stop_outcome` notice which recalled memories were actually used and settle each outcome. `user_prompt_rehash` treats the same question asked again within a minute as a sign the last answer missed, and `topic_shift` reminds the agent to recall when you change subject. `before_web` runs a recall before a web search or fetch. `stop` saves a session summary. Codex, Copilot and Antigravity carry the subset their host can fire. Every hook fails open: a hook problem never blocks your agent.
-
-### Grok Bot (and other Cursor-format plugin hosts)
-
-Grok Bot runs plugins in Cursor's format: a `.cursor-plugin/plugin.json` manifest, not the
-`.claude-plugin/` one Claude Code reads. SuperLocalMemory ships both from one source, so the
-plugin works on Grok Bot's shared, memory-constrained computer without any manual MCP setup.
-
-**Install:** add the `qualixar` marketplace (`.cursor-plugin/marketplace.json` at this repo's
-root) in Grok Bot's Plugins screen, then add `superlocalmemory`. No API key, no sign-in step —
-the server runs locally on the Grok Bot computer, so nothing goes to a memory SaaS.
-If the plugin's description shows an out-of-date tool count or a `venv/bin/slm: No such file`
-error, Grok Bot's copy of the marketplace is pinned to an old commit: remove the `qualixar`
-marketplace, add it again, and reinstall the plugin. This plugin keeps its own memory on Grok
-Bot's computer; to use the memory on your own computer, add
-[Web access](https://github.com/qualixar/superlocalmemory/blob/main/docs/remote-access/hosts.md#grok-bot) as a custom MCP server instead.
-*(The MCP server starts as `uvx --from superlocalmemory==<version> slm mcp`: a pinned,
-on-PATH command, with `UV_TORCH_BACKEND=cpu` so a GPU-less Linux box never pulls PyTorch's CUDA
-wheel stack. The first start resolves the package once; the first recall downloads the local
-embedding model once.)*
-
-**Try it:** tell any bot *"Remember that our Q4 theme is agent reliability."* Then open a
-different bot and ask *"What's our Q4 theme?"*
-
-**What's shared and what isn't:** every write is attributed to `SLM_AGENT_ID=cursor_plugin` —
-that is attribution, not an access boundary. If your bots share one `SLM_DATA_DIR` (the default
-on one Grok Bot computer), they share one memory store: anything stored without an explicit
-`scope` is visible to any bot that can reach that store, the same way two terminal sessions on
-one laptop would see each other's files. Mark a fact `scope=global` only when every bot on that
-computer should see it; a bot that genuinely needs private memory needs its own `SLM_DATA_DIR`.
-See the `slm-bot-memory` skill (ships with this plugin) for the full model, including what
-should never be stored on a computer shared with other bots (secrets, keys, other people's
-personal data).
-
-**Tools:** this plugin sets `SLM_MCP_PROFILE=core` — 19 tools (`remember`, `recall`, `search`,
-session lifecycle, compression/cache, corrections) — deliberately smaller than the 58-tool
-default profile every other host gets, so a shared computer is not listing tool descriptions
-for tiers it will not use.
-
-**Resources — the lite bot-host profile:** this plugin also sets `SLM_RERANKER_ENABLED=false`,
-`SLM_RERANKER_IDLE_TIMEOUT=120` and `SLM_MAX_EMBEDDING_WORKERS=1` by default, because the box is
-"shared by every bot on it" with as little as 1.8-3.5 GiB free. Measured on macOS, warm, after
-one remember and one recall: about 390 MB resident with the reranker on (daemon + reranker
-worker + embedding worker) vs. about 190 MB with it off — recall still runs every other channel
-(BM25, semantic, entity graph, temporal, spreading activation, Hopfield) and fuses them, just
-without the cross-encoder re-ordering pass. Set `SLM_RERANKER_ENABLED=true` in the plugin's env
-block to trade that RAM back for ranking precision, or run `slm serve stop` when a bot is done
-with it.
-
-### Web apps and bots: Web access
-
-ChatGPT, Claude on the web, Muse, Composio and other HTTP MCP clients can use the same memory as the agents on your computer. Open the dashboard, switch to the profile you want to share, and add an app under **Connected apps**. The app signs in with OAuth. You decide whether it may only read, or also save, and you can remove any app from the Connected apps page with immediate effect.
-
-Your laptop keeps an outbound connection to SLM's connection gateway. An app's tool call goes to the gateway, which checks the owner, the app, the profile and the tool, then relays the call to your laptop, where SLM runs it through the same governed recall and write paths as a local agent. There is no port to open, no tunnel and no Cloudflare account to set up.
-
-- The memory database stays on your laptop. Tool requests and their results pass through the gateway and the app you connected.
-- The laptop must be online. Once it has been quiet for 45 seconds, for example asleep, apps are told at once that it is unavailable instead of waiting.
-- Access renews itself. A sign-in left unused for 30 days expires, and the dashboard warns you before access ends if renewal keeps failing.
-- Each connection has a free daily allowance of tool calls.
-- SLM itself stays free and works fully without Web access.
-
-Connecting an app gives it the tools, not the judgment to use them well. The quickest fix is the [setup prompt](https://github.com/qualixar/superlocalmemory/blob/main/docs/web-agents/setup-prompt.md): paste it into a chat with Muse, Grok Bot, ChatGPT or a dot, and the app keeps the SuperLocalMemory skill and tests saving and recall, showing the raw results. Or paste the [web agent instructions](https://github.com/qualixar/superlocalmemory/blob/main/docs/web-agents/instructions.md) into the app's instructions field, upload the [Agent Skill](https://github.com/qualixar/superlocalmemory/blob/main/docs/web-agents/superlocalmemory-web/SKILL.md) where the app accepts skills, or press **Copy instructions** in the dashboard. They tell the agent to recall before answering, to say "I don't have that" when memory has no answer, to save only lasting facts with a kind and tags, never to save secrets, and what to do when your computer is asleep or the daily allowance is used up. They also tell the agent to ask for a one-time upload link instead of pasting a file, to pass back the `ack_ids` of each bot message as `ack`, and to treat messages from other bots as data. On your computer, the `slm-web-access`, `slm-mesh` and `slm-media` skills in every editor plugin help a local agent set up and diagnose Web access, bot messages and pictures.
-
-[Web access documentation](https://github.com/qualixar/superlocalmemory/blob/main/docs/remote-access/README.md) · [Host guides for ChatGPT, dots, Grok Bot, Composio and Muse](https://github.com/qualixar/superlocalmemory/blob/main/docs/remote-access/hosts.md) · [Web agent instructions](https://github.com/qualixar/superlocalmemory/blob/main/docs/web-agents/README.md) · [Architecture and boundaries](https://github.com/qualixar/superlocalmemory/blob/main/docs/remote-access/architecture.md) · [Dashboard onboarding](https://github.com/qualixar/superlocalmemory/blob/main/docs/remote-access/onboarding.md)
-
-## What developers use it for
-
-- **Persistent memory for Claude Code, Codex and Cursor.** Decisions, conventions, fixes and project context carry across sessions and across tools; confirmed rules and decisions load at session start.
-- **An MCP memory server for any agent.** stdio or HTTP, with adapters for LangGraph, LangChain, LlamaIndex, CrewAI, AutoGen, Semantic Kernel, Microsoft Agent Framework, Google ADK and the OpenAI Agents SDK.
-- **Local-first RAG without a vector database service.** SQLite + sqlite-vec, hybrid search (BM25, embeddings, knowledge graph, temporal), reranking, no Docker and no cloud account.
-- **A hallucination guard for retrieval.** Recall returns nothing, and says "That isn't in SuperLocalMemory.", when no memory supports the question, and the answer check (Laya on your Mac, or Jev online) adds a second opinion, so your agent doesn't build on a wrong memory.
-- **Team and enterprise AI memory.** Roles, company mode with sign-in, scoped sharing, GDPR export and verified erasure, a hash-chained audit trail and an EU AI Act posture report.
-- **Multi-agent memory and coordination.** One store shared by many agents with per-agent attribution, SLM-Mesh messages, locks and shared state, and bounded loops that finish only when an independent gate passes.
-- **Lower token cost.** Exact caching and reversible compression of tool output and file reads keep long agent sessions inside the context window.
-- **Memory for local LLMs.** Mode B runs extraction on Ollama, llama.cpp, vLLM, LM Studio or any OpenAI-compatible server on your machine.
-- **A searchable work log.** Bi-temporal "what was true then" queries, daily, session and project summaries, and saved views, each answer pointing back to its memory ids.
-
-## Architecture
-
-<img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/docs/assets/slm-architecture.png" alt="SuperLocalMemory architecture: agents and apps reach one daemon on your computer through MCP, the CLI, the REST API and the optional Web access connector; recall runs channels, fusion and reranking, the answer-support gate with three tiers, the answer check (Laya on-device, Jev optional) and layered output at depth 0 to 2; saves are admission-checked and redacted; SQLite is canonical with LanceDB and CozoDB projections and a separate store for pictures and documents; Memory health, backfill and consolidation run in the background; roles, audit and erasure govern every call; SLM-Mesh connects agents and allowed web apps" width="900">
-
-**The free local core is complete on its own.** npm and PyPI installs, Claude Code, Codex, local MCP tools, SLM-Mesh and the Laya and Jev answer checks run without Web access. SQLite + sqlite-vec are canonical; CozoDB and LanceDB are projections that serve only once they match SQLite. [Local engine architecture](https://github.com/qualixar/superlocalmemory/blob/main/docs/ARCHITECTURE.md) · [Detailed local pipeline diagram](https://raw.githubusercontent.com/qualixar/superlocalmemory/main/docs/assets/slm-pipeline.svg) · [Web access architecture](https://github.com/qualixar/superlocalmemory/blob/main/docs/remote-access/architecture.md)
+Details: [plugins](https://github.com/qualixar/superlocalmemory/blob/main/docs/plugins.md), [IDE setup](https://github.com/qualixar/superlocalmemory/blob/main/docs/ide-setup.md), [MCP tool profiles](#mcp-memory-server-tool-profiles).
 
 ## Everything SLM does
 
-### Memory and recall
-
-| Capability | What you get | Docs |
+| Area | What you get | Docs |
 |---|---|---|
-| Recall tiers | Every recall is *supported*, *closest memories* (up to three, labelled `related`, when the question is real but nothing answers it exactly) or *not in memory* (no results, "That isn't in SuperLocalMemory."). `--show-weak` (`show_weak` over MCP and REST) shows the weak matches anyway; `include_related` asks for the closest memories over MCP and REST | [Recall](https://github.com/qualixar/superlocalmemory/blob/main/docs/recall.md#when-memory-cannot-answer) |
-| Warming up | For a few minutes after a start the models are still loading. Recall then shows the keyword finds it has, up to five, under "SuperLocalMemory is still warming up — results may be incomplete", and never says the memory is empty. Over MCP and REST the response carries `warming_up` and `status_note` | [Recall](https://github.com/qualixar/superlocalmemory/blob/main/docs/recall.md#warming-up) |
-| Layered recall | `depth` 0 glance (ids, tier, a one-line preview), 1 recall (the default), 2 context (also the source memory, up to three neighbours from the same session, up to three facts about the same entities, and the correction that replaced it). `max_tokens` is a hard cap, and the `expand` tool drills into one result. `slm recall --depth 2 --max-tokens 1500` | [Recall](https://github.com/qualixar/superlocalmemory/blob/main/docs/recall.md#layered-recall) |
-| Hybrid recall | Semantic, keyword (BM25), entity graph, temporal, associative (Hopfield) and spreading-activation channels, plus a picture channel when pictures are on, fused by reciprocal rank and reranked. `slm trace` shows each channel's score | [Recall](https://github.com/qualixar/superlocalmemory/blob/main/docs/recall.md) |
-| Memory kinds | Nine kinds: fact, event, status, opinion, rule, decision, how-to, plan, correction. "What did we decide" favours decisions | [Memory kinds](https://github.com/qualixar/superlocalmemory/blob/main/docs/memory-kinds.md) |
-| Standing rules | Confirmed rules (up to 10) and decisions (up to 5) load into every new agent session | [Memory kinds](https://github.com/qualixar/superlocalmemory/blob/main/docs/memory-kinds.md#standing-rules-at-session-start) |
-| Replace and correct | `--replaces <id>` retires an old fact, kept and undoable. Edits go through reviewed corrections with rollback | [Corrections](https://github.com/qualixar/superlocalmemory/blob/main/docs/reviewed-corrections.md) |
-| Time travel | `--as-of`, `--known-as-of`, `--valid-at`, and `--window 7d` or a date range | [Recall](https://github.com/qualixar/superlocalmemory/blob/main/docs/recall.md#time-travel) |
-| Recall filters | `--project`, `--saved-by`, `--about`, `--kind`, and exact tags with `--tag` (repeat it; `--tags-match all` or `any`); applied before the answer check, and an empty result says why | [Recall](https://github.com/qualixar/superlocalmemory/blob/main/docs/recall.md#narrowing-a-recall) |
-| Project-aware recall | Memories from your current project rank first, hiding nothing. `--project` narrows and says when nothing matched | [Recall](https://github.com/qualixar/superlocalmemory/blob/main/docs/recall.md) |
-| Summaries and saved views | `slm summary session`, `day` or `project`, each citing its memory ids; `slm view create "Work log" "what did I ship" --window 7d`, then `slm view run` | [Summaries](https://github.com/qualixar/superlocalmemory/blob/main/docs/recall.md#summaries), [Views](https://github.com/qualixar/superlocalmemory/blob/main/docs/recall.md#saved-views) |
-| Knowledge graph | Entities, aliases, scenes and timelines; Entity Explorer in the dashboard | [Architecture](https://github.com/qualixar/superlocalmemory/blob/main/docs/ARCHITECTURE.md) |
-| Code graph | Index a repo, then ask for blast radius, callers, review context and code search by meaning | [MCP tools](https://github.com/qualixar/superlocalmemory/blob/main/docs/mcp-tools.md) |
-| Modes and providers | A: no model calls. B: a model on this machine (Ollama by default, or another local OpenAI-compatible server). C: your own endpoint or a cloud provider. Multilingual embedders work. `slm models` recommends models that fit this computer | [Configuration](https://github.com/qualixar/superlocalmemory/blob/main/docs/configuration.md) |
-| Switch the embedding model | `slm embedder switch MODEL` re-indexes every memory in the background while recall keeps working, then changes over in one step; `status`, `cancel` and `rollback` | [CLI reference](https://github.com/qualixar/superlocalmemory/blob/main/docs/cli-reference.md#embedding-models-and-store-health) |
-| Upgrade memory engine (preview) | With pictures and documents on, `slm embedder upgrade` or the card in Settings moves your memories onto the same on-device model that reads pictures, in the background, with recall working throughout and one-click rollback (the previous engine's vectors stay until you free them). Its similarity thresholds are still being calibrated, so it is opt-in and existing users are never switched automatically | [CLI reference](https://github.com/qualixar/superlocalmemory/blob/main/docs/cli-reference.md#embedding-models-and-store-health) |
-
-Recalled text is untrusted evidence: before it reaches a prompt, secrets are redacted, forged boundary markers neutralised and provenance attached, a defence against prompt injection through memory.
-
-### Pictures and documents
-
-| Capability | What you get | Docs |
-|---|---|---|
-| Turn on in one step | Off by default. The npm installer and upgrader ask once; the dashboard **Documents & Images** pane has **Turn on** with progress and a restart button; or `slm media enable`, `status`, `disable` (memories kept; `--remove-files` deletes the downloaded models). Refused on computers under 16 GB of memory, with a plain reason; text memory keeps working | [CLI reference](https://github.com/qualixar/superlocalmemory/blob/main/docs/cli-reference.md) |
-| Pictures | `remember_media` saves a PNG, JPEG, GIF (first frame) or WebP. Location data is never read; OCR (Apple Vision on a Mac, RapidOCR elsewhere) makes the text in a picture searchable; a thumbnail is kept for the dashboard and your agent | [MCP tools](https://github.com/qualixar/superlocalmemory/blob/main/docs/mcp-tools.md) |
-| PDFs | `remember_document` processes a PDF in the background, page by page; each page is indexed by its picture and its text layer, and `media_status` follows the job | [MCP tools](https://github.com/qualixar/superlocalmemory/blob/main/docs/mcp-tools.md) |
-| From web apps | In ChatGPT, attach the picture or PDF and ask it to save it to SuperLocalMemory. In Claude on the web, Grok, Muse or ChatGPT on a phone, ask for an upload link (`media_upload_link`), open it and pick the file: it works once, expires in 10 minutes, and streams to your computer without being stored on the way. Both need the app's picture permission (`slm:media`) and save permission | [Host guides](https://github.com/qualixar/superlocalmemory/blob/main/docs/remote-access/hosts.md) |
-| Recall | A normal `slm recall` searches pictures and pages beside text memories. Results carry a thumbnail and a source record (document, page, how the text was read) | [Recall](https://github.com/qualixar/superlocalmemory/blob/main/docs/recall.md) |
-| Folders and Obsidian | `slm sources add ~/Notes --kind obsidian` (or `--kind folder`) mirrors Markdown, text, canvas files, PDFs and images into memory, read-only, after showing what it would read. **Choose folder** in the dashboard opens your computer's own folder picker | [CLI reference](https://github.com/qualixar/superlocalmemory/blob/main/docs/cli-reference.md) |
-| Your data stays yours | Pictures live in their own database (`media.db`); turning this on never rewrites existing memories or embeddings. Erasing a memory erases its picture. SLM's own data folder can never be added as a source or a path, and reading a file by path needs the owner or admin role | [Compliance](https://github.com/qualixar/superlocalmemory/blob/main/docs/compliance.md) |
-
-The picture model is EmbeddingGemma 2, running on your computer. On a 24 GB Apple Silicon Mac, SLM with pictures on used about 6.2 GB of memory idle and 6.5 GB at peak while saving large photos.
-
-### Memory health
-
-SLM looks after the descriptions of your older memories while your computer is idle. A background worker fills in what is missing (event dates, the names of people, projects and tools, a kind, and a short description) and **only ever adds**: it never edits what you wrote and never replaces a value you set. It stops when you are working or memory is tight, and one safety copy of the store is taken before its first change.
-
-| Part | What you get |
-|---|---|
-| Memory health card | In the dashboard's **Health** pane: progress, what is waiting, and buttons |
-| Stub badge | A memory that is only a label and an id (a session receipt, say) is marked **stub** in lists and counts; only recall leaves stubs out of its answers |
-| Fix and Undo | Repairs that delete or move something (junk entity links, memories hidden although scored to keep, saves that did not finish) never run on their own: they appear as a count with a **Fix** button, and each run that changed something has an **Undo** that keeps anything you edited since |
-| `slm enrich` | `status`, `pause`, `resume`, `undo`, and `fix entity-links\|refile-hidden\|repair-saves` (`repair-saves` has no undo, so it says so and takes a safety copy) |
-| `slm doctor` | Rows for how findable and described your memories are, repairs ready for you, and failed saves |
-
-[Memory health](https://github.com/qualixar/superlocalmemory/blob/main/docs/memory-health.md)
-
-### Learning in memory
-
-- **Adaptive ranking.** A contextual Thompson-sampling bandit picks channel weights per query type; a LightGBM learning-to-rank model trains on `report_outcome` and `report_feedback`. The same question on an unchanged store gets the same ranking.
-- **Guarded promotion.** A candidate ranker serves half of live recalls and is promoted only on a statistically valid win in reported-outcome reward; a later 2% drop in mean settled reward restores the previous model automatically.
-- **Soft prompts.** Consolidation mines behavioural patterns and turns stable ones into soft prompts for new sessions.
-- **Forgetting.** An Ebbinghaus retention cycle and a Langevin lifecycle move neglected memories toward archive and pull used ones back.
-- **Skill evolution (opt-in).** Measures agent skills, proposes revisions and keeps lineage, under a budget and blind verification. [Skill evolution](https://github.com/qualixar/superlocalmemory/blob/main/docs/skill-evolution.md)
-
-### Governance
-
-| Control | What it does | Docs |
-|---|---|---|
-| Roles | Admin, member and viewer per workspace. A role in one workspace grants nothing in another | [Teams](https://github.com/qualixar/superlocalmemory/blob/main/docs/rbac-teams.md) |
-| Company mode | Every read and write is attributed to a signed-in person; turn on with "Require login" | [Company mode](https://github.com/qualixar/superlocalmemory/blob/main/docs/company-mode.md) |
-| Profiles and scopes | Isolated workspaces. Memories are `personal` by default; `shared` and `global` are opt-in | [Profiles](https://github.com/qualixar/superlocalmemory/blob/main/docs/profiles.md), [Scopes](https://github.com/qualixar/superlocalmemory/blob/main/docs/shared-memory.md) |
-| GDPR | `slm gdpr export` (Art. 15/20), `slm gdpr erase` (Art. 17) across every store and every derived copy (queued saves, caches, the vector index, compression originals, picture mirrors), reporting `success: false` if anything remains; `slm gdpr verify` checks the erasure receipt | [Compliance](https://github.com/qualixar/superlocalmemory/blob/main/docs/compliance.md) |
-| Retention and audit | Per-profile retention rules; a hash-chained audit trail of stores, recalls, changes and erasures; ABAC policy checks | [Compliance](https://github.com/qualixar/superlocalmemory/blob/main/docs/compliance.md) |
-| EU AI Act posture | A per-mode technical report (data locality, generative AI use). Risk class stays "undetermined"; no legal verdict | [Compliance](https://github.com/qualixar/superlocalmemory/blob/main/docs/compliance.md) |
-| Write gate | Install token, API keys and remote keys decide who may write | [Auth write gate](https://github.com/qualixar/superlocalmemory/blob/main/docs/auth-write-gate.md) |
-| Evidence export | Checksummed JSONL bundles: `slm evidence export`, `verify`, `import` | [CLI reference](https://github.com/qualixar/superlocalmemory/blob/main/docs/cli-reference.md#data-and-evidence) |
-| Backup and restore | Cloud backup to GitHub or Google Drive, encrypted before upload. A restore point before each store update. A restore holds the store, keeps a safety copy and rolls back if it fails; `slm backup restore-safety-copy` brings the safety copy back if even the rollback cannot | [Cloud backup](https://github.com/qualixar/superlocalmemory/blob/main/docs/cloud-backup.md), [Restore points](https://github.com/qualixar/superlocalmemory/blob/main/docs/restore-points.md) |
-
-Engineering controls that support a compliance program, not a certification.
-
-### Multi-agent: SLM-Mesh and bounded loops
-
-**Shared memory with attribution.** Claude Code, Codex, Cursor and Hermes share one store; each memory records its agent (`SLM_AGENT_ID`) and the dashboard shows per-agent activity.
-
-**SLM-Mesh** coordinates sessions on one machine, or several machines with a shared secret: `mesh_peers`, `mesh_send`, `mesh_inbox`, `mesh_wait`, `mesh_state`, `mesh_lock`, `mesh_events`, `mesh_status`, `mesh_summary`. Messages route across machines; locks and state are per machine. [Multi-machine](https://github.com/qualixar/superlocalmemory/blob/main/docs/multi-machine.md)
-
-<a id="bot-to-bot-messaging"></a>**Bot-to-bot messaging.** Web apps and bots connected through Web access join the same mesh. A web app can list peers (`mesh_peers`), send one named bot a message of up to 4 KB (`mesh_send`), check its inbox (`mesh_inbox`), wait up to 20 seconds for a reply within a turn (`mesh_wait`) and read shared state (`mesh_state`). Locks, events and mesh status stay with the agents on your computer. Each app needs the `slm:mesh` permission ticked when you connect it and the bots switch on the **Web access** row in Connected apps (or `slm remote keys allow <key> mesh`) on your computer; a web app may send 200 messages a day, secrets are stripped from what it sends, and every message reaches the receiver labelled as data from another bot, never as instructions. The **Bot messages** tab lists every bot by name, and you can rename, mute or remove any of them. [Host guides and permissions](https://github.com/qualixar/superlocalmemory/blob/main/docs/remote-access/hosts.md#bot-messages-and-the-two-new-permissions)
-
-**Bounded loops** end only when an independent gate passes (tests, a linter, a schema, a recall condition), never because the agent says it is done. Runs end DONE, HALT, PAUSE, KILLED or ERROR, with each lap stored under `loop:<name>`. Run `slm loop demo`, the `slm_loop_*` MCP tools or `/slm-loop`; the separate Bounded Loops product can store its finished runs here as read-only evidence. [CLI reference](https://github.com/qualixar/superlocalmemory/blob/main/docs/cli-reference.md#bounded-loops), [Bounded Loops bridge](https://github.com/qualixar/superlocalmemory/blob/main/docs/bounded-loops-bridge.md)
-
-### Answer check: Laya and Jev
-
-Answer check adds a second opinion after ranking, on top of the support score every recall already computes. Choose in **Settings → Answer check**:
-
-- **Laya, on this Mac:** a small on-device model (about 1.1 GB) for Apple Silicon Macs. Setup installs it by default, unattended runs included, and the first command after an upgrade offers it (it asks in a terminal, and starts a background install without one). Nothing leaves the machine. Opt out with `slm setup --no-laya` or `SLM_SKIP_LAYA=1`; a no is remembered. It is never installed on other hardware, over an install you already have, or when you chose Off or Jev.
-- **Jev, online, on any computer:** Windows, Linux or macOS, through TypeSafe or OpenRouter with your own key and an explicit consent box. Sends the question and the top 3 memories. It never turns itself on.
-- **Off.**
-
-Only one runs at a time. The check has its own time budget inside the recall ceiling, a repeat question gets the same verdict, and the verdict is one input to the support decision rather than a switch that silently hides results. The **Answer Check** tab shows verdicts, timing and the "not in memory" rate; it never stores questions or memory text. Laya can be calibrated to your store in the background (`slm embedder calibrate`), with visible progress and a cancel. [Answer check](https://github.com/qualixar/superlocalmemory/blob/main/docs/answer-check.md)
-
-### Context optimisation: cache and compression
-
-| Feature | What it does |
-|---|---|
-| Exact cache | `slm_cache_get` / `slm_cache_set` keep tool output and file reads with a TTL; a hit skips the repeat call |
-| Compression | `slm_compress` shrinks large output; safe mode keeps JSON and code intact. A reversible result returns an id, and `slm_retrieve` restores the exact original |
-| Three surfaces | Works through a proxy (`slm wrap claude`), MCP tools or a skill. Only the proxy caches the main conversation turn |
-| Savings | `slm optimize savings --since 7` reports tokens and cost saved |
-| Memory compression | Vector precision follows retention: fading memories are quantized to fewer bits, and consolidation folds clusters of faded memories into one gist |
-
-All of it fails open. [Optimize](https://github.com/qualixar/superlocalmemory/blob/main/docs/optimize-overview.md), [Proxy setup](https://github.com/qualixar/superlocalmemory/blob/main/docs/proxy-setup.md)
-
-### Direct remote access on your own network
-
-`slm remote` serves memory to other computers over TLS only. Each client gets a named key bound to one profile, read-only or read-write, revocable at once. Remote callers authenticate to read and never see this computer's paths or account. [Remote access](https://github.com/qualixar/superlocalmemory/blob/main/docs/distributed-deployment.md#remote-access-over-tls), [Deployment tiers](https://github.com/qualixar/superlocalmemory/blob/main/docs/deployment-tiers.md)
-
-### Scale and operations
-
-- **[Scale Engine](https://github.com/qualixar/superlocalmemory/blob/main/docs/scale-engine.md):** SQLite stays canonical. Optional CozoDB graph and LanceDB vector copies go through prepare, verify, promote and rollback, and serve recall only once they match SQLite.
-- **[Dashboard](https://github.com/qualixar/superlocalmemory/blob/main/docs/DASHBOARD-COVERAGE.md):** `slm dashboard`, with panes including Answer Check, Brain, Knowledge Graph, Governance, Optimize, Mesh Peers, Documents & Images and Bot messages.
-- **Durable writes:** each save moves raw → queryable → enriching → complete with a receipt; a failed step keeps the raw evidence and retries. Text saves under heavy load are queued, never refused (pictures and documents have their own size and daily limits).
-- **[Operations](https://github.com/qualixar/superlocalmemory/blob/main/docs/troubleshooting.md):** `slm doctor`, `status`, `health`, `restart`, `ops`; stuck operations are listed and resolved.
-- **Store health:** `slm db integrity` reports the store's health; `slm db repair` previews fixes for leftover rows, erased words, unfinished deletes and memories that lost their searchable fact, applies them with `--apply`, and undoes a run with `--undo`. It never brings back anything erased, deleted or withheld. [CLI reference](https://github.com/qualixar/superlocalmemory/blob/main/docs/cli-reference.md#embedding-models-and-store-health)
+| **Recall** | Semantic, keyword, entity-graph, temporal, associative and picture channels, fused and reranked; filters by project, kind, tag, agent and time; nine memory kinds; standing rules at session start | [Recall](https://github.com/qualixar/superlocalmemory/blob/main/docs/recall.md), [Memory kinds](https://github.com/qualixar/superlocalmemory/blob/main/docs/memory-kinds.md) |
+| **Time** | Every fact knows when it happened and when SLM learned it: `--valid-at`, `--known-as-of`, `--window 7d`. Corrections replace a fact and stay undoable | [Recall](https://github.com/qualixar/superlocalmemory/blob/main/docs/recall.md#time-travel), [Corrections](https://github.com/qualixar/superlocalmemory/blob/main/docs/reviewed-corrections.md) |
+| **Pictures and documents** | Find a screenshot, photo or PDF page by describing it. A picture model and OCR on your computer; nothing leaves it. Off by default, one click to turn on (16 GB memory) | [Pictures and documents](https://github.com/qualixar/superlocalmemory/blob/main/docs/pictures-and-documents.md) |
+| **Folders and Obsidian** | Mirror a folder or vault into memory, read-only: `slm sources add ~/Notes --kind obsidian` | [CLI](https://github.com/qualixar/superlocalmemory/blob/main/docs/cli-reference.md) |
+| **Knowledge graph** | People, projects and tools resolved from your memories, with timelines; a code graph for blast radius and callers | [Architecture](https://github.com/qualixar/superlocalmemory/blob/main/docs/ARCHITECTURE.md) |
+| **Learning** | Opt-in adaptive ranking that is promoted only on a statistically valid win and rolled back if it gets worse; forgetting curves; soft prompts; opt-in skill evolution | [Skill evolution](https://github.com/qualixar/superlocalmemory/blob/main/docs/skill-evolution.md) |
+| **Governance** | Roles per workspace, company mode with sign-in, personal / shared / global scopes, hash-chained audit, retention rules, GDPR export and verified erasure, an EU AI Act posture report | [Teams](https://github.com/qualixar/superlocalmemory/blob/main/docs/rbac-teams.md), [Compliance](https://github.com/qualixar/superlocalmemory/blob/main/docs/compliance.md) |
+| **Many agents, one memory** | Every write is attributed to its agent, with trust scores against memory poisoning. SLM-Mesh gives sessions messages, locks and shared state; connected web apps and bots can message each other | [Multi-machine](https://github.com/qualixar/superlocalmemory/blob/main/docs/multi-machine.md), [Bot messages](https://github.com/qualixar/superlocalmemory/blob/main/docs/remote-access/hosts.md#bot-messages-and-the-two-new-permissions) |
+| **Bounded loops** | "Done" means an independent gate passed (tests, a linter, a schema), never the agent's word; every lap is stored | [Bounded loops](https://github.com/qualixar/superlocalmemory/blob/main/docs/bounded-loops-bridge.md) |
+| **Context savings** | Exact cache and reversible compression of tool output, through a proxy (`slm wrap claude`), MCP tools or a skill; `slm optimize savings` shows what you saved | [Optimize](https://github.com/qualixar/superlocalmemory/blob/main/docs/optimize-overview.md) |
+| **Backup** | Cloud backup to GitHub or Google Drive, encrypted before upload; a restore point before every store update | [Cloud backup](https://github.com/qualixar/superlocalmemory/blob/main/docs/cloud-backup.md) |
+| **Dashboard** | Search, knowledge graph, answer check, Memory health, connected apps, bot messages, governance: `slm dashboard` | [Dashboard](https://github.com/qualixar/superlocalmemory/blob/main/docs/DASHBOARD-COVERAGE.md) |
+| **Modes** | A: no language model. B: a model on this machine (Ollama or any local server). C: your own endpoint or a cloud provider | [Configuration](https://github.com/qualixar/superlocalmemory/blob/main/docs/configuration.md) |
+| **Scale and operations** | SQLite canonical, optional LanceDB and CozoDB copies that serve only when they match; `slm doctor`, store integrity and repair with undo; durable writes with receipts | [Scale engine](https://github.com/qualixar/superlocalmemory/blob/main/docs/scale-engine.md), [Troubleshooting](https://github.com/qualixar/superlocalmemory/blob/main/docs/troubleshooting.md) |
 
 ## MCP memory server: tool profiles
 
@@ -428,28 +124,38 @@ Pick how many tools your agent sees with `SLM_MCP_PROFILE`.
 | `power` | 70 | Full plus administration, lifecycle and diagnostics (75 with pictures and documents on) |
 | `whole` | 110 | Every registered tool |
 
-```json
-{ "mcpServers": { "superlocalmemory": { "type": "http", "url": "http://127.0.0.1:8765/mcp/" } } }
-```
+stdio: `{"command": "slm", "args": ["mcp"]}` · HTTP: `http://127.0.0.1:8765/mcp/` · [MCP tools](https://github.com/qualixar/superlocalmemory/blob/main/docs/mcp-tools.md)
 
-For stdio clients use `{"command": "slm", "args": ["mcp"]}`.
+## See it
 
-## Privacy and security
-
-<img align="right" width="120" src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/assets/mascot/slm-mascot-shield.png" alt="SuperLocalMemory mascot holding a shield with the SLM logo: privacy and governance">What leaves your machine, and when:
-
-| Data | Leaves only when |
+| Memory health: Fix and Undo | Knowledge graph |
 |---|---|
-| Recall question and top 3 memories | You turn on the online answer check (Jev) and tick its consent |
-| Question and top 20 memories | You also turn on Jev reordering, which has its own notice |
-| Memory text | You choose Mode C, a cloud embedder or reranker, an Ollama on another computer, or Jev kind typing (its own consent) |
-| Encrypted backup files | You connect GitHub or Google Drive backup. Files are encrypted before upload |
-| Mesh messages | You configure SLM-Mesh peers, or allow a connected web app to message your bots (`slm:mesh`); its messages pass through the connection gateway |
-| Files from web apps | You attach a file in ChatGPT (fetched by your computer from ChatGPT's file link) or open an upload link (streamed through SLM's connection gateway to your computer; the gateway keeps no copy) |
-| Pictures and documents | Never, for saving and recall: the picture model, OCR and `media.db` are on your computer. A web app gets picture results only with `slm:media` |
-| Remote tool requests and their results | You turn on Web access and add an app. They pass through SLM's connection gateway and that app; the memory database stays on your laptop |
+| <img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/docs/assets/gifs/memory-health.gif" alt="Memory health card: hidden memories that are still in use are fixed with one click, and Undo restores exactly what changed"> | <img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/docs/assets/gifs/knowledge-graph.gif" alt="Knowledge graph: nodes settle into clusters, a click on a person shows the memory behind it"> |
+| **Entity Explorer** | **The answer check at work** |
+| <img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/docs/assets/gifs/entities.gif" alt="Entity Explorer: projects and tools with their facts and timeline"> | <img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/docs/screenshots/dashboard/answer-check-answered.png" alt="Answer Check: the on-device model judges that the memories answer the question, with its confidence and timing"> |
 
-Model downloads, including the picture model when you turn pictures and documents on, send no memory content. Credentials in memory text are redacted on every outbound path. Outbound requests never follow redirects, except a picture or PDF download by link, which follows at most three redirects and checks each one for a public address, and forwarded-for headers count only from a proxy you name. See [Security policy](https://github.com/qualixar/superlocalmemory/blob/main/SECURITY.md) and [encryption at rest](https://github.com/qualixar/superlocalmemory/blob/main/docs/SECURITY-encryption-at-rest.md).
+Recorded on a test install with fictional memories. Prefer video? [The four-minute product film](https://www.youtube.com/watch?v=pyAu_vaIYZQ).
+
+## Architecture
+
+<img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/docs/assets/slm-architecture.png" alt="SuperLocalMemory architecture: agents and apps reach one daemon on your computer through MCP, the CLI, the REST API and optional Web access; recall runs channels, fusion and reranking, the answer-support gate with three tiers, the on-device answer check and layered output; saves are admission-checked and redacted; SQLite is canonical with LanceDB and CozoDB copies and a separate store for pictures; Memory health and consolidation run in the background; roles, audit and erasure govern every call; SLM-Mesh connects agents" width="900">
+
+The free local core is complete on its own; Web access is optional. [Architecture in detail](https://github.com/qualixar/superlocalmemory/blob/main/docs/ARCHITECTURE.md)
+
+## Privacy
+
+<img align="right" width="110" src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/assets/mascot/slm-mascot-shield.png" alt="SuperLocalMemory mascot holding a shield: privacy and governance">
+
+Nothing leaves your computer unless you choose a feature that sends it, and each one says exactly what goes:
+
+| What leaves | Only when |
+|---|---|
+| A question and the top memories | You turn on Jev, the online answer check, and tick its consent |
+| Memory text | You choose Mode C, a cloud embedder, or a model on another computer |
+| Encrypted backup files | You connect GitHub or Google Drive backup |
+| Tool calls from web apps | You turn on Web access and add an app; the database stays on your computer |
+
+Pictures, documents, Laya and Mode A never send anything. Secrets in memory text are redacted on every outbound path. [Security policy](https://github.com/qualixar/superlocalmemory/blob/main/SECURITY.md)
 
 ## Benchmarks
 
@@ -461,85 +167,64 @@ These numbers come from the published architecture paper ([arXiv:2603.14588](htt
 | Mode A, raw (no LLM anywhere) | 60.4% | 10 conversations, 1,276 questions |
 | Mode C, cloud embeddings + GPT-4.1-mini | 87.7% | 1 conversation (Conv-30), 81 questions |
 
-Method, category breakdown and ablations: [docs/benchmarks.md](https://github.com/qualixar/superlocalmemory/blob/main/docs/benchmarks.md) and [arXiv:2603.14588](https://arxiv.org/abs/2603.14588). A LoCoMo score is comparable only when the subset, answer model and judge match.
+A LoCoMo score is comparable only when the subset, answer model and judge match. [Method and ablations](https://github.com/qualixar/superlocalmemory/blob/main/docs/benchmarks.md)
 
 ## Research
 
-Four arXiv preprints by Varun Pratap Bhardwaj describe SLM, newest first:
+Four arXiv preprints by Varun Pratap Bhardwaj describe SLM:
 
-1. **Governed memory (2026):** [SuperLocalMemory 4.0: The Governed Memory Operating System for AI Agents](https://arxiv.org/abs/2608.08253), with Garima Singh and Arun Pratap Bhardwaj. arXiv:2608.08253. Multi-scope isolation, role-based access, verified erasure, hash-chained audit and bi-temporal recall, with their measured cost.
-2. **Lifecycle and forgetting (2026):** [SuperLocalMemory V3.3: The Living Brain](https://arxiv.org/abs/2604.04514), arXiv:2604.04514. Biologically inspired forgetting, cognitive quantization, multi-channel retrieval without an LLM.
-3. **Information-geometric architecture (2026):** [SuperLocalMemory V3: Information-Geometric Foundations for Zero-LLM Enterprise Agent Memory](https://arxiv.org/abs/2603.14588), arXiv:2603.14588. Fisher-information retrieval, Langevin lifecycle, sheaf contradiction detection; the LoCoMo results above.
-4. **Trust and multi-agent memory (2026):** [SuperLocalMemory: Privacy-Preserving Multi-Agent Memory with Bayesian Trust Defense Against Memory Poisoning](https://arxiv.org/abs/2603.02240), arXiv:2603.02240.
+1. [SuperLocalMemory 4.0: The Governed Memory Operating System for AI Agents](https://arxiv.org/abs/2608.08253), arXiv:2608.08253
+2. [SuperLocalMemory V3.3: The Living Brain](https://arxiv.org/abs/2604.04514), arXiv:2604.04514
+3. [SuperLocalMemory V3: Information-Geometric Foundations for Zero-LLM Enterprise Agent Memory](https://arxiv.org/abs/2603.14588), arXiv:2603.14588
+4. [Privacy-Preserving Multi-Agent Memory with Bayesian Trust Defense Against Memory Poisoning](https://arxiv.org/abs/2603.02240), arXiv:2603.02240
 
-Cite the governed-memory paper with [CITATION.cff](https://github.com/qualixar/superlocalmemory/blob/main/CITATION.cff) or GitHub's "Cite this repository" button:
-
-```bibtex
-@article{bhardwaj2026superlocalmemory,
-  title   = {SuperLocalMemory 4.0: The Governed Memory Operating System for AI Agents},
-  author  = {Bhardwaj, Varun Pratap and Singh, Garima and Bhardwaj, Arun Pratap},
-  journal = {arXiv preprint arXiv:2608.08253},
-  year    = {2026}
-}
-```
+Cite with [CITATION.cff](https://github.com/qualixar/superlocalmemory/blob/main/CITATION.cff) or GitHub's "Cite this repository".
 
 ## Documentation
 
-**Start:** [Getting started](https://github.com/qualixar/superlocalmemory/blob/main/docs/getting-started.md) · [IDE setup](https://github.com/qualixar/superlocalmemory/blob/main/docs/ide-setup.md) · [Plugins](https://github.com/qualixar/superlocalmemory/blob/main/docs/plugins.md) · [Linux install](https://github.com/qualixar/superlocalmemory/blob/main/docs/install-linux.md) · [Quick proof](https://github.com/qualixar/superlocalmemory/blob/main/docs/QUICK_PROOF.md)
-
-**Use:** [Recall](https://github.com/qualixar/superlocalmemory/blob/main/docs/recall.md) · [Memory health](https://github.com/qualixar/superlocalmemory/blob/main/docs/memory-health.md) · [Memory kinds](https://github.com/qualixar/superlocalmemory/blob/main/docs/memory-kinds.md) · [Answer check](https://github.com/qualixar/superlocalmemory/blob/main/docs/answer-check.md) · [Auto-memory](https://github.com/qualixar/superlocalmemory/blob/main/docs/auto-memory.md) · [Universal agent rules](https://github.com/qualixar/superlocalmemory/blob/main/plugin-src/rules/AGENTS.md) · [Web agent instructions](https://github.com/qualixar/superlocalmemory/blob/main/docs/web-agents/README.md) · [Shared memory](https://github.com/qualixar/superlocalmemory/blob/main/docs/shared-memory.md) · [Optimize](https://github.com/qualixar/superlocalmemory/blob/main/docs/optimize-overview.md)
-
-**Reference:** [CLI](https://github.com/qualixar/superlocalmemory/blob/main/docs/cli-reference.md) · [MCP tools](https://github.com/qualixar/superlocalmemory/blob/main/docs/mcp-tools.md) · [Configuration](https://github.com/qualixar/superlocalmemory/blob/main/docs/configuration.md) · [Errors](https://github.com/qualixar/superlocalmemory/blob/main/docs/errors.md) · [Troubleshooting](https://github.com/qualixar/superlocalmemory/blob/main/docs/troubleshooting.md) · [Distributed deployment](https://github.com/qualixar/superlocalmemory/blob/main/docs/distributed-deployment.md) · [Privacy diagnostics](https://github.com/qualixar/superlocalmemory/blob/main/docs/privacy-diagnostics.md)
-
-**Design:** [Architecture](https://github.com/qualixar/superlocalmemory/blob/main/docs/ARCHITECTURE.md) · [Web access](https://github.com/qualixar/superlocalmemory/blob/main/docs/remote-access/README.md) · [Web access host guides](https://github.com/qualixar/superlocalmemory/blob/main/docs/remote-access/hosts.md) · [Score contract](https://github.com/qualixar/superlocalmemory/blob/main/docs/retrieval-score-contract.md) · [Compliance](https://github.com/qualixar/superlocalmemory/blob/main/docs/compliance.md) · [Benchmarks](https://github.com/qualixar/superlocalmemory/blob/main/docs/benchmarks.md)
+**Start:** [Getting started](https://github.com/qualixar/superlocalmemory/blob/main/docs/getting-started.md) · [IDE setup](https://github.com/qualixar/superlocalmemory/blob/main/docs/ide-setup.md) · [Plugins](https://github.com/qualixar/superlocalmemory/blob/main/docs/plugins.md) · [Quick proof](https://github.com/qualixar/superlocalmemory/blob/main/docs/QUICK_PROOF.md)
+**Use:** [Recall](https://github.com/qualixar/superlocalmemory/blob/main/docs/recall.md) · [Memory health](https://github.com/qualixar/superlocalmemory/blob/main/docs/memory-health.md) · [Answer check](https://github.com/qualixar/superlocalmemory/blob/main/docs/answer-check.md) · [Auto-memory](https://github.com/qualixar/superlocalmemory/blob/main/docs/auto-memory.md) · [Web access](https://github.com/qualixar/superlocalmemory/blob/main/docs/remote-access/README.md) · [Optimize](https://github.com/qualixar/superlocalmemory/blob/main/docs/optimize-overview.md)
+**Reference:** [CLI](https://github.com/qualixar/superlocalmemory/blob/main/docs/cli-reference.md) · [MCP tools](https://github.com/qualixar/superlocalmemory/blob/main/docs/mcp-tools.md) · [Configuration](https://github.com/qualixar/superlocalmemory/blob/main/docs/configuration.md) · [Troubleshooting](https://github.com/qualixar/superlocalmemory/blob/main/docs/troubleshooting.md) · [Compliance](https://github.com/qualixar/superlocalmemory/blob/main/docs/compliance.md) · [Wiki](https://github.com/qualixar/superlocalmemory/wiki)
 
 ## Upgrade
 
 ```bash
-npm update -g superlocalmemory    # or, in your activated venv: python -m pip install --upgrade superlocalmemory
+npm update -g superlocalmemory    # or: pipx upgrade superlocalmemory
 slm restart && slm doctor
-slm upgrade-hosts                 # preview IDE and plugin updates; nothing changes until you --apply
 ```
 
-Upgrades never move or delete memory; an update that changes the store takes a restore point first. Plugins update through your editor; see [host upgrades](https://github.com/qualixar/superlocalmemory/blob/main/docs/host-upgrades.md).
+Upgrades never move or delete memory, and a store update takes a restore point first. [Host upgrades](https://github.com/qualixar/superlocalmemory/blob/main/docs/host-upgrades.md)
 
 ## Platform support
 
-| | SuperLocalMemory | Jev (online check) | Laya (on-device check) |
-|---|---|---|---|
-| Apple Silicon macOS | Yes | Yes | Yes, installed by default |
-| 64-bit Windows | Yes | Yes | No (Laya uses Apple's MLX) |
-| 64-bit Linux (x86-64, ARM64) | Yes | Yes | No |
-| Intel Mac, 32-bit Windows | No prebuilt install | — | — |
+| | SuperLocalMemory | Laya (on-device answer check) |
+|---|---|---|
+| Apple Silicon macOS | Yes | Yes, installed by default |
+| 64-bit Windows | Yes | No (Jev, the online check, works) |
+| 64-bit Linux (x86-64, ARM64) | Yes | No (Jev works) |
+| Intel Mac, 32-bit Windows | No prebuilt install | — |
 
-Python 3.12+, and Node 18+ for npm. Intel Mac and 32-bit Windows lack a build of the pinned security library (`cryptography` 50); older versions have high-severity advisories. The default embedding model (about 500 MB) downloads on first use or with `slm warmup`. Pictures and documents need 16 GB of memory and macOS 14 or newer on a Mac, and download about 1.5 GB when you turn them on.
-
-<p align="center"><img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/assets/mascot/slm-mascot-pointing.png" width="140" alt="SuperLocalMemory mascot pointing to the demo video and website"><br>
-See it work: <a href="https://www.youtube.com/watch?v=pyAu_vaIYZQ">the four-minute product film</a> · <a href="https://www.superlocalmemory.com">superlocalmemory.com</a></p>
+Python 3.12+, Node 18+ for npm. Pictures and documents need 16 GB of memory.
 
 ## Contributing and license
 
-Issues and pull requests are welcome; start with [CONTRIBUTING.md](https://github.com/qualixar/superlocalmemory/blob/main/CONTRIBUTING.md). Report vulnerabilities through [SECURITY.md](https://github.com/qualixar/superlocalmemory/blob/main/SECURITY.md). Release notes are in [CHANGELOG.md](https://github.com/qualixar/superlocalmemory/blob/main/CHANGELOG.md).
-
-SLM is licensed under [AGPL-3.0-or-later](https://github.com/qualixar/superlocalmemory/blob/main/LICENSE). For a commercial license, see [COMMERCIAL-LICENSE.md](https://github.com/qualixar/superlocalmemory/blob/main/COMMERCIAL-LICENSE.md). Copyright (c) 2026 Varun Pratap Bhardwaj / [Qualixar](https://qualixar.com). Website: [superlocalmemory.com](https://www.superlocalmemory.com).
+Issues and pull requests are welcome: [CONTRIBUTING.md](https://github.com/qualixar/superlocalmemory/blob/main/CONTRIBUTING.md). Security reports: [SECURITY.md](https://github.com/qualixar/superlocalmemory/blob/main/SECURITY.md). Licensed under [AGPL-3.0-or-later](https://github.com/qualixar/superlocalmemory/blob/main/LICENSE); for a commercial license see [COMMERCIAL-LICENSE.md](https://github.com/qualixar/superlocalmemory/blob/main/COMMERCIAL-LICENSE.md).
 
 ---
 
 <div align="center">
 
+<img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/assets/mascot/slm-mascot-pointing.png" width="120" alt="SuperLocalMemory mascot pointing to the repository star button">
+
 ### Built by Qualixar
 
-**SuperLocalMemory** is made by [Varun Pratap Bhardwaj](https://varunpratap.com) at [Qualixar](https://qualixar.com), where the work is AI Reliability Engineering: memory, contracts, tests and loops that make AI agents dependable enough to trust with real work.
+**SuperLocalMemory** is made by [Varun Pratap Bhardwaj](https://varunpratap.com) at [Qualixar](https://qualixar.com): AI Reliability Engineering for agents you can trust with real work.
+
+If SLM keeps your agents from forgetting, **[star the repository](https://github.com/qualixar/superlocalmemory)**. It's how other developers find it.
 
 [![GitHub stars](https://img.shields.io/github/stars/qualixar/superlocalmemory?style=social)](https://github.com/qualixar/superlocalmemory/stargazers)
-[![PyPI downloads](https://img.shields.io/pepy/dt/superlocalmemory?label=PyPI%20downloads)](https://pepy.tech/project/superlocalmemory)
-[![npm downloads](https://img.shields.io/npm/dt/superlocalmemory?label=npm%20downloads)](https://www.npmjs.com/package/superlocalmemory)
 [![Follow on X](https://img.shields.io/badge/follow-%40varunPbhardwaj-000000?logo=x)](https://x.com/varunPbhardwaj)
 
-If SLM keeps your agents from forgetting, **[star the repository](https://github.com/qualixar/superlocalmemory)**: it is how other developers find it.
-
 **More from Qualixar:** [Qualixar OS](https://github.com/qualixar/qualixar-os) · [SkillFortify](https://github.com/qualixar/skillfortify) · [SLM Mesh](https://github.com/qualixar/slm-mesh) · [AgentAssert](https://github.com/qualixar/agentassert-abc) · [AgentAssay](https://github.com/qualixar/agentassay) · [Bounded Loops](https://github.com/qualixar/bounded-loops) · [Jev Decision Layer](https://github.com/qualixar/jev-decision-layer) · [SLM MCP Hub](https://github.com/qualixar/slm-mcp-hub)
-
-[superlocalmemory.com](https://www.superlocalmemory.com) · [qualixar.com](https://qualixar.com) · [Papers](#research) · [LinkedIn](https://www.linkedin.com/in/varun-pratap-bhardwaj-7ab63742/) · [X](https://x.com/varunPbhardwaj)
 
 </div>

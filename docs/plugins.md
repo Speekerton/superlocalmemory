@@ -115,7 +115,7 @@ project's `.github/` and keep any files of your own
 Add the `qualixar` marketplace (`.cursor-plugin/marketplace.json` in this
 repository) in the host's Plugins screen, then add `superlocalmemory`. The MCP
 server starts with `uvx` pinned to the release, with no API key or sign-in. See
-[the README section](../README.md#grok-bot-and-other-cursor-format-plugin-hosts)
+[the section below](#grok-bot-and-other-cursor-format-hosts)
 for what bots on one computer share. This plugin keeps its own memory on the Grok Bot
 computer. To reach the memory on your own computer, add Web access as a custom MCP
 server in Grok Bot's Plugins screen ([steps](remote-access/hosts.md#grok-bot)).

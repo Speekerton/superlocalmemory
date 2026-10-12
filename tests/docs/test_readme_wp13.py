@@ -193,9 +193,16 @@ def test_internal_links_resolve():
             broken.append(f"#{anchor}")
 
     # [text](docs/...) or [text](CONTRIBUTING.md) etc.
+    # The README uses absolute GitHub URLs so it renders on PyPI and npm; a
+    # link into this repository's main branch must still name a real file.
+    repo_prefix = "https://github.com/qualixar/superlocalmemory/blob/main/"
     for rel_path in re.findall(r"\[(?:[^\]]*)\]\(([^)#]+\.md[^)]*)\)", text):
         # Strip query/fragment
         path_only = rel_path.split("#")[0].split("?")[0]
+        if path_only.startswith(repo_prefix):
+            path_only = path_only[len(repo_prefix):]
+        elif path_only.startswith(("http://", "https://")):
+            continue
         full_path = REPO_ROOT / path_only
         if not full_path.exists():
             broken.append(rel_path)

@@ -11,6 +11,9 @@ WIKI = os.path.join(ROOT, "wiki-content")
 DIAG = os.path.join(ROOT, "docs", "wiki-diagrams")
 BANNED = r"\b(delve|tapestry|multifaceted|paradigm|foster|cutting-edge|holistic|synergy|resonate|pivotal|game-changer|transformative|embark|unravel|beacon)\b"
 STALE = r"\b(V3\.7|V3\.8|V4\.0\.5|V4\.1\.\d+)\b"
+# Live pages describe only the current release: no older version labels, no placeholder token.
+OLD_VERSION = r"(?<![\w./-])(?:[Vv][1-4](?:\.\d+)*|SLM [123]\b|[34]\.\d+\.\d+)(?![\w.-])|SLM_RELEASE_VERSION"
+ARCHIVE_BANNER = "> Archived: describes an older release that is no longer supported."
 problems = []
 
 pages = sorted(f for f in os.listdir(WIKI) if f.endswith(".md"))
@@ -31,7 +34,7 @@ for page in pages:
         if t.startswith("images/"):
             if t[7:] not in images:
                 add(page, f"missing image {t}")
-        elif t and t not in names and not os.path.exists(os.path.join(WIKI, t)):
+        elif t and t not in names and not os.path.exists(os.path.join(WIKI, t)) and not os.path.exists(os.path.join(WIKI, t + ".md")):
             add(page, f"broken link ({u})")
     for m in re.finditer(r"\[\[([^\]|]+)", body):
         n = m.group(1).strip().replace(" ", "-")
@@ -46,8 +49,23 @@ for page in pages:
         add(page, "stale release label in title")
     for m in re.finditer(STALE, body):
         add(page, f"stale label '{m.group(0)}' (check it is historical)")
+    for m in re.finditer(OLD_VERSION, re.sub(r"`[^`\n]*`", "", body)):
+        add(page, f"old version label '{m.group(0)}' on a live page")
     for m in re.finditer(r"/Users/(?!yourusername|Shared)[A-Za-z0-9_.-]+", text):
         add(page, f"real home path {m.group(0)}")
+
+# Every archived page must open with the banner; the sidebar may link only the Archive index.
+ARCH = os.path.join(WIKI, "archive")
+for dirpath, _dirs, files in os.walk(ARCH):
+    for f in sorted(files):
+        if f.endswith(".md"):
+            first = open(os.path.join(dirpath, f), encoding="utf-8").readline().strip()
+            if first != ARCHIVE_BANNER:
+                add(os.path.relpath(os.path.join(dirpath, f), WIKI), "archived page lacks the archive banner")
+side = open(os.path.join(WIKI, "_Sidebar.md"), encoding="utf-8").read()
+for m in re.finditer(r"\]\(([^)\s]+)\)", side):
+    if "archive" in m.group(1).lower() and m.group(1) != "archive/Archive-Index":
+        add("_Sidebar.md", f"sidebar links into the archive: {m.group(1)}")
 
 # Mermaid blocks must equal a .mmd source (ignoring the title-less definition) and must render.
 src = {f[:-4]: open(os.path.join(DIAG, f), encoding="utf-8").read().strip()

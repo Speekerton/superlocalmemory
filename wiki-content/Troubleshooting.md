@@ -79,7 +79,7 @@ If the Connected apps page says the service is not available, run `slm status` t
 
 Worker processes are watched. If the combined memory of SLM's workers goes over a budget (by default 40 percent of RAM with a 2,500 MB floor), the heaviest worker is killed, and workers silent for 60 seconds are killed too. Tune with `SLM_RSS_BUDGET_MB`, `SLM_MAX_WORKER_MB` and `SLM_EMBED_WORKER_RSS_LIMIT_MB`. The database being too large is handled by `slm decay` (preview) and `slm decay --execute`, and `slm db compact` for LanceDB versions.
 
-On macOS, NumPy, SciPy and PyTorch use Apple's Accelerate framework, which has reported defects in matrix factorizations. SLM's save, recall, maintenance and embedding paths make no factorization calls, and the random rotation used for embedding compression avoids Accelerate's QR since 4.1.20. If SLM quits unexpectedly and the crash report names `libLAPACK` or `Accelerate`, open an issue with that report and `slm status --json`.
+On macOS, NumPy, SciPy and PyTorch use Apple's Accelerate framework, which has reported defects in matrix factorizations. SLM's save, recall, maintenance and embedding paths make no factorization calls, and the random rotation used for embedding compression avoids Accelerate's QR. If SLM quits unexpectedly and the crash report names `libLAPACK` or `Accelerate`, open an issue with that report and `slm status --json`.
 
 ## Exit codes and error envelopes
 

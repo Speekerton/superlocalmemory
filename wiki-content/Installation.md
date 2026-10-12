@@ -1,6 +1,6 @@
 # Installation
 
-SLM installs as a single `slm` command, either through npm (which gives it a private Python environment) or through pipx or pip (which put it in a Python environment you control). Installing only puts the program on disk. It does not create your data folder, edit an IDE, start a daemon or download a model. Those happen when you run `slm setup`, so you decide each step. SLM 4.1.25 supports Apple Silicon Macs, 64-bit Windows and 64-bit Linux on Python 3.12 to 3.14.
+SLM installs as a single `slm` command, either through npm (which gives it a private Python environment) or through pipx or pip (which put it in a Python environment you control). Installing only puts the program on disk. It does not create your data folder, edit an IDE, start a daemon or download a model. Those happen when you run `slm setup`, so you decide each step. SLM supports Apple Silicon Macs, 64-bit Windows and 64-bit Linux on Python 3.12 to 3.14.
 
 ## What you need
 
@@ -138,7 +138,7 @@ slm upgrade-hosts                           # preview which host integrations ar
 slm upgrade-hosts --host codex --apply      # refresh only what you reviewed
 ```
 
-A few minutes after SLM first starts on a new version it checks the memory store once, read-only, and shows the result under Health in the dashboard ([Health and Repair](Health-and-Repair)). Schema migrations are additive and forward-only. There is no downgrade of the schema; to go back, use a restore point (`slm db restore-points`, `slm db prepare-downgrade`) or restore a verified copy of the whole data folder. See [Host Upgrades](Host-Upgrades) and [Upgrade Memory Engine](Upgrade-Memory-Engine). Coming from SLM 2? Use [Migration from V2](Migration-from-V2).
+A few minutes after SLM first starts on a new version it checks the memory store once, read-only, and shows the result under Health in the dashboard ([Health and Repair](Health-and-Repair)). Schema migrations are additive and forward-only. There is no downgrade of the schema; to go back, use a restore point (`slm db restore-points`, `slm db prepare-downgrade`) or restore a verified copy of the whole data folder. See [Host Upgrades](Host-Upgrades) and [Upgrade Memory Engine](Upgrade-Memory-Engine).
 
 ## Uninstall
 

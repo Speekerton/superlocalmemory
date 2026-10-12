@@ -33,7 +33,7 @@ By default a memory is `personal`: visible only to the profile that wrote it. Tw
 | `global` | Every profile on this install |
 
 ```bash
-slm remember "Deploy approved for v2.3.1" --scope shared --shared-with agent-b,agent-c
+slm remember "Deploy approved for build 2301" --scope shared --shared-with agent-b,agent-c
 ```
 
 The MCP `remember` tool takes the same `scope` and `shared_with` arguments, with `shared_with` as a comma-separated string. Reading is default-deny: shared and global memories reach a profile only when its settings include them in recall (Settings > Memory Scope has "include shared in recall" and "include global in recall", both off by default), and the default write scope is `personal`. This is an authorization rule inside one install and has nothing to do with the mesh. Profiles are namespaces, not security boundaries ([Profiles](Profiles)).

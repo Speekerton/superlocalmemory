@@ -1,6 +1,6 @@
 # Memory Kinds
 
-Every memory can say what sort of thing it is: a fact, an event, a decision, a standing rule. Recall uses that to answer "what did we decide" with decisions and "how do I" with how-tos, and the rules and decisions you have confirmed are handed to every new agent session. Kinds were added in 4.1.19. The central design choice is that a kind guessed by a model is only ever a suggestion. Nothing acts on it until a person or the saving agent confirms it.
+Every memory can say what sort of thing it is: a fact, an event, a decision, a standing rule. Recall uses that to answer "what did we decide" with decisions and "how do I" with how-tos, and the rules and decisions you have confirmed are handed to every new agent session. The central design choice is that a kind guessed by a model is only ever a suggestion. Nothing acts on it until a person or the saving agent confirms it.
 
 ## The nine kinds
 

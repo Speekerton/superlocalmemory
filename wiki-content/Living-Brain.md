@@ -1,6 +1,6 @@
 # Living Brain
 
-The Living Brain is SLM's answer to a plain problem: a memory that only grows becomes slower, noisier and less trustworthy. SLM manages memories the way a working memory behaves. Memories that keep proving useful stay sharp, ones that are never touched fade, and clusters of old related facts are folded into a short summary instead of being left to pile up. The ideas come from the paper [SuperLocalMemory V3.3: The Living Brain](https://arxiv.org/abs/2604.04514) (arXiv:2604.04514), which covers biologically inspired forgetting, cognitive quantization and multi-channel retrieval without an LLM.
+The Living Brain is SLM's answer to a plain problem: a memory that only grows becomes slower, noisier and less trustworthy. SLM manages memories the way a working memory behaves. Memories that keep proving useful stay sharp, ones that are never touched fade, and clusters of old related facts are folded into a short summary instead of being left to pile up. The ideas come from the paper [The Living Brain](https://arxiv.org/abs/2604.04514) (arXiv:2604.04514), which covers biologically inspired forgetting, cognitive quantization and multi-channel retrieval without an LLM.
 
 The name also covers a dashboard pane called **Brain**. The two parts are different, and this page treats them separately: first the lifecycle machinery, then the Brain pane.
 

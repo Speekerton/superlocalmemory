@@ -87,7 +87,7 @@ Your computer's credential renews itself, so normally you do nothing, and the pa
 
 ## Rules that limit it
 
-Web access cannot be used in company mode while login is required: remote keys are refused there. Folder sources pause while Web access is set up. Pictures saved before 4.1.25 are held back from web apps until saved again, because they were vetted under an older rule. See [Security, Company Mode and Teams](Security-Company-Mode-and-Teams) and [Privacy and Data Flow](Privacy-and-Data-Flow).
+Web access cannot be used in company mode while login is required: remote keys are refused there. Folder sources pause while Web access is set up. Pictures saved by an earlier release are held back from web apps until saved again, because they were vetted under an older rule. See [Security, Company Mode and Teams](Security-Company-Mode-and-Teams) and [Privacy and Data Flow](Privacy-and-Data-Flow).
 
 ## Other computers on your network
 

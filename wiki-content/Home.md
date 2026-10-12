@@ -61,7 +61,7 @@ Developers who use AI coding agents and want decisions, conventions and fixes to
 
 ## The research
 
-SLM's design is described in four arXiv preprints by Varun Pratap Bhardwaj, newest first: [SuperLocalMemory 4.0: The Governed Memory Operating System for AI Agents](https://arxiv.org/abs/2608.08253) (multi-scope isolation, role-based access, verified erasure, hash-chained audit and bi-temporal recall), [SuperLocalMemory V3.3: The Living Brain](https://arxiv.org/abs/2604.04514) (forgetting and cognitive quantization), [Information-Geometric Foundations for Zero-LLM Enterprise Agent Memory](https://arxiv.org/abs/2603.14588) and [Privacy-Preserving Multi-Agent Memory with Bayesian Trust Defense Against Memory Poisoning](https://arxiv.org/abs/2603.02240). See [Research Foundations](Research-Foundations).
+SLM's design is described in four arXiv preprints by Varun Pratap Bhardwaj, newest first: [the governed memory operating system paper](https://arxiv.org/abs/2608.08253) (multi-scope isolation, role-based access, verified erasure, hash-chained audit and bi-temporal recall), [the Living Brain paper](https://arxiv.org/abs/2604.04514) (forgetting and cognitive quantization), [the information-geometric foundations paper](https://arxiv.org/abs/2603.14588) and [the privacy-preserving multi-agent memory paper](https://arxiv.org/abs/2603.02240). See [Research Foundations](Research-Foundations).
 
 SLM is open source. The source, issues and releases are on [GitHub](https://github.com/qualixar/superlocalmemory), and the version history is in the [CHANGELOG](https://github.com/qualixar/superlocalmemory/blob/main/CHANGELOG.md).
 

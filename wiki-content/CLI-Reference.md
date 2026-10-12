@@ -1,6 +1,6 @@
 # CLI Reference
 
-The `slm` command has 71 top-level commands, plus `slm hook`, which hosts call from their hook configuration and which is not part of the normal command parser. This page groups them by task, with one short table per group. The installed help always wins over this page: `slm --help` lists every command, `slm <command> --help` lists its flags, and `slm help` prints a grouped overview with the topics `modes`, `config` and `self-heal`. Everything here was checked against the 4.1.25 code and its `--help` output.
+The `slm` command has 71 top-level commands, plus `slm hook`, which hosts call from their hook configuration and which is not part of the normal command parser. This page groups them by task, with one short table per group. The installed help always wins over this page: `slm --help` lists every command, `slm <command> --help` lists its flags, and `slm help` prints a grouped overview with the topics `modes`, `config` and `self-heal`. Everything here was checked against the code and its `--help` output.
 
 ## How the CLI behaves
 
@@ -120,7 +120,7 @@ See [Memory Kinds](Memory-Kinds) for what the nine kinds mean and how suggestion
 | `slm db restore-points` | List the copies of your memories you can go back to | `--json` |
 | `slm db restore POINT_ID` | Go back to a restore point, applied when SLM next starts ([Host Upgrades](Host-Upgrades)) | `--yes`, `--cancel`, `--no-reimport`, `--json` |
 | `slm db prepare-downgrade` | Get your memories ready to run on the previous SLM version | `--yes`, `--cancel`, `--json` |
-| `slm migrate` | The one-shot V2 to current migrator ([Migration from V2](Migration-from-V2)). Not the same as `slm db migrate` | `--rollback` only while the migrator's own backup still exists |
+| `slm migrate` | A one-shot migrator for data from a very old install; a current install does not need it. Not the same as `slm db migrate` | `--rollback` only while the migrator's own backup still exists |
 | `slm evidence export DEST, verify BUNDLE, import BUNDLE, rebuild` | Versioned, checksummed JSONL evidence bundles. `import` and `rebuild` are dry runs unless `--execute` | `export`: `--profile`; `import`: `--profile`, `--replace`, `--rollback-dir`, `--execute`; all: `--json` |
 | `slm backup status, recovery-key, decrypt FILE` | Cloud-backup encryption: state, the recovery key, and turning a downloaded backup into a plain `.db` file ([Cloud Backup](Cloud-Backup)) | `recovery-key --import` reads a key from stdin; `decrypt`: `-o OUT`, `--recovery-key-stdin`, `--force`; all: `--json` |
 | `slm clear-cache` | Wipe regenerable caches. `memory.db` and `learning.db` are kept | none |

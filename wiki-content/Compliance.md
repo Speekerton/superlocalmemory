@@ -90,7 +90,7 @@ slm profile switch client-a
 ```
 
 Shared and global scopes are opt-in. Profiles are not an operating-system,
-process, or tenant-security boundary; deployment isolation and the V3.7 scope
+process, or tenant-security boundary; deployment isolation and the scope
 matrix remain required for sensitive workloads.
 
 ### Trust Scoring

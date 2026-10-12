@@ -33,7 +33,7 @@ Credentials go to your operating system's keychain (macOS Keychain, Windows Cred
 
 ## Encryption
 
-Since 4.1.19 every file is encrypted on your computer before upload, so GitHub and Google Drive only ever store ciphertext. A cloud backup carries the whole memory store, credentials included, which is why the encryption is not optional.
+Every file is encrypted on your computer before upload, so GitHub and Google Drive only ever store ciphertext. A cloud backup carries the whole memory store, credentials included, which is why the encryption is not optional.
 
 The format is AES-256-GCM over fixed-size chunks (the STREAM construction used by Tink and `age`). Each file gets its own key, derived with HKDF-SHA256 from your backup key and a random 96-bit nonce, and the header is authenticated, so reordering, splicing, truncation or appended data all fail to decrypt. Chunks are processed one at a time, so a multi-gigabyte database is never held in memory. Encrypted files end in `.slmenc`.
 

@@ -36,7 +36,8 @@ def corpus():
 def test_store_is_about_two_thousand_rows_and_mostly_id_heavy(corpus) -> None:
     rows = corpus.corpus()
     assert 1900 <= len(rows) <= 2100
-    hubs = [r for r in rows if r.kind in ("receipt", "log", "session", "commit", "tool_event", "stub")]
+    hub_kinds = ("receipt", "log", "session", "commit", "tool_event", "stub")
+    hubs = [r for r in rows if r.kind in hub_kinds]
     assert len(hubs) > len(rows) / 2
     assert any(re.search(r"asdk_app_[0-9a-f]{16}", r.content) for r in rows)
     assert any(re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-", r.content) for r in rows)

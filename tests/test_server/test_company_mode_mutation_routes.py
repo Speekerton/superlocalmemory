@@ -102,6 +102,10 @@ def _nothing_leaves_the_sandbox(monkeypatch):
     monkeypatch.setattr(
         "superlocalmemory.server.unified_daemon._request_graceful_shutdown", lambda *a, **k: None,
     )
+    yield
+    from superlocalmemory.server.manual_heal import join_manual_heals
+    assert join_manual_heals(timeout_s=None), (
+        "manual repair must finish before subprocess patches are restored")
 
 
 @pytest.fixture

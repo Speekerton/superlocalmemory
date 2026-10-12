@@ -27,6 +27,7 @@ from superlocalmemory.storage.models import (
     RecallResponse,
     RetrievalResult,
 )
+from tests._recall_sources import recall_sources
 
 _QUERY = "what is the current status of the Atlas migration"
 
@@ -103,8 +104,13 @@ def _engine(make_facts, *, db=None, resolver=None):
 
 
 def _run(config, engine, db=None, query=_QUERY):
-    return rp.run_recall(query, "default", fast=True, config=config, retrieval_engine=engine,
-                         trust_scorer=None, embedder=None, db=db, llm=None, hooks=None)
+    response = engine.recall(query, "default")
+    backed_engine = SimpleNamespace(**vars(engine))
+    backed_engine.recall = lambda *a, **k: response
+    with recall_sources(config.base_dir, response.results, db=db) as sources:
+        return rp.run_recall(query, "default", fast=True, config=config,
+                             retrieval_engine=backed_engine, trust_scorer=None,
+                             embedder=None, db=sources, llm=None, hooks=None)
 
 
 def _snapshot(response) -> str:

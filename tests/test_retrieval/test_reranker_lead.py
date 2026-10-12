@@ -84,16 +84,17 @@ def _recall_through_the_pipeline(monkeypatch, tmp_path, results, learned):
 
     from superlocalmemory.core.config import SLMConfig
     from superlocalmemory.storage.models import Mode
+    from tests._recall_sources import recall_sources
 
     config = SLMConfig.for_mode(Mode.A, base_dir=tmp_path)
     config.retrieval = replace(config.retrieval, sufficiency_judge="off")
     engine = SimpleNamespace(recall=lambda *a, **k: RecallResponse(
         query="q", results=list(results), query_type="factual"))
     monkeypatch.setattr(recall_pipeline, "apply_ranking", learned)
-    return recall_pipeline.run_recall(
-        "q", "default", fast=True, config=config, retrieval_engine=engine,
-        trust_scorer=None, embedder=None, db=SimpleNamespace(db_path=None),
-        llm=None, hooks=None)
+    with recall_sources(tmp_path, results) as db:
+        return recall_pipeline.run_recall(
+            "q", "default", fast=True, config=config, retrieval_engine=engine,
+            trust_scorer=None, embedder=None, db=db, llm=None, hooks=None)
 
 
 def _reverse(response, *args, **kwargs):

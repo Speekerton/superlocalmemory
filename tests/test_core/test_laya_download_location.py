@@ -134,7 +134,7 @@ def test_a_managed_install_records_a_model_folder_that_exists(offline_install):
     assert Path(result.model_path).is_dir()
     record = json.loads((lr.runtime_dir() / ".slm-managed").read_text(encoding="utf-8"))
     assert record["verified"] is True
-    assert Path(record["model_path"]).is_dir()
+    assert (lr.runtime_dir() / record["model_path"]).is_dir()
 
 
 def test_the_library_finds_the_recorded_weights_from_the_workers_hf_home(offline_install):

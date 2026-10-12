@@ -2169,6 +2169,7 @@ def cmd_recall(args: Namespace) -> None:
                     return
                 from superlocalmemory.cli.recall_text import (
                     empty_result_line,
+                    fidelity_line,
                     incomplete_line,
                     project_line,
                     tag_line,
@@ -2177,7 +2178,7 @@ def cmd_recall(args: Namespace) -> None:
                 if not result["results"]:
                     return print("\n".join(filter(None, [
                         empty_result_line(result), incomplete, project_line(result),
-                        tag_line(result)])))
+                        tag_line(result), fidelity_line(result)])))
                 # Text output.
                 # PR #101: ``dict.get(k, 0)`` returns the DEFAULT only when the
                 # key is ABSENT — a present-but-null value still reaches the
@@ -2190,7 +2191,7 @@ def cmd_recall(args: Namespace) -> None:
                 for i, r in enumerate(result["results"], 1):
                     score = r.get('score') or 0
                     print(f"  {i}. [{score:.2f}] {r['content']}")
-                for note in filter(None, (incomplete, project_line(result),
+                for note in filter(None, (incomplete, project_line(result), fidelity_line(result),
                                           _answer_check_line(result))):
                     print(f"\n{note}")
                 return
@@ -3970,6 +3971,7 @@ def cmd_trace(args: Namespace) -> None:
                         **{k: result[k] for k in (
                             "answer_check_status", "answer_check_ran",
                             "answer_check_reason", "answer_check_note", "answerability",
+                            "source_fidelity_status", "source_fidelity_note",
                             "answerability_reason") if k in result},
                     }, next_actions=[
                         {
@@ -3984,6 +3986,11 @@ def cmd_trace(args: Namespace) -> None:
                     f"{float(result.get('retrieval_time_ms', 0)):.0f}ms"
                 )
                 print(f"Results: {len(result['results'])}")
+                from superlocalmemory.cli.recall_text import empty_result_line, fidelity_line
+                if not result["results"]:
+                    print(empty_result_line(result))
+                if fidelity_line(result):
+                    print(fidelity_line(result))
                 for i, item in enumerate(result["results"], 1):
                     print(
                         f"\n  {i}. [relevance "
@@ -4056,8 +4063,14 @@ def cmd_trace(args: Namespace) -> None:
         if hasattr(r, "channel_scores") and r.channel_scores:
             for ch, sc in r.channel_scores.items():
                 print(f"       {ch}: {sc:.3f}")
+    from superlocalmemory.cli.recall_text import empty_result_line, fidelity_line
     from superlocalmemory.server.recall_serializer import recall_response_metadata
-    answer_check = _answer_check_line(recall_response_metadata(response))
+    metadata = recall_response_metadata(response)
+    if not response.results:
+        print(empty_result_line(metadata))
+    if fidelity_line(metadata):
+        print(fidelity_line(metadata))
+    answer_check = _answer_check_line(metadata)
     if answer_check:
         print(f"\n{answer_check}")
 

@@ -30,8 +30,10 @@ from superlocalmemory.learning.bandit import ContextualBandit
 from superlocalmemory.learning.bandit_cache import _BanditCache
 from superlocalmemory.retrieval import answer_check_status as acs
 from superlocalmemory.retrieval.sufficiency import SufficiencyVerdict
+from superlocalmemory.storage.database import DatabaseManager
 from superlocalmemory.storage.migrations import M005_bandit_tables as m5
 from superlocalmemory.storage.models import AtomicFact, RecallResponse, RetrievalResult
+from tests._recall_sources import recall_sources
 
 CTX = {"query_type": "single_hop", "entity_count": 0, "time_bucket": "morning"}
 QUESTION = "which database does the billing service use?"
@@ -184,14 +186,19 @@ def test_twenty_identical_recalls_one_order_and_the_memo_hits(
                                               query_type="factual"))
     orders = collections.Counter()
     details = []
-    for _ in range(20):
-        pcos.RECENT_TOPS.forget("default")
-        out = recall_pipeline.run_recall(
-            QUESTION, "default", fast=True, config=mode_a_config,
-            retrieval_engine=engine, trust_scorer=None, embedder=None,
-            db=SimpleNamespace(db_path=memory_db), llm=None, hooks=None)
-        orders[tuple(r.fact.fact_id for r in out.results)] += 1
-        details.append(out.answer_check_detail)
+    with DatabaseManager(memory_db) as db:
+        for _ in range(20):
+            pcos.RECENT_TOPS.forget("default")
+            response = engine.recall(QUESTION)
+            backed_engine = SimpleNamespace(_sufficiency_judge=judge,
+                                            recall=lambda *a, **k: response)
+            with recall_sources(mode_a_config.base_dir, response.results, db=db):
+                out = recall_pipeline.run_recall(
+                    QUESTION, "default", fast=True, config=mode_a_config,
+                    retrieval_engine=backed_engine, trust_scorer=None, embedder=None,
+                    db=db, llm=None, hooks=None)
+            orders[tuple(r.fact.fact_id for r in out.results)] += 1
+            details.append(out.answer_check_detail)
     memo.clear(judge)
     assert len(orders) == 1, orders
     # One genuine check; the other nineteen reuse it.

@@ -50,7 +50,7 @@ _STDLIB_HELPERS = ("multiprocessing.resource_tracker", "multiprocessing.forkserv
 
 def _is_product_thread(thread: threading.Thread) -> bool:
     name = thread.name or ""
-    return name.startswith(_PRODUCT_PREFIXES) or name == _LANCEDB_LOOP
+    return name.startswith(_PRODUCT_PREFIXES) or name in {_LANCEDB_LOOP, "manual-heal"}
 
 
 def _leaked(before: frozenset, *, allow_lancedb: bool) -> list[threading.Thread]:

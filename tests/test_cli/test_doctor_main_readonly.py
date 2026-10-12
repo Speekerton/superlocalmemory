@@ -51,8 +51,13 @@ def test_main_doctor_never_launches_daemon(tmp_path, free_port, quick, use_json,
     env.pop("SLM_TEST_ALLOW_DAEMON_SPAWN", None)
     run = subprocess.run([sys.executable, "-c", script], env=env,
                          capture_output=True, text=True, timeout=30)
+    if use_json and run.stdout:
+        daemon_detail = next(c for c in json.loads(run.stdout)["data"]["checks"]
+                             if c["name"] == "Daemon")["detail"]
+    else:
+        daemon_detail = next((line for line in run.stdout.splitlines() if "Daemon:" in line), "")
+    assert run.returncode == int(dead), f"{daemon_detail}\n{run.stderr}"
     assert (tmp_path / "spawn-count").read_text() == "0"
-    assert run.returncode == int(dead), run.stderr
     if use_json:
         row = next(c for c in json.loads(run.stdout)["data"]["checks"] if c["name"] == "Daemon")
         assert row["status"] == ("FAIL" if dead else "WARN")

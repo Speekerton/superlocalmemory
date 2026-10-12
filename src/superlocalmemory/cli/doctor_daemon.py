@@ -12,6 +12,8 @@ from superlocalmemory.infra.daemon_identity import DaemonDescriptor
 from superlocalmemory.infra.process_identity import compare_start_tokens, process_start_token_for
 
 HEALTH_TIMEOUT = 0.5
+# Includes interpreter startup, local evidence, health and optional features.
+CHECK_TIMEOUT = 1.0
 MAX_HEALTH_BYTES = 64 * 1024
 
 
@@ -32,7 +34,7 @@ def check_daemon() -> DaemonCheck:
     lets us interrupt trickling headers/bodies or a blocked descriptor read on
     every platform, without leaving a background thread or child behind.
     """
-    deadline = time.monotonic() + HEALTH_TIMEOUT
+    deadline = time.monotonic() + CHECK_TIMEOUT
     try:
         with subprocess.Popen(
             [sys.executable, "-m", "superlocalmemory.cli.doctor_daemon", str(deadline)],
@@ -45,7 +47,7 @@ def check_daemon() -> DaemonCheck:
                 worker.kill()
                 worker.communicate()  # reap our worker and close its pipes
                 return DaemonCheck(
-                    "WARN", f"Daemon diagnostic exceeded its {HEALTH_TIMEOUT:g}s deadline",
+                    "WARN", f"Daemon diagnostic exceeded its {CHECK_TIMEOUT:g}s deadline",
                     "slm restart",
                 )
         if worker.returncode != 0:
@@ -106,7 +108,7 @@ def _inspect_daemon(deadline: float | None = None) -> DaemonCheck:
     """Inspect without auto-start, startup waits, or readiness-helper retries."""
     from superlocalmemory.cli import daemon
 
-    deadline = deadline if deadline is not None else time.monotonic() + HEALTH_TIMEOUT
+    deadline = deadline if deadline is not None else time.monotonic() + CHECK_TIMEOUT
     try:
         record = daemon.read_descriptor()
         if record is None:
@@ -126,7 +128,7 @@ def _inspect_daemon(deadline: float | None = None) -> DaemonCheck:
                 "FAIL", f"Recorded daemon exited; pid {record.pid} was reused by another process",
                 "slm restart",
             )
-        health = _fetch_json(record, "/health", deadline - time.monotonic())
+        health = _fetch_json(record, "/health", min(HEALTH_TIMEOUT, deadline - time.monotonic()))
         matches = health is not None and daemon.descriptor_matches_health(record, health)
         if evidence == "identity_changed" and not matches:
             return DaemonCheck(
@@ -144,7 +146,9 @@ def _inspect_daemon(deadline: float | None = None) -> DaemonCheck:
             return DaemonCheck(
                 "FAIL", "Daemon health does not match the recorded identity", "slm restart",
             )
-        features = _fetch_json(record, "/api/v3/features", deadline - time.monotonic())
+        features = _fetch_json(
+            record, "/api/v3/features", min(HEALTH_TIMEOUT, deadline - time.monotonic()),
+        )
         media = (features or {}).get("media") or {}
         return DaemonCheck(
             "PASS", f"Running and healthy (pid {record.pid})", descriptor=record,

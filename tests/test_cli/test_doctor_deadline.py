@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import psutil
 import pytest
 
-from superlocalmemory.cli.doctor_daemon import HEALTH_TIMEOUT, check_daemon
+from superlocalmemory.cli.doctor_daemon import CHECK_TIMEOUT, check_daemon
 from superlocalmemory.infra.daemon_identity import build_descriptor, write_descriptor
 
 
@@ -75,7 +75,7 @@ def test_whole_diagnostic_has_one_deadline(free_port, behavior):
     try:
         result = check_daemon()
         elapsed = time.monotonic() - began
-        assert elapsed < HEALTH_TIMEOUT + 0.2, f"diagnostic took {elapsed:.3f}s"
+        assert elapsed < CHECK_TIMEOUT + 0.2, f"diagnostic took {elapsed:.3f}s"
         assert requests.count("/health") == 1
         assert {p.pid for p in psutil.Process().children()} == children
         if behavior == "healthy":
@@ -94,9 +94,9 @@ def test_whole_diagnostic_has_one_deadline(free_port, behavior):
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="POSIX named pipe")
 def test_descriptor_read_is_inside_deadline(tmp_path):
     os.mkfifo(tmp_path / "daemon.json")
-    # Permit the old reader to finish after 1s so RED does not hang pytest.
+    # Permit an unbounded reader to finish later so RED does not hang pytest.
     def unblock():
-        time.sleep(1)
+        time.sleep(CHECK_TIMEOUT * 2)
         try:
             fd = os.open(tmp_path / "daemon.json", os.O_WRONLY | os.O_NONBLOCK)
         except OSError:
@@ -109,7 +109,7 @@ def test_descriptor_read_is_inside_deadline(tmp_path):
     began = time.monotonic()
     try:
         result = check_daemon()
-        assert time.monotonic() - began < HEALTH_TIMEOUT + 0.2
+        assert time.monotonic() - began < CHECK_TIMEOUT + 0.2
         assert result.status in {"WARN", "FAIL"}
     finally:
         thread.join(2)

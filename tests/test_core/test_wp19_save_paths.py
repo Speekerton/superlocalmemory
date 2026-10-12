@@ -45,3 +45,19 @@ def test_surface_has_immediate_description_and_durable_event_time(tmp_path, surf
         assert parent['tags'] == ['database']
     finally:
         db.close()
+
+
+def test_document_and_picture_saves_reach_the_same_runtime_writer():
+    """The two ingestion pipelines submit through the remember runtime, whose
+    every admission writer is the canonical description handler above."""
+    import inspect
+
+    import superlocalmemory.core.remember_runtime as runtime
+    import superlocalmemory.documents.pipeline as documents
+    import superlocalmemory.media.ingest as media
+    for module, source_type in ((documents, 'document'), (media, 'media')):
+        text = inspect.getsource(module)
+        assert 'submit_memory_settled(' in text and f'source_type="{source_type}"' in text
+    writers = inspect.getsource(runtime)
+    assert writers.count('writer=build_immediate_admission_handler(') + \
+        writers.count('writer = build_immediate_admission_handler(') >= 3

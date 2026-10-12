@@ -1,4 +1,4 @@
-**SuperLocalMemory 4.1.25**
+**SuperLocalMemory**
 
 * [Home](Home)
 
@@ -6,8 +6,8 @@
 * [Installation](Installation)
 * [Getting Started](Getting-Started)
 * [IDE Setup](IDE-Setup)
+* [Plugins, Skills and Hooks](Plugins-Skills-and-Hooks)
 * [Host Integration Upgrades](Host-Upgrades)
-* [Migration from V2](Migration-from-V2)
 
 **How memory works**
 * [Architecture](Architecture)
@@ -60,5 +60,5 @@
 **Research**
 * [Research Foundations](Research-Foundations)
 
-**Older documentation**
-* [V2 Archive](v2-archive/)
+**Archive**
+* [Archive](archive/Archive-Index)

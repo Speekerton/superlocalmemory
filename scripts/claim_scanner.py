@@ -165,6 +165,7 @@ SKIP_PARTS = {
     "build",
     "__pycache__",
     "v2-archive",
+    "archive",
     "audits",
     "superpowers",
 }

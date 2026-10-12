@@ -122,7 +122,7 @@ def _restore_safety_copy(args: argparse.Namespace) -> None:
 def _status(args: argparse.Namespace) -> None:
     from superlocalmemory.infra.backup_keys import encryption_status
 
-    status = encryption_status()
+    status = {**encryption_status(), "recovery": _recovery_status()}
     if getattr(args, "json", False):
         print(json.dumps(status, indent=2))
         return
@@ -133,6 +133,25 @@ def _status(args: argparse.Namespace) -> None:
               "destination or make the first cloud backup.")
     for notice in status["notices"]:
         print(f"\n{notice}")
+    if status["recovery"]:
+        print(f"\n{status['recovery']['message']}")
+
+
+def _recovery_status() -> dict | None:
+    """A restore waiting for recovery, with the pre-restore copy it kept (or None)."""
+    from superlocalmemory.server import recovery_marker
+
+    try:
+        root = _data_root()
+        marker = recovery_marker.read(root)
+        message = recovery_marker.refusal(root)
+    except Exception:  # noqa: BLE001 - status never fails on this optional line
+        return None
+    if marker is None or not message:
+        return None
+    copies = recovery_marker.kept_copies(marker)
+    return {"phase": marker.get("phase"), "safety_id": marker.get("safety_id"),
+            "kept_copy": copies[0] if copies else None, "message": message}
 
 
 def _recovery_key(args: argparse.Namespace) -> None:

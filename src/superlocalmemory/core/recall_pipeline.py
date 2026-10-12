@@ -1256,6 +1256,15 @@ def _engine_learning_db(config: Any) -> Path | None:
         return None
 
 
+def _metadata_reader(db: Any) -> Any:
+    """Tags/project per result for the support gate's optional bonus, when the
+    store can be read (a stand-in database cannot)."""
+    if not callable(getattr(db, "execute", None)):
+        return None
+    from superlocalmemory.core.support_stage import metadata_reader
+    return metadata_reader(db)
+
+
 def run_recall(
     query: str,
     profile_id: str,
@@ -1284,8 +1293,15 @@ def run_recall(
     answer_check: str | None = None,
     facets: Any = None,
     query_id: str | None = None,
+    show_weak: bool = False,
 ) -> RecallResponse:
     """Recall relevant facts for a query.
+
+    4.1.25: when nothing in memory supports the question (the answer-support
+    gate, ``core/support_stage``), recall returns no results and a plain
+    ``abstention_note``; ``show_weak=True`` returns the weak matches instead,
+    each labelled ``weak``. Pinned memories and explicit filters keep their
+    existing behaviour.
 
     ``query_id`` is this recall's one identity. The engine allocates it and
     returns it on the response; the bandit play, the shadow assignment and
@@ -1556,7 +1572,14 @@ def run_recall(
     _resettle_shown_after_bias(
         play_sink, profile_id, response.results, _shown_before_judge,
     )
-    finalize_score_contract(response, verdict=outcome.verdict)
+    from superlocalmemory.core import support_stage
+    support = support_stage.assess(
+        retrieval_engine, query, response, outcome.verdict, profile_id,
+        metadata=_metadata_reader(db)) if support_stage.enabled(config) else None
+    finalize_score_contract(
+        response, verdict=outcome.verdict, support=support, show_weak=show_weak,
+        keep_results=support_stage.explicit_filter(
+            facets, window, as_of=as_of, known_as_of=known_as_of, valid_at=valid_at))
     response.answer_check_status = outcome.status
     response.answer_check_detail = outcome.detail
 

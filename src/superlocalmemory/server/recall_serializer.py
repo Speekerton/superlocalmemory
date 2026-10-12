@@ -318,6 +318,11 @@ def serialize_recall_response(
                 entry["marker"] = marker
         if include_evidence:
             entry["evidence"] = dict(getattr(r, "evidence", None) or {})
+        if getattr(r, "support", None) is not None:
+            # 4.1.25: the answer-support gate's probability, and whether this
+            # memory is below its threshold (shown only on request, or pinned).
+            entry["support"] = r.support
+            entry["weak"] = bool(getattr(r, "weak", False))
         raw.append(entry)
 
     # F-3 source discipline, then F-2 budget — order matters (discipline first
@@ -349,9 +354,22 @@ def _score_metadata(response):
         "answer_confidence": getattr(response, "answer_confidence", None),
         "abstained": bool(getattr(response, "abstained", False)),
         "abstention_reason": getattr(response, "abstention_reason", None),
+        "abstention_note": getattr(response, "abstention_note", "") or "",
+        "support": _support_metadata(response),
         "temporal_frame": temporal_frame(timestamps),
         "thematic_context": getattr(response, "community_context", None),
     }
+
+
+def _support_metadata(response) -> dict | None:
+    """The answer-support gate's verdict (4.1.25); None when it did not run."""
+    status = getattr(response, "support_status", "") or ""
+    if not status:
+        return None
+    return {"status": status, "best": getattr(response, "support_best", None),
+            "threshold": getattr(response, "support_threshold", None),
+            "version": getattr(response, "support_version", "") or "",
+            "weak_shown": bool(getattr(response, "weak_shown", False))}
 
 
 def _retrieval_metadata(response):
@@ -386,4 +404,5 @@ def _check_metadata(response):
         "answer_check_reason": detail,
         "answer_check_note": answer_check_note(status, detail, retrieval_complete=complete),
         "answerability": answerability[0], "answerability_reason": answerability[1],
+        "answer_check_insufficient": getattr(response, "answer_check_insufficient", None),
     }

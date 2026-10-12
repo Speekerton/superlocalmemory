@@ -329,6 +329,11 @@ def mode_a_config(tmp_path):
     # subprocess per test adds 3s teardown overhead (kills ONNX worker).
     # 13 engine tests × 3s = 39s wasted. Cross-encoder has its own tests.
     config.retrieval.use_cross_encoder = False
+    # 4.1.25: the answer-support gate has its own tests (test_hard_abstain,
+    # test_support_gate, the answerability harness). A mock embedder's random
+    # vectors give it nothing to measure, so engine tests that are about
+    # something else would abstain on every question.
+    config.retrieval.answer_support_gate = False
     return config
 
 

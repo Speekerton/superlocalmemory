@@ -471,6 +471,11 @@ class RetrievalResult:
     # coverage and entity hit. Measurement only: nothing ranks or abstains on
     # it yet. In-process and in recall trace; the recall envelope is unchanged.
     evidence: dict = field(default_factory=dict)
+    # 4.1.25: the answer-support gate's probability that this memory answers
+    # the question (``retrieval.support_gate``), and whether it is below the
+    # gate's threshold. None / False when the gate did not run.
+    support: float | None = None
+    weak: bool = False
 
 
 @dataclass
@@ -572,3 +577,17 @@ class RecallResponse:
     # "something has it, just not among this question's candidates". None
     # when the recall named no tags. Additive.
     tag_scope: dict | None = None
+    # 4.1.25: the answer-support gate (``retrieval.support_gate``) -
+    # "supported" / "unsupported", or "" when it did not run; its best
+    # probability, threshold and recipe version; whether weak matches were
+    # shown on request (``show_weak``). ``abstention_note`` is the sentence a
+    # person reads when recall abstains. ``answer_check_insufficient`` keeps
+    # the answer check's own verdict (None when it gave none), since the gate,
+    # not the check alone, decides ``abstained``. Additive.
+    support_status: str = ""
+    support_best: float | None = None
+    support_threshold: float | None = None
+    support_version: str = ""
+    weak_shown: bool = False
+    abstention_note: str = ""
+    answer_check_insufficient: bool | None = None

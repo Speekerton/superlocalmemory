@@ -1107,8 +1107,12 @@ class MemoryEngine:
         include_unknown: bool = False,
         answer_check: str | None = None,
         facets: Any = None,
+        show_weak: bool = False,
     ) -> RecallResponse:
         """Recall relevant facts for a query.
+
+        ``show_weak``: when nothing in memory supports the question, return the
+        weak matches labelled ``weak`` instead of nothing (4.1.25).
 
         ``answer_check``: "full" (default) or "no_reorder" (the check without
         the opt-in reorder: the loop gate). A recall that is not a question runs
@@ -1190,6 +1194,7 @@ class MemoryEngine:
                 answer_check=answer_check,
                 facets=facets,
                 query_id=answer_id,
+                show_weak=show_weak,
             )
         except Exception:
             # Diagnostics are intentionally not recorded here.  A recall is a

@@ -22,11 +22,24 @@ def test_peek_returns_rules_from_a_read_only_connection(tmp_path):
 
 
 def test_peek_says_so_when_only_a_writer_can_answer(tmp_path):
+    """An older rules table needs the writer to migrate it before it can be read."""
     path = tmp_path / "memory.db"
-    sqlite3.connect(path).close()
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE retention_rules (rule_id INTEGER PRIMARY KEY, profile_id TEXT)")
+    conn.close()
     ro = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     assert RetentionEngine.peek_rules(ro, "default") is None
     ro.close()
+
+
+def test_no_rules_table_yet_reads_as_no_rules_without_creating_one(tmp_path):
+    path = tmp_path / "memory.db"
+    sqlite3.connect(path).close()
+    ro = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    assert RetentionEngine.peek_rules(ro, "default") == []
+    ro.close()
+    tables = sqlite3.connect(path).execute("SELECT name FROM sqlite_master").fetchall()
+    assert tables == []
 
 
 def test_the_route_helper_does_not_wait_for_the_write_lock(tmp_path, monkeypatch):

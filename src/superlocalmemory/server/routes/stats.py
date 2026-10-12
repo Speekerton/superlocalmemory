@@ -85,9 +85,18 @@ def _internal_error(detail: str = "Internal server error") -> HTTPException:
     return HTTPException(status_code=500, detail=detail)
 
 
+STATS_CACHE_S = 8.0
+
+
 @router.get("/api/stats")
 def get_stats():
-    """Get comprehensive system statistics."""
+    """Get comprehensive system statistics (computed once per few seconds; see view_cache)."""
+    from superlocalmemory.server.view_cache import cached
+
+    return cached("stats", (str(DB_PATH), get_active_profile()), STATS_CACHE_S, _stats)
+
+
+def _stats():
     try:
         conn = get_db_connection()
         conn.row_factory = dict_factory

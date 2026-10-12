@@ -16,6 +16,7 @@ from superlocalmemory.server import write_identity
 from superlocalmemory.server.rbac_enforce import require_permission
 
 router = APIRouter(prefix='/api/memory-health', tags=['memory-health'])
+HEALTH_CACHE_S = 10.0
 
 
 class Action(BaseModel):
@@ -38,7 +39,13 @@ def _engine(request):
 def get_health(request: Request):
     # Store-wide maintenance counts and undo are for its owner/admin only.
     require_permission(request, Permission.MANAGE)
-    return report(_engine(request)._db)
+    engine = _engine(request)
+    from superlocalmemory.server.view_cache import cached
+
+    # Every open dashboard polls this; one scan answers them all for a few seconds.
+    key = (str(getattr(engine._db, 'db_path', id(engine._db))),
+           str(getattr(engine, 'profile_id', '')))
+    return cached('memory-health', key, HEALTH_CACHE_S, lambda: report(engine._db))
 
 
 @router.get('/stubs')
@@ -56,6 +63,9 @@ def change_health(body: Action, request: Request):
         request, getattr(request.app.state, 'daemon_descriptor', None), actor_kind='memory-health')
     require_permission(request, Permission.MANAGE)
     engine = _engine(request)
+    from superlocalmemory.server.view_cache import drop
+
+    drop('memory-health')  # the person changed it: the next read shows the change
     runner = EnrichmentRunner(engine._db, idle=lambda: False)
     try:
         if body.action == 'repair':

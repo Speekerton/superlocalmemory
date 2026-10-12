@@ -9,6 +9,7 @@ Routes: /api/compliance/status, /api/compliance/audit,
 Uses V3 compliance modules: ABACEngine, AuditChain, RetentionEngine.
 """
 import logging
+import threading
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -57,6 +58,24 @@ def _require_manage(request) -> None:
         return
 
 
+COMPLIANCE_CACHE_S = 5.0
+_AUDIT_CHAINS: dict = {}
+_AUDIT_LOCK = threading.Lock()
+
+
+def _audit():
+    """One opened audit chain per trail. Opening one checks and upgrades the
+    trail's layout under its write lock; doing that on every dashboard poll
+    cost a second under load and competed with the daemon's own audit writes."""
+    key = str(AUDIT_DB)
+    with _AUDIT_LOCK:
+        chain = _AUDIT_CHAINS.get(key)
+        if chain is None:
+            chain = AuditChain(key)
+            _AUDIT_CHAINS[key] = chain
+        return chain
+
+
 @router.get("/api/compliance/status")
 def compliance_status(request: Request):
     """Get compliance engine status for active profile."""
@@ -70,9 +89,20 @@ def compliance_status(request: Request):
     )
     if not COMPLIANCE_AVAILABLE:
         return {"available": False, "message": "Compliance engine not available"}
+    from superlocalmemory.server.view_cache import cached
 
+    # Checked above for this caller; the summary itself is shared a few seconds.
+    profile = get_active_profile()
     try:
-        profile = get_active_profile()
+        return cached("compliance-status", (str(AUDIT_DB), str(DB_PATH), profile),
+                      COMPLIANCE_CACHE_S, lambda: _compliance_status(profile))
+    except Exception:
+        logger.exception("compliance_status error")
+        return {"available": False, "error": "Internal server error"}
+
+
+def _compliance_status(profile: str) -> dict:
+    try:
 
         # Audit events (hash-chained, from the engine's live audit_chain.db).
         # Scope the count + recent list to the active profile.
@@ -81,7 +111,7 @@ def compliance_status(request: Request):
         try:
             from superlocalmemory.server.audit_view import present_event
 
-            audit = AuditChain(str(AUDIT_DB))
+            audit = _audit()
             recent_audit_events = [present_event(e)
                                    for e in audit.query(profile_id=profile, limit=30)]
             # A COUNT, not 100,000 rows loaded per pane view (G-M4).
@@ -114,9 +144,8 @@ def compliance_status(request: Request):
             "retention_policies": retention_policies,
             "abac_policies_count": abac_policies_count,
         }
-    except Exception:
-        logger.exception("compliance_status error")
-        return {"available": False, "error": "Internal server error"}
+    finally:
+        pass  # failures raise: compliance_status answers them, uncached
 
 
 def _retention_rules(profile: str) -> list:
@@ -140,7 +169,7 @@ def warm_audit_integrity() -> None:
         return
     from superlocalmemory.compliance.audit_verify_cache import warm
 
-    warm(AuditChain(str(AUDIT_DB)))
+    warm(_audit())
 
 
 @router.get("/api/compliance/audit")
@@ -166,7 +195,6 @@ def query_audit_trail(
     require_http_mutation_actor(request, getattr(request.app.state, "daemon_descriptor", None),
                                 actor_kind="audit-read")
     try:
-        from superlocalmemory.server.audit_view import integrity_summary, present_event
         from superlocalmemory.server.rbac_enforce import has_global_manage
 
         profile = get_active_profile()
@@ -174,28 +202,42 @@ def query_audit_trail(
         # no workspace; whoever holds authority over the whole installation
         # sees them next to the active workspace's (PR 248 review, finding 5).
         installation = has_global_manage(request)
-        scope = (profile, "") if installation else profile
-        audit = AuditChain(str(AUDIT_DB))
-        events = [present_event(e) for e in audit.query(
-            profile_id=scope, operation=event_type, start_date=since,
-            limit=limit, offset=offset,
-        )]
-        matching = audit.count(profile_id=scope, operation=event_type, start_date=since)
-        integrity = integrity_summary(audit, cached=True)
-        return {
-            "available": True, "events": events, "total": matching,
-            "returned": len(events), "offset": offset,
-            "has_more": offset + len(events) < matching,
-            "chain_verified": integrity["verified"],
-            "integrity_label": integrity["label"],
-            "integrity": integrity["report"],
-            "active_profile": profile,
-            "includes_installation_events": installation,
-            "filters": {"event_type": event_type, "since": since, "limit": limit},
-        }
+        from superlocalmemory.server.view_cache import cached
+
+        # Permission is decided above for this caller; the page is shared a few
+        # seconds between callers with the same view of the trail.
+        return cached("compliance-audit",
+                      (str(AUDIT_DB), profile, installation, limit, event_type, since, offset),
+                      COMPLIANCE_CACHE_S,
+                      lambda: _audit_page(profile, installation, limit, event_type, since, offset))
     except Exception:
         logger.exception("query_audit_trail error")
         return {"available": False, "error": "Internal server error"}
+
+
+def _audit_page(profile, installation, limit, event_type, since, offset) -> dict:
+    from superlocalmemory.server.audit_view import integrity_summary, present_event
+
+    # Failures raise: query_audit_trail answers them, and nothing is cached.
+    scope = (profile, "") if installation else profile
+    audit = _audit()
+    events = [present_event(e) for e in audit.query(
+        profile_id=scope, operation=event_type, start_date=since,
+        limit=limit, offset=offset,
+    )]
+    matching = audit.count(profile_id=scope, operation=event_type, start_date=since)
+    integrity = integrity_summary(audit, cached=True)
+    return {
+        "available": True, "events": events, "total": matching,
+        "returned": len(events), "offset": offset,
+        "has_more": offset + len(events) < matching,
+        "chain_verified": integrity["verified"],
+        "integrity_label": integrity["label"],
+        "integrity": integrity["report"],
+        "active_profile": profile,
+        "includes_installation_events": installation,
+        "filters": {"event_type": event_type, "since": since, "limit": limit},
+    }
 
 
 def _erasure_succeeded(result: dict) -> bool:

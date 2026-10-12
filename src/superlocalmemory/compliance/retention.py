@@ -205,12 +205,14 @@ class RetentionEngine:
     def peek_rules(db: sqlite3.Connection, profile_id: str) -> list[dict[str, Any]] | None:
         """Rules for a profile from a READ-ONLY connection, creating and changing nothing.
 
-        ``None`` means the table is missing or older than the current layout, so
+        ``None`` means the table is older than the current layout, so
         only a writer can answer (the constructor creates and migrates it). A
         screen that just lists the rules takes this path and never needs the
         database write lock.
         """
         columns = {r[1] for r in db.execute("PRAGMA table_info(retention_rules)").fetchall()}
+        if not columns:
+            return []  # no table yet: no rules, and reading must not create one
         if not {"framework", "action", "applies_to"} <= columns:
             return None
         return _read_rules(db, profile_id)

@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS audit_chain (
     metadata TEXT DEFAULT '{}',
     hash_version INTEGER NOT NULL DEFAULT 2
 );
+CREATE INDEX IF NOT EXISTS idx_audit_chain_profile ON audit_chain(profile_id, id);
 CREATE TABLE IF NOT EXISTS audit_anchor_state (
     singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
     created_at TEXT NOT NULL

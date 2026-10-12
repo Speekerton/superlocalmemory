@@ -4,11 +4,11 @@ SuperLocalMemory is built on four arXiv papers and a set of mathematical layers 
 
 ## The four papers
 
-All four are by Varun Pratap Bhardwaj; the governed-memory paper has two further authors. They are listed newest first.
+They are listed newest first.
 
 | arXiv | Title | What it covers | Where it shows up in the product |
 |---|---|---|---|
-| [2608.08253](https://arxiv.org/abs/2608.08253) | SuperLocalMemory: The Governed Memory Operating System for AI Agents (with Garima Singh and Arun Pratap Bhardwaj) | Multi-scope isolation, role-based access, verified erasure, hash-chained audit and bi-temporal recall, with the measured cost of the governed write path | [Governance](Governance), [Security, Company Mode and Teams](Security-Company-Mode-and-Teams), [Profiles](Profiles) |
+| [2608.08253](https://arxiv.org/abs/2608.08253) | SuperLocalMemory: The Governed Memory Operating System for AI Agents | Multi-scope isolation, role-based access, verified erasure, hash-chained audit and bi-temporal recall, with the measured cost of the governed write path | [Governance](Governance), [Security, Company Mode and Teams](Security-Company-Mode-and-Teams), [Profiles](Profiles) |
 | [2604.04514](https://arxiv.org/abs/2604.04514) | SuperLocalMemory: The Living Brain | Biologically inspired forgetting, cognitive quantization, multi-channel retrieval without a language model | [Living Brain](Living-Brain) |
 | [2603.14588](https://arxiv.org/abs/2603.14588) | SuperLocalMemory: Information-Geometric Foundations for Zero-LLM Enterprise Agent Memory | Fisher-information retrieval, Langevin lifecycle, sheaf contradiction detection, and the LoCoMo results below | [How Recall Works](How-Recall-Works), this page |
 | [2603.02240](https://arxiv.org/abs/2603.02240) | SuperLocalMemory: Privacy-Preserving Multi-Agent Memory with Bayesian Trust Defense Against Memory Poisoning | Per-agent Bayesian trust scores and defence against poisoned writes | [Governance](Governance), [Multi-Agent Memory](Multi-Agent-Memory) |
@@ -50,7 +50,7 @@ Retention is `R(t) = e^(-t/S)`, with `t` the hours since last access and `S` a s
 
 ### Hopfield associative memory
 
-The Hopfield channel uses the modern continuous Hopfield network of Ramsauer et al. (arXiv 2008.02217), whose update rule `xi_new = X' softmax(beta X xi)` is the same operation as single-head attention, with `beta = 1 / sqrt(d)`. In recall it is one of the five candidate producers, and its fusion weight is 0.8 (1.0 in Mode C). It is built for pattern completion on vague or noisy queries, and it finds related material rather than matching material, so on its own it does not count as evidence for the evidence floor ([How Recall Works](How-Recall-Works)). It has size limits: a full matrix path for under 10,000 facts, a nearest-neighbour prefilter of 500 candidates between 10,000 and 100,000, and it returns nothing above 100,000, where the other channels are expected to carry the query. Code: `math/hopfield.py`, `retrieval/hopfield_channel.py`.
+The Hopfield channel uses the modern continuous Hopfield network (arXiv 2008.02217), whose update rule `xi_new = X' softmax(beta X xi)` is the same operation as single-head attention, with `beta = 1 / sqrt(d)`. In recall it is one of the five candidate producers, and its fusion weight is 0.8 (1.0 in Mode C). It is built for pattern completion on vague or noisy queries, and it finds related material rather than matching material, so on its own it does not count as evidence for the evidence floor ([How Recall Works](How-Recall-Works)). It has size limits: a full matrix path for under 10,000 facts, a nearest-neighbour prefilter of 500 candidates between 10,000 and 100,000, and it returns nothing above 100,000, where the other channels are expected to carry the query. Code: `math/hopfield.py`, `retrieval/hopfield_channel.py`.
 
 ### TurboQuant and the quantizers
 
@@ -68,17 +68,7 @@ These are the LoCoMo results reported in the architecture paper (arXiv:2603.1458
 
 The Mode A retrieval run reported 72.0% on single-hop, 70.3% on multi-hop, 80.0% on temporal and 85.0% on open-domain questions. The Mode C figure covers a single conversation and is not a full-dataset result. The three rows use different answer-construction models, so they are not three scores of one system and cannot be ranked against each other.
 
-The paper also reports an ablation over six conversations (832 questions, local retrieval with GPT-4.1-mini answers) in which the information-geometric layers lifted the average from 58.9% to 71.7%, a gain of 12.7 points. The gain ranged from 6.0 points on conv-43 to 19.9 points on conv-44, the hardest dialogue.
-
-| Conversation | With the math layers | Without | Difference (points) |
-|---|---:|---:|---:|
-| conv-26 | 78.5 | 71.2 | +7.3 |
-| conv-30 | 77.5 | 66.7 | +10.8 |
-| conv-42 | 60.8 | 47.3 | +13.5 |
-| conv-43 | 64.3 | 58.3 | +6.0 |
-| conv-44 | 64.2 | 44.3 | +19.9 |
-| conv-49 | 84.7 | 65.9 | +18.8 |
-| Average | 71.7 | 58.9 | +12.7 |
+The paper also reports an ablation across six conversations: 71.7% with the information-geometric layers and 58.9% without them, a gain of 12.7 points. That average is what the project's benchmark note publishes. Per-conversation scores, a question count and the answer model for that ablation are not in the note, so they are not repeated here.
 
 Read the ablation with the defaults above in mind. It measures the paper's architecture with its information-geometric layers on or off. The package today ships the simplified Fisher mode and has the sheaf layer off, so the 12.7 points should not be quoted as the effect of the shipped defaults. Nothing on this page claims that a rerun of the current package would reproduce them.
 

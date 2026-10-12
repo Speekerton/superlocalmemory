@@ -239,12 +239,17 @@ def register_v33_tools(server, get_engine: Callable) -> None:
             # MCP process. Fall back to local import only if no daemon.
             import asyncio
             # blocking urllib (60s timeout) — keep it off the MCP event loop.
+            # No workspace is named: the daemon resolves the caller's own from
+            # the binding and session forwarded with the request, and says which
+            # one it acted on. Naming this process's engine profile would
+            # override that binding (PR 248 re-check, N10).
             daemon_result = await asyncio.to_thread(
-                _try_daemon_post, "/consolidate/cognitive", {"profile_id": pid},
+                _try_daemon_post, "/consolidate/cognitive", {},
             )
             if daemon_result is not None:
+                acted_on = daemon_result.get("profile_id") or pid
                 _emit_event("ccq.consolidation_complete", {
-                    "profile_id": pid,
+                    "profile_id": acted_on,
                     "clusters_processed": daemon_result.get("clusters_processed", 0),
                     "blocks_created": daemon_result.get("blocks_created", 0),
                 })
@@ -252,7 +257,7 @@ def register_v33_tools(server, get_engine: Callable) -> None:
                     "success": True,
                     "clusters_processed": daemon_result.get("clusters_processed", 0),
                     "blocks_created": daemon_result.get("blocks_created", 0),
-                    "profile_id": pid,
+                    "profile_id": acted_on,
                     "via": "daemon",
                 }
 
@@ -470,12 +475,13 @@ def register_v33_tools(server, get_engine: Callable) -> None:
             import asyncio
             # blocking urllib — keep it off the MCP event loop.
             daemon_result = await asyncio.to_thread(
-                _try_daemon_post, "/maintenance/run", {"profile_id": pid},
+                _try_daemon_post, "/maintenance/run", {},
             )
             if daemon_result is not None:
-                daemon_result.setdefault("success", True)
-                daemon_result["via"] = "daemon"
-                return daemon_result
+                # The daemon names the workspace it ran against ("profile").
+                return {**daemon_result, "success": daemon_result.get("success", True),
+                        "via": "daemon",
+                        "profile": daemon_result.get("profile") or pid}
 
             authorization = authorize_mcp_mutation(
                 engine,

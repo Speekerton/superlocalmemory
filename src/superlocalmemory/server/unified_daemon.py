@@ -1209,10 +1209,16 @@ class ObserveBuffer:
     def set_engine(self, engine) -> None:
         self._engine = engine
 
-    def enqueue(self, content: str, *, trusted_actor_id: str = "") -> dict:
+    def enqueue(
+        self, content: str, *, trusted_actor_id: str = "", profile_id: str = "",
+    ) -> dict:
         # The hash is only a duplicate-window and idempotency key; the text
-        # that is previewed, evented and stored is the prepared one.
-        content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        # that is previewed, evented and stored is the prepared one. A routed
+        # workspace is part of it, so the same words observed in two
+        # workspaces are two observations.
+        content_hash = hashlib.sha256(
+            (f"{profile_id}\x00{content}" if profile_id else content).encode("utf-8")
+        ).hexdigest()
         from superlocalmemory.memory_core import prepare_user_text
 
         content = prepare_user_text(
@@ -1273,7 +1279,7 @@ class ObserveBuffer:
             command = build_engine_ingestion_command(self._engine)
             receipt = command.submit(IngestionRequest(
                 content=content,
-                profile_id=self._engine._profile_id,
+                profile_id=profile_id or self._engine._profile_id,
                 source_type="http-observe",
                 idempotency_key=f"observe:v1:{content_hash}",
                 metadata={
@@ -5831,9 +5837,25 @@ def _register_daemon_routes(application: FastAPI) -> None:
             getattr(application.state, "daemon_descriptor", None),
             actor_kind="http-observe",
         )
+        # A caller bound to another workspace observes into it. The shared
+        # workspace keeps its existing gate-free path (machine hooks call this).
+        engine = getattr(application.state, "engine", None)
+        routed = ""
+        if engine is not None:
+            from superlocalmemory.server.acting_profile import acting_profile
+
+            routed = acting_profile(engine.profile_id)
+            if routed == engine.profile_id:
+                routed = ""
+            else:
+                from superlocalmemory.access.rbac import Permission
+                from superlocalmemory.server.rbac_enforce import require_permission
+
+                require_permission(request, Permission.WRITE, profile=routed)
         result = _observe_buffer.enqueue(
             req.content,
             trusted_actor_id=actor_id,
+            profile_id=routed,
         )
         return result
 
@@ -5843,9 +5865,18 @@ def _register_daemon_routes(application: FastAPI) -> None:
     async def consolidate_cognitive_endpoint(body: dict, request: Request):
         _update_activity()
         engine = _get_engine_or_503()
+        # The workspace this caller is in (finding N10): checked, run and
+        # reported against the same value, never the shared engine's.
+        from superlocalmemory.server.acting_profile import (
+            acting_profile,
+            unknown_profile_response,
+        )
+        pid = acting_profile(engine.profile_id, body.get("profile_id"))
         from superlocalmemory.access.rbac import Permission
         from superlocalmemory.server.rbac_enforce import require_permission
-        require_permission(request, Permission.WRITE, profile=engine._profile_id)
+        require_permission(request, Permission.WRITE, profile=pid)
+        if (missing := unknown_profile_response(engine, pid)) is not None:
+            return missing
         from superlocalmemory.server.route_mutations import (
             authorize_route_mutation,
         )
@@ -5853,10 +5884,9 @@ def _register_daemon_routes(application: FastAPI) -> None:
             request,
             operation="update",
             source_agent_id="http-cognitive-consolidation",
-            profile_id=engine.profile_id,
+            profile_id=pid,
         )
         try:
-            pid = engine.profile_id
             from superlocalmemory.encoding.cognitive_consolidator import (
                 CognitiveConsolidator,
             )
@@ -5881,8 +5911,23 @@ def _register_daemon_routes(application: FastAPI) -> None:
     async def run_maintenance_endpoint(body: dict, request: Request):
         _update_activity()
         engine = _get_engine_or_503()
-        from superlocalmemory.server.rbac_enforce import require_global_manage
+        from superlocalmemory.access.rbac import Permission
+        from superlocalmemory.server.acting_profile import (
+            acting_profile,
+            unknown_profile_response,
+        )
+        from superlocalmemory.server.rbac_enforce import (
+            require_global_manage,
+            require_permission,
+        )
+        # The vector-store step is installation-wide, so the caller needs
+        # authority over every workspace; the per-workspace steps then run on,
+        # and are authorized against, the workspace the caller is in (N10).
+        pid = acting_profile(engine.profile_id, body.get("profile_id"))
         require_global_manage(request)
+        require_permission(request, Permission.MANAGE, profile=pid)
+        if (missing := unknown_profile_response(engine, pid)) is not None:
+            return missing
         from superlocalmemory.server.route_mutations import (
             authorize_route_mutation,
         )
@@ -5890,10 +5935,9 @@ def _register_daemon_routes(application: FastAPI) -> None:
             request,
             operation="update",
             source_agent_id="http-maintenance",
-            profile_id=engine.profile_id,
+            profile_id=pid,
         )
         try:
-            pid = engine.profile_id
             results: dict = {}
             try:
                 from superlocalmemory.core.maintenance import run_maintenance as _run_maint
@@ -5952,14 +5996,17 @@ def _register_daemon_routes(application: FastAPI) -> None:
         engine = _get_engine_or_503()
         from superlocalmemory.server.rbac_enforce import require_global_manage
         require_global_manage(request)
+        from superlocalmemory.server.acting_profile import acting_profile
         from superlocalmemory.server.route_mutations import (
             authorize_route_mutation,
         )
+        # Compaction is installation-wide; the mutation is recorded against the
+        # workspace the caller is in, not the shared one.
         authorization = authorize_route_mutation(
             request,
             operation="update",
             source_agent_id="http-maintenance",
-            profile_id=engine.profile_id,
+            profile_id=acting_profile(engine.profile_id),
         )
         from superlocalmemory.core.maintenance_scheduler import compact_vector_store
         out = await asyncio.to_thread(compact_vector_store)
@@ -6387,6 +6434,11 @@ def _register_daemon_routes(application: FastAPI) -> None:
         # Warming loads at most what session_init would show. An unbounded
         # count from the request used to go straight into the recall.
         limit = max(1, min(int(req.max_results), _SESSION_OPEN_MAX_RESULTS))
+        # A caller bound to another workspace warms that one. Binding it
+        # already required READ there, so no further gate is added.
+        from superlocalmemory.server.acting_profile import acting_profile
+        routed = acting_profile(engine.profile_id)
+        _routed = {} if routed == engine.profile_id else {"profile_id": routed}
         try:
             from superlocalmemory.core.answer_check_scope import skip_answer_check
             from superlocalmemory.server.write_identity import (
@@ -6405,7 +6457,7 @@ def _register_daemon_routes(application: FastAPI) -> None:
                 # key at every session start. Results are unaffected.
                 with skip_answer_check():
                     return engine.recall(query, limit=limit, agent_id=actor_id,
-                                         **_session_facets)
+                                         **_routed, **_session_facets)
 
             # Off the event loop: a recall can take a second or more, and
             # every other client of this daemon would wait for it.
@@ -6434,8 +6486,10 @@ def _register_daemon_routes(application: FastAPI) -> None:
         _update_activity()
         engine = _get_engine_or_503()
         from superlocalmemory.access.rbac import Permission
+        from superlocalmemory.server.acting_profile import acting_profile
         from superlocalmemory.server.rbac_enforce import require_permission
-        require_permission(request, Permission.WRITE, profile=engine._profile_id)
+        pid = acting_profile(engine.profile_id)
+        require_permission(request, Permission.WRITE, profile=pid)
         from superlocalmemory.server.route_mutations import (
             authorize_route_mutation,
         )
@@ -6443,7 +6497,7 @@ def _register_daemon_routes(application: FastAPI) -> None:
             request,
             operation="update",
             source_agent_id="http-session-close",
-            profile_id=engine.profile_id,
+            profile_id=pid,
         )
         sid = req.session_id
         if not sid:
@@ -6453,8 +6507,9 @@ def _register_daemon_routes(application: FastAPI) -> None:
                 if db is not None and hasattr(db, "execute"):
                     rows = db.execute(
                         "SELECT session_id FROM memories "
-                        "WHERE session_id != '' ORDER BY created_at DESC LIMIT 1",
-                        (),
+                        "WHERE session_id != '' AND profile_id = ? "
+                        "ORDER BY created_at DESC LIMIT 1",
+                        (pid,),
                     )
                     if rows:
                         sid = str(rows[0][0])
@@ -6464,7 +6519,7 @@ def _register_daemon_routes(application: FastAPI) -> None:
             return {"ok": True, "session_id": "", "summary_events_created": 0,
                     "message": "no session to close"}
         try:
-            created = engine.close_session(sid)
+            created = engine.close_session(sid, profile_id=pid)
             authorization.complete()
             return {"ok": True, "session_id": sid,
                     "summary_events_created": int(created)}

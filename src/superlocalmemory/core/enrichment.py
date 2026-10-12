@@ -215,17 +215,11 @@ class EnrichmentRunner:
                                         (fact.fact_id, fact.profile_id))[0])
         start = current['referenced_date'] or current['observation_date'] or current['created_at']
         changed += add('atomic_facts', fact.fact_id, 'valid_from', start)
-        temporal = self.db.get_temporal_validity(fact.fact_id, fact.profile_id)
-        if temporal is None:
-            self.db.execute('INSERT INTO fact_temporal_validity '
-                            '(fact_id,profile_id,valid_from,system_created_at) VALUES (?,?,?,?)',
-                            (fact.fact_id, fact.profile_id, start, now()))
-            created = self.db.get_temporal_validity(fact.fact_id, fact.profile_id)
-            ledger.record(self.db, run_id, fact.profile_id, 'fact_temporal_validity',
-                          fact.fact_id, '__row__', None, created, fact_id=fact.fact_id)
-            changed += 1
-        else:
-            changed += add('fact_temporal_validity', fact.fact_id, 'valid_from', start)
+        # A missing temporal row is legacy_unknown (storage/database.py): it is
+        # never created here, because its transaction time would be invented.
+        # An existing row only has an empty event start filled (add() is
+        # fill-only); its system_created_at is never touched.
+        changed += add('fact_temporal_validity', fact.fact_id, 'valid_from', start)
         ids = self._entities(run_id, fact, description['entities_json'])
         changed += add('atomic_facts', fact.fact_id, 'canonical_entities_json',
                        json.dumps(ids), replace_guess=True)

@@ -109,3 +109,47 @@ def test_backup_failure_does_not_touch_facts_or_break_recall(legacy_store, monke
     assert result['errors'] > 0
     assert snapshot(db) == before
     assert db.get_all_facts('default')
+
+
+def _finish(runner):
+    for _ in range(20):
+        result = runner.run_batch(limit=12)
+        if result['status'] == 'completed':
+            return result
+    raise AssertionError('enrichment did not finish')
+
+
+def test_legacy_fact_without_a_temporal_row_stays_legacy_unknown(legacy_store):
+    """Review H2: absence of a temporal row means legacy_unknown; never backfilled."""
+    from superlocalmemory.core.enrichment import EnrichmentRunner
+    db = legacy_store
+    db.execute("DELETE FROM fact_temporal_validity WHERE fact_id IN ('f1','f2')")
+    ids = [f'f{i}' for i in range(12)]
+
+    def inadmissible():
+        return db.get_strict_temporal_inadmissible_fact_ids(
+            ids, 'default', known_as_of='2025-06-01', include_unknown=True)
+
+    before = inadmissible()
+    temporal_before = {r['fact_id']: dict(r) for r in
+                       db.execute('SELECT * FROM fact_temporal_validity')}
+    _finish(EnrichmentRunner(db, idle=lambda: True))
+    assert inadmissible() == before
+    temporal_after = {r['fact_id']: dict(r) for r in
+                      db.execute('SELECT * FROM fact_temporal_validity')}
+    assert set(temporal_after) == set(temporal_before)
+    assert 'f1' not in temporal_after and 'f2' not in temporal_after
+    # Existing rows keep their transaction time; only an empty event start is filled.
+    for fact_id, row in temporal_after.items():
+        assert row['system_created_at'] == temporal_before[fact_id]['system_created_at']
+        assert row['valid_from']
+    # The fact's own event-time column is still filled for every fact.
+    assert all(r['valid_from'] for r in db.execute('SELECT valid_from FROM atomic_facts'))
+
+
+def test_enrichment_never_replaces_an_existing_event_start(legacy_store):
+    from superlocalmemory.core.enrichment import EnrichmentRunner
+    db = legacy_store
+    db.execute("UPDATE fact_temporal_validity SET valid_from='2019-06-01' WHERE fact_id='f3'")
+    _finish(EnrichmentRunner(db, idle=lambda: True))
+    assert db.get_temporal_validity('f3', 'default')['valid_from'] == '2019-06-01'

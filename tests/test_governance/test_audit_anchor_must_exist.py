@@ -57,10 +57,11 @@ def test_an_empty_chain_needs_no_anchor(tmp_path):
     assert chain.verify_report()["ok"] is True
 
 
-def test_the_next_entry_restores_the_anchor(tmp_path):
+def test_the_next_entry_does_not_hide_a_removed_anchor(tmp_path):
     path = _chain(tmp_path)
     os.remove(str(path) + ".anchor")
     chain = AuditChain(path)
     assert chain.verify_report()["ok"] is False
     chain.log("access.login", agent_id="user:a", profile_id="")
-    assert chain.verify_report()["ok"] is True
+    assert chain.verify_report()["ok"] is False
+    assert not os.path.exists(str(path) + ".anchor")

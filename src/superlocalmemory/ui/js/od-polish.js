@@ -3,7 +3,8 @@
 //   - labels each table cell with its column name so tables can reflow into
 //     stacked cards on narrow screens (CSS in theme-slm.css);
 //   - adds the mascot to empty states that are rendered by other panes;
-//   - places a small mascot at the bottom of the sidebar.
+//   - places a small mascot at the bottom of the sidebar;
+//   - gives loading and error messages a mascot (moving while it waits).
 (function () {
   'use strict';
 
@@ -69,6 +70,47 @@
   }
 
   // A tab count that has not loaded yet reads "…": hide it until it has a number.
+  // Loading and error messages written by any pane get the mascot too, so a
+  // wait looks like a wait (a gently moving mascot) and a failure looks calm
+  // rather than broken. Text only decides; no pane has to opt in.
+  var LOADING = /^(Loading|Reading|Searching|Checking|Fetching)\b.{0,70}(…|\.\.\.)$/;
+  var TROUBLE = /^(Could not|Couldn['’]t|Unavailable|That did not work|Failed to|Search is unavailable|Search could not|.{0,60} could not be read)/;
+
+  function polishStyle() {
+    if (document.getElementById('slm-polish-style')) return;
+    var s = document.createElement('style');
+    s.id = 'slm-polish-style';
+    s.textContent =
+      '.slm-state-mascot{width:40px;height:40px;vertical-align:middle;margin-right:10px;display:inline-block}' +
+      '.slm-state-mascot.loading{animation:slm-polish-bob 1.6s ease-in-out infinite}' +
+      '@keyframes slm-polish-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}' +
+      '@media (prefers-reduced-motion: reduce){.slm-state-mascot.loading{animation:none}}';
+    document.head.appendChild(s);
+  }
+
+  function decorateStates(root) {
+    var nodes = (root || document).querySelectorAll('.tab-pane div, .tab-pane p, .tab-pane span, .tab-pane td, main div, main p');
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      var had = n.querySelector(':scope > img.slm-state-mascot');
+      if (n.children.length - (had ? 1 : 0) > 1 || n.closest('#slm-startup') ||
+          n.closest('button,a,label,option,select')) continue;
+      var txt = (n.textContent || '').trim();
+      if (txt.length > 200) continue;
+      var kind = LOADING.test(txt) ? 'loading' : (TROUBLE.test(txt) ? 'trouble' : '');
+      if (!kind) { if (had) had.remove(); continue; }
+      if (had && had.classList.contains(kind)) continue;
+      if (had) had.remove();
+      if (n.querySelector('img, svg, canvas')) continue;
+      polishStyle();
+      var img = document.createElement('img');
+      img.className = 'slm-state-mascot ' + kind;
+      img.src = '/static/assets/mascot/' + (kind === 'loading' ? 'flying' : 'peek') + '-320.webp';
+      img.alt = ''; img.width = 40; img.height = 40;
+      n.insertBefore(img, n.firstChild);
+    }
+  }
+
   function tidyCounts() {
     document.querySelectorAll('.tab .cnt').forEach(function (c) {
       var pending = (c.textContent || '').trim() === '\u2026';
@@ -87,7 +129,7 @@
   }
 
   var pending = false;
-  function run() { pending = false; labelTables(); decorateEmpty(); sidebarMascot(); tidyCounts(); }
+  function run() { pending = false; labelTables(); decorateEmpty(); decorateStates(); sidebarMascot(); tidyCounts(); }
   function schedule() { if (!pending) { pending = true; setTimeout(run, 150); } }
   function start() {
     run();

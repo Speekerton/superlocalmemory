@@ -87,10 +87,10 @@ Your computer's credential renews itself, so normally you do nothing, and the pa
 
 ## Rules that limit it
 
-Web access cannot be used in company mode while login is required: remote keys are refused there. Folder sources pause while Web access is set up. Pictures saved by an earlier release are held back from web apps until saved again, because they were vetted under an older rule. See [Security, Company Mode and Teams](Security-Company-Mode-and-Teams) and [Privacy and Data Flow](Privacy-and-Data-Flow).
+Folder sources pause while Web access is set up. Pictures saved by an earlier release are held back from web apps until saved again, because they were vetted under an older rule. See [Security, Company Mode and Teams](Security-Company-Mode-and-Teams) and [Privacy and Data Flow](Privacy-and-Data-Flow).
 
 ## Other computers on your network
 
-A different feature, `slm remote`, serves other computers on your network or tailnet, with no cloud involved. It is a second, TLS-only listener, off by default. `slm remote tls init` makes a certificate, `slm remote enable --listen HOST:PORT` turns it on, and `slm remote keys add NAME` creates a named key, shown once and bound to exactly one profile (`--read-only` for a read-only key). Only `/mcp` and `GET /health` exist on that listener. `slm remote keys allow NAME mesh|media` grants the optional abilities, and `slm remote check` tests the setup.
+A different feature, `slm remote`, serves other computers on your network or tailnet, with no cloud involved. It is a second, TLS-only listener, off by default. `slm remote tls init` makes a certificate, `slm remote enable --listen HOST:PORT` turns it on, and `slm remote keys add NAME` creates a named key, shown once and bound to exactly one profile (`--read-only` for a read-only key). The listener serves `/mcp` and any path under it (a bare `/mcp` is served as `/mcp/`), plus `GET` and `HEAD /health`. Any other path is 404. Company mode refuses these keys: an enterprise deployment, or a workspace that requires sign-in. If that mode cannot be read, the keys are refused as well. `slm remote keys allow NAME mesh|media` grants the optional abilities, and `slm remote check` tests the setup.
 
 Web access is not database replication and not SLM-Mesh. More guides are in the repository under [docs/remote-access](https://github.com/qualixar/superlocalmemory/tree/main/docs/remote-access): connecting each host app, the architecture and trust boundaries, and how to check a connection end to end.

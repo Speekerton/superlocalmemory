@@ -127,6 +127,9 @@ _EXACT: dict[str, Rule] = {
         "/api/evolution/disable",
         "/api/evolution/config",
     )},
+    **{path: Rule(Permission.MANAGE, "active") for path in (
+        "/api/evolution/run", "/api/evolution/approve", "/api/evolution/rollback",
+    )},
     "/api/profiles/create": Rule(Permission.MANAGE, "any"),
     # Writes into the active workspace that name no workspace of their own.
     "/observe": _WRITE_ACTIVE,

@@ -812,6 +812,10 @@ class SkillEvolver:
 
     def _read_skill_content(self, skill_name: str) -> str:
         """Read a skill's SKILL.md content. Searches known skill directories."""
+        if self._activator is not None:
+            live = self._activator._live_path(skill_name)
+            if live.is_file():
+                return live.read_text(encoding="utf-8")
         search_dirs = [
             Path.home() / ".claude" / "skills",
             Path.home() / ".claude" / "plugins",
@@ -857,7 +861,9 @@ class SkillEvolver:
         The dir_name is DISTINCT from candidate.skill_name. It is the sanitized,
         versioned subdirectory inside the quarantine root, e.g. "brainstorming-vabc12".
         """
-        EVOLVED_SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+        quarantine = (self._activator._quarantine_root
+                      if self._activator is not None else EVOLVED_SKILLS_DIR)
+        quarantine.mkdir(parents=True, exist_ok=True)
 
         # Build directory name. skill_name derives from a behavioral-assertion
         # trigger (any non-whitespace), so sanitize for ALL evolution types —
@@ -875,9 +881,9 @@ class SkillEvolver:
             dir_name = base_name
         dir_name = dir_name or "skill"
 
-        skill_dir = EVOLVED_SKILLS_DIR / dir_name
+        skill_dir = quarantine / dir_name
         # Defense in depth: never write outside the evolved-skills directory.
-        if not str(skill_dir.resolve()).startswith(str(EVOLVED_SKILLS_DIR.resolve())):
+        if not skill_dir.resolve().is_relative_to(quarantine.resolve()):
             raise ValueError(f"evolved skill path escapes sandbox: {dir_name!r}")
         skill_dir.mkdir(parents=True, exist_ok=True)
 

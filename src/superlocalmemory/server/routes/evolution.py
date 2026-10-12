@@ -11,7 +11,7 @@ import logging
 from types import SimpleNamespace
 from typing import Optional
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from superlocalmemory.server.config_file import read_config, update_config
@@ -31,11 +31,68 @@ def _require_read(request: Request) -> None:
     require_permission(request, Permission.READ, profile=get_active_profile())
 
 
-def _require_manage(request: Request) -> None:
+def _require_manage(request: Request, *, installation_wide: bool = True) -> None:
     """Guard evolution mutations with the same RBAC boundary as v3 settings."""
-    from superlocalmemory.server.rbac_enforce import require_global_manage
+    from superlocalmemory.access.rbac import Permission
+    from superlocalmemory.server.rbac_enforce import require_global_manage, require_permission
 
-    require_global_manage(request)
+    if installation_wide:
+        require_global_manage(request)
+    else:
+        require_permission(request, Permission.MANAGE, profile=get_active_profile())
+
+
+def _activator(installation_wide: bool, quarantine_dir_name: str = ""):
+    """Select the activation destination and the workspace's quarantined source."""
+    import hashlib
+
+    from superlocalmemory.evolution.skill_activator import SkillActivator
+
+    key = hashlib.sha256(get_active_profile().encode("utf-8")).hexdigest()
+    root = MEMORY_DIR / "workspace_skills" / key
+    quarantine = root / "quarantine"
+    if quarantine_dir_name and not (quarantine / quarantine_dir_name / "SKILL.md").is_file():
+        # Older workspace candidates lived in the shared quarantine. Their
+        # record remains workspace-scoped; the activator validates containment.
+        quarantine = MEMORY_DIR / "quarantine" / "skills"
+    if installation_wide:
+        return SkillActivator(quarantine_root=quarantine)
+    return SkillActivator(live_root=root / "skills", backup_root=root / "backups",
+                          quarantine_root=quarantine)
+
+
+def _candidate_source(store, record, profile_id: str):
+    """Recover the quarantined directory from its persisted verification receipt."""
+    import dataclasses
+    import json
+
+    if record.quarantine_dir_name:
+        return record
+    transitions = store.get_transitions(record.id, profile_id)
+    verified = next((row for row in reversed(transitions)
+                     if row["to_status"] == "verified_quarantined"), None)
+    if verified is None:
+        return record
+    metadata = json.loads(verified["metadata"])
+    return dataclasses.replace(record, quarantine_dir_name=metadata.get("quarantine_dir_name", ""))
+
+
+def _rollback_scope(body) -> bool:
+    """The activation receipt, not a client flag, determines rollback authority."""
+    import json
+
+    from superlocalmemory.evolution.evolution_store import EvolutionStore
+
+    if not body.record_id:
+        return bool(body.installation_wide)
+    store = EvolutionStore(str(MEMORY_DIR / "memory.db"))
+    transitions = store.get_transitions(body.record_id, get_active_profile())
+    active = next((row for row in reversed(transitions) if row["to_status"] == "active"), None)
+    # Pre-scope activations used the global live root.
+    scope = bool(json.loads(active["metadata"]).get("installation_wide", True)) if active else False
+    if body.installation_wide is not None and body.installation_wide != scope:
+        raise HTTPException(409, detail="Rollback scope does not match the activation receipt")
+    return scope
 
 
 def _read_evolution_config() -> dict:
@@ -150,7 +207,7 @@ def evolution_disable(request: Request):
 @router.post("/api/evolution/run")
 def evolution_run(request: Request):
     """Manually trigger an evolution cycle."""
-    _require_manage(request)
+    _require_manage(request, installation_wide=False)
     try:
         from superlocalmemory.evolution.skill_evolver import SkillEvolver
 
@@ -174,7 +231,8 @@ def evolution_run(request: Request):
             confirm_model=evo_cfg.get("confirm_model", ""),
         )
         evolver = SkillEvolver(
-            db_path, SimpleNamespace(evolution=evolution_config)
+            db_path, SimpleNamespace(evolution=evolution_config), profile_id=profile,
+            activator=_activator(False),
         )
         result = evolver.run_consolidation_cycle(profile)
 
@@ -356,6 +414,7 @@ class ApproveSkillRequest(BaseModel):
     """
 
     record_id: str
+    installation_wide: bool = False
 
 
 _APPROVABLE = ("verified_quarantined", "promoted")
@@ -364,10 +423,9 @@ _APPROVABLE = ("verified_quarantined", "promoted")
 @router.post("/api/evolution/approve")
 def evolution_approve(request: Request, body: ApproveSkillRequest):
     """Activate a quarantined skill mutation after human approval."""
-    _require_manage(request)
+    _require_manage(request, installation_wide=body.installation_wide)
     try:
         from superlocalmemory.evolution.evolution_store import EvolutionStore
-        from superlocalmemory.evolution.skill_activator import SkillActivator
         from superlocalmemory.evolution.types import EvolutionStatus
 
         profile_id = get_active_profile()
@@ -376,6 +434,8 @@ def evolution_approve(request: Request, body: ApproveSkillRequest):
         record = store.get_record(body.record_id, profile_id)
         if record is None:
             return {"success": False, "error": "No such evolution candidate"}
+
+        record = _candidate_source(store, record, profile_id)
 
         # Prefer the transition chain over the record's own column: the chain is
         # the audited history and the column is a cache of its last entry.
@@ -423,7 +483,7 @@ def evolution_approve(request: Request, body: ApproveSkillRequest):
             actor_id=actor, reason="approved by request",
         )
         try:
-            activation = SkillActivator().activate(
+            activation = _activator(body.installation_wide, record.quarantine_dir_name).activate(
                 record.skill_name, record.quarantine_dir_name, actor_id=actor,
             )
         except Exception as exc:
@@ -439,7 +499,8 @@ def evolution_approve(request: Request, body: ApproveSkillRequest):
             body.record_id, profile_id,
             EvolutionStatus.APPROVED, EvolutionStatus.ACTIVE,
             actor_id=actor, reason="activated from quarantine",
-            metadata={"content_hash": activation.get("content_hash", "")},
+            metadata={"content_hash": activation.get("content_hash", ""),
+                      "installation_wide": body.installation_wide},
         )
 
         return {
@@ -466,6 +527,7 @@ class RollbackSkillRequest(BaseModel):
     #: reverses. Without it the file is restored and the log still says active,
     #: which reads as "this mutation is live" forever.
     record_id: str = ""
+    installation_wide: Optional[bool] = None
 
 
 @router.post("/api/evolution/rollback")
@@ -476,13 +538,18 @@ def evolution_rollback(request: Request, body: RollbackSkillRequest):
     loop is that a verified mutation can still be a bad one, and finding that
     out happens after it is live.
     """
-    _require_manage(request)
+    installation_wide = _rollback_scope(body)
+    _require_manage(request, installation_wide=installation_wide)
     try:
         from superlocalmemory.evolution.evolution_store import EvolutionStore
-        from superlocalmemory.evolution.skill_activator import SkillActivator
         from superlocalmemory.evolution.types import EvolutionStatus
 
-        result = SkillActivator().rollback(body.skill_name)
+        if body.record_id:
+            store = EvolutionStore(str(MEMORY_DIR / "memory.db"))
+            record = store.get_record(body.record_id, get_active_profile())
+            if record is None or record.skill_name != body.skill_name:
+                return {"success": False, "error": "No such evolution candidate"}
+        result = _activator(installation_wide).rollback(body.skill_name)
 
         # Record the reversal. A restored file with the log still reading
         # "active" says the mutation is live when it is not, and that is the

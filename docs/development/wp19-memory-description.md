@@ -77,8 +77,11 @@ Review follow-ups (H1-H3, M1-M5, L1-L3):
 - Stub exclusion is opt-in for recall answer paths only (engine hydration,
   degraded recall, degraded session context). Lists, counts, export and the
   dashboard include stubs with a `stub` flag. The stub rule is a label plus a
-  machine-shaped id (8+ hex, UUID, ULID) or dated session boilerplate; a user
-  edit sets `non_answer_user=0`, which the save-time mark and enrichment obey.
+  machine-shaped id (8+ hex with a letter a-f, 12+ digits, UUID, ULID) or dated
+  session boilerplate, so a receipt number or a date stamp is not a stub. An
+  edit sets `non_answer_user=0` (which the save-time mark and enrichment obey)
+  only when the correction is applied; a proposal alone, or a rejected one,
+  leaves the flag as it was.
 - A profile fold maps the undo ledger's entity ids through its own merge, so
   undo after a profile delete restores exactly.
 - Background kind suggestions refuse Ollama cloud models by tag and by

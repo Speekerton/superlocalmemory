@@ -487,7 +487,8 @@ same buttons.
 
 Stubs stay in `slm list`, the dashboard list and every count, marked "stub";
 recall never answers with one. Editing a stub (`slm update`, the dashboard, or
-the `update_memory` tool) clears the mark for good.
+the `update_memory` tool) clears the mark for good once the edit is accepted;
+a proposed edit that is rejected leaves the mark as it was.
 
 Repairs that only add (search sketches rebuilt from the stored vector) run on
 their own. Repairs that delete or move something (entity links: duplicate

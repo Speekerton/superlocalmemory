@@ -1412,12 +1412,8 @@ def _propose_correction_successor(
         # predecessor's current kind onto this successor only when applied.
     )
     persisted_id = db.insert_fact_immutable(successor)
-    # A person edited this memory: neither side of the edit is a stub any
-    # more, and the automatic stub rule never re-flags them (WP-19 M1).
-    from superlocalmemory.encoding.non_answer import user_unmark
-
-    user_unmark(db, fact_id, profile_id)
-    user_unmark(db, persisted_id, profile_id)
+    # A proposal is no one's say-so: the stub flag stays as it was until the
+    # edit is applied (``_transition_correction``; WP-19 NEW-4).
     from superlocalmemory.storage.correction_cases import (
         CorrectionActor,
         propose_on_connection,
@@ -1515,6 +1511,12 @@ def _transition_correction(
         _carry_over_confirmed_kind(
             connection, profile_id, case.predecessor_fact_id, case.successor_fact_id,
         )
+        # The person accepted the edit: neither side is a stub any more, and
+        # the automatic stub rule never re-flags them (WP-19 M1, NEW-4).
+        from superlocalmemory.encoding.non_answer import user_unmark_on_connection
+
+        for edited in (case.predecessor_fact_id, case.successor_fact_id):
+            user_unmark_on_connection(connection, edited, profile_id)
     return {
         "ok": True,
         "operation_id": f"correction:{to_status}:{case.case_id}",

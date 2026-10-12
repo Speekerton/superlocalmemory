@@ -3,8 +3,9 @@
 """Conservative receipt/stub detection, independent of fact length.
 
 A fact is a stub only when the WHOLE text is machine bookkeeping: a label
-followed by a machine-shaped id (8+ hex characters, a canonical UUID or a
-ULID), or session boilerplate with its timestamp. Anything a person could
+followed by a machine-shaped id (8+ hex characters with a letter a-f, a canonical UUID or a
+ULID; a plain number needs 12+ digits, so a receipt number or a date stamp is
+never one), or session boilerplate with its timestamp. Anything a person could
 mean ("use port 8765", "memory id: grandma-recipe") stays answer material.
 A user's decision ("this is an answer") is stored and always wins.
 """
@@ -18,7 +19,8 @@ _DATE = r'\d{4}-\d{2}-\d{2}(?:[T ]\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{
 _SESSION = re.compile(r'^(?:\[\]\s*)?session\s+(?:ended|closed)(?:\s+at)?\s+'
                       + _DATE + r'[.!]?$', re.I)
 _MACHINE_ID = (r'(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
-               r'|[0-9a-f]{8,}'
+               r'|(?=[0-9]*[a-f])[0-9a-f]{8,}'  # hex: a letter a-f, so not a plain number
+               r'|[0-9]{12,}'
                r'|[0-7][0-9a-hjkmnp-tv-z]{25})')
 _RECEIPT = re.compile(r'^(?:receipt|operation|session|fact|memory|run)(?:[ _-]?id)?'
                       r'\s*[:=]\s*' + _MACHINE_ID + r'[.!]?$', re.I)
@@ -81,3 +83,14 @@ def user_unmark(db, fact_id, profile_id):
     extra = f', {_USER_COLUMN}=0' if _USER_COLUMN in columns else ''
     db.execute(f'UPDATE atomic_facts SET non_answer=0{extra} WHERE fact_id=? AND profile_id=?',
                (fact_id, profile_id))
+
+
+def user_unmark_on_connection(connection, fact_id, profile_id):
+    """``user_unmark`` inside an open transaction (a correction being applied)."""
+    columns = {row[1] for row in connection.execute('PRAGMA table_info(atomic_facts)')}
+    if 'non_answer' not in columns:
+        return
+    extra = f', {_USER_COLUMN}=0' if _USER_COLUMN in columns else ''
+    connection.execute(
+        f'UPDATE atomic_facts SET non_answer=0{extra} WHERE fact_id=? AND profile_id=?',
+        (fact_id, profile_id))

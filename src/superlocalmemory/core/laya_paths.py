@@ -53,7 +53,7 @@ def venv_refusal(venv: Path) -> str:
         return REPAIR
     cfg = venv / 'pyvenv.cfg'
     try:
-        for line in cfg.read_text().splitlines():
+        for line in cfg.read_text(encoding="utf-8").splitlines():
             key, sep, value = line.partition('=')
             if sep and key.strip() in ('home', 'executable'):
                 target = Path(value.strip())

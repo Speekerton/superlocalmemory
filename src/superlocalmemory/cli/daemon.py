@@ -960,14 +960,24 @@ def _recovery_root():
     return Path(SLMConfig.load().db_path).parent
 
 
-def _recovery_block() -> str | None:
-    """Why a restore forbids starting now, or None (unreadable settings never block)."""
-    try:
-        from superlocalmemory.server.backup_restore_txn import restore_in_progress
+def _recovery_state() -> tuple[str, str] | None:
+    """``(kind, message)`` when a restore forbids starting now, or None.
 
-        return restore_in_progress(_recovery_root())
+    Kind is ``restore_running`` (wait) or ``recovery_needed`` (run the
+    recovery command). Unreadable settings never block.
+    """
+    try:
+        from superlocalmemory.server.backup_restore_txn import start_refusal
+
+        return start_refusal(_recovery_root())
     except Exception:  # noqa: BLE001
         return None
+
+
+def _recovery_block() -> str | None:
+    """Why a restore forbids starting now, or None (unreadable settings never block)."""
+    found = _recovery_state()
+    return found[1] if found else None
 
 
 def ensure_daemon(*, port: int | None = None) -> bool:
@@ -1177,11 +1187,14 @@ def describe_daemon_unavailability() -> dict[str, str]:
 def _describe_daemon_unavailability() -> dict[str, str]:
     from superlocalmemory.cli import daemon_diagnosis
 
-    blocked = _recovery_block()
-    if blocked:
-        # A restore left the stores mixed: that is why nothing starts, and the
-        # fix is the recovery command, not `slm serve start`.
-        return {"reason": "recovery_needed", "message": blocked,
+    found = _recovery_state()
+    if found:
+        kind, message = found
+        if kind == "restore_running":
+            return {"reason": kind, "message": message,
+                    "hint": "Wait for the restore to finish; it starts the service again."}
+        # The stores may be mixed: the fix is the recovery command, not a retry.
+        return {"reason": "recovery_needed", "message": message,
                 "hint": "Run `slm backup restore-safety-copy`, then `slm serve start`."}
     return daemon_diagnosis.describe(sys.modules[__name__])
 

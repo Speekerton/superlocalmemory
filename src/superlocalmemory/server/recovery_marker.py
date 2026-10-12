@@ -152,14 +152,29 @@ def _writer_alive(marker: dict) -> bool:
     return False  # the process cannot be proven to be the writer
 
 
+RUNNING = "restore_running"
+RECOVERY = "recovery_needed"
+
+
 def refusal(root: Path) -> str | None:
     """The start-up refusal a marker means, or None when there is no marker."""
+    found = state(root)
+    return found[1] if found else None
+
+
+def state(root: Path) -> tuple[str, str] | None:
+    """``(RUNNING, message)`` while a live writer restores, ``(RECOVERY, message)``
+    when the stores may be mixed, or None. Waiting helps only the first."""
     marker = read(root)
     if marker is None:
         return None
     if marker.get("phase") == "writing" and _writer_alive(marker):
-        return ("A restore is replacing the memory store; start again when it finishes. "
-                f"If no restore is running, run `{RECOVER_COMMAND}`.")
+        return RUNNING, ("A restore is replacing the memory store; start again when it "
+                         f"finishes. If no restore is running, run `{RECOVER_COMMAND}`.")
+    return RECOVERY, _recovery_message(marker)
+
+
+def _recovery_message(marker: dict) -> str:
     copies = kept_copies(marker)
     kept = f" The stores as they were before it are kept in {copies[0]}." if copies else ""
     return ("The last restore stopped part-way and the stores may be mixed, so the "

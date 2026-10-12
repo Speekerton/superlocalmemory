@@ -58,7 +58,8 @@ def _daemon_unavailable(command: str, use_json: bool) -> None:
         "reason": diagnosis["reason"],
         "message": f"Owned daemon is unavailable: {diagnosis['message']}",
         "hint": diagnosis["hint"],
-        "retryable": True,
+        # Retrying never clears a store that needs recovery; it does end a restore.
+        "retryable": diagnosis["reason"] != "recovery_needed",
     }
     if use_json:
         from superlocalmemory.cli.json_output import json_print

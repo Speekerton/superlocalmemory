@@ -156,6 +156,8 @@ def _session_message(session: dict) -> str:
         if reason == "recovery_needed":
             message += (": a restore stopped part-way. Run `slm backup restore-safety-copy`, "
                         "then `slm serve start`.")
+        elif reason == "restore_running":
+            message += ": a restore is running; wait for it to finish."
         return message
     message = (
         f"SLM session_init OK: {session['session_id']} "

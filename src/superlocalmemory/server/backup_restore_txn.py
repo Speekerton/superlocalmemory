@@ -115,18 +115,29 @@ def clear_recovery_needed(root: Path) -> bool:
 
 def restore_in_progress(root: Path) -> str | None:
     """Why a daemon must not start now, or None. Never raises."""
+    found = start_refusal(root)
+    return found[1] if found else None
+
+
+def start_refusal(root: Path) -> tuple[str, str] | None:
+    """``(kind, message)`` why nothing may start, or None. Never raises.
+
+    ``recovery_marker.RUNNING``: a live restore; waiting is the answer.
+    ``recovery_marker.RECOVERY``: the stores may be mixed; run the command.
+    """
     try:
-        refused = recovery_marker.refusal(root)
+        found = recovery_marker.state(root)
     except Exception:  # noqa: BLE001
-        refused = None
-    if refused:
-        return refused
+        found = None
+    if found:
+        return found
     try:
         status = read_json(Path(root) / OUTCOME_NAME) or {}
     except Exception:  # noqa: BLE001 - an unreadable note never blocks start-up
         return None
     if status.get("state") in ("stopping", "restoring") and _alive(status.get("worker_pid")):
-        return "A dashboard restore is replacing the memory store; start again when it finishes."
+        return recovery_marker.RUNNING, ("A dashboard restore is replacing the memory store; "
+                                         "start again when it finishes.")
     return None
 
 

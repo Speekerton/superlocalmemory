@@ -10,6 +10,16 @@ events full of hex ids, UUIDs and app ids. Those ID-heavy rows are the "hubs":
 their embeddings sit close to everything, so random text reaches them with a
 high cosine. A store without them cannot show the failure this measures.
 
+It is also unevenly described, like a store that is a year old. About 40% of
+it is a "legacy" slice written before tags, projects and observation dates
+were recorded: no tags, no project, no session date, a rule-guessed kind. The
+rest is "described": tags, a project and a date on every row. About a quarter
+of all rows are tiny stubs under 40 characters ("[] session ended ...",
+"rcpt asdk_app_... ok"). Lifecycle states are spread like a real store's
+(about 26% active, 58% warm, 14% cold, 2% archived; questions never point at
+an archived row). Every measurement is reported per slice, because a design
+that only works when tags, kinds and dates exist is not a design.
+
 Everything here is synthetic. The hand-written rows that questions point at
 live in ``tests/fixtures/answerability/anchors.jsonl``; this module adds the
 deterministic filler around them. Same code, same rows, same order, on every
@@ -25,18 +35,22 @@ from dataclasses import dataclass
 from pathlib import Path
 
 #: Bump when the generated rows change; recorded baselines name the version.
-CORPUS_VERSION = "answerability-corpus-v1"
+CORPUS_VERSION = "answerability-corpus-v2"
 FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "answerability"
 
 _FILLER_COUNTS = {
-    "receipt": 320,
-    "log": 360,
-    "session": 260,
-    "commit": 160,
-    "tool_event": 200,
-    "meeting": 300,
-    "maintenance": 300,
+    "receipt": 240,
+    "log": 260,
+    "session": 160,
+    "commit": 120,
+    "tool_event": 140,
+    "meeting": 240,
+    "maintenance": 220,
+    "stub": 520,
 }
+LEGACY, DESCRIBED = "legacy", "described"
+#: Share of rows in the legacy slice, in tenths (4 = 40%).
+_LEGACY_TENTHS = 4
 
 
 @dataclass(frozen=True)
@@ -46,6 +60,19 @@ class Memory:
     kind: str
     project: str
     session_date: str
+    slice: str = DESCRIBED
+    lifecycle: str = "active"
+
+    @property
+    def metadata(self) -> dict | None:
+        """What the save carries: nothing at all for the legacy slice."""
+        if self.slice == LEGACY:
+            return None
+        return {"project": self.project, "tags": self.kind}
+
+    @property
+    def stored_date(self) -> str | None:
+        return None if self.slice == LEGACY else self.session_date
 
 
 class _Stream:
@@ -145,10 +172,38 @@ def _maintenance(s: _Stream, i: int) -> str:
             f"Next review is in {1 + s.below(14)} days.")
 
 
+def _stub(s: _Stream, i: int) -> str:
+    # Under 40 characters, as real stubs are.
+    form = i % 5
+    if form == 0:
+        return f"[] session ended {_date(s)} #{i}"
+    if form == 1:
+        return f"rcpt asdk_app_{s.hex(12)} ok"
+    if form == 2:
+        return f"ok {s.hex(8)} ({i})"
+    if form == 3:
+        return f"run {s.uuid()[:23]}"
+    return f"saved {s.below(9)} item(s) #{i}"
+
+
 _MAKERS = {
     "receipt": _receipt, "log": _log, "session": _session, "commit": _commit,
     "tool_event": _tool_event, "meeting": _meeting, "maintenance": _maintenance,
+    "stub": _stub,
 }
+
+
+def _slice_of(key: str) -> str:
+    h = int.from_bytes(hashlib.sha256(f"{CORPUS_VERSION}:slice:{key}".encode()).digest()[:4], "big")
+    return LEGACY if h % 10 < _LEGACY_TENTHS else DESCRIBED
+
+
+def _lifecycle_of(key: str, *, anchor: bool) -> str:
+    h = int.from_bytes(hashlib.sha256(f"{CORPUS_VERSION}:life:{key}".encode()).digest()[:4], "big")
+    r = h % 100
+    if anchor:  # a question never points at an archived memory
+        return "active" if r < 30 else "warm" if r < 85 else "cold"
+    return "active" if r < 26 else "warm" if r < 84 else "cold" if r < 98 else "archived"
 
 
 def anchors() -> list[Memory]:
@@ -158,7 +213,8 @@ def anchors() -> list[Memory]:
         if line.strip():
             row = json.loads(line)
             rows.append(Memory(row["key"], row["content"], row["kind"], row["project"],
-                               _date(stream)))
+                               _date(stream), _slice_of(row["key"]),
+                               _lifecycle_of(row["key"], anchor=True)))
     return rows
 
 
@@ -168,8 +224,9 @@ def fillers() -> list[Memory]:
         stream = _Stream(f"{CORPUS_VERSION}:{kind}")
         for i in range(count):
             content = _MAKERS[kind](stream, i)
-            rows.append(Memory(f"fill-{kind}-{i}", content, kind,
-                               _PROJECTS[i % len(_PROJECTS)], _date(stream)))
+            key = f"fill-{kind}-{i}"
+            rows.append(Memory(key, content, kind, _PROJECTS[i % len(_PROJECTS)],
+                               _date(stream), _slice_of(key), _lifecycle_of(key, anchor=False)))
     return rows
 
 
@@ -208,6 +265,10 @@ def digest() -> str:
     """Identifies the store: corpus rows plus the generator version."""
     h = hashlib.sha256(CORPUS_VERSION.encode("utf-8"))
     for row in corpus():
-        h.update(json.dumps([row.key, row.content, row.kind, row.project, row.session_date],
-                            ensure_ascii=False).encode("utf-8"))
+        h.update(json.dumps([row.key, row.content, row.kind, row.project, row.session_date,
+                             row.slice, row.lifecycle], ensure_ascii=False).encode("utf-8"))
     return h.hexdigest()[:16]
+
+
+def slice_of_key() -> dict[str, str]:
+    return {row.key: row.slice for row in corpus()}

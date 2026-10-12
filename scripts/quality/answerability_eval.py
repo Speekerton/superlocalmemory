@@ -50,6 +50,7 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 _ENV_ROOTS = ("SLM_DATA_DIR", "SL_MEMORY_PATH", "SLM_HOME")
 TOP_K = 5
+SLICES = ("legacy", "described")
 RECALL_LIMIT = 10
 
 
@@ -171,14 +172,15 @@ def build_store(cache: Path, *, log=print) -> Path:
             ids = engine.store(
                 row.content,
                 session_id=f"eval-{row.project}-{row.session_date[:7]}",
-                session_date=row.session_date,
-                metadata={"project": row.project, "tags": row.kind},
+                session_date=row.stored_date,
+                metadata=row.metadata,
             )
             keymap[row.key] = list(ids)
             if i % 250 == 0:
                 log(f"stored {i + 1}/{len(rows)} in {time.monotonic() - t0:.0f} s")
     finally:
         engine.close()
+    _set_lifecycles(data, rows, keymap)
     empty = [k for k, ids in keymap.items() if not ids]
     keymap_path.write_text(json.dumps({"digest": digest, "corpus_version": corpus.CORPUS_VERSION,
                                        "keys": keymap, "no_fact": empty}, indent=1),
@@ -186,6 +188,21 @@ def build_store(cache: Path, *, log=print) -> Path:
     log(f"built {len(rows)} memories in {time.monotonic() - t0:.0f} s "
         f"({len(empty)} without a fact)")
     return root
+
+
+def _set_lifecycles(data: Path, rows, keymap: dict[str, list[str]]) -> None:
+    """Spread lifecycle states like a real store's (the save makes every row active)."""
+    import sqlite3
+
+    conn = sqlite3.connect(data / "memory.db")
+    try:
+        for row in rows:
+            for fact_id in keymap.get(row.key, ()):
+                conn.execute("UPDATE atomic_facts SET lifecycle = ? WHERE fact_id = ?",
+                             (row.lifecycle, fact_id))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _memory_ids(data: Path, keymap: dict[str, list[str]]) -> dict[str, str]:
@@ -251,13 +268,18 @@ def auc(positives: list[float], negatives: list[float]) -> float | None:
     return wins / (len(positives) * len(negatives))
 
 
-def separation(per_question: list[dict]) -> dict:
-    keys = sorted({k for row in per_question for k in row["question_features"]})
+def separation(per_question: list[dict], field: str = "question_features",
+               real_slice: str | None = None) -> dict:
+    """AUC per question-level feature. With ``real_slice``, only that slice's
+    real questions, and every question's features from that slice's candidates."""
+    keys = sorted({k for row in per_question for k in row[field]})
     report = {}
     for key in keys:
         def values(sets):
-            return [row["question_features"].get(key, -1e9) for row in per_question
-                    if row["set"] in sets]
+            return [row[field].get(key, -1e9) for row in per_question
+                    if row["set"] in sets
+                    and (real_slice is None or row["set"] != "real"
+                         or row.get("slice") == real_slice)]
         real, nonsense = values({"real"}), values({"nonsense"})
         unanswerable = values({"unanswerable"})
         report[key] = {
@@ -305,6 +327,7 @@ def measure_profile(profile: str, store_root: Path, work: Path, *,
     shutil.copytree(store_root / "data", data)
     _refuse_own_store(data)
     memory_to_key = _memory_ids(data, keymap)
+    slices = _load_corpus_module().slice_of_key()
     engine = _engine(profile, data)
     rows: list[dict] = []
     latencies: list[float] = []
@@ -324,7 +347,9 @@ def measure_profile(profile: str, store_root: Path, work: Path, *,
                 "abstained": len(response.results) == 0,
                 "no_confident_match": bool(response.no_confident_match),
                 "rank": None if q["expected"] == "abstain" else _hit_rank(keys, q["expected"]),
-                "top_keys": keys[:TOP_K], "reranker_status": response.reranker_status,
+                "top_keys": keys[:TOP_K], "result_keys": keys,
+                "slice": (slices.get(q["expected"][0]) if q["expected"] != "abstain" else None),
+                "reranker_status": response.reranker_status,
                 "incomplete_channels": list(response.incomplete_channels or ()),
                 "query_evidence": getattr(response, "query_evidence", None),
             })
@@ -337,11 +362,15 @@ def measure_profile(profile: str, store_root: Path, work: Path, *,
             for r in response.results:
                 f = result_features(r)
                 f["key"] = memory_to_key.get(r.fact.memory_id or "", "?")
+                f["slice"] = slices.get(f["key"])
                 feats.append(f)
             row = by_qid[q["qid"]]
             row["candidates"] = feats
-            row["question_features"] = _question_level(
-                [{k: v for k, v in f.items() if k != "key"} for f in feats])
+            plain = [{k: v for k, v in f.items() if k not in ("key", "slice")} for f in feats]
+            row["question_features"] = _question_level(plain)
+            row["question_features_by_slice"] = {
+                name: _question_level([pf for pf, f in zip(plain, feats) if f["slice"] == name])
+                for name in SLICES}
             if q["expected"] != "abstain":
                 hits = [f for f in feats if f["key"] in q["expected"]]
                 row["expected_features"] = hits[0] if hits else None
@@ -374,10 +403,35 @@ def summarise(rows: list[dict], latencies: list[float]) -> dict:
                        "p95": round(nearest_rank_ms(latencies, 95), 1)} if latencies else {},
         "by_category": by_category,
         "separation": separation([r for r in rows if "question_features" in r]),
+        "slices": {name: _slice_block(rows, name) for name in SLICES},
         "failures": {
             "nonsense_answered": [r["qid"] for r in nonsense if not r["abstained"]],
             "real_missed": [r["qid"] for r in real if not _hit(r)],
         },
+    }
+
+
+def _slice_block(rows: list[dict], name: str) -> dict:
+    """The gate and the separation as seen from one slice of the store.
+
+    Real questions: those whose memory is in the slice. Nonsense: answered
+    "by this slice" when any returned memory belongs to it, so the abstain
+    rate says whether this slice's memories let nonsense through.
+    """
+    slices = _load_corpus_module().slice_of_key()
+    real = [r for r in rows if r["set"] == "real" and r["slice"] == name]
+    nonsense = [r for r in rows if r["set"] == "nonsense"]
+    answered = [r["qid"] for r in nonsense
+                if any(slices.get(k) == name for k in r.get("result_keys", ()))]
+    featured = [{**r, "slice_features": r["question_features_by_slice"][name]}
+                for r in rows if "question_features_by_slice" in r]
+    return {
+        "real_n": len(real),
+        "real_top5_hit_rate": _rate(sum(1 for r in real if _hit(r)), len(real)),
+        "real_missed": [r["qid"] for r in real if not _hit(r)],
+        "nonsense_abstain_rate": _rate(len(nonsense) - len(answered), len(nonsense)),
+        "nonsense_answered_by_this_slice": answered,
+        "separation": separation(featured, field="slice_features", real_slice=name),
     }
 
 
@@ -398,6 +452,10 @@ def gate_failures(report: dict) -> list[str]:
                 f'{profile["profile"]}: nonsense abstain {profile["nonsense_abstain_rate"]}')
         if profile["real_top5_hit_rate"] != 1.0:
             problems.append(f'{profile["profile"]}: real top-5 {profile["real_top5_hit_rate"]}')
+        for name, block in (profile.get("slices") or {}).items():
+            for metric in ("nonsense_abstain_rate", "real_top5_hit_rate"):
+                if block[metric] not in (None, 1.0):
+                    problems.append(f'{profile["profile"]}/{name}: {metric} {block[metric]}')
     return problems
 
 

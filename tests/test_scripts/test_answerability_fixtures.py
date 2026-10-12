@@ -36,17 +36,34 @@ def corpus():
 def test_store_is_about_two_thousand_rows_and_mostly_id_heavy(corpus) -> None:
     rows = corpus.corpus()
     assert 1900 <= len(rows) <= 2100
-    hubs = [r for r in rows if r.kind in ("receipt", "log", "session", "commit", "tool_event")]
+    hubs = [r for r in rows if r.kind in ("receipt", "log", "session", "commit", "tool_event", "stub")]
     assert len(hubs) > len(rows) / 2
     assert any(re.search(r"asdk_app_[0-9a-f]{16}", r.content) for r in rows)
     assert any(re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-", r.content) for r in rows)
+
+
+def test_store_is_unevenly_described_like_a_year_old_one(corpus) -> None:
+    rows = corpus.corpus()
+    legacy = [r for r in rows if r.slice == corpus.LEGACY]
+    assert 0.35 <= len(legacy) / len(rows) <= 0.45
+    assert all(r.metadata is None and r.stored_date is None for r in legacy)
+    described = [r for r in rows if r.slice == corpus.DESCRIBED]
+    assert all(r.metadata and r.stored_date for r in described)
+    tiny = sum(len(r.content) < 40 for r in rows) / len(rows)
+    assert 0.20 <= tiny <= 0.28
+    assert {r.lifecycle for r in rows} == {"active", "warm", "cold", "archived"}
+    keys = {r.key: r for r in rows}
+    real = corpus.load_questions("real")
+    assert all(keys[k].lifecycle != "archived" for q in real for k in q["expected"])
+    by_slice = {keys[q["expected"][0]].slice for q in real}
+    assert by_slice == {corpus.LEGACY, corpus.DESCRIBED}
 
 
 def test_generation_is_deterministic(corpus) -> None:
     assert corpus.corpus() == corpus.corpus()
     # Pinned: a change to the generator or the anchors must bump CORPUS_VERSION
     # and re-record the baseline it was measured against.
-    assert corpus.digest() == "23dd0f193bed359f"
+    assert corpus.digest() == "d21fd3d53039f6e6"
 
 
 def test_question_sets_meet_the_plan_sizes_and_point_at_real_rows(corpus) -> None:

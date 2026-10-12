@@ -34,6 +34,7 @@ def test_successful_ide_connection_records_only_aggregate_activation(
         lambda *_args, **_kwargs: {
             "ide": "cursor",
             "error": None,
+            "ide": "cursor",
             "mcp_config": "wrote",
             "mcp_path": "/private/config.json",
             "agents_md": "unchanged",

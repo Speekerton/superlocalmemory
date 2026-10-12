@@ -46,7 +46,7 @@ _S = "src/superlocalmemory/"
 
 #: (file, enclosing function, call) -> (number of call sites, reason)
 REVIEWED: dict[tuple[str, str, str], tuple[int, str]] = {
-    (_S + "cli/commands.py", "cmd_doctor", "httpx.get"):
+    (_S + "cli/commands.py", "_cmd_doctor_checks", "httpx.get"):
         (1, "PROBE: `slm doctor` lists Ollama models (GET /api/tags)"),
     (_S + "cli/remote_commands.py", "_probe", "socket.create_connection"):
         (1, "PROBE: `slm remote check` TLS handshake to this SLM's own remote "

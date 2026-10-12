@@ -1847,7 +1847,11 @@ class SLMConfig:
             ("math", self.math),
             ("channel_weights", self.channel_weights),
         ):
+            # Saving to a new path has no on-disk section yet: start from the
+            # section this config was loaded with so unknown keys survive.
             _base = existing.get(_section)
+            if not isinstance(_base, dict):
+                _base = (getattr(self, "_raw_preserved", None) or {}).get(_section)
             _merged = dict(_base) if isinstance(_base, dict) else {}
             _merged.update(asdict(_obj))
             data[_section] = _merged

@@ -12,4 +12,6 @@ def test_unknown_hopfield_keys_survive_save_to_new_path(tmp_path):
     config = SLMConfig.load(source)
     destination = tmp_path / "copy" / "config.json"
     config.save(destination)
-    assert json.loads(destination.read_text())["hopfield"] == section
+    saved = json.loads(destination.read_text())["hopfield"]
+    # Every key the user wrote survives unchanged; known defaults may be added.
+    assert {key: saved.get(key) for key in section} == section

@@ -1529,7 +1529,7 @@ def run_recall(
                               if getattr(r, "fact", None) is not None]
         response.results = source_fidelity_flags.flag_unverified(kind_aware.apply_for_recall(
             response.results, query, profile_id, getattr(config, "retrieval", None),
-            engine=retrieval_engine, db=db), db, profile_id)  # unverified source
+            engine=retrieval_engine, db=db), db, profile_id, response=response)
         _resettle_shown_after_bias(play_sink, profile_id, response.results,
                                    _shown_before_kind)
     _mark("learning+ranking")

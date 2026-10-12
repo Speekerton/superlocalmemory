@@ -87,7 +87,10 @@ MODE_SHORT_NAME: dict[Mode, str] = {
 #: this device" once the optional online answer check is on. Do not reword
 #: that phrase without updating the swap.
 MODE_TAGLINE: dict[Mode, str] = {
-    Mode.A: "No language model runs — nothing leaves this device. Fastest and most private.",
+    Mode.A: (
+        "Memories are saved and recalled without a language model — nothing leaves "
+        "this device. Fastest and most private."
+    ),
     Mode.B: (
         "A model on this machine — Ollama by default, any local server works — "
         "and nothing leaves this device."

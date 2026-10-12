@@ -482,7 +482,7 @@ configuration. Run it after any install or upgrade.
 
 ```bash
 slm doctor
-slm doctor --quick   # dependencies and configuration only
+slm doctor --quick   # fast checks, including daemon health
 slm doctor --deep    # read every database page (slow on a large store)
 slm doctor --fix     # re-download missing models and install sqlite-vec first
 slm doctor --json
@@ -496,6 +496,22 @@ characters, and changes nothing. With `--yes` it moves exactly those memories
 back to the active zone and touches no other row; the ids are logged. `--yes`
 without `--refile-hidden` does nothing. In `--json` output the result is under
 `refile_hidden` (`applied`, `moved`, `fact_ids`, `previews`).
+
+Every mode checks the daemon descriptor and makes at most one short `/health`
+probe (0.5-second timeout). Doctor never starts the daemon. A missing descriptor
+warns with `slm serve start`; a dead recorded process, invalid descriptor or
+unhealthy daemon fails with `slm restart`. A `/health` reply that is streaming,
+oversized or never completes counts as unhealthy (FAIL), still within the 1-second
+diagnostic deadline. If only the optional feature probe overruns, the Daemon row
+stays PASS and a separate "Daemon features" row warns. The check appears in JSON
+output too.
+
+The whole run has one overall deadline (180 seconds; 900 with `--deep` or `--fix`).
+If a check hangs, doctor prints the report so far plus a failing "Doctor deadline"
+row naming the check that did not finish, and exits 1.
+
+Exit codes: **0** when checks pass or report warnings only; **1** when any check
+fails. Doctor prints the complete report before exiting, including with `--json`.
 
 Doctor also reads the same failure counts as `slm ops status`: a "Failed saves"
 row warns when saves were given up on after repeated attempts (dead-lettered, so
@@ -823,6 +839,8 @@ for structured output.
 slm decay                   # Preview Ebbinghaus zone transitions
 slm decay --execute         # Apply them
 slm quantize --execute      # Apply embedding precision changes
+slm quantize --repair-sketches           # Preview QJL sketch repairs only
+slm quantize --repair-sketches --execute # Repair sketches without precision changes
 slm consolidate --cognitive # Include CCQ cognitive consolidation
 slm consolidate --dry-run
 slm soft-prompts            # List auto-learned soft prompts
@@ -830,6 +848,22 @@ slm soft-prompts            # List auto-learned soft prompts
 
 `decay`, `quantize`, `consolidate` and `soft-prompts` accept `--profile` and
 `--json`.
+
+`quantize --repair-sketches` repairs legacy or incompatible QJL sketches from
+retained original vectors. It preserves canonical vectors, base quantized bytes,
+bit widths and lifecycle state, and starts no embedding model. The default is a
+read-only preview; add `--execute` to apply repairs. Rows without usable original
+vectors are reported as needing re-embedding. Repeating the repair skips sketches
+that are already compatible.
+Repair uses the existing rotation matrix, including a legacy polar matrix when
+appropriate. If that matrix is missing or incompatible, restore it from backup
+before applying repairs.
+
+The full `quantize --execute` cycle also changes precision according to retention.
+Before applying, it prints preview counts for sketch repairs, precision downgrades,
+precision upgrades and forgotten-state transitions (whose vectors are kept).
+Counts can change if memories change concurrently. With `--json`, the preview is
+printed to stderr before execution and included as `data.plan` in the final JSON.
 
 ---
 
@@ -843,7 +877,7 @@ Versioned, checksummed JSONL bundles of memory evidence.
 slm evidence export /path/to/bundle.jsonl --profile default
 slm evidence verify /path/to/bundle.jsonl
 slm evidence import /path/to/bundle.jsonl --execute
-slm evidence import /path/to/bundle.jsonl --replace --execute
+slm evidence import /path/to/bundle.jsonl --replace --rollback-dir ./slm-rollback --execute
 slm evidence rebuild --execute   # Rebuild derived lexical state
 ```
 
@@ -862,12 +896,15 @@ memory content, no secrets) for manual inspection or support. `reliability
 Bayesian learner has moved off its prior and whether each schema-guarded path has
 ever run against this store.
 
-### `slm backup status|recovery-key|decrypt`
+### `slm backup status|recovery-key|decrypt|restore-safety-copy|clear-recovery-needed`
 
 Cloud backups are encrypted. `status` shows the encryption state;
 `recovery-key` shows the recovery key, or with `--import` reads one from stdin
 for a new computer; `decrypt <file> [-o OUT] [--recovery-key-stdin] [--force]`
-turns a downloaded backup into a plain `.db` file. See [Cloud
+turns a downloaded backup into a plain `.db` file;
+`restore-safety-copy [--id POINT]` puts back the safety copy a failed dashboard
+restore kept, with the service stopped; `clear-recovery-needed` lets the service
+start again after you repaired the stores yourself. See [Cloud
 backup](cloud-backup.md).
 
 ### `slm gdpr status|export|erase|verify`
@@ -936,7 +973,16 @@ slm adapters start gmail
 slm adapters status gmail
 slm adapters stop gmail
 slm adapters disable gmail
+slm adapters folders                    # where the dashboard may point importers
+slm adapters allow-folder ~/Meetings    # approve one more folder (this computer only)
 ```
+
+The dashboard's Configure button only accepts a file or folder inside an import
+folder: `imports/` (or the older `import/` drop folder) in the data folder, or a
+folder approved here. Symlinks out of those folders, hidden folders and the rest
+of the data folder are refused. A path saved earlier, or edited by hand in
+`adapters.json`, is checked again on Start and by the importer itself; one that
+fails the check is not read, and the adapter says what to do.
 
 ### `slm ingest [--source ecc|jsonl]`
 

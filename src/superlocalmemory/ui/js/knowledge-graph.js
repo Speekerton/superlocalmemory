@@ -457,7 +457,7 @@ function openSigmaNodeDetail(nodeId) {
         var neighbors = sigmaGraph.neighbors(nodeId);
         var neighborList = neighbors.slice(0, 10).map(function(nid) {
             var na = sigmaGraph.getNodeAttributes(nid);
-            return '<div class="border-bottom py-1 cursor-pointer" data-act-click="sigma-highlight-node" data-node-id="' + nid + '">'
+            return '<div class="border-bottom py-1 cursor-pointer" data-act-click="sigma-highlight-node" data-node-id="' + escapeHtml(String(nid)) + '">'
                 + '<small class="text-primary">' + escapeHtml((na.label || '').substring(0, 40)) + '</small>'
                 + '</div>';
         }).join('');
@@ -738,7 +738,7 @@ function renderLiveCommunityPanel(communityMap) {
         // Generate simple label from most common entity
         var label = generateLiveLabel(c.community_id, c.members);
         html += '<div class="d-flex align-items-center mb-1 cursor-pointer" '
-            + 'data-act-click="sigma-filter-community" data-community-id="' + c.community_id + '" data-community-src="' + communitySource + '" '
+            + 'data-act-click="sigma-filter-community" data-community-id="' + escapeHtml(String(c.community_id)) + '" data-community-src="' + escapeHtml(communitySource) + '" '
             + 'title="' + c.members.length + ' memories">'
             + '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + color + ';flex-shrink:0;"></span>'
             + '<span class="ms-1 text-truncate" style="font-size:0.75rem;">' + escapeHtml(label) + '</span>'
@@ -789,7 +789,7 @@ function loadCommunities() {
             communities.forEach(function(c) {
                 var color = c.color || SIGMA_CLUSTER_COLORS[c.community_id % SIGMA_CLUSTER_COLORS.length];
                 html += '<div class="d-flex align-items-center mb-1 cursor-pointer" '
-                    + 'data-act-click="sigma-filter-community" data-community-id="' + c.community_id + '" data-community-src="backend" '
+                    + 'data-act-click="sigma-filter-community" data-community-id="' + escapeHtml(String(c.community_id)) + '" data-community-src="backend" '
                     + 'title="' + escapeHtml((c.top_entities || []).join(', ')) + '">'
                     + '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + color + ';flex-shrink:0;"></span>'
                     + '<span class="ms-1 text-truncate" style="font-size:0.75rem;">' + escapeHtml(c.label) + '</span>'
@@ -900,9 +900,7 @@ if (typeof window !== 'undefined') {
 // escapeHtml — needed by tooltip and detail panel (was in graph-core.js)
 if (typeof escapeHtml === 'undefined') {
     function escapeHtml(text) {
-        var div = document.createElement('div');
-        div.textContent = text || '';
-        return div.innerHTML;
+        return String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
     window.escapeHtml = escapeHtml;
 }

@@ -39,24 +39,45 @@ mesh secret, are the one exception, as they are for reading the mesh.
 
 ## Setting it up
 
-Use the dashboard: **Settings → Access**. Add users, grant each a role on the
-workspace, then turn on "Require login".
+Use the dashboard: **Governance → Access & Users**. Add users, grant each a
+role on the workspace, then turn on "Require login". The same place has, for
+each account, **Reset password** and **Disable**.
+
+A workspace always keeps at least one administrator: removing, demoting,
+disabling or deleting its last active administrator is refused with "Add
+another administrator ... before changing this person's access".
+
+Passwords and account status belong to the whole account, which may also have
+a role on other workspaces. An administrator can reset the password of, disable
+or delete only an account whose every workspace they administer; otherwise only
+the computer's owner (below) or the person themselves can. A person changing
+their own password enters their current one.
 
 There is no `slm user`, `slm role` or `slm company-mode`. Users and roles are
-managed in the dashboard or over the HTTP API below. The one CLI is `slm team`,
-for the login requirement only:
+managed in the dashboard or over the HTTP API below. The CLI is `slm team`,
+for the login requirement and for recovery:
 
 ```bash
 slm team status                       # Require login: on|off. Users: N.
 slm team policy --require-login on    # every user signs in
 slm team policy --require-login off   # the machine owner is the user again
+slm team admin <username> [--profile NAME]   # make an account an administrator again
+slm team reset-password <username>            # set a new password (asked twice, never shown)
 ```
 
 `slm team` talks to the running daemon with a private capability file that only
-the user running SLM can read, so the owner can always switch the requirement
-off, even with every administrator locked out. Run it as that user. If the
-daemon refuses it, it says to run it as the same user, with the daemon running
-from that user's data folder.
+the user running SLM can read, so the owner can always recover, even with every
+administrator locked out: make someone an administrator again, set a new
+password, or switch the requirement off. Run it as that user. If the daemon
+refuses it, it says to run it as the same user, with the daemon running from
+that user's data folder.
+
+Every account change (user created, updated or deleted, role changed,
+membership removed, policy changed) is recorded in the hash-chained audit trail
+twice: once as requested, before it is applied, and once with its outcome. If
+the audit trail cannot be written the change is not made. Sign-ins (successful,
+failed or throttled) and sign-outs are recorded as they happen. No password or
+session token is ever recorded.
 
 The same operations over HTTP, for scripting. Every one of these also needs
 machine authentication — see [auth-write-gate.md](auth-write-gate.md) for the

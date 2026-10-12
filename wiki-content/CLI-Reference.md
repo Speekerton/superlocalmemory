@@ -1,9 +1,8 @@
-# CLI Reference
+# CLI Reference — V4.1.25
 
 The installed CLI is the command source of truth. Use `slm --help` and
 `slm <command> --help`; commands that advertise `--json` provide structured
-output. Most of this page was written for V4.0.5; the "New in 4.1.25" section is
-current for 4.1.25. The installed `--help` wins if prose drifts.
+output. This page describes **V4.1.25**; the installed `--help` wins if prose drifts.
 
 ## Setup & Status
 
@@ -20,7 +19,40 @@ current for 4.1.25. The installed `--help` wins if prose drifts.
 | `slm doctor [--fix] [--quick] [--json]` | Pre-flight checks (deps, embedding worker, daemon) |
 | `slm restart` | Kill orphans, clean state, start fresh, verify health |
 
+Doctor checks daemon availability in every mode, including `--quick`: it reads
+the descriptor and makes at most one `/health` probe with a 0.5-second timeout.
+It never starts the daemon. A missing descriptor warns with `slm serve start`;
+a dead recorded process or an invalid or unhealthy daemon fails with
+`slm restart`. The daemon check is also included in `--json` output.
+
+Doctor exits **0** for passes or warnings only, and **1** if any check fails.
+The complete text or JSON report is emitted before the exit status is set.
+
 ## Memory Operations
+
+### Quantization and sketch repair
+
+```bash
+slm quantize                              # Preview the full precision cycle
+slm quantize --execute                    # Apply the full cycle
+slm quantize --repair-sketches            # Preview QJL sketch repairs only
+slm quantize --repair-sketches --execute  # Apply sketch repairs only
+slm quantize --repair-sketches --profile default --json
+```
+
+Use `--repair-sketches` for the QJL repair recommended by `slm doctor`. It repairs
+legacy or incompatible sketches from retained original vectors without changing
+canonical vectors, base quantized bytes, bit widths or lifecycle state. It starts
+no embedding model and previews by default. Repeating it skips compatible sketches;
+memories without usable original vectors are reported as needing re-embedding.
+Repair reuses existing rotation geometry, including the legacy polar fallback.
+Restore a missing or incompatible rotation matrix from backup before applying.
+
+The full `--execute` cycle also adjusts precision based on retention. Before it
+applies changes, it prints preview counts for sketch repairs, downgrades, upgrades
+and forgotten-state transitions (vectors are kept). Counts can change under
+concurrent writes. Both paths accept `--profile` and `--json`; execution previews
+go to stderr with `--json`, and the final JSON includes the preview in `data.plan`.
 
 ### Store
 
@@ -244,37 +276,6 @@ slm proxy --port 8765 --provider anthropic            # Optimization proxy
 ```
 
 Run `slm --help` and `slm <command> --help` for the full surface — this page is an orientation map, not the complete parser.
-
-## New in 4.1.25
-
-Commands and flags that 4.1.25 adds over 4.1.24, taken from the parser and checked with `--help`. The full descriptions are in the repository's `docs/cli-reference.md`.
-
-| Command | What it does |
-|---------|-------------|
-| `slm features [--json]` | What is on and what you can turn on: images and documents, folder sources, bot messages |
-| `slm media enable [--yes] [--json]` | Turn images and documents on (downloads models; shows the size and asks first) |
-| `slm media disable [--remove-files] [--json]` | Turn them off; memories are kept. `--remove-files` also deletes the downloaded models |
-| `slm media status [--json]` | What is on and how set-up is going |
-| `slm media gc [--apply] [--json]` | Find picture leftovers (records without a memory, stray files); `--apply` removes them (owner or admin) |
-| `slm media repair [--dry-run] [--json]` | Make pictures findable by what they show (re-embeds them; owner or admin) |
-| `slm sources add <path> [--kind folder\|obsidian] [--yes]` | Check a folder, show what would be read, and connect it (read-only source) |
-| `slm sources list` | Connected folders |
-| `slm sources report <id>` | What a folder skipped, held back or failed on |
-| `slm sources rescan <id>` | Scan a folder now |
-| `slm sources remove <id> [--purge] [--yes]` | Disconnect a folder; `--purge` also erases the memories it gave |
-| `slm sources forget-empty <id> [--yes]` | Forget the files of a folder you emptied on purpose |
-| `slm team status` / `slm team policy --require-login on\|off` | Whether login is required and how many users exist; turn required login on or off |
-| `slm token show` | Print the SuperLocalMemory key the dashboard asks for (readable only by you) |
-| `slm remote keys allow\|disallow <key> mesh\|media [--json]` | Let a remote key use bot messages (mesh) or images and documents (media), or stop it |
-| `slm embedder upgrade [--yes] [--no-wait] [--json]` | Move your memories to the newer memory engine (preview; rolls back) |
-| `slm outcome success\|partial\|failure <fact_id>... [--query-id ID] [--note TEXT] [--agent NAME] [--report-id KEY] [--json]` | Report whether recalled memories helped; this trains the ranking (reward 1.0 / 0.5 / 0.0). Quote the `query_id` from `slm recall --json` |
-| `slm db repair-entities [--json]` | Preview (read-only) of the repair of entity links left by the old fuzzy name merge |
-| `slm db repair-entities --apply --root <data folder>` | Back up the store (to `backups/`, labelled `pre-entity-repair`), then repair; prints the undo command |
-| `slm db repair-entities --undo <run_id> --root <data folder>` | Put back everything that run changed |
-| `slm doctor --refile-hidden [--yes]` | List memories hidden (archive/forgotten) although their retention score is above 0.8; `--yes` moves exactly those back to active |
-| `slm gdpr export --include-embeddings` | Include embeddings and other binary columns (base64) in the export; omitted by default |
-
-`--apply` and `--undo` on `slm db repair-entities` refuse to run unless `--root` names the data folder the command resolves to.
 
 ## Examples
 

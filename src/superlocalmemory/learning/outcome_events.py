@@ -78,9 +78,16 @@ REWARD_BY_OUTCOME: dict[str, float] = {
 }
 
 #: Where a report came from. Stored as provenance, never trusted for auth.
-VALID_SURFACES: frozenset[str] = frozenset({
-    "mcp", "rest", "cli", "dashboard", "python", "mcp_feedback",
-})
+VALID_SURFACES: frozenset[str] = frozenset(
+    {
+        "mcp",
+        "rest",
+        "cli",
+        "dashboard",
+        "python",
+        "mcp_feedback",
+    }
+)
 
 #: Key in ``context_json`` under which provenance is stored.
 PROVENANCE_KEY = "_provenance"
@@ -129,10 +136,7 @@ class OutcomeWrite:
 def reward_for(outcome: str) -> float:
     """The reward for a verdict. Raises ``ValueError`` for anything else."""
     if outcome not in REWARD_BY_OUTCOME:
-        raise ValueError(
-            f"outcome must be one of {sorted(REWARD_BY_OUTCOME)}, "
-            f"not {outcome!r}"
-        )
+        raise ValueError(f"outcome must be one of {sorted(REWARD_BY_OUTCOME)}, not {outcome!r}")
     return REWARD_BY_OUTCOME[outcome]
 
 
@@ -148,7 +152,9 @@ def _normalised_ids(fact_ids: Any) -> tuple[str, ...]:
 def _fingerprint(report: OutcomeReport) -> str:
     """Digest of what the report says, independent of when it was sent."""
     parts = [
-        report.profile_id, report.recall_query_id, report.outcome,
+        report.profile_id,
+        report.recall_query_id,
+        report.outcome,
         ",".join(sorted(report.fact_ids)),
     ]
     if not report.recall_query_id:
@@ -177,21 +183,21 @@ def _columns(conn: sqlite3.Connection) -> set[str]:
 def _check_memories(conn: sqlite3.Connection, report: OutcomeReport) -> None:
     marks = ",".join("?" for _ in report.fact_ids)
     rows = conn.execute(
-        "SELECT fact_id FROM atomic_facts "
-        f"WHERE profile_id = ? AND fact_id IN ({marks})",
+        f"SELECT fact_id FROM atomic_facts WHERE profile_id = ? AND fact_id IN ({marks})",
         (report.profile_id, *report.fact_ids),
     ).fetchall()
     found = {str(r[0]) for r in rows}
     missing = [f for f in report.fact_ids if f not in found]
     if missing:
         raise UnknownMemories(
-            f"{len(missing)} memory id(s) are not in profile "
-            f"{report.profile_id!r}"
+            f"{len(missing)} memory id(s) are not in profile {report.profile_id!r}"
         )
 
 
 def _recent_duplicate(
-    conn: sqlite3.Connection, report: OutcomeReport, fingerprint: str,
+    conn: sqlite3.Connection,
+    report: OutcomeReport,
+    fingerprint: str,
     now: datetime,
 ) -> str | None:
     since = (now - timedelta(seconds=DUPLICATE_WINDOW_SEC)).isoformat()
@@ -232,18 +238,25 @@ def _validate(report: OutcomeReport, *, need_ids: bool = True) -> OutcomeReport:
     if len(qid) > 64:
         raise ValueError("recall_query_id must be at most 64 characters")
     return OutcomeReport(
-        profile_id=str(report.profile_id), fact_ids=ids,
-        outcome=report.outcome, surface=report.surface, recall_query_id=qid,
+        profile_id=str(report.profile_id),
+        fact_ids=ids,
+        outcome=report.outcome,
+        surface=report.surface,
+        recall_query_id=qid,
         agent_id=str(report.agent_id or "")[:120],
         note=str(report.note or "")[:1000],
         idempotency_key=str(report.idempotency_key or "").strip()[:128],
-        query=str(report.query or "")[:200], extra=dict(report.extra),
+        query=str(report.query or "")[:200],
+        extra=dict(report.extra),
     )
 
 
 def record_outcome_event(
-    conn: sqlite3.Connection, report: OutcomeReport, *,
-    now: datetime | None = None, check_memories: bool = True,
+    conn: sqlite3.Connection,
+    report: OutcomeReport,
+    *,
+    now: datetime | None = None,
+    check_memories: bool = True,
 ) -> OutcomeWrite:
     """Store one report on ``conn`` (memory.db). The caller owns the commit.
 
@@ -264,14 +277,41 @@ def record_outcome_event(
             return OutcomeWrite(dup, reward, False, False)
         outcome_id = "oc_" + uuid.uuid4().hex
     stamp = current.isoformat()
-    cols = ["outcome_id", "profile_id", "query", "fact_ids_json", "outcome",
-            "context_json", "timestamp"]
-    vals: list[Any] = [outcome_id, report.profile_id, report.query,
-                       json.dumps(list(report.fact_ids)), report.outcome,
-                       _context(report, fingerprint), stamp]
+    cur, present = _insert_report(conn, report, outcome_id, reward, stamp, fingerprint)
+    if cur.rowcount == 1 and report.surface != "mcp_feedback":
+        from superlocalmemory.storage.retention_access import record_use_clock
+
+        record_use_clock(conn, report.profile_id, report.fact_ids, outcome_id, stamp)
+    attributed = bool(report.recall_query_id) and "recall_query_id" in present
+    return OutcomeWrite(outcome_id, reward, cur.rowcount == 1, attributed)
+
+
+def _insert_report(conn, report, outcome_id, reward, stamp, fingerprint):
+    cols = [
+        "outcome_id",
+        "profile_id",
+        "query",
+        "fact_ids_json",
+        "outcome",
+        "context_json",
+        "timestamp",
+    ]
+    vals: list[Any] = [
+        outcome_id,
+        report.profile_id,
+        report.query,
+        json.dumps(list(report.fact_ids)),
+        report.outcome,
+        _context(report, fingerprint),
+        stamp,
+    ]
     present = _columns(conn)
-    optional = (("reward", reward), ("settled", 1), ("settled_at", stamp),
-                ("recall_query_id", report.recall_query_id or None))
+    optional = (
+        ("reward", reward),
+        ("settled", 1),
+        ("settled_at", stamp),
+        ("recall_query_id", report.recall_query_id or None),
+    )
     for name, value in optional:
         if name in present:
             cols.append(name)
@@ -281,13 +321,15 @@ def record_outcome_event(
         f"VALUES ({', '.join('?' for _ in cols)})",
         tuple(vals),
     )
-    attributed = bool(report.recall_query_id) and "recall_query_id" in present
-    return OutcomeWrite(outcome_id, reward, cur.rowcount == 1, attributed)
+    return cur, present
 
 
 def apply_side_effects(
-    written: OutcomeWrite, report: OutcomeReport, *,
-    memory_db_path: Path, learning_db_path: Path,
+    written: OutcomeWrite,
+    report: OutcomeReport,
+    *,
+    memory_db_path: Path,
+    learning_db_path: Path,
     bridge_signals: bool = True,
 ) -> None:
     """Feed a NEW event to explicit feedback and source quality. Never raises."""
@@ -303,8 +345,10 @@ def apply_side_effects(
         update_source_quality_for_reward(
             memory_db_path=Path(memory_db_path),
             learning_db_path=Path(learning_db_path),
-            profile_id=report.profile_id, outcome_id=written.outcome_id,
-            fact_ids=list(report.fact_ids), reward=written.reward,
+            profile_id=report.profile_id,
+            outcome_id=written.outcome_id,
+            fact_ids=list(report.fact_ids),
+            reward=written.reward,
         )
     except Exception as exc:  # noqa: BLE001 — the event is already durable
         logger.debug("source-quality outcome feed skipped: %s", exc)
@@ -318,8 +362,10 @@ def _bridge_signals(report: OutcomeReport, learning_db_path: Path) -> None:
         sig_type, value = _SIGNAL_FOR_OUTCOME[report.outcome]
         for fid in report.fact_ids:
             collector.record_explicit(
-                profile_id=report.profile_id, fact_id=fid,
-                signal_type=sig_type, value=value,
+                profile_id=report.profile_id,
+                fact_id=fid,
+                signal_type=sig_type,
+                value=value,
                 channel=f"outcome:{report.surface}",
             )
     except Exception as exc:  # noqa: BLE001 — the event is already durable
@@ -327,8 +373,11 @@ def _bridge_signals(report: OutcomeReport, learning_db_path: Path) -> None:
 
 
 def write_outcome(
-    report: OutcomeReport, *, memory_db_path: Path,
-    learning_db_path: Path | None = None, bridge_signals: bool = True,
+    report: OutcomeReport,
+    *,
+    memory_db_path: Path,
+    learning_db_path: Path | None = None,
+    bridge_signals: bool = True,
     check_memories: bool = True,
 ) -> OutcomeWrite:
     """Store a report under the process write lock, then run side effects.
@@ -342,24 +391,31 @@ def write_outcome(
     learning = Path(learning_db_path or memory_db_path.parent / "learning.db")
     with memory_write(memory_db_path) as conn:
         written = record_outcome_event(
-            conn, report, check_memories=check_memories,
+            conn,
+            report,
+            check_memories=check_memories,
         )
     apply_side_effects(
-        written, _validate(report, need_ids=check_memories),
+        written,
+        _validate(report, need_ids=check_memories),
         memory_db_path=memory_db_path,
-        learning_db_path=learning, bridge_signals=bridge_signals,
+        learning_db_path=learning,
+        bridge_signals=bridge_signals,
     )
     return written
 
 
 #: report_feedback's vocabulary, mapped onto the outcome verdicts.
 _FEEDBACK_TO_OUTCOME: dict[str, str] = {
-    "relevant": "success", "partial": "partial", "irrelevant": "failure",
+    "relevant": "success",
+    "partial": "partial",
+    "irrelevant": "failure",
 }
 
 
-def record_feedback_outcome(engine: Any, profile_id: str, fact_id: str,
-                            feedback: str, recall_query_id: str) -> bool:
+def record_feedback_outcome(
+    engine: Any, profile_id: str, fact_id: str, feedback: str, recall_query_id: str
+) -> bool:
     """Store a per-memory judgement of an identified recall as an outcome.
 
     Used by MCP ``report_feedback`` when the caller quotes the recall's
@@ -372,9 +428,13 @@ def record_feedback_outcome(engine: Any, profile_id: str, fact_id: str,
         return False
     try:
         written = write_outcome(
-            OutcomeReport(profile_id=profile_id, fact_ids=(fact_id,),
-                          outcome=verdict, surface="mcp_feedback",
-                          recall_query_id=recall_query_id),
+            OutcomeReport(
+                profile_id=profile_id,
+                fact_ids=(fact_id,),
+                outcome=verdict,
+                surface="mcp_feedback",
+                recall_query_id=recall_query_id,
+            ),
             memory_db_path=Path(engine._db.db_path),  # noqa: SLF001
             learning_db_path=Path(engine._config.base_dir) / "learning.db",  # noqa: SLF001
             bridge_signals=False,

@@ -15,6 +15,7 @@ Reads only. Returns [] on a store without the kind columns, or on any error.
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -43,40 +44,21 @@ def _has_table(db: Any, name: str) -> bool:
     return bool(rows)
 
 
-def confirmed_facts(db: Any, profile_id: str, kind: MemoryKind, limit: int) -> list[StandingFact]:
-    """Newest confirmed facts of ``kind`` in ``profile_id`` that are still current.
-
-    A predecessor an applied correction replaced is excluded by the
-    ``fact_temporal_validity`` check below. A successor whose correction case
-    is not (or no longer) applied - status ``proposed``, ``rejected`` or
-    ``rolled_back`` - is excluded too, through the identical admission rule
-    recall itself uses (``DatabaseManager.get_nonapplied_correction_successor_ids``):
-    a kind a model or an agent only proposed, and a person has not yet
-    confirmed by applying it, must never be injected as settled truth at
-    session start (LLD I6). An applied successor is admitted normally - it is
-    not the predecessor's case that matters, only its own.
-    """
+def confirmed_facts(
+    db: Any, profile_id: str, kind: MemoryKind, limit: int, project_path: str = ""
+) -> list[StandingFact]:
+    """Current confirmed facts; filter project identity before applying the session cap."""
     try:
         if limit <= 0 or not db.has_memory_kind_columns():
             return []
-        sources = sorted(s.value for s in CONFIRMED_SOURCES)
-        replaced = ""
-        if _has_table(db, "fact_temporal_validity"):
-            replaced = (" AND NOT EXISTS (SELECT 1 FROM fact_temporal_validity v "
-                        "WHERE v.fact_id = f.fact_id AND v.system_expired_at IS NOT NULL)")
-        rows = db.execute(
-            "SELECT f.fact_id, f.content, f.importance, f.access_count FROM atomic_facts f "
-            "WHERE f.profile_id = ? AND f.memory_kind = ? "
-            f"AND f.memory_kind_source IN ({','.join('?' * len(sources))}) "
-            "AND COALESCE(f.lifecycle, 'active') != 'archived' "
-            "AND COALESCE(f.quarantined, 0) = 0" + replaced +
-            " ORDER BY f.created_at DESC LIMIT ?",
-            (profile_id, kind.value, *sources, int(limit)),
-        )
-        rows = list(rows)
+        rows = _confirmed_rows(db, profile_id, kind, limit, project_path)
+        rows = _project_rows(list(rows), project_path)
         candidate_ids = [str(dict(row)["fact_id"]) for row in rows]
-        withheld = db.get_nonapplied_correction_successor_ids(candidate_ids, profile_id) \
-            if candidate_ids else set()
+        withheld = (
+            db.get_nonapplied_correction_successor_ids(candidate_ids, profile_id)
+            if candidate_ids
+            else set()
+        )
         if not isinstance(withheld, set):
             logger.debug("Standing %s lookup skipped: malformed admission result", kind.value)
             return []
@@ -89,18 +71,26 @@ def confirmed_facts(db: Any, profile_id: str, kind: MemoryKind, limit: int) -> l
         fact_id = str(d["fact_id"])
         if fact_id in withheld:
             continue
-        out.append(StandingFact(fact_id, str(d["content"] or ""), kind.value,
-                                float(d.get("importance") or 0.0), int(d.get("access_count") or 0)))
-    return out
+        out.append(
+            StandingFact(
+                fact_id,
+                str(d["content"] or ""),
+                kind.value,
+                float(d.get("importance") or 0.0),
+                int(d.get("access_count") or 0),
+            )
+        )
+    return out[:limit]
 
 
-def standing_facts(db: Any, profile_id: str,
-                   exclude: frozenset[str] = frozenset()) -> list[StandingFact]:
+def standing_facts(
+    db: Any, profile_id: str, exclude: frozenset[str] = frozenset(), *, project_path: str = ""
+) -> list[StandingFact]:
     """Standing rules first, then active decisions; ``exclude`` (already shown,
     e.g. pinned) does not use up a slot."""
     out: list[StandingFact] = []
     for kind, cap in ((MemoryKind.RULE, MAX_RULES), (MemoryKind.DECISION, MAX_DECISIONS)):
-        found = confirmed_facts(db, profile_id, kind, cap + len(exclude))
+        found = confirmed_facts(db, profile_id, kind, cap + len(exclude), project_path)
         out.extend([f for f in found if f.fact_id not in exclude][:cap])
     return out
 
@@ -112,5 +102,52 @@ def enabled(config: Any) -> bool:
     return value is not False
 
 
-__all__ = ["MAX_DECISIONS", "MAX_RULES", "StandingFact", "confirmed_facts", "enabled",
-           "standing_facts"]
+__all__ = [
+    "MAX_DECISIONS",
+    "MAX_RULES",
+    "StandingFact",
+    "confirmed_facts",
+    "enabled",
+    "standing_facts",
+]
+
+
+def _project_rows(rows: list, project_path: str) -> list:
+    from superlocalmemory.core.project_identity import project_key
+
+    if not project_path:
+        return rows
+    wanted = project_key(project_path)
+    admitted = []
+    for row in rows:
+        try:
+            meta = json.loads(dict(row).get("metadata_json") or "{}")
+            project = project_key(meta.get("project") or meta.get("project_path"))
+            if project is None or project == wanted:
+                admitted.append(row)
+        except (ValueError, TypeError, AttributeError):
+            continue
+    return admitted
+
+
+def _confirmed_rows(db, profile_id, kind, limit, project_path):
+    sources = sorted(s.value for s in CONFIRMED_SOURCES)
+    replaced = ""
+    if _has_table(db, "fact_temporal_validity"):
+        replaced = (
+            " AND NOT EXISTS (SELECT 1 FROM fact_temporal_validity v "
+            "WHERE v.fact_id = f.fact_id AND v.system_expired_at IS NOT NULL)"
+        )
+    return db.execute(
+        "SELECT f.fact_id, f.content, f.importance, f.access_count, m.metadata_json "
+        "FROM atomic_facts f LEFT JOIN memories m ON m.memory_id=f.memory_id "
+        "AND m.profile_id=f.profile_id "
+        "WHERE f.profile_id = ? AND f.memory_kind = ? "
+        f"AND f.memory_kind_source IN ({','.join('?' * len(sources))}) "
+        "AND COALESCE(f.lifecycle, 'active') != 'archived' "
+        "AND COALESCE(f.quarantined, 0) = 0"
+        + replaced
+        + " ORDER BY f.created_at DESC"
+        + ("" if project_path else " LIMIT ?"),
+        (profile_id, kind.value, *sources) + (() if project_path else (int(limit),)),
+    )

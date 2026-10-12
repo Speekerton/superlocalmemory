@@ -25,7 +25,11 @@ has no session, nothing changes: the machine operator keeps full access.
 The tables below are the whole policy. A route with no entry needs ``write`` on
 a workspace the caller belongs to (``scope="any"``: the route names its own
 workspace and decides the exact one). Routes that act on the active workspace
-only are listed with ``scope="active"`` and are checked against it.
+only are listed with ``scope="active"`` and are checked against it. Routes
+that change one setting for the whole installation (the login policy, the
+provider, Optimize, Jev consent, restarts ...) are ``scope="global"``: MANAGE
+on one workspace is not enough, the caller must administer every workspace or
+be the machine owner (PR 248 review, finding 1).
 """
 
 from __future__ import annotations
@@ -50,7 +54,8 @@ class Rule:
     not read must never move the check); ``named`` = the workspace in
     ``?profile_id=`` when the route honours it, else the active one; ``any`` =
     some workspace the caller belongs to (the route picks the workspace itself
-    and enforces it); ``path`` = the workspace in the URL. ``owner_permission``
+    and enforces it); ``path`` = the workspace in the URL; ``global`` = every workspace
+    (installation-wide state). ``owner_permission``
     is what the machine owner needs when it has no session (defaults to
     ``permission``). ``machine_ok`` lets a machine
     principal (daemon capability, fleet secret) through without a session, as
@@ -78,7 +83,7 @@ OPEN_PREFIXES = (
 )
 
 _READ = Rule(Permission.READ)
-_MANAGE_ACTIVE = Rule(Permission.MANAGE, "active")
+_GLOBAL = Rule(Permission.MANAGE, "global")
 _WRITE_ACTIVE = Rule(Permission.WRITE, "active")
 _MESH = Rule(Permission.WRITE, "active", machine_ok=True)
 _WRITE_NAMED = Rule(Permission.WRITE, "named")
@@ -90,11 +95,45 @@ _EXACT: dict[str, Rule] = {
     "/api/v3/chat/stream": _READ,
     "/api/v3/recall/trace": _READ,
     "/session/open": _READ,
-    # Daemon-wide control.
-    "/api/daemon/restart": _MANAGE_ACTIVE,
-    "/api/v3/components/heal": _MANAGE_ACTIVE,
-    "/api/v3/ide/connect": _MANAGE_ACTIVE,
-    "/api/v3/ollama/validate": _MANAGE_ACTIVE,
+    # Installation-wide state: one setting for every workspace.
+    **{path: _GLOBAL for path in (
+        "/api/rbac/policy",
+        "/api/memory-kinds/settings",
+        "/api/learning/backup",
+        "/api/learning/migrate-legacy",
+        "/maintenance/run",
+        "/maintenance/compact",
+        "/api/daemon/restart",
+        "/api/daemon/doctor",
+        "/api/daemon/repair",
+        "/api/v3/components/heal",
+        "/api/v3/ide/connect",
+        "/api/v3/ollama/validate",
+        "/api/v3/mode",
+        "/api/v3/mode/set",
+        "/api/v3/scope/config",
+        "/api/v3/runtime/config",
+        "/api/v3/auto-capture/config",
+        "/api/v3/auto-recall/config",
+        "/api/v3/auto-invoke/config",
+        "/api/v3/daemon/config",
+        "/api/v3/forgetting/config",
+        "/api/v3/graph/config",
+        "/api/v3/mesh/config",
+        "/api/v3/storage/config",
+        "/api/v3/trust/config",
+        "/api/v3/ratelimit",
+        "/api/v3/features/media/enable",
+        "/api/v3/features/media/disable",
+        "/api/v3/answer-check/mode",
+        "/api/v3/answer-check/save",
+        "/api/evolution/enable",
+        "/api/evolution/disable",
+        "/api/evolution/config",
+    )},
+    **{path: Rule(Permission.MANAGE, "active") for path in (
+        "/api/evolution/run", "/api/evolution/approve", "/api/evolution/rollback",
+    )},
     "/api/profiles/create": Rule(Permission.MANAGE, "any"),
     # Writes into the active workspace that name no workspace of their own.
     "/observe": _WRITE_ACTIVE,
@@ -107,9 +146,16 @@ _EXACT: dict[str, Rule] = {
 
 #: Path prefixes, in order.
 _PREFIXES: tuple[tuple[str, Rule], ...] = (
-    ("/api/optimize", _MANAGE_ACTIVE),
-    ("/api/v3/provider", _MANAGE_ACTIVE),
-    ("/api/v3/embedding", _MANAGE_ACTIVE),
+    ("/api/v3/local-apps/", _GLOBAL),
+    ("/api/integrity/repair", _GLOBAL),
+    ("/api/optimize", _GLOBAL),
+    ("/api/v3/provider", _GLOBAL),
+    ("/api/v3/embedding", _GLOBAL),
+    ("/api/v3/answer-check/jev/", _GLOBAL),
+    ("/api/v3/answer-check/laya/", _GLOBAL),
+    ("/api/backup", _GLOBAL),
+    ("/api/upgrade/", _GLOBAL),
+    ("/api/adapters/", _GLOBAL),
     ("/api/rbac", Rule(Permission.MANAGE, "any")),
     ("/mesh/", _MESH),
     ("/maintenance/", _WRITE_ACTIVE),
@@ -166,6 +212,10 @@ def _target_profile(request, rule: Rule) -> str | None:
 
 def _user_holds(rbac: Any, user: dict, rule: Rule, profile: str | None) -> bool:
     uid = user["user_id"]
+    if rule.scope == "global":
+        from superlocalmemory.server.rbac_enforce import holds_global_manage
+
+        return holds_global_manage(rbac, uid)
     if rule.scope == "any":
         for row in rbac.list_user_profiles(uid):
             try:
@@ -229,6 +279,10 @@ def mutation_gate(request, app_state):
     except Exception:  # noqa: BLE001 - an unreadable policy is a no, not a yes
         logger.warning("mutation gate: authorization could not be read", exc_info=True)
         return _refusal(503, "authorization temporarily unavailable")
+    if rule.scope == "global":
+        from superlocalmemory.server.rbac_enforce import GLOBAL_MANAGE_MESSAGE
+
+        return _refusal(403, GLOBAL_MANAGE_MESSAGE)
     return _refusal(
         403, f"Your role does not allow '{rule.permission.value}' on this workspace.",
     )

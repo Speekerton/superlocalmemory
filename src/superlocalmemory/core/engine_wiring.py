@@ -752,17 +752,21 @@ def wire_hooks(
     except Exception:
         pass
 
-    # -- Tamper-proof audit chain (all operations logged with hash chain) --
+    # -- Tamper-evident audit chain (all operations logged with hash chain) --
     try:
         from superlocalmemory.compliance.audit import AuditChain
+        from superlocalmemory.core.audit_record import audit_metadata
         audit_path = config.db_path.parent / "audit_chain.db"
         audit_chain = AuditChain(audit_path)
-        for op in ("store", "recall", "delete"):
+        for op in ("store", "recall", "delete", "update"):
+            # Who (the authenticated actor, the connection's agent, the user),
+            # what (content hash, fact ids, operation id) -- L-16 / G-L2.
             hooks.register_post(op, lambda ctx, _op=op: audit_chain.log(
                 operation=_op,
                 agent_id=ctx.get("agent_id", "unknown"),
                 profile_id=ctx.get("profile_id", profile_id),
                 content_hash=ctx.get("content_hash", ""),
+                metadata=audit_metadata(ctx),
             ))
         result["audit_chain"] = audit_chain
     except Exception:

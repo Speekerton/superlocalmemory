@@ -556,6 +556,12 @@ def run_store(
         "profile_id": profile_id,
         "content_preview": content[:100],
     }
+    # What the audit entry binds: the text's hash and who saved it (L-16, L-15).
+    from superlocalmemory.core.agent_attribution import audit_fields
+    from superlocalmemory.core.audit_record import content_hash as _content_hash
+
+    hook_ctx["content_hash"] = _content_hash(content)
+    hook_ctx.update(audit_fields(metadata))
     if not pre_authorized:
         hooks.run_pre("store", hook_ctx)
 
@@ -686,6 +692,7 @@ def run_store(
     facts, protected_source_ids = source_fact_set(
         facts, content, record, queryable_facts,
         getattr(config.store, "max_verbatim_chars", 24000),
+        db=db,
     )
 
     if not facts:

@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
@@ -91,6 +91,17 @@ def _apply_form(body: SaveRequest, mode: str):
     return change
 
 
+def _record_consents(request: Request, before: Any, body: SaveRequest) -> None:
+    """Receipts for any consent this Save grants or withdraws (OPS-19), first."""
+    from superlocalmemory.server.consent_receipts import record_change, rerank_count
+
+    record_change(request, "answer_check", before=before, accepted=bool(body.consent),
+                  provider=body.provider)
+    record_change(request, "rerank", before=before,
+                  accepted=bool(body.rerank and body.consent), provider=body.provider,
+                  k=rerank_count(before))
+
+
 def _judge_fields(retrieval: Any) -> tuple:
     snap = answer_check_state.snapshot(retrieval)
     return tuple(snap.get(k) for k in _JUDGE_FIELDS)
@@ -127,6 +138,7 @@ def post_save(request: Request, body: SaveRequest):
                 except judge_keys.JudgeKeyStoreError:
                     return base._error(support.KEY_PROBLEM)
                 support.forget_test("jev")
+            _record_consents(request, before, body)
             retrieval = support.save(_apply_form(body, mode))
             if new_key or _judge_fields(retrieval) != _judge_fields(before) \
                     or not _running_as_saved(app_state, retrieval):
@@ -136,6 +148,8 @@ def post_save(request: Request, body: SaveRequest):
             status_body = support.build_status(app_state)
         status_body["message"] = "Saved. " + support.switched_message(mode, retrieval)
         return status_body
+    except HTTPException:
+        raise
     except Exception:
         return base._internal_error()
 

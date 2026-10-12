@@ -322,6 +322,9 @@ def get_settings(request: Request):
 
 @router.post("/settings")
 def post_settings(request: Request, body: SettingsUpdate):
+    from superlocalmemory.server.rbac_enforce import require_global_manage
+
+    require_global_manage(request)
     _manage_gate(request)
     try:
         engine = _engine(request)

@@ -23,6 +23,7 @@ from dateutil.parser import parse as dateutil_parse
 
 from superlocalmemory.encoding.temporal_parser import TemporalParser
 from superlocalmemory.retrieval.fact_cover import fact_table
+from superlocalmemory.retrieval.scope_policy import authorized_topk, filter_authorized_results
 from superlocalmemory.retrieval.temporal_slice_cache import TemporalSliceCache
 from superlocalmemory.storage.database import _scope_where
 
@@ -154,7 +155,10 @@ class TemporalChannel:
                 # that is what this channel was asked about; entity matches
                 # follow, and anything already present keeps its better place.
                 seen = {fid for fid, _ in recent}
-                return recent + [(f, s) for f, s in entity_results if f not in seen]
+                return filter_authorized_results(
+                    self._db, recent + [(f, s) for f, s in entity_results if f not in seen],
+                    profile_id, include_global=include_global, include_shared=include_shared,
+                )
 
         events = self._load_events(
             profile_id, include_global=include_global, include_shared=include_shared,
@@ -193,7 +197,10 @@ class TemporalChannel:
                     scored[fid] = max(scored.get(fid, 0.0), best)
 
         results = sorted(scored.items(), key=lambda x: (-x[1], x[0]))
-        return results[:top_k]
+        return authorized_topk(
+            self._db, results, profile_id, top_k,
+            include_global=include_global, include_shared=include_shared,
+        )
 
     def _entity_temporal_search(
         self,

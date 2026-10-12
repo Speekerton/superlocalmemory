@@ -87,6 +87,8 @@ _NO_DAEMON_COMMANDS = {
     # v4.0.2 receipt summary is a direct read-only learning.db query.
     "brain",
     "diagnostics",
+    # Doctor must observe a stopped/crashed daemon without recovering it first.
+    "doctor",
     # LLD-06 — agents launched through wrap start the daemon on demand.
     "wrap",
     # V3.6 Optimize commands that are config read/write only.
@@ -670,11 +672,15 @@ def main() -> None:
     trace_p.add_argument("--json", action="store_true", help="Output structured JSON (agent-native)")
 
     # -- Diagnostics (continued) ----------------------------------------
-    doctor_p = sub.add_parser("doctor", help="Pre-flight check: deps, embedding worker, connectivity")
+    doctor_p = sub.add_parser(
+        "doctor", help="Pre-flight check: deps, embedding worker, connectivity",
+        description="Check dependencies, configuration and daemon health. "
+        "Exit codes: 0 for passes or warnings only; 1 if any check fails.",
+    )
     doctor_p.add_argument("--json", action="store_true", help="Output structured JSON (agent-native)")
     doctor_p.add_argument(
         "--quick", action="store_true",
-        help="Run only the fast checks (deps + config); skip daemon/embedding probes",
+        help="Run fast checks, including daemon health; skip embedding worker and Ollama probes",
     )
     doctor_p.add_argument(
         "--deep", action="store_true",
@@ -858,6 +864,9 @@ def main() -> None:
         help="Apply precision changes",
     )
     quantize_p.add_argument("--profile", default="", help="Target profile")
+    quantize_p.add_argument("--repair-sketches", action="store_true",
+                            help="Repair QJL sketches only; preserve embedding precision "
+                                 "(preview by default)")
     quantize_p.add_argument("--json", action="store_true", help="Output structured JSON (agent-native)")
 
     consolidate_p = sub.add_parser("consolidate", help="Run memory consolidation pipeline")
@@ -1298,6 +1307,13 @@ def main() -> None:
         choices=["retry", "force_reconcile", "cancel"],
         help="Remediation action to apply")
     ops_resolve_p.add_argument(
+        "--json", action="store_true", help="Output structured JSON (agent-native)")
+    ops_repair_p = ops_sub.add_parser(
+        "repair-saves",
+        help="Re-file saves dead-lettered on another memory (dry run unless --apply)")
+    ops_repair_p.add_argument(
+        "--apply", action="store_true", help="Back up memory.db, then repair")
+    ops_repair_p.add_argument(
         "--json", action="store_true", help="Output structured JSON (agent-native)")
     ops_status_p = ops_sub.add_parser(
         "status", help="Quick failure count + writer stall overview")

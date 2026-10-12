@@ -111,19 +111,23 @@ def _response(contents) -> RecallResponse:
 
 def _run(judge, config, monkeypatch, *, delay: float = FAST_S,
          contents=("memory 0", "memory 1", "memory 2", "memory 3")):
+    from tests._recall_sources import recall_sources
+
     clock = acs.time.clock  # the autouse retrieval_clock
+    response = _response(contents)
 
     def recall(*_a, **_kw):
         clock.offset = delay  # retrieval "took" delay seconds
-        return _response(contents)
+        return response
 
     engine = SimpleNamespace(_sufficiency_judge=judge, recall=recall)
     monkeypatch.setattr(recall_pipeline, "apply_ranking", lambda resp, *a, **k: resp)
     try:
-        return recall_pipeline.run_recall(
-            "what is the recall ceiling?", "default", fast=True, config=config,
-            retrieval_engine=engine, trust_scorer=None, embedder=None,
-            db=SimpleNamespace(db_path=None), llm=None, hooks=None)
+        with recall_sources(config.base_dir, response.results) as db:
+            return recall_pipeline.run_recall(
+                "what is the recall ceiling?", "default", fast=True, config=config,
+                retrieval_engine=engine, trust_scorer=None, embedder=None,
+                db=db, llm=None, hooks=None)
     finally:
         clock.offset = 0.0
 

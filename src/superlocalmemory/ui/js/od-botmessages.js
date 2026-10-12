@@ -49,6 +49,15 @@
 
   function kindChip(kind) { return el('span', 'badge neutral od-kind', kindLabel(kind)); }
 
+  // 4.1.25 G-L4: the same words the Mesh pane uses for a peer's state. A sender
+  // known only from its messages is no longer connected (it left the mesh).
+  var PEER_STATE = { active: ['connected', 'ok'], stale: ['not seen recently', 'warn'],
+                     dead: ['gone quiet', 'danger'], left: ['left the mesh', 'neutral'] };
+  function stateChip(status) {
+    var st = PEER_STATE[status] || PEER_STATE.left;
+    return el('span', 'badge ' + st[1] + ' od-peer-state', st[0]);
+  }
+
   // ---------------------------------------------------------------- time
   // Server times carry microseconds ("...51.148946+00:00"); trim to the milliseconds
   // every browser parses.
@@ -267,7 +276,8 @@
     row.head = el('div', 'od-peer-head');
     row.title = el('strong', 'od-peer-name', peerName(from));
     row.tag = el('span', 'badge warn od-peer-muted', 'muted');
-    [row.title, kindChip(from.kind)].forEach(function (n) { row.head.appendChild(n); });
+    [row.title, kindChip(from.kind), stateChip(from.status || 'left')]
+      .forEach(function (n) { row.head.appendChild(n); });
     return row.head;
   }
 

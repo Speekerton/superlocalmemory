@@ -24,6 +24,21 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Generator, NoReturn
 
+from superlocalmemory.storage import erasure_derived, projection_outbox, store_signature
+from superlocalmemory.storage.correction_cases import SAVED_SUCCESSOR_PARAMS, SAVED_SUCCESSOR_SQL
+from superlocalmemory.storage.embedding_codec import (
+    decode_embedding,
+    decode_float_vector,
+    encode_embedding,
+    encode_float_vector,
+)
+from superlocalmemory.storage.erasure_visibility import (
+    aggregate_erasure_clause_for_db,
+    erasure_clause,
+    has_tombstones,
+    memory_erasure_clause_for_db,
+)
+from superlocalmemory.storage.memory_kinds import KIND_COLUMNS
 from superlocalmemory.storage.models import (
     AtomicFact,
     CanonicalEntity,
@@ -40,18 +55,8 @@ from superlocalmemory.storage.models import (
     TemporalEvent,
     TrustScore,
 )
-from superlocalmemory.storage.embedding_codec import (
-    decode_embedding,
-    decode_float_vector,
-    encode_embedding,
-    encode_float_vector,
-)
-from superlocalmemory.storage.write_lock import get_write_lock
 from superlocalmemory.storage.read_connection import read_only_snapshot
-from superlocalmemory.storage import projection_outbox
-from superlocalmemory.storage.memory_kinds import KIND_COLUMNS
-from superlocalmemory.storage.correction_cases import SAVED_SUCCESSOR_PARAMS, SAVED_SUCCESSOR_SQL
-from superlocalmemory.storage import store_signature
+from superlocalmemory.storage.write_lock import get_write_lock
 
 logger = logging.getLogger(__name__)
 
@@ -330,6 +335,7 @@ def _compose_visible_clause(
     has_archive: bool,
     has_quarantine: bool,
     include_quarantined: bool = False,
+    has_erasure: bool = False,
 ) -> str:
     """Build the AND-clause from what the store actually has.
 
@@ -343,6 +349,8 @@ def _compose_visible_clause(
         clause += f" AND COALESCE({table}archive_status, 'live') != 'archived'"
     if not include_quarantined and has_quarantine:
         clause += f" AND COALESCE({table}quarantined, 0) = 0"
+    if has_erasure:
+        clause += erasure_clause(prefix)
     return clause
 
 
@@ -436,6 +444,7 @@ def visible_fact_clause_for_connection(
         prefix,
         has_archive=_has("archive_status"),
         has_quarantine=_has("quarantined"),
+        has_erasure=has_tombstones(conn),
         include_quarantined=include_quarantined,
     )
 
@@ -1361,6 +1370,17 @@ class DatabaseManager:
             self._temporal_table_present = True
         return present
 
+    def _has_projection_tombstones_table(self) -> bool:
+        """Cache only schema presence; re-probe absent tables after migrations."""
+        if getattr(self, "_tombstone_table_present", False):
+            return True
+        present = bool(self.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='projection_tombstones'"
+        ))
+        if present:
+            self._tombstone_table_present = True
+        return present
+
     def current_fact_clause(
         self, prefix: str = "", *, include_quarantined: bool = False,
     ) -> str:
@@ -1383,7 +1403,10 @@ class DatabaseManager:
     ) -> str:
         """AND-clause excluding rows no caller should be shown as a memory.
 
-        Two exclusions, one definition: soft-deleted (``archive_status``) and
+        Erasure intent always wins, including for include_quarantined callers.
+        Membership is evaluated by SQLite on every read and is never cached.
+
+        Two other exclusions, one definition: soft-deleted (``archive_status``) and
         withheld (``quarantined``). Both are presence-guarded, because each
         column arrives with a migration and may be absent on a store the engine
         has not opened.
@@ -1410,6 +1433,7 @@ class DatabaseManager:
         """
         return _compose_visible_clause(
             prefix,
+            has_erasure=self._has_projection_tombstones_table(),
             has_archive=self._has_archive_status(),
             has_quarantine=self._has_quarantine_column(),
             include_quarantined=include_quarantined,
@@ -1814,6 +1838,17 @@ class DatabaseManager:
             for r in rows
         ]
 
+    def is_memory_erasing(self, memory_id: str, profile_id: str) -> bool:
+        """Whether an erasure fence blocks this source, including a deleted parent."""
+        clause = memory_erasure_clause_for_db(self, "source")
+        if not clause:
+            return False
+        rows = self.execute(
+            "SELECT 1 FROM (SELECT ? AS memory_id, ? AS profile_id) AS source "
+            f"WHERE 1=1{clause}", (memory_id, profile_id),
+        )
+        return not rows
+
     def get_memory_content_batch(
         self, memory_ids: list[str], profile_id: str,
         include_global: bool = False, include_shared: bool = False,
@@ -1831,9 +1866,10 @@ class DatabaseManager:
         where, sparams = _scope_where(
             profile_id, include_global=include_global, include_shared=include_shared,
         )
+        erasure = memory_erasure_clause_for_db(self)
         rows = self.execute(
             f"SELECT memory_id, content FROM memories "
-            f"WHERE memory_id IN ({ph}) AND {where}",
+            f"WHERE memory_id IN ({ph}) AND {where}{erasure}",
             (*unique_ids, *sparams),
         )
         return {dict(r)["memory_id"]: dict(r)["content"] for r in rows}
@@ -1850,7 +1886,8 @@ class DatabaseManager:
             include_shared=include_shared,
         )
         rows = self.execute(
-            f"SELECT * FROM atomic_facts WHERE memory_id = ? AND {where} "
+            f"SELECT * FROM atomic_facts WHERE memory_id = ? AND {where}"
+            f"{self.visible_fact_clause()} "
             "ORDER BY confidence DESC",
             (memory_id, *params),
         )
@@ -2234,6 +2271,10 @@ class DatabaseManager:
         self, entity_id: str, profile_id: str,
     ) -> list[EntityProfile]:
         """All profile entries for an entity within a profile scope."""
+        # Not summary-fenced here: the only caller (retrieval/profile_channel)
+        # uses fact ids, which it passes through filter_authorized_results, so a
+        # mixed profile still yields its retained facts. Summary TEXT is fenced
+        # at the entity routes.
         rows = self.execute(
             "SELECT * FROM entity_profiles WHERE entity_id = ? AND profile_id = ? "
             "ORDER BY last_updated DESC",
@@ -2283,20 +2324,28 @@ class DatabaseManager:
 
     def get_all_scenes(self, profile_id: str) -> list[MemoryScene]:
         """All scenes for a profile, newest first."""
+        erasure = aggregate_erasure_clause_for_db(self, "memory_scenes")
         rows = self.execute(
-            "SELECT * FROM memory_scenes WHERE profile_id = ? "
+            f"SELECT * FROM memory_scenes WHERE profile_id = ?{erasure} "
             "ORDER BY last_updated DESC",
             (profile_id,),
         )
         return [self._row_to_scene(r) for r in rows]
 
     def get_scenes_for_fact(
-        self, fact_id: str, profile_id: str,
+        self, fact_id: str, profile_id: str, *, include_erasing: bool = False,
     ) -> list[MemoryScene]:
-        """All scenes whose fact_ids JSON array contains *fact_id*."""
+        """All scenes whose fact_ids JSON array contains *fact_id*.
+
+        Scenes naming a fact whose erasure has started are withheld from
+        readers. ``include_erasing`` is for the erasure/mutation path itself,
+        which must still find the scene in order to remove the fact from it.
+        """
+        erasure = "" if include_erasing else aggregate_erasure_clause_for_db(
+            self, "memory_scenes")
         rows = self.execute(
             "SELECT * FROM memory_scenes WHERE profile_id = ? "
-            "AND fact_ids_json LIKE ? ORDER BY last_updated DESC",
+            f"AND fact_ids_json LIKE ?{erasure} ORDER BY last_updated DESC",
             (profile_id, f'%"{fact_id}"%'),
         )
         return [self._row_to_scene(r) for r in rows]
@@ -2319,8 +2368,9 @@ class DatabaseManager:
         params: list[str] = []
         for fid in fact_ids:
             params.extend((profile_id, f'%"{fid}"%'))
+        erasure = aggregate_erasure_clause_for_db(self, "memory_scenes")
         rows = self.execute(
-            f"SELECT * FROM memory_scenes WHERE {clauses} ORDER BY last_updated DESC",
+            f"SELECT * FROM memory_scenes WHERE ({clauses}){erasure} ORDER BY last_updated DESC",
             tuple(params),
         )
         out: dict[str, list[MemoryScene]] = {}
@@ -3238,14 +3288,22 @@ class DatabaseManager:
         Fail-soft: any exception is logged and ignored.
         """
         try:
-            scenes = self.get_scenes_for_fact(fact_id, profile_id)
+            scenes = self.get_scenes_for_fact(fact_id, profile_id, include_erasing=True)
+            erased_text = erasure_derived.fact_content(self.execute, profile_id, fact_id)
             for scene in scenes:
                 new_ids = [fid for fid in (scene.fact_ids or []) if fid != fact_id]
                 if new_ids:
+                    # The theme is the anchor fact's first 200 characters, so it
+                    # must not outlive the fact (storage/erasure_derived.py).
+                    theme = scene.theme
+                    if erasure_derived.theme_quotes(
+                            theme, scene.fact_ids or [], fact_id, erased_text):
+                        theme = erasure_derived.theme_from_members(
+                            self.execute, profile_id, new_ids)
                     self.execute(
-                        "UPDATE memory_scenes SET fact_ids_json = ? "
+                        "UPDATE memory_scenes SET fact_ids_json = ?, theme = ? "
                         "WHERE scene_id = ?",
-                        (json.dumps(new_ids), scene.scene_id),
+                        (json.dumps(new_ids), theme, scene.scene_id),
                     )
                 else:
                     self.execute(
@@ -3440,27 +3498,9 @@ class DatabaseManager:
 
         Returns count of successfully upserted rows.
         """
-        count = 0
-        from superlocalmemory.core.lifecycle_state import atomic_lifecycle_for
+        from superlocalmemory.storage.retention_lifecycle import batch_retention
 
-        with self.transaction():
-            for f in facts:
-                self._upsert_retention_in_transaction(
-                    fact_id=f["fact_id"],
-                    profile_id=profile_id,
-                    retention_score=f["retention"],
-                    memory_strength=f["strength"],
-                    access_count=f["access_count"],
-                    last_accessed_at=f["last_accessed_at"],
-                    lifecycle_zone=f["zone"],
-                )
-                self.execute(
-                    "UPDATE atomic_facts SET lifecycle = ? "
-                    "WHERE fact_id = ? AND profile_id = ?",
-                    (atomic_lifecycle_for(f["zone"]), f["fact_id"], profile_id),
-                )
-                count += 1
-        return count
+        return batch_retention(self, facts, profile_id)
 
     def get_facts_needing_decay(self, profile_id: str) -> list[dict]:
         """Get facts that need decay computation (excludes core memory).
@@ -3491,29 +3531,9 @@ class DatabaseManager:
 
         Idempotent: if fact not found, logs warning and returns.
         """
-        # Check existence first (idempotent)
-        rows = self.execute(
-            "SELECT fact_id FROM fact_retention WHERE fact_id = ? AND profile_id = ?",
-            (fact_id, profile_id),
-        )
-        if not rows:
-            logger.warning(
-                "soft_delete_fact: fact_id=%s not found in fact_retention, skipping",
-                fact_id,
-            )
-            return
+        from superlocalmemory.storage.retention_lifecycle import forget_fact
 
-        from superlocalmemory.core.lifecycle_state import set_fact_lifecycle_zone
-
-        with self.transaction():
-            set_fact_lifecycle_zone(
-                self, [fact_id], "forgotten", profile_id=profile_id,
-            )
-            self.execute(
-                "UPDATE fact_retention SET retention_score = 0.0 "
-                "WHERE fact_id = ? AND profile_id = ?",
-                (fact_id, profile_id),
-            )
+        forget_fact(self, fact_id, profile_id)
 
     # ------------------------------------------------------------------
     # Phase E: CCQ Consolidated Blocks & Audit CRUD

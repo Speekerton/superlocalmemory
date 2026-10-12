@@ -276,7 +276,7 @@ function loadDashboardSources(stats) {
         'cli-sync': 'CLI sync',
         'unknown': 'Unclassified'
     };
-    var COLORS = ['var(--violet)', 'var(--cyan)', 'var(--warn,#f59e0b)', 'var(--fg-3)'];
+    var COLORS = ['var(--violet)', 'var(--cyan)', 'var(--warn,#f59e0b)', 'var(--fg-2)'];
     var total = sources.reduce(function(sum, source) {
         return sum + (Number(source.count) || 0);
     }, 0);
@@ -352,16 +352,24 @@ function setTextById(id, val) {
 function answerCheckSummaryText(status) {
     var jev = status.jev || {};
     var providerName = jev.provider === 'openrouter' ? 'OpenRouter' : 'TypeSafe';
+    if (status.laya && status.laya.state === 'failed') {
+        return 'On this Mac · failed' + (status.laya.error ? ': ' + status.laya.error : '');
+    }
     if (status.active === 'laya') {
-        return 'On this Mac · ready' + (status.mode === 'auto' ? ' (turned on by itself)' : '');
+        return 'On this Mac · configured' + (status.mode === 'auto' ? ' (turned on by itself)' : '');
     }
     if (status.active === 'jev') {
-        var line = 'Online (' + providerName + ') · ready';
+        // No live health signal exists for the hosted check; the status carries
+        // only the last Test, so say that and never "ready".
+        var test = (status.tests || {}).jev;
+        var line = 'Online (' + providerName + ') · ' + (!test ? 'not tested yet'
+            : test.ok ? 'last test passed'
+            : 'last test failed' + (test.message ? ': ' + test.message : ''));
         if (jev.rerank && jev.rerank.active) line += ' · reordering on';
         return line;
     }
     // Nothing runs. Say why when something was chosen.
-    if (status.mode === 'laya') return 'On this Mac · ' + status.laya.state;
+    if (status.mode === 'laya') return 'On this Mac · not checking';
     if (status.mode === 'jev') return 'Online (' + providerName + ') · off';
     if (status.laya.state === 'installing') return 'On this Mac · setting up';
     return null;

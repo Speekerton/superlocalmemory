@@ -13,11 +13,12 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from superlocalmemory.infra.data_root import DynamicStatePath
 from superlocalmemory.server.route_mutations import authorize_route_mutation
 from superlocalmemory.storage.memory_write import memory_write
 
 from .export_delivery import export_response
-from .helpers import DB_PATH, MEMORY_DIR, get_active_profile, get_engine_lazy
+from .helpers import DB_PATH, get_active_profile, get_engine_lazy
 
 logger = logging.getLogger("superlocalmemory.routes.compliance")
 router = APIRouter()
@@ -26,7 +27,7 @@ router = APIRouter()
 # (core/engine_wiring.py). The route MUST read that same file — an earlier
 # "audit.db" path pointed at a file nothing ever wrote, so the Compliance tab
 # always showed zero events.
-AUDIT_DB = MEMORY_DIR / "audit_chain.db"
+AUDIT_DB = DynamicStatePath("audit_chain.db")
 
 # Feature detection
 COMPLIANCE_AVAILABLE = False
@@ -78,9 +79,12 @@ async def compliance_status(request: Request):
         audit_events_count = 0
         recent_audit_events = []
         try:
+            from superlocalmemory.server.audit_view import present_event
+
             audit = AuditChain(str(AUDIT_DB))
-            recent_audit_events = audit.query(profile_id=profile, limit=30)
-            # get_stats() is global; count this profile's rows for the header.
+            recent_audit_events = [present_event(e)
+                                   for e in audit.query(profile_id=profile, limit=30)]
+            # A COUNT, not 100,000 rows loaded per pane view (G-M4).
             audit_events_count = audit.count(profile_id=profile)
         except Exception as exc:
             logger.debug("audit chain: %s", exc)
@@ -140,23 +144,31 @@ async def query_audit_trail(
     require_http_mutation_actor(request, getattr(request.app.state, "daemon_descriptor", None),
                                 actor_kind="audit-read")
     try:
+        from superlocalmemory.server.audit_view import integrity_summary, present_event
+        from superlocalmemory.server.rbac_enforce import has_global_manage
+
         profile = get_active_profile()
+        # Installation-wide events (accounts, the login policy, sign-in) carry
+        # no workspace; whoever holds authority over the whole installation
+        # sees them next to the active workspace's (PR 248 review, finding 5).
+        installation = has_global_manage(request)
+        scope = (profile, "") if installation else profile
         audit = AuditChain(str(AUDIT_DB))
-        events = audit.query(
-            profile_id=profile, operation=event_type, start_date=since,
+        events = [present_event(e) for e in audit.query(
+            profile_id=scope, operation=event_type, start_date=since,
             limit=limit, offset=offset,
-        )
-        matching = audit.count(profile_id=profile, operation=event_type, start_date=since)
-        chain_ok = True
-        try:
-            chain_ok = audit.verify_integrity()
-        except Exception:
-            pass
+        )]
+        matching = audit.count(profile_id=scope, operation=event_type, start_date=since)
+        integrity = integrity_summary(audit)
         return {
             "available": True, "events": events, "total": matching,
             "returned": len(events), "offset": offset,
             "has_more": offset + len(events) < matching,
-            "chain_verified": chain_ok, "active_profile": profile,
+            "chain_verified": integrity["verified"],
+            "integrity_label": integrity["label"],
+            "integrity": integrity["report"],
+            "active_profile": profile,
+            "includes_installation_events": installation,
             "filters": {"event_type": event_type, "since": since, "limit": limit},
         }
     except Exception:

@@ -26,6 +26,7 @@ from superlocalmemory.compliance.export_encoding import (
     is_vector_column,
 )
 from superlocalmemory.compliance.export_stream import JsonObjectWriter
+from superlocalmemory.storage.erasure_visibility import erasure_clause_for_connection
 
 logger = logging.getLogger("superlocalmemory.routes.data_io")
 
@@ -103,6 +104,7 @@ def _query(cursor: Any, profile: str, category: str | None, project: str | None,
         # consolidator regenerates them from the facts that ARE exported) and
         # their text is kept in consolidated_summaries.
         where, params = "profile_id = ?", [profile]
+        where += erasure_clause_for_connection(cursor.connection)
         if has_column(cursor, "atomic_facts", "quarantined"):
             where += " AND COALESCE(quarantined, 0) = 0"
         if category:

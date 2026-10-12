@@ -43,7 +43,7 @@
     DECAY_TRUSTS.forEach(function (t) {
       var span = document.createElement('span');
       span.textContent = t.label;
-      Object.assign(span.style, { fontSize:'10.5px', color: t.color, fontFamily:'var(--font-mono)' });
+      Object.assign(span.style, { fontSize:'10.5px', color:'var(--fg-2)', fontFamily:'var(--font-mono)', borderBottom:'2px solid ' + t.color });
       key.appendChild(span);
     });
     wrap.appendChild(key);

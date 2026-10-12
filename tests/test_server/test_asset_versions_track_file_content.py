@@ -196,6 +196,24 @@ class TestItCannotBreakThePage:
         assert "9.9.9" in out
 
 
+class TestTheSourceIsTheTemplate:
+    """The checked-in page is the template the server renders, not a render of it.
+
+    PR 251 replaced it with a served copy collapsed onto 161 lines with every
+    version baked in: the diff could not be reviewed, and the literal the
+    rewriter falls back to was gone. Both are checked here.
+    """
+
+    def test_the_page_is_readable_source(self) -> None:
+        html = (_ui_source() / "index.html").read_text(encoding="utf-8")
+        assert len(html.splitlines()) > 1000
+        assert max(len(line) for line in html.splitlines()) < 400
+
+    def test_versions_are_not_baked_into_unversioned_references(self) -> None:
+        html = (_ui_source() / "index.html").read_text(encoding="utf-8")
+        assert '<script src="static/js/core.js"></script>' in html
+
+
 class TestItCostsNothingPerRequest:
     def test_a_warm_render_reads_no_asset_files(self, ui: Path) -> None:
         """This runs on every page load of a daemon that stays up for days.

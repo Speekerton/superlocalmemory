@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from superlocalmemory.core import laya_process
+from superlocalmemory.core import laya_paths, laya_process
 from superlocalmemory.infra.instance_lock import InstanceLock
 from superlocalmemory.runtimes.model_sources import (
     HuggingFaceSource, LocalDirSource, ModelSource, classify_error,
@@ -179,6 +179,8 @@ class ManagedEnv:
         return canonical_data_root() / "runtimes" / self.spec.name
 
     def python(self) -> Path:
+        if reason := laya_paths.venv_refusal(self.root / "venv"):
+            raise RuntimeError(reason)
         sub = "Scripts/python.exe" if sys.platform == "win32" else "bin/python"
         return self.root / "venv" / sub
 
@@ -246,7 +248,9 @@ class ManagedEnv:
 
     def _base_changed(self, rec: dict[str, Any]) -> bool:
         path, version = _base_python()
-        return (rec.get("base_python"), rec.get("base_version")) != (path, version) or not self.python().exists()
+        return (bool(laya_paths.venv_refusal(self.root / "venv"))
+                or (rec.get("base_python"), rec.get("base_version")) != (path, version)
+                or not self.python().exists())
 
     def _unsupported_reason(self) -> str:
         if not _python_supported():
@@ -340,7 +344,8 @@ class ManagedEnv:
         """A venv built by a different base Python is rebuilt, and its packages are reinstalled."""
         rec = self._read()
         recorded = (rec.get("base_python"), rec.get("base_version"))
-        if recorded[0] and recorded != _base_python():
+        if (laya_paths.venv_refusal(self.root / "venv")
+                or recorded[0] and recorded != _base_python()):
             shutil.rmtree(self.root / "venv", ignore_errors=True)
             self._clear_markers("venv", "pip")
 

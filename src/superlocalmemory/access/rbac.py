@@ -89,6 +89,41 @@ class RbacError(ValueError):
     """Raised for invalid RBAC operations (bad role, duplicate user, ...)."""
 
 
+class LastAdminError(RbacError):
+    """The change would leave a workspace with no active administrator."""
+
+
+def _admin_workspaces(conn: sqlite3.Connection, user_id: str) -> list[str]:
+    """Workspaces where ``user_id`` is an active administrator."""
+    return [row[0] for row in conn.execute(
+        "SELECT m.profile_id FROM rbac_memberships m JOIN rbac_users u "
+        "ON u.user_id = m.user_id WHERE m.user_id=? AND m.role='admin' "
+        "AND u.status='active'", (user_id,),
+    )]
+
+
+def _ensure_admin_remains(conn: sqlite3.Connection, user_id: str,
+                          profiles: list[str]) -> None:
+    """Refuse when ``user_id`` is the last active admin of any of ``profiles``.
+
+    Runs inside the caller's write transaction (BEGIN IMMEDIATE), so two
+    administrators demoting each other at once cannot both pass: the second
+    sees the first one's change (4.1.25 audit UX-20: one dropdown change
+    removed the last administrator and with it every way back in the UI).
+    """
+    for profile in profiles:
+        others = conn.execute(
+            "SELECT COUNT(*) FROM rbac_memberships m JOIN rbac_users u "
+            "ON u.user_id = m.user_id WHERE m.profile_id=? AND m.role='admin' "
+            "AND u.status='active' AND m.user_id != ?", (profile, user_id),
+        ).fetchone()[0]
+        if not others:
+            raise LastAdminError(
+                f"'{profile}' would have no administrator left. Add another "
+                "administrator to it before changing this person's access."
+            )
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -207,10 +242,24 @@ class RbacEngine:
             # A password change invalidates every existing session.
             conn.execute("DELETE FROM rbac_sessions WHERE user_id=?", (user_id,))
 
+    def set_display_name(self, user_id: str, display_name: str) -> None:
+        name = (display_name or "").strip()
+        if not name:
+            raise RbacError("Display name cannot be empty.")
+        with memory_write(self._db_path) as conn:
+            cur = conn.execute(
+                "UPDATE rbac_users SET display_name=? WHERE user_id=?", (name[:120], user_id),
+            )
+            if cur.rowcount == 0:
+                raise RbacError("User not found.")
+
     def set_status(self, user_id: str, status: str) -> None:
         if status not in ("active", "disabled"):
             raise RbacError("status must be 'active' or 'disabled'.")
         with memory_write(self._db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if status == "disabled":
+                _ensure_admin_remains(conn, user_id, _admin_workspaces(conn, user_id))
             cur = conn.execute(
                 "UPDATE rbac_users SET status=? WHERE user_id=?", (status, user_id)
             )
@@ -221,6 +270,8 @@ class RbacEngine:
 
     def delete_user(self, user_id: str) -> None:
         with memory_write(self._db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            _ensure_admin_remains(conn, user_id, _admin_workspaces(conn, user_id))
             conn.execute("DELETE FROM rbac_sessions WHERE user_id=?", (user_id,))
             conn.execute("DELETE FROM rbac_memberships WHERE user_id=?", (user_id,))
             cur = conn.execute("DELETE FROM rbac_users WHERE user_id=?", (user_id,))
@@ -376,10 +427,13 @@ class RbacEngine:
         except ValueError:
             raise RbacError(f"Invalid role '{role}'. Use admin/member/viewer.")
         with memory_write(self._db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
             if not conn.execute(
                 "SELECT 1 FROM rbac_users WHERE user_id=?", (user_id,)
             ).fetchone():
                 raise RbacError("User not found.")
+            if role_enum is not Role.ADMIN and profile_id in _admin_workspaces(conn, user_id):
+                _ensure_admin_remains(conn, user_id, [profile_id])
             conn.execute(
                 "INSERT INTO rbac_memberships (profile_id, user_id, role, added_at, added_by) "
                 "VALUES (?, ?, ?, ?, ?) "
@@ -391,6 +445,9 @@ class RbacEngine:
 
     def remove_membership(self, profile_id: str, user_id: str) -> None:
         with memory_write(self._db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if profile_id in _admin_workspaces(conn, user_id):
+                _ensure_admin_remains(conn, user_id, [profile_id])
             conn.execute(
                 "DELETE FROM rbac_memberships WHERE profile_id=? AND user_id=?",
                 (profile_id, user_id),
@@ -432,6 +489,17 @@ class RbacEngine:
                 (user_id,)
             ).fetchall()
             return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    def list_member_workspaces(self) -> list[str]:
+        """Every workspace at least one account belongs to (sorted)."""
+        conn = self._conn()
+        try:
+            rows = conn.execute(
+                "SELECT DISTINCT profile_id FROM rbac_memberships ORDER BY profile_id"
+            ).fetchall()
+            return [row[0] for row in rows]
         finally:
             conn.close()
 

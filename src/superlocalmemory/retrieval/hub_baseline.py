@@ -169,6 +169,23 @@ class ProbeBank:
 PROBES = ProbeBank()
 
 
+#: When a recall last tried to embed the probes itself (``lazy_warm``).
+_LAST_LAZY_WARM = [0.0]
+LAZY_WARM_EVERY_S = 60.0
+
+
+def lazy_warm(embedder: Any) -> bool:
+    """From recall, the first time the embedder answered a question in this
+    process: embed the probes now (once; a failure is retried after a minute),
+    so no process -- a one-shot CLI, an MCP server without the daemon -- stays
+    without them."""
+    now = time.monotonic()
+    if now - _LAST_LAZY_WARM[0] < LAZY_WARM_EVERY_S:
+        return False
+    _LAST_LAZY_WARM[0] = now
+    return warm_probes(embedder)
+
+
 def warm_probes(embedder: Any) -> bool:
     """Embed the probes for ``embedder``'s space now, once per process, so recall
     can read them (``ProbeBank.cached``). The daemon calls this at boot, the

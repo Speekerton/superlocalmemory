@@ -297,3 +297,19 @@ def test_subject_coverage_counts_only_the_words_that_name_a_subject() -> None:
     jp = "日志保留多久？"
     assert ef.build(query=jp, terms=ef.query_terms(jp), query_vector=None, fact=fact,
                     channel_scores={})["subject_coverage"] == 1.0
+
+
+def test_a_recall_with_a_question_vector_embeds_the_probes_once(monkeypatch) -> None:
+    calls: list = []
+    monkeypatch.setattr(hb, "warm_probes", lambda emb: calls.append(emb) or True)
+    monkeypatch.setattr(hb, "_LAST_LAZY_WARM", [0.0])
+    eng = _engine_with(None, {})
+    eng._embedder = "E"
+    eng._config = SimpleNamespace(answer_support_gate=True)
+    eng._attach_evidence("v0.3.4 snazzle", [], {}, "default")
+    eng._attach_evidence("v0.3.4 snazzle", [], {}, "default")  # not again within a minute
+    assert calls == ["E"]
+    eng._query_embedding_cache = {}
+    monkeypatch.setattr(hb, "_LAST_LAZY_WARM", [0.0])
+    eng._attach_evidence("no vector", [], {}, "default")
+    assert calls == ["E"]  # no question vector: the embedder is not ready

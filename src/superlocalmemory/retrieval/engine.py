@@ -789,14 +789,19 @@ class RetrievalEngine:
         """
         from superlocalmemory.retrieval import evidence_attach
 
+        vector = getattr(self, "_query_embedding_cache", {}).get(query)
         try:
             probes = self._probe_matrix()
+            if probes is None and vector is not None and not _gate_off(self):
+                from superlocalmemory.retrieval import hub_baseline
+                if hub_baseline.lazy_warm(getattr(self, "_embedder", None)):
+                    probes = self._probe_matrix()
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("hub probes: %s", exc)
             probes = None
         return evidence_attach.attach(
             query, results,
-            query_vector=getattr(self, "_query_embedding_cache", {}).get(query),
+            query_vector=vector,
             ce_scores=ce_scores,
             stored_baselines=lambda ids: self._hub_baselines(ids, profile_id),
             probes=probes,
@@ -1804,6 +1809,12 @@ _CHANNEL_KEYS: tuple[str, ...] = (
     "spreading_activation", "hopfield",
     "media",  # only scaled when a recall actually carries it (below)
 )
+
+
+def _gate_off(engine: Any) -> bool:
+    from superlocalmemory.retrieval.support_gate import switched_off
+
+    return switched_off(getattr(engine, "_config", None))
 
 
 def apply_channel_weights(

@@ -9,11 +9,19 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable
 
-from superlocalmemory.core.injection import InjectableMemory, render_context
+from superlocalmemory.core.injection import (
+    InjectableMemory, render_context, response_injectable, supported_only,
+)
 from superlocalmemory.retrieval.temporal_frame import relative_age, temporal_frame
 
 logger = logging.getLogger(__name__)
 
+
+def _injectable_tier(result: Any) -> bool:
+    """A result the support stage labelled supported, or never labelled."""
+    return supported_only([InjectableMemory(
+        content="", score=0.0, support_tier=str(getattr(result, "tier", "") or ""),
+    )]) != []
 
 
 class AutoRecall:
@@ -124,8 +132,9 @@ class AutoRecall:
         # --- 3. Build memory context block (empty string when no results) ---
         memory_ctx = ""
         try:
-            if response is not None and response.results:
-                relevant = [r for r in response.results if r.score >= self._threshold]
+            if response is not None and response.results and response_injectable(response):
+                relevant = [r for r in response.results
+                            if r.score >= self._threshold and _injectable_tier(r)]
                 if relevant:
                     memories = [
                         InjectableMemory(
@@ -135,6 +144,7 @@ class AutoRecall:
                             importance=float(getattr(r.fact, "importance", 0.0) or 0.0),
                             access_count=int(getattr(r.fact, "access_count", 0) or 0),
                             source_type="recall",
+                            support_tier=str(getattr(r, "tier", "") or ""),
                         )
                         for r in relevant[:self._max_memories]
                     ]
@@ -164,13 +174,13 @@ class AutoRecall:
 
         try:
             response = self._recall(query, self._max_memories)
-            if response is None:
+            if response is None or not response_injectable(response):
                 return []
             from datetime import datetime as _dt, timezone as _tz
             _now = _dt.now(_tz.utc)
             results = []
             for r in response.results:
-                if r.score >= self._threshold:
+                if r.score >= self._threshold and _injectable_tier(r):
                     _created = getattr(r.fact, "created_at", "") or ""
                     results.append({
                         "fact_id": r.fact.fact_id,

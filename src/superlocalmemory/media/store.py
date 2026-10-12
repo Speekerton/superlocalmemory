@@ -22,6 +22,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator, Sequence
 
+from superlocalmemory.media.generation import bump_generation
 from superlocalmemory.media.schema import (
     MEDIA_SCHEMA_VERSION, apply_schema, stored_version,
 )
@@ -168,6 +169,7 @@ class MediaStore(JobsMixin, DocumentsMixin, DocumentEraseMixin, EraseMixin, Reve
                 self._w.execute("ROLLBACK")
                 raise
             self._w.execute("COMMIT")
+        bump_generation()
 
     def _read(self) -> sqlite3.Connection:
         conn = getattr(self._local, "conn", None)
@@ -408,7 +410,7 @@ class MediaStore(JobsMixin, DocumentsMixin, DocumentEraseMixin, EraseMixin, Reve
                 out.append((m[0], float(distance)))
         return sorted(out, key=lambda t: t[1])
 
-    def _visible_vector_rows(self, memory_ids: Sequence[str], space_id: str) -> list:
+    def _visible_vector_rows(self, memory_ids: Sequence[str], space_id: str, *, limit: int = -1) -> list:
         """Resolve authorized anchors/pages before KNN, so private items cannot crowd them."""
         if not memory_ids:
             return []
@@ -419,12 +421,12 @@ class MediaStore(JobsMixin, DocumentsMixin, DocumentEraseMixin, EraseMixin, Reve
             "i.anchor_memory_id IN (SELECT value FROM json_each(?)) OR EXISTS ("
             "SELECT 1 FROM doc_pages p,json_each(p.memory_ids_json) j "
             "WHERE p.document_id=i.document_id AND p.page_no=i.page_no "
-            "AND j.value IN (SELECT value FROM json_each(?))))", (space_id, ids, ids),
+            "AND j.value IN (SELECT value FROM json_each(?)))) LIMIT ?", (space_id, ids, ids, limit),
         ).fetchall()
 
     def has_vectors_for_memories(self, memory_ids: Sequence[str]) -> bool:
         space = self.active_space()
-        return bool(space and self._visible_vector_rows(memory_ids, space["space_id"]))
+        return bool(space and self._visible_vector_rows(memory_ids, space["space_id"], limit=1))
 
     def knn_for_memories(self, vector: Sequence[float], memory_ids: Sequence[str],
                          k: int) -> list[tuple[str, float]]:

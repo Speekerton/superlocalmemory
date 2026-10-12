@@ -137,7 +137,7 @@ def _warm(engine, timeout_s: float) -> dict:
 
 def _backfill(engine) -> dict:
     """Give every stored memory its hub baseline before measuring (foreground,
-    timed), when this build has them; the background pass is held off."""
+    timed), when this build has them, rather than wait for maintenance."""
     try:
         from superlocalmemory.retrieval.hub_baseline import Backfill
     except ImportError:
@@ -490,8 +490,6 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-    # The measurement runs the hub-baseline pass itself, in the foreground.
-    os.environ["SLM_HUB_BASELINE_BACKFILL"] = "0"
     profiles = [p.strip() for p in args.profiles.split(",") if p.strip()]
     if not profiles or any(p not in ("a", "b") for p in profiles):
         print("answerability-eval: --profiles takes a, b or a,b", file=sys.stderr)

@@ -142,18 +142,15 @@ def test_missing_table_and_embedder_fail_open(tmp_path) -> None:
         manager.close()
 
 
-def test_background_pass_starts_stops_and_reports(db) -> None:
+def test_a_pass_is_bounded_by_batches_and_stops_when_asked(db) -> None:
     emb = _Embedder()
     _store(db, 5)
-    task = hb.Backfill(db, emb, batch=2, pause_s=0.0, start_delay_s=0.0)
-    task.start()
-    task.thread.join(5.0)
-    assert task.finished and task.written == 5
-    task.stop()
-    stopped = hb.Backfill(db, emb, start_delay_s=30.0)
-    stopped.start()
-    stopped.stop(timeout=2.0)
-    assert not stopped.thread.is_alive() and stopped.written == 0
+    task = hb.Backfill(db, emb, batch=2)
+    assert task.run_until_done(max_batches=1) == 2 and not task.finished
+    assert task.run_until_done() == 5 and task.finished
+    stopped = hb.Backfill(db, emb, batch=2)
+    stopped.stop()
+    assert stopped.run_until_done() == 0
 
 
 def test_probe_vectors_are_unit_length() -> None:

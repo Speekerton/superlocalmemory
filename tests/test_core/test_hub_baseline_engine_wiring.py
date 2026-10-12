@@ -1,10 +1,11 @@
 # Copyright (c) 2026 Varun Pratap Bhardwaj / Qualixar
 # Licensed under AGPL-3.0-or-later - see LICENSE file
-"""A stored memory gets its hub baseline at save; the engine owns the backfill."""
+"""A stored memory gets its hub baseline at save; maintenance fills the rest."""
 
 from __future__ import annotations
 
 import hashlib
+import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -34,8 +35,8 @@ def _embedder() -> MagicMock:
     return m
 
 
-def _engine(tmp_path: Path, monkeypatch, backfill: str) -> MemoryEngine:
-    monkeypatch.setenv("SLM_HUB_BASELINE_BACKFILL", backfill)
+@pytest.fixture
+def engine(tmp_path: Path) -> Iterator[MemoryEngine]:
     hb.PROBES._cache.clear()
     eng = MemoryEngine(SLMConfig(
         mode=Mode.A, base_dir=tmp_path, db_path=tmp_path / "memory.db",
@@ -44,12 +45,6 @@ def _engine(tmp_path: Path, monkeypatch, backfill: str) -> MemoryEngine:
     eng._config.retrieval.use_cross_encoder = False
     with patch("superlocalmemory.core.engine_wiring.init_embedder", return_value=_embedder()):
         eng._ensure_init()
-    return eng
-
-
-@pytest.fixture
-def engine(tmp_path, monkeypatch) -> Iterator[MemoryEngine]:
-    eng = _engine(tmp_path, monkeypatch, "0")
     yield eng
     eng.close()
 
@@ -61,15 +56,15 @@ def test_a_stored_memory_has_its_baseline_before_store_returns(engine) -> None:
     assert set(got) == set(fact_ids)
 
 
-def test_backfill_is_off_when_asked_and_owned_by_the_engine_otherwise(
-        tmp_path, monkeypatch, engine) -> None:
-    assert engine._hub_backfill is None
-    other = _engine(tmp_path / "on", monkeypatch, "1")
-    try:
-        task = other._hub_backfill
-        assert isinstance(task, hb.Backfill) and task.thread is not None
-    finally:
-        other.close()
-    assert other._hub_backfill is None
-    task.thread.join(3.0)
-    assert not task.thread.is_alive()
+def test_maintenance_fills_baselines_a_store_does_not_have(engine) -> None:
+    fact_ids = engine.store("Release notes are written before tagging.")
+    conn = sqlite3.connect(engine._config.db_path)
+    conn.execute(f"DELETE FROM {hb.TABLE}")  # a store from before this release
+    conn.commit()
+    conn.close()
+    space = hb.space_of(engine._embedder)
+    assert hb.read(engine._db, fact_ids, space) == {}
+    scheduler = engine._maintenance_scheduler
+    assert scheduler is not None and scheduler._initial_hub_timer is not None
+    scheduler._hub_baseline_pass()
+    assert set(hb.read(engine._db, fact_ids, space)) == set(fact_ids)

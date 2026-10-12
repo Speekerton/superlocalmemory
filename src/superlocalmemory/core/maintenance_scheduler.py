@@ -170,6 +170,13 @@ class MaintenanceScheduler:
         )
         self._initial_project_timer.daemon = True
         self._initial_project_timer.start()
+        # 4.1.25: every stored memory's hub baseline (retrieval/hub_baseline.py),
+        # so recall can tell a memory that is close to everything from one
+        # that answers. Same one-shot pattern, after the others; the periodic
+        # cycle then keeps it complete in bounded steps.
+        self._initial_hub_timer = threading.Timer(390.0, self._hub_baseline_pass)
+        self._initial_hub_timer.daemon = True
+        self._initial_hub_timer.start()
         logger.info(
             "Maintenance scheduler started (interval=%dm)",
             self._config.forgetting.scheduler_interval_minutes,
@@ -192,6 +199,22 @@ class MaintenanceScheduler:
             _reclassify.apply(open_connection=self._db.raw_connection)
         except Exception as exc:
             logger.debug("Startup plan re-read skipped: %s", exc)
+
+    def _hub_baseline_pass(self, max_batches: int | None = None) -> None:
+        """Fill in missing hub baselines in bounded batches (resumable: each
+        batch re-reads what is missing, so a stop loses nothing)."""
+        if not self._running or self._embedder is None:
+            return
+        try:
+            from superlocalmemory.retrieval.hub_baseline import Backfill
+
+            self._hub_pass = Backfill(self._db, self._embedder)
+            written = self._hub_pass.run_until_done(max_batches=max_batches)
+            if written:
+                logger.info("Hub baselines: %d facts measured", written)
+            self._record_step("hub baseline", True)
+        except Exception as exc:
+            self._record_step("hub baseline", False, str(exc))
 
     def _project_backfill(self) -> None:
         """Tag a bounded batch of session-end summaries with their project
@@ -288,6 +311,13 @@ class MaintenanceScheduler:
         if _project_timer is not None:
             _project_timer.cancel()
             self._initial_project_timer = None
+        _hub_timer = getattr(self, "_initial_hub_timer", None)
+        if _hub_timer is not None:
+            _hub_timer.cancel()
+            self._initial_hub_timer = None
+        _hub_pass = getattr(self, "_hub_pass", None)
+        if _hub_pass is not None:  # stops between batches
+            _hub_pass.stop(timeout=0)
         logger.info("Maintenance scheduler stopped")
 
     def _schedule_next(self) -> None:
@@ -364,6 +394,9 @@ class MaintenanceScheduler:
                     )
             except Exception as exc:
                 logger.debug("Self-heal backfill skipped: %s", exc)
+            # Bounded per cycle: a new embedding space or probe version
+            # converges over a few cycles instead of holding the write lock.
+            self._hub_baseline_pass(max_batches=20)
 
         # Once per cycle, not per profile: there is one embeddings table.
         # Also before the per-profile Langevin/Ollama work — on a real store

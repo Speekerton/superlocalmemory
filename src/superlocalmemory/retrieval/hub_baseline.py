@@ -28,11 +28,11 @@ WHEN IT IS COMPUTED
 -------------------
 * A new memory gets its baseline when its materialization completes
   (``core/engine_ingestion.py``), from probe vectors embedded once per process.
-* Existing stores fill in through :class:`Backfill`: bounded batches on a
-  background thread, resumable by construction (each batch takes the facts that
-  still lack a baseline for the live space and probe version), and stopped with
-  the engine. Recall works throughout; a memory without a baseline simply has
-  none recorded.
+* Existing stores fill in through :class:`Backfill`, run by the maintenance
+  scheduler a few minutes after start and then every cycle: bounded batches,
+  resumable by construction (each batch takes the facts that still lack a
+  baseline for the live space and probe version), stopped with the scheduler.
+  Recall works throughout; a memory without a baseline simply has none.
 * A different embedding space or probe version is a different baseline; old
   rows are ignored, then replaced as the pass reaches them.
 
@@ -281,66 +281,39 @@ def backfill_step(db: Any, embedder: Any, batch: int = BATCH) -> int:
 
 
 class Backfill:
-    """The background pass that gives an existing store its baselines.
+    """The pass that gives an existing store its baselines.
 
-    Bounded (``batch`` facts per step, a pause between steps), resumable (each
-    step re-reads what is missing, so a stop at any point loses nothing) and
-    owned by the engine, which stops it on close.
+    Bounded (``batch`` facts per step, at most ``max_batches`` steps per run),
+    resumable (each step re-reads what is missing, so a stop at any point loses
+    nothing). The maintenance scheduler runs it shortly after start and then
+    every cycle (``core/maintenance_scheduler.py``) and stops it on close.
     """
 
-    def __init__(self, db: Any, embedder: Any, *, batch: int = BATCH,
-                 pause_s: float = 0.5, start_delay_s: float = 5.0) -> None:
+    def __init__(self, db: Any, embedder: Any, *, batch: int = BATCH) -> None:
         self._db = db
         self._embedder = embedder
         self._batch = batch
-        self._pause_s = pause_s
-        self._start_delay_s = start_delay_s
         self._stop = threading.Event()
-        self._thread: threading.Thread | None = None
         self.written = 0
         self.finished = False
 
-    def start(self) -> None:
-        if self._thread is not None:
-            return
-        self._thread = threading.Thread(target=self._run, name="slm-hub-baseline",
-                                        daemon=True)
-        self._thread.start()
-
-    @property
-    def thread(self) -> threading.Thread | None:
-        return self._thread
-
-    def stop(self, timeout: float = 2.0) -> None:
-        """Ask the pass to stop; join it for at most ``timeout`` seconds."""
+    def stop(self, timeout: float = 0.0) -> None:
+        """Stop after the batch in progress (``timeout`` kept for symmetry)."""
         self._stop.set()
-        if self._thread is not None and timeout > 0:
-            self._thread.join(timeout)
 
-    def run_until_done(self) -> int:
-        """Foreground variant (tools and tests): every missing baseline, now."""
-        while not self._stop.is_set():
-            n = backfill_step(self._db, self._embedder, self._batch)
-            if n == 0:
-                break
-            self.written += n
-        self.finished = True
-        return self.written
-
-    def _run(self) -> None:
-        if self._stop.wait(self._start_delay_s):
-            return
+    def run_until_done(self, max_batches: int | None = None) -> int:
+        """Run in the calling thread until nothing is missing, ``max_batches``
+        batches have run, or :meth:`stop`; return the facts measured. Each batch
+        yields the shared embedder to recall (``recall_gate.background_work``)."""
         from superlocalmemory.core.recall_gate import background_work
 
-        try:
-            while not self._stop.is_set():
-                with background_work():
-                    n = backfill_step(self._db, self._embedder, self._batch)
-                if n == 0:
-                    break
-                self.written += n
-                if self._stop.wait(self._pause_s):
-                    return
-            self.finished = True
-        except Exception as exc:  # never take the engine down; retried next start
-            logger.warning("hub baseline backfill stopped: %s", exc)
+        batches = 0
+        while not self._stop.is_set() and (max_batches is None or batches < max_batches):
+            with background_work():
+                n = backfill_step(self._db, self._embedder, self._batch)
+            batches += 1
+            if n == 0:
+                self.finished = True
+                break
+            self.written += n
+        return self.written

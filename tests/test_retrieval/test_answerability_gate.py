@@ -40,7 +40,6 @@ def _harness():
 def report(tmp_path_factory):
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-    os.environ["SLM_HUB_BASELINE_BACKFILL"] = "0"
     cache = os.environ.get("SLM_ANSWERABILITY_CACHE")
     work = tmp_path_factory.mktemp("answerability")
     return _harness().run(work, ["a"], Path(cache) if cache else None)

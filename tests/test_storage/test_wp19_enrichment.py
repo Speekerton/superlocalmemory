@@ -53,7 +53,9 @@ def test_coverage_rises_provenance_is_complete_and_undo_is_exact(legacy_store):
     assert result['processed'] == 12
     assert result['backup_point']
     rows = [dict(r) for r in db.execute('SELECT * FROM atomic_facts')]
-    assert all(r['observation_date'] and r['valid_from'] for r in rows)
+    assert all(r['observation_date'] for r in rows)
+    # Save time is not an event start: only a fact's own event date starts it.
+    assert all(r['valid_from'] == r['referenced_date'] for r in rows)
     assert all(json.loads(r['canonical_entities_json']) for r in rows if not r['non_answer'])
     parents = [json.loads(r['metadata_json'])
                for r in db.execute('SELECT metadata_json FROM memories')]
@@ -63,7 +65,9 @@ def test_coverage_rises_provenance_is_complete_and_undo_is_exact(legacy_store):
     assert db.get_all_facts('default')
     changes = db.execute('SELECT * FROM enrichment_changes')
     assert changes
-    assert all(r['source'] == 'enrichment' and r['enrichment_version'] and r['run_id']
+    assert all(r['enrichment_version'] and r['run_id'] for r in changes)
+    # A date taken from created_at is labelled inferred; nothing else is.
+    assert all((r['source'] == 'inferred') == (r['field'] == 'observation_date')
                for r in changes)
     runner.undo(result['run_id'])
     assert snapshot(db) == before
@@ -124,6 +128,7 @@ def test_legacy_fact_without_a_temporal_row_stays_legacy_unknown(legacy_store):
     from superlocalmemory.core.enrichment import EnrichmentRunner
     db = legacy_store
     db.execute("DELETE FROM fact_temporal_validity WHERE fact_id IN ('f1','f2')")
+    db.execute("UPDATE atomic_facts SET referenced_date='2026-03-02' WHERE fact_id='f3'")
     ids = [f'f{i}' for i in range(12)]
 
     def inadmissible():
@@ -142,9 +147,13 @@ def test_legacy_fact_without_a_temporal_row_stays_legacy_unknown(legacy_store):
     # Existing rows keep their transaction time; only an empty event start is filled.
     for fact_id, row in temporal_after.items():
         assert row['system_created_at'] == temporal_before[fact_id]['system_created_at']
-        assert row['valid_from']
-    # The fact's own event-time column is still filled for every fact.
-    assert all(r['valid_from'] for r in db.execute('SELECT valid_from FROM atomic_facts'))
+        # Only an event date starts a fact (declared, or the one its own text
+        # names: f11 says 2026-04-01); save time never does.
+        expected = {'f3': '2026-03-02', 'f11': '2026-04-01'}.get(fact_id)
+        assert (row['valid_from'] or '')[:10] == (expected or '')
+    starts = {r['fact_id']: r['valid_from'] for r in db.execute(
+        'SELECT fact_id,valid_from FROM atomic_facts')}
+    assert {k for k, v in starts.items() if v} == {'f3', 'f11'}
 
 
 def test_enrichment_never_replaces_an_existing_event_start(legacy_store):

@@ -6,10 +6,9 @@
 
 | Version | Supported |
 |:--------|:---------:|
-| 4.0.x | Yes |
-| 3.8.x | Security fixes only |
-| 3.7.x | Security fixes only |
-| < 3.7 | No |
+| 4.1.x | Yes (current line; fixes ship in the next 4.1 release, so upgrade to the latest) |
+| 4.0.x | No (no 4.0 release since 4.1.0 on 2026-08-23; upgrade to 4.1.x) |
+| 3.x | No (no 3.x release since 4.0.0 on 2026-08-08; upgrade to 4.1.x) |
 
 ### Reporting Vulnerabilities
 

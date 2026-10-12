@@ -297,6 +297,27 @@ producers are dense semantic, BM25 lexical, temporal, Hopfield associative and
 spreading activation; entity-graph information can adjust a post-fusion score
 but is not a separate producer.
 
+### `slm outcome success|partial|failure <fact_id>... [options]`
+
+Tells SLM whether the memories a recall gave you helped. This is what trains the
+ranking: `success` counts as a reward of 1.0, `partial` 0.5, `failure` 0.0. The
+report goes to the running SLM (started if it is not running) and is stored by
+the same writer MCP and the dashboard use, so it settles exactly like theirs.
+
+```bash
+slm recall "deploy checklist" --json             # note data.query_id and the result ids
+slm outcome success <fact_id> <fact_id> --query-id <query_id>
+slm outcome failure <fact_id> --note "it was the old checklist" --agent my-script
+slm outcome partial <fact_id> --report-id job-42 --json   # a retry with job-42 records nothing new
+```
+
+`--query-id` ties the report to that recall. Without it the report is matched on
+overlapping memories inside a time window, and the output says which happened
+("tied to that recall" or "matched by overlapping memories"). `--report-id` is an
+idempotency key. `--note` (up to 1,000 characters) and `--agent` are kept with the
+report. A refused report exits 1 with the reason; `--json` returns the envelope
+with `outcome_id`, `reward`, `attributed` and `duplicate`.
+
 ### `slm health`
 
 Diagnostics for the mathematical layers (similarity, consistency and lifecycle
@@ -464,7 +485,16 @@ slm doctor --quick   # dependencies and configuration only
 slm doctor --deep    # read every database page (slow on a large store)
 slm doctor --fix     # re-download missing models and install sqlite-vec first
 slm doctor --json
+slm doctor --refile-hidden         # list memories hidden although scored to keep (dry run)
+slm doctor --refile-hidden --yes   # re-file exactly those
 ```
+
+`--refile-hidden` lists memories whose lifecycle zone is archive or forgotten
+although their retention score is above 0.8, with their id and the first 80
+characters, and changes nothing. With `--yes` it moves exactly those memories
+back to the active zone and touches no other row; the ids are logged. `--yes`
+without `--refile-hidden` does nothing. In `--json` output the result is under
+`refile_hidden` (`applied`, `moved`, `fact_ids`, `previews`).
 
 Doctor also reads the same failure counts as `slm ops status`: a "Failed saves"
 row warns when saves were given up on after repeated attempts (dead-lettered, so
@@ -1070,6 +1100,34 @@ under **Memory store**, in plain words, with **Repair now**. Repair now first
 saves a full backup copy of your memory and changes nothing if that copy fails;
 it then runs the same repair as `slm db repair --apply` and checks again. It
 removes no memory you have.
+
+### `slm db repair-entities [--apply] [--undo RUN_ID] --root ROOT`
+
+Undoes wrong entity links left by the entity rules before 4.1.25, which merged
+different names by fuzzy similarity and saved timestamps, hashes, paths and status
+words as names. Without `--apply` it only reads and prints counts: aliases to
+remove or relabel, facts to relink, facts left with no entity, entities to
+create, junk entities to remove, edges to remove and temporal events to repoint,
+plus the entities losing the most aliases and a few examples (names only).
+
+```bash
+slm db repair-entities                                   # preview (read-only)
+slm db repair-entities --apply --root ~/.superlocalmemory
+slm db repair-entities --undo <run_id> --root ~/.superlocalmemory
+slm db repair-entities --json
+```
+
+`--apply` first makes a backup copy of the store in the data folder's `backups/`
+(labelled `pre-entity-repair`). If the copy cannot be made, nothing is changed.
+It then applies the repair and keeps an undo record, and prints the `--undo`
+command with its run id. `--undo RUN_ID` puts back everything that run changed
+in one transaction. It refuses a run id that is unknown or already undone.
+
+`--apply` and `--undo` refuse to run unless `--root` names the data folder the
+command resolves to. With SLM running, the change runs inside it and needs a
+write credential and the MANAGE permission (an admin, in company mode); otherwise
+it runs in the command itself. A second `--apply` changes nothing (it still makes
+a backup copy).
 
 ### `slm db fidelity [--profile P] [--limit N] [--json]`
 

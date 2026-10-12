@@ -52,18 +52,65 @@ def _gate(request: Request, *, mutation: bool = False) -> None:
         require_manage(request)
 
 
+def _configured_hosts() -> list[str]:
+    """Hosts whose own settings already carry SLM. Best effort: never fails a status."""
+    try:
+        from superlocalmemory.cli import host_upgrades
+
+        return list(host_upgrades._detected_hosts())
+    except Exception:  # noqa: BLE001 - unreadable host settings only mean "unknown"
+        return []
+
+
+def _profile_of(tools: list[str]) -> str | None:
+    """The named tool selection a session exposes, or None for a custom set."""
+    try:
+        from superlocalmemory.mcp.profiles import _PROFILE_DEFINITIONS
+    except Exception:  # noqa: BLE001
+        return None
+    have = frozenset(tools)
+    if not have:
+        return None
+    for name in ("core", "code", "full", "power", "mesh"):
+        if _PROFILE_DEFINITIONS.get(name) == have:
+            return name
+    return None
+
+
 def _status() -> dict:
     from superlocalmemory.hooks.portable_kit import IDE_MATRIX
 
+    snap = mcp_processes.snapshot(canonical_data_root())
+    apps = [
+        {**app, "tools_profile": _profile_of(app.get("tools") or [])}
+        for app in snap.get("apps", [])
+    ]
+    configured = set(_configured_hosts())
+    live = {}
+    for app in apps:
+        live[app["host"]] = live.get(app["host"], 0) + 1
     available = [
         {"id": key, "name": desc.display}
         for key, desc in IDE_MATRIX.items()
         if desc.fmt and desc.mcp_path_global and key != "vscode-copilot"
     ]
     available += [{"id": "claude-code", "name": "Claude Code"}, {"id": "hermes", "name": "Hermes"}]
+    for row in available:
+        row["configured"] = row["id"] in configured
+        row["connected"] = live.get(row["id"], 0) > 0
+    names = {row["id"]: row["name"] for row in available}
     return {
-        **mcp_processes.snapshot(canonical_data_root()),
+        **snap,
+        "apps": apps,
         "available_hosts": available,
+        "configured_hosts": [
+            {
+                "id": host,
+                "name": mcp_processes.HOST_NAMES.get(host) or names.get(host, host),
+                "live": live.get(host, 0),
+            }
+            for host in sorted(configured)
+        ],
         "profiles": PROFILES,
     }
 

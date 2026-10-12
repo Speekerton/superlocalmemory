@@ -13,20 +13,24 @@ from superlocalmemory.cli.doctor_daemon import CHECK_TIMEOUT, check_daemon
 from superlocalmemory.infra.daemon_identity import build_descriptor, write_descriptor
 
 
-def _serve(free_port, behavior):
+def _serve(free_port, behavior, started_ago=3600):
     import os
 
-    record = build_descriptor(port=free_port, version="test", pid=os.getpid())
+    record = build_descriptor(port=free_port, version="test", pid=os.getpid(),
+                              started_at=time.time() - started_ago)
     write_descriptor(record)
     stop = threading.Event()
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             try:
+                if behavior == "silent_features" and self.path != "/health":
+                    stop.wait(8)  # accepted, never answered: a real socket timeout
+                    return
                 self.send_response(200)
                 self.end_headers()
                 if behavior == "stream" or (behavior == "features" and self.path != "/health"):
-                    until = time.monotonic() + 3
+                    until = time.monotonic() + CHECK_TIMEOUT + 1
                     while time.monotonic() < until and not stop.wait(0.05):
                         self.wfile.write(b" ")
                         self.wfile.flush()
@@ -130,3 +134,18 @@ def test_deadline_text_mode_names_check_and_exits_one(monkeypatch, capsys):
     assert exc.value.code == 1
     assert "Optimize (Surface B)" in out and "did not finish" in out
     assert "Summary:" in out
+
+
+def test_a_daemon_that_just_started_is_told_to_run_doctor_again_not_restart(free_port):
+    from superlocalmemory.cli import doctor_daemon
+
+    close = _serve(free_port, "silent_features", started_ago=5)
+    began = time.monotonic()
+    try:
+        result = check_daemon()
+        elapsed = time.monotonic() - began
+    finally:
+        close()
+    assert result.status == "PASS" and result.feature_warning == ""
+    assert "still starting" in result.feature_note
+    assert CHECK_TIMEOUT < elapsed < CHECK_TIMEOUT + doctor_daemon.WARMUP_TIMEOUT + 1.5

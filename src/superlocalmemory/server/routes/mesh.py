@@ -33,6 +33,8 @@ class RegisterRequest(BaseModel):
     port: int = 0
     project_path: str = ""
     agent_type: str = "unknown"
+    app: str = ""
+    display_name: str = ""
 
 
 class DeregisterRequest(BaseModel):
@@ -189,6 +191,7 @@ def register(req: RegisterRequest, request: Request):
     result = broker.register_peer(
         req.session_id, req.summary, req.host, req.port,
         req.project_path, req.agent_type, profile_id=_active_profile(),
+        app_name=req.app, display_name=req.display_name,
     )
     if result.get("ok") is False:
         raise HTTPException(409, detail=result.get("error", "registration refused"))

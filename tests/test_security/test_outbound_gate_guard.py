@@ -74,7 +74,8 @@ REVIEWED: dict[tuple[str, str, str], tuple[int, str]] = {
             "that checked address (Host and TLS name stay the link's host), redirects are "
             "followed by hand (max 3, each re-checked), https only, 25 MB and 10 s caps (a PDF: "
             "100 MB, streamed to a file, 120 s). "
-            "tests/test_security/test_media_fetch.py and test_media_fetch_file_hosts.py pin all of this."),
+            "tests/test_security/test_media_fetch.py and test_media_fetch_file_hosts.py "
+            "pin all of this."),
     (_S + "core/ollama_embedder.py", "OllamaEmbedder._check_availability", "httpx.get"):
         (1, "PROBE: Ollama model list (GET /api/tags)"),
     (_S + "core/ollama_validator.py", "validate_ollama_model", "httpx.post"):
@@ -123,8 +124,6 @@ REVIEWED: dict[tuple[str, str, str], tuple[int, str]] = {
             "gate everywhere else."),
     (_S + "mesh/remote_sync.py", "_get_cert_sha256", "socket.create_connection"):
         (1, "MESH: reads the peer's TLS certificate for pinning; sends nothing"),
-    (_S + "optimize/proxy/server.py", "ProxyApp.startup", "httpx.AsyncClient"):
-        (1, "PROXY: forwards the agent's own LLM requests; never opens the store"),
     (_S + "server/routes/backup.py", "github_oauth_callback", "httpx.post"):
         (1, "OAUTH: exchanges the GitHub OAuth code"),
     (_S + "server/routes/config_api.py", "get_ollama_models", "httpx.get"):

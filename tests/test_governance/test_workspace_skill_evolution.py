@@ -1,6 +1,7 @@
 """Workspace admins approve their own candidates without changing global skills."""
 
 # ruff: noqa: F811
+import hashlib
 from pathlib import Path
 
 from tests.test_governance.test_role_surface_matrix_rest import _company, matrix  # noqa: F401
@@ -39,6 +40,11 @@ def _candidate(root, profile):
     return record.id
 
 
+def _reviewed(profile):
+    """The hash of the bytes the reviewer read; approval must name it."""
+    return hashlib.sha256(f"{profile} instructions".encode()).hexdigest()
+
+
 def test_admin_approves_and_rolls_back_only_own_workspace(matrix):
     from superlocalmemory.server.routes import evolution
 
@@ -47,12 +53,14 @@ def test_admin_approves_and_rolls_back_only_own_workspace(matrix):
     own = _candidate(evolution.MEMORY_DIR, "sales")
     foreign = _candidate(evolution.MEMORY_DIR, "default")
     headers = who["admin_b"]
-    approved = client.post("/api/evolution/approve", json={"record_id": own}, headers=headers)
+    approved = client.post("/api/evolution/approve", json={"record_id": own, "reviewed_hash": _reviewed("sales")},
+                           headers=headers)
     assert approved.status_code == 200 and approved.json()["success"] is True, approved.text
     live = Path(approved.json()["live_path"])
     assert live.is_relative_to(evolution.MEMORY_DIR)
     assert live.read_text() == "sales instructions"
-    denied = client.post("/api/evolution/approve", json={"record_id": foreign}, headers=headers)
+    denied = client.post("/api/evolution/approve", json={"record_id": foreign, "reviewed_hash": _reviewed("default")},
+                         headers=headers)
     assert denied.json()["success"] is False
     rolled = client.post(
         "/api/evolution/rollback",
@@ -94,7 +102,8 @@ def test_global_activation_receipt_requires_global_rollback(matrix):
     record_id = _candidate(evolution.MEMORY_DIR, 'sales')
     client.post('/api/profiles/sales/switch', headers=who['root_admin'])
     approved = client.post('/api/evolution/approve', headers=who['root_admin'],
-                           json={'record_id': record_id, 'installation_wide': True})
+                           json={'record_id': record_id, 'installation_wide': True,
+                                 'reviewed_hash': _reviewed('sales')})
     assert approved.json()['success'] is True, approved.text
     live = Path(approved.json()['live_path'])
     denied = client.post('/api/evolution/rollback', headers=who['admin_b'],

@@ -7,8 +7,8 @@
 Routes: /ws/updates
 """
 import logging
-from typing import Set
 from datetime import datetime, timezone
+from typing import Set
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -46,28 +46,33 @@ def _ws_origin_allowed(websocket: WebSocket) -> bool:
     """Return True when the WebSocket upgrade Origin is permitted.
 
     Non-browser clients (CLI, MCP tools) carry no Origin header and are
-    always allowed.  Browser-originated connections must come from a
-    loopback address or a host in the configured remote allowlist.
+    still pass the network/account gates. Browser origins must belong to
+    this listener, including explicitly configured remote dashboards.
     """
     origin = websocket.headers.get("origin", "")
     if not origin:
         return True  # non-browser caller (CLI/MCP) — no origin to validate
 
     try:
-        from superlocalmemory.server.origin import origin_is_loopback
-        if origin_is_loopback(origin):
-            return True
-    except Exception:
-        # If the helper is unavailable, fall through to the remote check.
-        if "127.0.0.1" in origin or "::1" in origin or "localhost" in origin:
-            return True
+        from superlocalmemory.server.origin import (
+            daemon_browser_origins,
+            remote_browser_origin_allowed,
+        )
 
-    try:
-        from superlocalmemory.core.remote_mode import is_remote_origin_allowed
-        if is_remote_origin_allowed(origin):
+        descriptor = getattr(websocket.app.state, "daemon_descriptor", None)
+        port = getattr(descriptor, "port", None)
+        if port is None:
+            # The standalone dashboard uses the ASGI listener identity.
+            port = (websocket.scope.get("server") or (None, None))[1]
+        if port is not None and origin in daemon_browser_origins(int(port)):
+            return True
+        if port is not None and remote_browser_origin_allowed(
+                origin, port=int(port), host_header=websocket.headers.get("host", "")):
+            # The outer NonLocalAccessGate and the route's RBAC check still
+            # decide caller authority; an allowed origin is never a credential.
             return True
     except Exception:
-        pass
+        return False
 
     return False
 

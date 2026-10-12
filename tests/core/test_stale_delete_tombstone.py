@@ -17,7 +17,7 @@ import uuid
 
 import pytest
 
-from tests.test_compliance.test_gdpr_erasure_wins import _person_edits
+from tests.test_compliance.test_gdpr_erasure_wins import _live_index_has, _person_edits
 
 _WORDS = "Quorvantel stores the synthetic copper compass in the attic chest."
 
@@ -63,7 +63,7 @@ def _state(engine, fact_id: str) -> dict:
         "bm25": _n(engine, "SELECT COUNT(*) AS n FROM bm25_tokens WHERE fact_id = ?", (fact_id,)),
         "temporal": _n(engine, "SELECT COUNT(*) AS n FROM fact_temporal_validity "
                        "WHERE fact_id = ?", (fact_id,)),
-        "in_live_index": fact_id in index._fact_id_set,
+        "in_live_index": _live_index_has(engine, fact_id),
         "tombstone": _n(engine, "SELECT COUNT(*) AS n FROM projection_tombstones "
                         "WHERE fact_id = ?", (fact_id,)),
         "open_erasures": _n(engine, "SELECT COUNT(*) AS n FROM projection_obligations "

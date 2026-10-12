@@ -1,3 +1,5 @@
+# ruff: noqa: E402
+# Bootstrap environment and transport seams must precede tool imports.
 # Copyright (c) 2026 Varun Pratap Bhardwaj / Qualixar
 # Licensed under AGPL-3.0-or-later - see LICENSE file
 # Part of SuperLocalMemory V4 | https://qualixar.com | https://varunpratap.com
@@ -14,15 +16,16 @@ from __future__ import annotations
 # CRITICAL: Set BEFORE any torch/transformers import to prevent Metal/MPS
 # GPU memory reservation on Apple Silicon.
 import os as _os
-_os.environ.setdefault('PYTORCH_MPS_HIGH_WATERMARK_RATIO', '0.0')
-_os.environ.setdefault('PYTORCH_MPS_MEM_LIMIT', '0')
-_os.environ.setdefault('PYTORCH_ENABLE_MPS_FALLBACK', '1')
-_os.environ.setdefault('TOKENIZERS_PARALLELISM', 'false')
-_os.environ.setdefault('TORCH_DEVICE', 'cpu')
+
+_os.environ.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.0")
+_os.environ.setdefault("PYTORCH_MPS_MEM_LIMIT", "0")
+_os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+_os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+_os.environ.setdefault("TORCH_DEVICE", "cpu")
 # LIGHT engine contract: suppress the top-level dep check in __init__.py
 # that unconditionally imports onnxruntime. MCP runs LIGHT-only — ONNX
 # must never load in this process.
-_os.environ.setdefault('SLM_SKIP_DEP_CHECK', '1')
+_os.environ.setdefault("SLM_SKIP_DEP_CHECK", "1")
 
 import logging
 import sys
@@ -38,6 +41,7 @@ server = SLMFastMCP("SuperLocalMemory V4", version=_slm_version)
 # Lazy engine singleton -------------------------------------------------------
 
 import threading as _threading
+
 _engine = None
 _engine_lock = _threading.Lock()
 
@@ -109,22 +113,33 @@ import os as _os_reg
 
 _ESSENTIAL_TOOLS: set[str] = {
     # Core memory operations (8)
-    "remember", "recall", "search", "fetch",
-    "list_recent", "delete_memory", "update_memory", "get_status",
+    "remember",
+    "recall",
+    "search",
+    "fetch",
+    "list_recent",
+    "delete_memory",
+    "update_memory",
+    "get_status",
     "switch_profile",
     # Session lifecycle (3)
-    "session_init", "observe", "close_session",
+    "session_init",
+    "observe",
+    "close_session",
     # Feedback / learning signals — reachable Dash-Core path for
     # thumbs-up / pin / drift signals.
     "report_feedback",
     # v4.0.2 portable Brain evidence: profile-scoped receipt reads/writes.
-    "get_brain_evidence_status", "record_agent_experience",
-    "record_cognitive_turn", "finalize_cognitive_turn",
+    "get_brain_evidence_status",
+    "record_agent_experience",
+    "record_cognitive_turn",
+    "finalize_cognitive_turn",
     # v4.0.4: explicit, optional observation from the separately installed
     # Bounded Loops MCP producer. It never participates in recall/ranking.
     "observe_bounded_loop_evidence",
     # Update, review, and list form one core correction lifecycle.
-    "review_correction", "list_corrections",
+    "review_correction",
+    "list_corrections",
     # v4.0.8 (#113): readable summaries. Present here as well as in the named
     # profiles because this set is the FALLBACK surface — it must mirror
     # ``full``, and a tool that ships in the smallest profile ("core") cannot be
@@ -132,31 +147,47 @@ _ESSENTIAL_TOOLS: set[str] = {
     "get_memory_summary",
     # 4.1.21 (#113): saved views — run (read) and manage (write). Mirrors
     # ``full`` in mcp/profiles.py, as this set must.
-    "run_view", "manage_view",
+    "run_view",
+    "manage_view",
     # Memory management (2)
-    "forget", "run_maintenance",
+    "forget",
+    "run_maintenance",
     # NOTE: prestage_context IS registered (see register_prestage_tool below)
     # but is deliberately absent from the default surface. Brain evidence is
     # intentionally present: it is the portable contract for installed agents.
     # Infinite memory + learning (4)
-    "consolidate_cognitive", "get_soft_prompts",
-    "set_mode", "report_outcome",
+    "consolidate_cognitive",
+    "get_soft_prompts",
+    "set_mode",
+    "report_outcome",
     # v3.4.7: Two-way learning (4)
-    "log_tool_event", "get_assertions",
-    "reinforce_assertion", "contradict_assertion",
+    "log_tool_event",
+    "get_assertions",
+    "reinforce_assertion",
+    "contradict_assertion",
     # v3.4.11: Skill evolution (3)
-    "evolve_skill", "skill_health", "skill_lineage",
+    "evolve_skill",
+    "skill_health",
+    "skill_lineage",
     # v3.6.11: Surface B Optimize tools (5)
-    "slm_compress", "slm_retrieve", "slm_cache_set", "slm_cache_get", "slm_optimize_stats",
+    "slm_compress",
+    "slm_retrieve",
+    "slm_cache_set",
+    "slm_cache_get",
+    "slm_optimize_stats",
     # v3.8.0: bounded-loop tools (3) — CLI + /slm-loop command + MCP. Kept in
     # the default exposure so any MCP client discovers gated loops, not just
     # profile=code/full/power sessions.
-    "slm_loop_run", "slm_loop_history", "slm_loop_show",
+    "slm_loop_run",
+    "slm_loop_history",
+    "slm_loop_show",
     # 4.1.19 WP8: memory-kind management (4). Varun's call (2026-10-03):
     # default visibility, not power-only — every normal session gets these,
     # matching mcp/profiles.py's _PROFILE_KINDS in code/full (this set must
     # mirror full exactly; see test_prestage_registered.py).
-    "set_memory_kind", "memory_kinds_status", "review_memory_kinds",
+    "set_memory_kind",
+    "memory_kinds_status",
+    "review_memory_kinds",
     "confirm_memory_kinds",
 }
 
@@ -165,29 +196,46 @@ _mesh_tools_enabled = _os_reg.environ.get("SLM_MCP_MESH_TOOLS", "").lower() in (
 if not _mesh_tools_enabled:
     try:
         from superlocalmemory.core.config import SLMConfig
+
         _cfg = SLMConfig.load()
         _mesh_tools_enabled = getattr(_cfg, "mesh_enabled", True)  # default True in v3.4.3+
     except Exception:
         _mesh_tools_enabled = True  # Safe default — mesh broker is always in daemon
 
 if _mesh_tools_enabled:
-    _ESSENTIAL_TOOLS.update({
-        "mesh_summary", "mesh_peers", "mesh_send", "mesh_inbox", "mesh_wait",
-        "mesh_state", "mesh_lock", "mesh_events", "mesh_status",
-    })
+    _ESSENTIAL_TOOLS.update(
+        {
+            "mesh_summary",
+            "mesh_peers",
+            "mesh_send",
+            "mesh_inbox",
+            "mesh_wait",
+            "mesh_state",
+            "mesh_lock",
+            "mesh_events",
+            "mesh_status",
+        }
+    )
 
 # Image and document tools: listed by default only while images are on. Read
 # once at start (like mesh); any error means off. Mirrors ``full`` in profiles.py.
 try:
     from superlocalmemory.runtimes import features as _features
+
     _media_tools_enabled = bool(_features.media_enabled())
 except Exception:
     _media_tools_enabled = False
 
 if _media_tools_enabled:
-    _ESSENTIAL_TOOLS.update({
-        "remember_media", "get_media", "remember_document", "media_status", "media_upload_link",
-    })
+    _ESSENTIAL_TOOLS.update(
+        {
+            "remember_media",
+            "get_media",
+            "remember_document",
+            "media_status",
+            "media_upload_link",
+        }
+    )
 
 _ESSENTIAL_TOOLS = frozenset(_ESSENTIAL_TOOLS)
 
@@ -208,14 +256,8 @@ _user_allowlist_str = _os_reg.environ.get("SLM_MCP_TOOLS", "").strip()
 # ---------------------------------------------------------------------------
 
 from superlocalmemory.mcp.profiles import (  # noqa: E402 (after env setups above)
-    _PROFILE_CORE,
-    _PROFILE_CODE,
-    _PROFILE_FULL_MESH,
-    _PROFILE_FULL,
-    _PROFILE_POWER,
-    _PROFILE_MESH,
-    _PROFILE_DEFINITIONS,
     _PROFILE_ALIASES,
+    _PROFILE_DEFINITIONS,
     _MEDIA_TOOLS,
 )
 
@@ -249,8 +291,10 @@ def _resolve_profile_allowed(
     if canonical in definitions:
         return definitions[canonical]
     from superlocalmemory.mcp.profile_names import (
-        UnknownProfileError, unknown_profile_message,
+        UnknownProfileError,
+        unknown_profile_message,
     )
+
     raise UnknownProfileError(unknown_profile_message(profile))
 
 
@@ -262,6 +306,7 @@ class _FilteredServer:
     all tools are registered (bypass filter). When SLM_MCP_TOOLS is set,
     that user allowlist is used instead of _ESSENTIAL_TOOLS.
     """
+
     __slots__ = ("_server", "_allowed")
 
     def __init__(self, real_server: SLMFastMCP, allowed: frozenset[str]) -> None:
@@ -274,6 +319,7 @@ class _FilteredServer:
             if func.__name__ in self._allowed:
                 return self._server.tool(*args, **kwargs)(func)
             return func  # Skip registration — still importable, just not MCP-visible
+
         return decorator
 
     def __getattr__(self, name):
@@ -282,12 +328,12 @@ class _FilteredServer:
 
 # Choose registration target (precedence: ALL > user allowlist > profile > essential)
 if _all_tools:
-    _target = server                                                              # tier1 (unchanged)
+    _target = server  # tier1 (unchanged)
 elif _user_allowlist_str:
     _user_allowlist = frozenset(t.strip() for t in _user_allowlist_str.split(",") if t.strip())
-    _target = _FilteredServer(server, _user_allowlist)                           # tier2 (unchanged)
+    _target = _FilteredServer(server, _user_allowlist)  # tier2 (unchanged)
 elif _profile == "whole":
-    _target = server                                                              # NEW raw-server
+    _target = server  # NEW raw-server
 elif _profile:
     _profile_allowed = _resolve_profile_allowed(
         _profile, _PROFILE_DEFINITIONS, _ESSENTIAL_TOOLS
@@ -302,16 +348,16 @@ elif _profile:
 else:
     _target = _FilteredServer(server, _ESSENTIAL_TOOLS | _MEDIA_TOOLS)
 
-from superlocalmemory.mcp.tools_core import register_core_tools
-from superlocalmemory.mcp.tools_v28 import register_v28_tools
-from superlocalmemory.mcp.tools_v3 import register_v3_tools
-from superlocalmemory.mcp.tools_active import register_active_tools
-from superlocalmemory.mcp.tools_v33 import register_v33_tools
 from superlocalmemory.mcp.resources import register_resources
+from superlocalmemory.mcp.tools_active import register_active_tools
 from superlocalmemory.mcp.tools_code_graph import register_code_graph_tools
-from superlocalmemory.mcp.tools_mesh import register_mesh_tools
-from superlocalmemory.mcp.tools_learning import register_learning_tools
+from superlocalmemory.mcp.tools_core import register_core_tools
 from superlocalmemory.mcp.tools_evolution import register_evolution_tools
+from superlocalmemory.mcp.tools_learning import register_learning_tools
+from superlocalmemory.mcp.tools_mesh import register_mesh_tools
+from superlocalmemory.mcp.tools_v3 import register_v3_tools
+from superlocalmemory.mcp.tools_v28 import register_v28_tools
+from superlocalmemory.mcp.tools_v33 import register_v33_tools
 
 register_core_tools(_target, get_engine)
 register_v28_tools(_target, get_engine)
@@ -319,35 +365,52 @@ register_v3_tools(_target, get_engine)
 register_active_tools(_target, get_engine)
 register_v33_tools(_target, get_engine)
 register_resources(server, get_engine)  # Resources always registered (not tools)
-register_code_graph_tools(_target, get_engine)  # CodeGraph: filtered like other tools (SLM_MCP_ALL_TOOLS=1 to show all)
-register_mesh_tools(_target, get_engine)  # v3.4.4: Mesh P2P tools — ships with SLM, no separate slm-mesh needed
+register_code_graph_tools(
+    _target, get_engine
+)  # CodeGraph: filtered like other tools (SLM_MCP_ALL_TOOLS=1 to show all)
+register_mesh_tools(
+    _target, get_engine
+)  # v3.4.4: Mesh P2P tools — ships with SLM, no separate slm-mesh needed
 register_learning_tools(_target, get_engine)  # v3.4.7: Two-way learning tools
 register_evolution_tools(_target, get_engine)  # v3.4.11: Skill evolution tools
 from superlocalmemory.mcp.tools_optimize import register_optimize_tools
+
 register_optimize_tools(_target)  # v3.6.11: Surface B Optimize tools (proxy-free)
-from superlocalmemory.mcp.tools_loops import register_loop_tools
 from superlocalmemory.mcp._daemon_proxy import choose_pool as _choose_loop_pool
+from superlocalmemory.mcp.tools_loops import register_loop_tools
+
 register_loop_tools(
     _target,
     get_engine,
     _choose_loop_pool,
 )  # v3.8.0: bounded-loop tools (CLI+command+MCP)
 from superlocalmemory.mcp.tools_ops import register_ops_tools
+
 register_ops_tools(_target, get_engine)  # operational recovery & admin remediation
 from superlocalmemory.mcp.tools_brain import register_brain_tools
+
 register_brain_tools(_target, get_engine)  # v4.0.2 portable Brain receipts
 from superlocalmemory.mcp.tools_summaries import register_summary_tools
+
 register_summary_tools(_target, get_engine)  # v4.0.8 issue #113 summary reads
 from superlocalmemory.mcp.tools_views import register_view_tools
+
 register_view_tools(_target, get_engine)  # 4.1.21 issue #113 saved views
 from superlocalmemory.mcp.tools_kinds import register_kind_tools
-register_kind_tools(_target, get_engine)  # 4.1.19 WP8: memory-kind management (ships in every profile, not only power)
+
+register_kind_tools(
+    _target, get_engine
+)  # 4.1.19 WP8: memory-kind management (ships in every profile, not only power)
 from superlocalmemory.mcp.tools_media import (
-    register_document_tools, register_media_resources, register_media_tools,
+    register_document_tools,
+    register_media_resources,
+    register_media_tools,
 )
+
 register_media_tools(_target)  # image tools for local AI apps (host-only)
 register_document_tools(_target)  # document tools for local AI apps (host-only)
 from superlocalmemory.mcp.tools_media_upload import register_upload_link_tool
+
 register_upload_link_tool(_target)  # one-time upload link for web apps (remote-only)
 register_media_resources(server)
 from superlocalmemory.mcp.tools_context import register_prestage_tool
@@ -359,20 +422,24 @@ def _memories_from(results) -> list[dict]:
     out: list[dict] = []
     for r in items:
         if isinstance(r, dict):
-            out.append({
-                "id": str(r.get("fact_id") or r.get("id") or ""),
-                "text": str(r.get("content") or r.get("text") or ""),
-                "score": float(r.get("score") or r.get("relevance_score") or 0.0),
-                "source": str(r.get("source") or "recall"),
-            })
+            out.append(
+                {
+                    "id": str(r.get("fact_id") or r.get("id") or ""),
+                    "text": str(r.get("content") or r.get("text") or ""),
+                    "score": float(r.get("score") or r.get("relevance_score") or 0.0),
+                    "source": str(r.get("source") or "recall"),
+                }
+            )
             continue
         fact = getattr(r, "fact", r)
-        out.append({
-            "id": str(getattr(fact, "fact_id", "") or ""),
-            "text": str(getattr(fact, "content", "") or ""),
-            "score": float(getattr(r, "score", 0.0) or 0.0),
-            "source": "recall",
-        })
+        out.append(
+            {
+                "id": str(getattr(fact, "fact_id", "") or ""),
+                "text": str(getattr(fact, "content", "") or ""),
+                "score": float(getattr(r, "score", 0.0) or 0.0),
+                "source": "recall",
+            }
+        )
     return out
 
 
@@ -392,8 +459,11 @@ def _prestage_recall(query: str, limit: int, profile_id: str, as_of: str | None 
     from superlocalmemory.mcp.remote_visibility import current_view
     from superlocalmemory.retrieval import remote_view, visibility
 
-    ctx = remote_view.context_for(current_view(), getattr(engine, "_db", None),
-                                  target or getattr(engine, "profile_id", "default"))
+    ctx = remote_view.context_for(
+        current_view(),
+        getattr(engine, "_db", None),
+        target or getattr(engine, "profile_id", "default"),
+    )
     if ctx is None:
         return _memories_from(engine.recall(query, **kwargs))
     with visibility.use(ctx):
@@ -410,9 +480,8 @@ register_prestage_tool(_target, _prestage_recall)
 def _eager_warmup() -> None:
     """Ensure the shared daemon is running without opening a per-client engine.
 
-    Mesh registration is intentionally lazy: a local stdio session is not a
-    remote peer, and heartbeat writes should begin only after a mesh tool is
-    actually used.
+    Each local stdio host session joins the broker and maintains its heartbeat.
+    Embedded daemon instances skip this warmup entirely.
     """
     _logger = logging.getLogger(__name__)
 
@@ -424,10 +493,15 @@ def _eager_warmup() -> None:
     # This runs in background — doesn't block MCP tool registration.
     try:
         from superlocalmemory.cli.daemon import ensure_daemon
+
         if ensure_daemon():
             _logger.info("Daemon auto-started by MCP server")
+            from superlocalmemory.mcp.tools_mesh import auto_register_mesh
+
+            auto_register_mesh()
     except Exception as exc:
         _logger.warning("Daemon auto-start failed: %s", exc)
+
 
 import threading
 
@@ -458,7 +532,9 @@ def _parent_watchdog() -> None:
     Also validates the original parent is still alive via os.kill(ppid, 0).
     Uses os._exit(0) to bypass any atexit handlers that might hang.
     """
-    import os as _os_wd, time as _time
+    import os as _os_wd
+    import time as _time
+
     _wlog = logging.getLogger(__name__ + ".watchdog")
     initial_ppid = _os_wd.getppid()
     if initial_ppid <= 1:
@@ -468,9 +544,12 @@ def _parent_watchdog() -> None:
         try:
             current_ppid = _os_wd.getppid()
             if current_ppid != initial_ppid or current_ppid <= 1:
-                _wlog.info("Parent PID changed (%d→%d), self-terminating", initial_ppid, current_ppid)
+                _wlog.info(
+                    "Parent PID changed (%d→%d), self-terminating", initial_ppid, current_ppid
+                )
                 _os_wd._exit(0)
             from superlocalmemory.core.platform_utils import is_pid_alive
+
             if not is_pid_alive(initial_ppid):
                 _wlog.info("Parent PID %d gone, self-terminating", initial_ppid)
                 _os_wd._exit(0)
@@ -479,7 +558,9 @@ def _parent_watchdog() -> None:
 
 
 if not _embedded_in_daemon:
-    _watchdog_thread = threading.Thread(target=_parent_watchdog, daemon=True, name="parent-watchdog")
+    _watchdog_thread = threading.Thread(
+        target=_parent_watchdog, daemon=True, name="parent-watchdog"
+    )
     _watchdog_thread.start()
 
 
@@ -493,18 +574,13 @@ if not _embedded_in_daemon:
 # closes WITHOUT consuming any bytes, so it cannot race with FastMCP's asyncio
 # stdin reader. On Linux (no kqueue), the watchdog alone provides coverage.
 def _stdin_eof_monitor() -> None:
-    """Exit when the IDE closes our stdin pipe (kqueue — macOS only).
+    """Exit this stdio MCP process when the host closes its input stream."""
+    import os as _os_eof
+    import select as _sel
+    import time as _time
 
-    V3.6.4: kqueue ``EVFILT_READ`` reports ``EV_EOF`` *together with*
-    still-readable bytes (``ev.data > 0``) when the write-end closes while a
-    final request is buffered. Exiting on the EOF flag alone (pre-3.6.4)
-    dropped that in-flight request and self-terminated a session that still
-    had work to deliver — strict MCP hosts (e.g. the Hermes agent) then
-    logged a keepalive failure and respawned the process. We now defer
-    termination until the buffer is genuinely drained (see ``_stdin_guard``).
-    """
-    import select as _sel, os as _os_eof, time as _time
     from superlocalmemory.mcp._stdin_guard import eof_action
+
     _mlog = logging.getLogger(__name__ + ".stdin_monitor")
     if not hasattr(_sel, "kqueue"):
         return  # Linux / non-macOS: watchdog covers process death
@@ -543,7 +619,9 @@ def _stdin_eof_monitor() -> None:
 
 
 if not _embedded_in_daemon:
-    _stdin_monitor_thread = threading.Thread(target=_stdin_eof_monitor, daemon=True, name="stdin-eof-monitor")
+    _stdin_monitor_thread = threading.Thread(
+        target=_stdin_eof_monitor, daemon=True, name="stdin-eof-monitor"
+    )
     _stdin_monitor_thread.start()
 
 

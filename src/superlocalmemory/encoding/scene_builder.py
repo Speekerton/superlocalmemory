@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 
 from superlocalmemory.storage.embedding_codec import decode_embedding
+from superlocalmemory.storage.erasure_derived import THEME_CHARS
 import logging
 from datetime import UTC, datetime
 
@@ -170,7 +171,7 @@ class SceneBuilder:
         Pre-computes and caches the theme embedding for efficient later
         comparisons in assign_to_scene.
         """
-        theme = fact.content[:200]
+        theme = fact.content[:THEME_CHARS]
         scene = MemoryScene(
             profile_id=profile_id,
             theme=theme,

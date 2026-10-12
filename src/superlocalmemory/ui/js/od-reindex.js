@@ -78,7 +78,7 @@
     _parts.state.textContent = head + (isActive(job) ? ACTIVE[job.state] : finalText(job));
     _parts.progress.textContent = progressText(job);
     _parts.note.textContent = isActive(job)
-      ? 'Recall keeps using ' + job.from + ' until the switch completes.' : '';
+      ? (job.queued_reason ? job.queued_reason + ' ' : '') + 'Recall keeps using ' + job.from + ' until the switch completes.' : '';
     _parts.error.textContent = job.state === 'failed' && job.error ? 'Error: ' + job.error : '';
     _parts.cancel.style.display = isActive(job) ? '' : 'none';
     _parts.cancel.disabled = false;

@@ -146,3 +146,45 @@ class SLMFastMCP(MCPServer):
         install_streamable_http_resource_guard()
         # Q9: every tool result goes out compact, not pretty-printed.
         install_compact_mcp_json()
+        self._slm_allowed = None
+
+    def configure_tool_surface(self, allowed: frozenset[str]) -> None:
+        """Freeze host selection while evaluating feature availability per request."""
+        self._slm_allowed = allowed
+
+    def _tool_enabled(self, name: str) -> bool:
+        if self._slm_allowed is not None and name not in self._slm_allowed:
+            return False
+        from superlocalmemory.mcp.profiles import _MEDIA_TOOLS
+
+        if name in _MEDIA_TOOLS:
+            from superlocalmemory.runtimes import features
+
+            return bool(features.media_enabled())
+        return True
+
+    async def list_tools(self):
+        return [tool for tool in await super().list_tools() if self._tool_enabled(tool.name)]
+
+    async def call_tool(self, name, arguments, context=None):
+        # Host selection is an invocation boundary. Feature availability only
+        # controls discovery: media handlers own actionable opt-in refusals.
+        if self._slm_allowed is not None and name not in self._slm_allowed:
+            raise ValueError("This tool is not enabled for this connection")
+        return await super().call_tool(name, arguments, context)
+
+    async def run_stdio_async(self) -> None:
+        from superlocalmemory.mcp.local_lifecycle import run_stdio
+
+        await run_stdio(self, self._run_local_transport)
+
+    async def _run_local_transport(self) -> None:
+        from mcp.server.lowlevel import NotificationOptions
+        from mcp.server.stdio import stdio_server
+
+        async with stdio_server() as (read_stream, write_stream):
+            await self._lowlevel_server.run(
+                read_stream, write_stream,
+                self._lowlevel_server.create_initialization_options(
+                    notification_options=NotificationOptions(tools_changed=True)),
+            )

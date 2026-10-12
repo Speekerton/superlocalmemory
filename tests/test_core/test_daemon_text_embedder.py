@@ -140,3 +140,83 @@ def test_the_mcp_proxy_can_ask_questions_too(daemon):
     assert proxy.embed_batch(["a"]) == [[0.25] * 4]
     assert daemon.posts[0] == {"texts": ["a question"], "prompt": "query"}
     assert "prompt" not in daemon.posts[1]       # the request an existing daemon gets is unchanged
+
+
+def test_full_python_api_routes_to_same_root_daemon(daemon, monkeypatch):
+    """ENG-10: a full API process delegates without starting a model worker."""
+    from types import SimpleNamespace
+
+    from superlocalmemory.core import process_role, text_provider
+
+    monkeypatch.setattr(process_role, '_daemon', False)
+    emb = text_provider.init_slm_media_embedder(SimpleNamespace(embedding=CONFIG))
+    assert isinstance(emb, DaemonTextEmbedder)
+    assert emb.embed_query('Find the incident decision') == [0.25] * 4
+    assert daemon.posts[-1]['prompt'] == 'query'
+
+
+def test_full_legacy_provider_reuses_compatible_daemon(daemon, monkeypatch):
+    from types import SimpleNamespace
+
+    from superlocalmemory.core import process_role, text_provider
+
+    monkeypatch.setattr(process_role, '_daemon', False)
+    legacy = EmbeddingConfig(model_name=MODEL, dimension=4, provider='sentence-transformers')
+    def forbidden_worker(_config):
+        raise AssertionError('A second worker must not be started')
+    emb = text_provider.route_embedder(SimpleNamespace(embedding=legacy),
+                                      try_ollama=forbidden_worker,
+                                      try_service=forbidden_worker)
+    assert isinstance(emb, DaemonTextEmbedder)
+    assert emb.embed_query('Find the recovery approval') == [0.25] * 4
+
+
+@pytest.mark.parametrize('wrong_space', [False, True])
+def test_legacy_provider_falls_back_when_daemon_not_compatible(daemon, monkeypatch, wrong_space):
+    from types import SimpleNamespace
+
+    from superlocalmemory.core import process_role, text_provider
+
+    monkeypatch.setattr(process_role, '_daemon', False)
+    daemon.embedder = ({'available': True, 'warm': True, 'model': 'other', 'dimension': 4}
+                       if wrong_space else None)
+    legacy = EmbeddingConfig(model_name=MODEL, dimension=4, provider='sentence-transformers')
+    local = object()
+    assert text_provider.route_embedder(SimpleNamespace(embedding=legacy),
+                                        try_ollama=lambda _: None,
+                                        try_service=lambda _: local) is local
+
+
+def test_legacy_provider_never_sends_another_roots_text_to_the_daemon(
+    daemon, monkeypatch, tmp_path,
+):
+    from types import SimpleNamespace
+
+    from superlocalmemory.core import process_role, text_provider
+
+    monkeypatch.setattr(process_role, '_daemon', False)
+    legacy = EmbeddingConfig(model_name=MODEL, dimension=4, provider='sentence-transformers')
+    local = object()
+    emb = text_provider.route_embedder(
+        SimpleNamespace(embedding=legacy, base_dir=tmp_path / 'other'),
+        try_ollama=lambda _: None, try_service=lambda _: local)
+    assert emb is local
+    assert daemon.posts == []
+
+
+def test_legacy_api_keeps_the_compatible_proxy_while_daemon_warms(daemon, monkeypatch):
+    from types import SimpleNamespace
+
+    from superlocalmemory.core import process_role, text_provider
+
+    monkeypatch.setattr(process_role, '_daemon', False)
+    daemon.embedder = {'available': False, 'warm': False, 'model': MODEL, 'dimension': 4}
+    local = object()
+    legacy = EmbeddingConfig(model_name=MODEL, dimension=4, provider='sentence-transformers')
+    emb = text_provider.route_embedder(SimpleNamespace(embedding=legacy),
+                                       try_ollama=lambda _: None, try_service=lambda _: local)
+    assert isinstance(emb, DaemonTextEmbedder)
+    assert emb.is_available is False
+    daemon.embedder = {'available': True, 'warm': True, 'model': MODEL, 'dimension': 4}
+    emb._ping_at = float('-inf')
+    assert emb.embed_query('Recover after warmup') == [0.25] * 4

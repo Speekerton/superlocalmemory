@@ -146,23 +146,21 @@
       // Connected agents card (full-width)
       '<div class="card" style="margin-top:16px">' +
         '<div class="card-head">' +
-          '<h3>Connected agents</h3>' +
-          '<span class="sub">live write / recall stream</span>' +
+          '<h3>Connected local apps</h3>' +
+          '<span class="sub">initialized MCP processes on this computer</span>' +
           '<div class="spacer"></div>' +
           // pulse class + explicit dot color as in design
-          '<span class="badge neutral pulse" style="border-radius:99px">' +
-            '<span class="dot" style="background:var(--ok)"></span> live' +
-          '</span>' +
+          '<a class="badge neutral" href="#apps-pane">Manage apps</a>' +
         '</div>' +
         '<div class="card-pad">' +
           // Summary stats row: 4 metrics
           '<div style="display:flex;gap:24px;margin-bottom:16px;flex-wrap:wrap" id="od-h-agent-stats">' +
             '<div>' +
-              '<div class="muted-info" style="font-size:11px">Total agents</div>' +
+              '<div class="muted-info" style="font-size:11px">Confirmed connections</div>' +
               '<div class="num" style="font-size:22px;font-weight:700" id="od-h-agent-total">—</div>' +
             '</div>' +
             '<div>' +
-              '<div class="muted-info" style="font-size:11px">Active 24h</div>' +
+              '<div class="muted-info" style="font-size:11px">Reconnect needed</div>' +
               '<div class="num" style="font-size:22px;font-weight:700" id="od-h-agent-active">—</div>' +
             '</div>' +
             '<div>' +
@@ -178,12 +176,12 @@
           // Protocol, Trust, Writes, Recalls — no per-agent endpoint; display '—'
           '<table class="tbl" id="od-h-agents-tbl">' +
             '<thead><tr>' +
-              '<th>Agent</th>' +
+              '<th>App</th>' +
               '<th>Protocol</th>' +
-              '<th>Trust</th>' +
-              '<th>Writes</th>' +
-              '<th>Recalls</th>' +
-              '<th>Last seen</th>' +
+              '<th>Version</th>' +
+              '<th>Tools</th>' +
+              '<th>Status</th>' +
+              '<th>Connected since</th>' +
             '</tr></thead>' +
             '<tbody id="od-h-agents-body">' +
               '<tr><td colspan="6" class="muted-info" style="text-align:center;padding:24px">Loading…</td></tr>' +
@@ -498,13 +496,11 @@
     var writesEl  = document.getElementById('od-h-agent-writes');
     var recallsEl = document.getElementById('od-h-agent-recalls');
 
-    var stats = (agentsData && agentsData.stats) || {};
-    var agents = (agentsData && agentsData.agents) || [];
-    var total  = stats.total_agents != null ? stats.total_agents : agents.length;
+    var total = agentsData && Number.isSafeInteger(agentsData.confirmed_count) ? agentsData.confirmed_count
+      : (agentsData && Number.isSafeInteger(agentsData.count) ? agentsData.count : null);
 
-    if (totalEl)   totalEl.textContent   = fmtNum(total);
-    // TODO: no per-agent last_seen endpoint in current API; active_24h cannot be determined
-    if (activeEl)  activeEl.textContent  = '—';
+    if (totalEl)   totalEl.textContent   = total === null ? '—' : fmtNum(total);
+    if (activeEl)  activeEl.textContent  = agentsData ? fmtNum((agentsData.stale_count || 0) + (agentsData.unreported_count || 0)) : '—';
 
     var writes  = eventsStats ? (eventsStats['memory.stored']   || 0) : 0;
     var recalls = eventsStats ? (eventsStats['memory.recalled'] || 0) : 0;
@@ -526,12 +522,13 @@
     var tbody = document.getElementById('od-h-agents-body');
     if (!tbody) return;
 
-    var agents = (agentsData && agentsData.agents) || [];
+    var agents = (agentsData && agentsData.apps) || [];
 
     if (agents.length === 0) {
       tbody.innerHTML =
         '<tr><td colspan="6" class="muted-info" style="text-align:center;padding:24px">' +
-        'No agents registered. Agents appear automatically when they connect via MCP, CLI, or REST.' +
+        (agentsData ? 'No local apps connected.' : 'Local app status unavailable.') +
+        ' <a href="#apps-pane">Connect an app or refresh its status</a>' +
         '</td></tr>';
       return;
     }
@@ -542,16 +539,12 @@
       // CRIT(c): agent_id through esc()
       rows += (
         '<tr>' +
-          '<td><b>' + esc(a.agent_id || '') + '</b></td>' +
-          // TODO: Protocol — no protocol field in /api/agents response
-          '<td><span class="badge neutral">—</span></td>' +
-          // TODO: Trust score — only aggregate available via /api/trust/stats, not per-agent
-          '<td><span class="badge neutral">—</span></td>' +
-          // TODO: Writes per-agent — no per-agent write count in current API
-          '<td class="num dim">—</td>' +
-          // TODO: Recalls per-agent — no per-agent recall count in current API
-          '<td class="num dim">—</td>' +
-          '<td class="muted-info">' + esc(timeAgo(a.registered_at)) + '</td>' +
+          '<td><b>' + esc(a.name || a.host || '') + '</b></td>' +
+          '<td>MCP stdio</td>' +
+          '<td>' + esc(a.code_version) + '</td>' +
+          '<td class="num">' + (a.version_reported === false ? '—' : esc((a.tools || []).length)) + '</td>' +
+          '<td>' + (a.version_reported === false ? 'Connection unconfirmed · version unreported' : (a.stale_version ? 'Stale version · reconnect in Connected apps' : 'Connected')) + '</td>' +
+          '<td class="muted-info">' + esc(timeAgo(a.connected_at)) + '</td>' +
         '</tr>'
       );
     }
@@ -577,7 +570,7 @@
       fetch('/health').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
       fetch('/api/stats').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
       fetch('/api/v3/math/health').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
-      fetch('/api/agents').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
+      fetch('/api/v3/local-apps').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
       fetch('/api/trust/stats').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
       fetch('/api/events/stats').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
       fetch('/api/learning/readiness').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
@@ -599,6 +592,7 @@
       populateTrustSignals(trustStats);
       populateAgentSummary(agentsData, eventsStats);
       populateAgentTable(agentsData);
+      if (typeof window.odMountDaemonControls === 'function') window.odMountDaemonControls(container);
       // v3.8.2 UX-6: component "what's missing" report (od-components.js).
       if (typeof window.odRenderComponents === 'function') {
         window.odRenderComponents(document.getElementById('od-h-components'));
@@ -608,7 +602,8 @@
     }).catch(function (err) {
       container.innerHTML =
         '<div style="color:var(--danger);text-align:center;padding:48px 0">' +
-        'Failed to load health data. Check the daemon is running (slm status).</div>';
+        'Failed to load health data. <button id="od-health-retry" class="btn secondary">Retry health check</button></div>';
+      document.getElementById('od-health-retry').addEventListener('click', function () { odRenderHealth(container); });
       if (typeof console !== 'undefined') {
         console.error('[od-health] render error:', err);
       }

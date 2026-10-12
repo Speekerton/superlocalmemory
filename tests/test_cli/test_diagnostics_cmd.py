@@ -14,7 +14,6 @@ import pytest
 from superlocalmemory.cli.main import _command_requires_daemon
 from superlocalmemory.infra.local_diagnostics import LocalDiagnostics
 
-
 ROOT = Path(__file__).resolve().parents[2]
 
 

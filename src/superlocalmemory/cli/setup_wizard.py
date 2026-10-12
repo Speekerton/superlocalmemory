@@ -1052,7 +1052,8 @@ def run_wizard(auto: bool = False) -> None:
     print("  Quick start:")
     print('    slm remember "your first memory"')
     print('    slm recall "search query"')
-    print("    slm dashboard              → http://localhost:8765")
+    from superlocalmemory.cli.deployment import runtime_port
+    print(f"    slm dashboard              → http://localhost:{runtime_port()}")
     print("    slm adapters enable gmail  → start Gmail ingestion")
     print()
     print("  Need help?")

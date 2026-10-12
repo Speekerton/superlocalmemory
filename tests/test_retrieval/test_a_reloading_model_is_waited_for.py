@@ -36,7 +36,9 @@ def service_with(monkeypatch):
 
     def build(*codes: str):
         sp = fake.install(monkeypatch, *codes)
-        svc = EmbeddingService(EmbeddingConfig(dimension=4))
+        # This worker has no Nomic vocabulary; keep lexical-cache setup outside
+        # the model-wait timing assertion.
+        svc = EmbeddingService(EmbeddingConfig(model_name="fixture", dimension=4))
         qe = QueryEmbedder(lambda: svc)
         made.append((sp, svc, qe))
         return sp, svc, qe
@@ -82,15 +84,16 @@ def test_after_a_memory_pressure_kill_the_reload_is_bounded(
     # kills the worker; every later check passes again.
     pressure = iter([True, False])
     monkeypatch.setattr(
-        svc, "_check_memory_pressure", lambda: next(pressure, True),
+        svc, "_check_memory_pressure", lambda **_kwargs: next(pressure, True),
     )
     assert svc.embed("load it once") == [0.5] * 4
     assert svc.is_warm is False, "the pressure check should have killed the worker"
     assert svc.has_loaded_once is True
 
     vector, status = qe.embed("question under pressure", _GUARD)
-    assert (vector, status) == (None, chstat.WARMING)
-    assert len(sp.procs) == 2
+    assert (vector, status) == (None, None)
+    assert svc.memory_status()["state"] == "memory_pressure"
+    assert len(sp.procs) == 1, "memory pressure pauses replacement workers"
 
 
 def test_has_loaded_once_survives_unload_but_not_a_new_service(service_with) -> None:

@@ -1713,6 +1713,10 @@ class DatabaseManager:
                     projection_outbox.enqueue_for_fact(self, fact_id)
 
         self._atomically(_write)
+        if "scope" in clean or "shared_with" in clean:
+            # Who may see a memory changed: kept picture-search answers are stale.
+            from superlocalmemory.media.generation import bump_generation
+            bump_generation()
 
     def delete_fact(self, fact_id: str, profile_id: str | None = None) -> None:
         """Hard-delete a fact.

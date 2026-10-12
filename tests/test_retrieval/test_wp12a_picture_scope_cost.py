@@ -64,3 +64,35 @@ def test_reader_with_no_own_pictures_searches_only_visible_scopes(
     finally:
         store.close()
         db.close()
+
+
+@pytest.mark.parametrize("flags,profile", [
+    ({}, "default"),
+    ({"include_global": True}, "reader"),
+])
+def test_a_picture_with_many_facts_cannot_crowd_out_the_right_picture(tmp_path, flags, profile):
+    from ._media_support import blend
+
+    scope = "global" if flags else "personal"
+    db = DatabaseManager(tmp_path / "memory.db")
+    db.initialize(schema)
+    store = make_store(tmp_path, [(mid(1), "image", "pic-a", unit(0)),
+                                  (mid(2), "image", "pic-b", blend(0, 1, .3))])
+    try:
+        for memory, number in (("pic-a", 1), ("pic-b", 2)):
+            source = {"type": "media", "media_id": mid(number)}
+            db.store_memory(MemoryRecord(memory_id=memory, profile_id="default", content=memory,
+                                         metadata={"_slm_source": source}))
+        for n in range(40):
+            db.store_fact(AtomicFact(fact_id=f"a-{n:02d}", memory_id="pic-a", content=f"a {n}",
+                                     profile_id="default", scope=scope))
+        db.store_fact(AtomicFact(fact_id="b-0", memory_id="pic-b", content="b",
+                                 profile_id="default", scope=scope))
+        ch = MediaChannel(lambda: store, lambda: FakeClient(unit(0)), db)
+        found = ch.search(unit(0), profile, 50, **flags)
+        ids = [fact_id for fact_id, _ in found]
+        assert "b-0" in ids
+        assert sum(1 for i in ids if i.startswith("a-")) <= 3
+    finally:
+        store.close()
+        db.close()

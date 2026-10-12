@@ -556,7 +556,6 @@ def _init_quantization_aware_search(
         from superlocalmemory.math.polar_quant import PolarQuantEncoder
         from superlocalmemory.math.qjl import QJLEncoder
         from superlocalmemory.retrieval.canonical_vector_index import candidate_vector_source
-
         from superlocalmemory.retrieval.quantization_aware_search import QuantizationAwareSearch
         from superlocalmemory.storage.quantized_store import QuantizedEmbeddingStore
 

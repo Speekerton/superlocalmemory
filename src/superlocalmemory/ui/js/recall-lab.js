@@ -193,6 +193,7 @@ function renderRecallPage() {
         numLabel.textContent = '#' + (globalIndex + 1);
         scoreRow.appendChild(numLabel);
         var scoreBadges = document.createElement('div');
+        var storedConfidence = r.memory_confidence === undefined ? r.confidence : r.memory_confidence;
         // Built element by element rather than as an HTML string. The values are
         // server-supplied, and this file's sibling panes are held to the same
         // rule: this pane renders DOM, it does not parse markup.
@@ -200,7 +201,7 @@ function renderRecallPage() {
             ['badge bg-primary me-1', 'Query relevance: ' + r.score, ''],
             ['badge bg-secondary me-1', 'Semantic evidence: ' + (r.match_confidence == null ? 'unmeasured' : r.match_confidence), ''],
             ['badge bg-secondary me-1', 'Trust: ' + r.trust_score, ''],
-            ['badge bg-outline-info', 'Stored fact confidence: ' + (r.confidence == null ? 'not recorded' : r.confidence),
+            ['badge bg-outline-info', 'Stored fact confidence: ' + (storedConfidence == null ? 'not recorded' : storedConfidence),
              'border:1px solid var(--cyan);color:var(--cyan-text);'],
         ].forEach(function(spec) {
             var badge = document.createElement('span');

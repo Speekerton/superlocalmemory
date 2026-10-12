@@ -1295,7 +1295,9 @@ class RetrievalEngine:
             from superlocalmemory.retrieval import media_channel
             self._media_channel = self._media_channel or media_channel.for_engine(
                 self._db, text_query_vector=lambda q: self._embed_query(q)[0])
-            media_vec, _media_state = self._media_channel.prepare(query, profile_id)
+            media_vec, _media_state = self._media_channel.prepare(
+                query, profile_id, include_global=include_global, include_shared=include_shared,
+            )
             if _media_state and channel_status is not None:
                 channel_status["media"] = _media_state
 
@@ -1402,7 +1404,10 @@ class RetrievalEngine:
 
         if media_vec is not None:
             futures["media"] = executor.submit(
-                _safe_channel, "media", self._media_channel.search,
+                _safe_channel, "media", functools.partial(
+                    self._media_channel.search,
+                    include_global=include_global, include_shared=include_shared,
+                ),
                 media_vec, profile_id, self._config.semantic_top_k,
             )
 

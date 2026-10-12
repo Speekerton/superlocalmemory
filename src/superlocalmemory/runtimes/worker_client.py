@@ -47,6 +47,10 @@ class MediaWorkerError(RuntimeError):
     """The worker could not answer. The text is plain language."""
 
 
+class MediaWorkerMemoryError(MediaWorkerError):
+    """The worker was not started because the computer is short of free memory."""
+
+
 class MediaWorkerWarming(MediaWorkerError):
     """The worker is starting; ask again shortly."""
 
@@ -252,7 +256,7 @@ class MediaWorkerClient(MediaEmbedderPort):
                     f"Waited {self.load_timeout_s:g} seconds for another model load to release "
                     "the memory reservation. Try again when that load finishes; "
                     "check slm doctor if it stays busy.") from exc
-            raise MediaWorkerError(
+            raise MediaWorkerMemoryError(
                 f"Not enough free memory to load the model right now ({exc}). "
                 "Close other large applications, then try again.") from exc
         except OSError as exc:
@@ -402,9 +406,16 @@ class MediaWorkerClient(MediaEmbedderPort):
         reply = self._request(cmd, **fields)
         return {k: v for k, v in reply.items() if k not in ("ok", "id")}
 
-    def prepare_image(self, path: Path | str, out_dir: Path | str, *, wait_cold: bool = True) -> dict:
-        """Strip metadata, make a thumbnail and a perceptual hash; results are files in ``out_dir``."""
-        return self._image_request("prepare_image", wait_cold, path=str(path), out_dir=str(out_dir))
+    def prepare_image(self, path: Path | str, out_dir: Path | str, *, wait_cold: bool = True,
+                      classify: bool = True) -> dict:
+        """Strip metadata, make a thumbnail and a perceptual hash; results are files in ``out_dir``.
+
+        ``classify=False`` leaves out the subject classifier (for a rasterised document page).
+        """
+        fields: dict[str, Any] = {"path": str(path), "out_dir": str(out_dir)}
+        if not classify:
+            fields["classify"] = False
+        return self._image_request("prepare_image", wait_cold, **fields)
 
     def ocr_image(self, path: Path | str, *, wait_cold: bool = True) -> dict:
         """The text in an image: ``{"engine": ..., "text": ...}`` (engine ``none`` when none is installed)."""

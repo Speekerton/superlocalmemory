@@ -79,6 +79,6 @@ def install(monkeypatch, *codes: str, on_spawn=None) -> Spawner:
     monkeypatch.setattr(emb_mod, "subprocess", sp.namespace())
     monkeypatch.setattr(
         emb_mod.EmbeddingService, "_check_memory_pressure",
-        staticmethod(lambda: True),
+        staticmethod(lambda **_kwargs: True),
     )
     return sp

@@ -55,9 +55,8 @@ def control(root: Path, action: str) -> None:
 def wait_stopped(pid: int) -> None:
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
+        from superlocalmemory.core.platform_utils import is_pid_alive
+        if not is_pid_alive(pid):
             return
         time.sleep(0.2)
     raise RuntimeError("Daemon did not stop; restore refused")

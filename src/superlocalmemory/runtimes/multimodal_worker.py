@@ -19,7 +19,7 @@ Every request may carry an ``"id"``; the reply echoes it.
                     -> {"ok": true, "vectors": [[...], ...]}
   {"cmd": "embed_image", "paths": [str, ...<=16]}
                     -> {"ok": true, "vectors": [[...], ...]}
-  {"cmd": "prepare_image", "path": "...", "out_dir": "..."}
+  {"cmd": "prepare_image", "path": "...", "out_dir": "...", "classify": true}
                     -> {"ok": true, "mime", "width", "height", "exif", "phash",
                         "stored_path", "stored_ext", "thumb_path"}
   {"cmd": "ocr_image", "path": "..."}
@@ -382,7 +382,8 @@ def _cmd_prepare_image(req: dict) -> dict:
     if not os.path.isdir(out_dir):
         raise _Invalid("out_dir is not a directory")
     try:
-        return _image_ops().prepare_image(path, out_dir)
+        classify = req.get("classify", True) is not False
+        return _image_ops().prepare_image(path, out_dir, classify=classify)
     except ImportError:
         raise _Invalid("pillow unavailable") from None
     except ValueError as exc:  # the module's own messages: no paths, no contents

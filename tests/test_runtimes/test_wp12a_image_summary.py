@@ -54,3 +54,39 @@ def test_offline_subject_caption_includes_confident_objects_only(monkeypatch):
                          lambda name: vision if name == "Vision" else foundation)
     caption = media_image_ops._apple_subjects("fixture.png")
     assert "bicycle" in caption and "motorcycle" not in caption
+
+
+def test_a_failing_vision_binding_never_breaks_the_caption(monkeypatch, caplog):
+    def broken(name):
+        raise OSError("vision framework crashed")
+
+    monkeypatch.setattr(media_image_ops.sys, "platform", "darwin")
+    monkeypatch.setattr(media_image_ops.importlib, "import_module", broken)
+    with caplog.at_level("DEBUG", logger=media_image_ops.logger.name):
+        assert media_image_ops._apple_subjects("fixture.png") == ""
+    assert "classifier" in caplog.text.lower()
+
+
+def test_a_request_to_skip_the_classifier_skips_it(monkeypatch, tmp_path):
+    class Image:
+        width, height, format = 4, 4, "PNG"
+        def convert(self, mode): return self
+        def thumbnail(self, size): pass
+        def getdata(self): return [(0, 0, 255)] * 16
+        def close(self): pass
+
+    real = media_image_ops.importlib.import_module
+    fake_hash = SimpleNamespace(phash=lambda _: "ff")
+    monkeypatch.setattr(media_image_ops.importlib, "import_module",
+                        lambda name: fake_hash if name == "imagehash" else real(name))
+    monkeypatch.setattr(media_image_ops, "_open_checked", lambda _: Image())
+    monkeypatch.setattr(media_image_ops, "_load_upright", lambda image: (image, {}, None))
+    monkeypatch.setattr(media_image_ops, "_encode_original", lambda *args: b"original")
+    monkeypatch.setattr(media_image_ops, "_encode_thumb", lambda *args: b"thumbnail")
+    seen = []
+    monkeypatch.setattr(media_image_ops, "_apple_subjects",
+                        lambda path: seen.append(path) or " subject")
+    skipped = media_image_ops.prepare_image(str(tmp_path / "p.png"), str(tmp_path), classify=False)
+    assert seen == [] and "subject" not in skipped["visual_summary"]
+    kept = media_image_ops.prepare_image(str(tmp_path / "p.png"), str(tmp_path))
+    assert len(seen) == 1 and "subject" in kept["visual_summary"]

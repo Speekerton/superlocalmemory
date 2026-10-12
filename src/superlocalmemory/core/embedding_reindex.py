@@ -49,6 +49,7 @@ _QUIET_WAIT_S = 600.0  # background is paused meanwhile; requests are served
 _MAX_BACKOFF_S = 60.0
 #: How long a model load waits for another heavy job (a picture-model load, a document parse).
 LOAD_WAIT_S = 600.0
+MEMORY_REFUSED_MESSAGE = "Not enough free memory to load the model right now; try again later."
 
 
 class NoChange(ValueError):
@@ -227,6 +228,8 @@ class ReindexRunner:
         return {"freed_vectors": freed, "previous": None}
 
     def status(self) -> dict:
+        from superlocalmemory.core.embedding_memory import runtime_status
+
         conn = self._conn()
         try:
             job = active_job(conn) or latest_job(conn)
@@ -235,7 +238,8 @@ class ReindexRunner:
             return {"job": public_view(job), "notice": self.notice,
                     "live": row["live_signature"] if row else None,
                     "previous": previous if previous and sp.has_previous(conn) else previous,
-                    "previous_vectors_kept": sp.has_previous(conn)}
+                    "previous_vectors_kept": sp.has_previous(conn),
+                    "worker": runtime_status(self.app_state)}
         finally:
             conn.close()
 
@@ -365,16 +369,16 @@ class ReindexRunner:
                 steps.close_embedder(embedder)
 
     def _load_embedder(self, target: Any) -> Any | None:
-        """Start the model, and ask it one question so it is really in memory, under the RAM reservation.
+        """Probe under one load reservation; managed workers own theirs.
 
-        Only one heavy job runs at a time across the daemon, the picture worker and the
-        command line: a second one waits here. The reservation covers the load only, so a
-        long re-index does not shut other model loads out for hours.
+        A cold managed worker acquires the same file lock while serving the probe.
+        Holding it here too deadlocks resumed jobs whose prebuilt model is gone.
         """
         from contextlib import nullcontext
 
         from superlocalmemory.core.ram_lock import ram_reservation
         from superlocalmemory.runtimes.media_models import load_mb_for
+        from superlocalmemory.runtimes.worker_client import MediaWorkerMemoryError
 
         # The managed worker owns its cross-process reservation. Holding the
         # same file lock here while probing prevents its cold load from starting.
@@ -386,7 +390,13 @@ class ReindexRunner:
             with reservation:
                 embedder = steps.build_embedder(target)
                 if embedder is not None:
-                    steps.probe(embedder, target.dimension)
+                    try:
+                        steps.probe(embedder, target.dimension)
+                    except steps.StepFailed as failed:
+                        if isinstance(failed.__cause__, MediaWorkerMemoryError):
+                            # a managed worker said no for lack of memory, not of a vector
+                            raise steps.StepFailed(MEMORY_REFUSED_MESSAGE) from None
+                        raise
                 return embedder
         except steps.StepFailed:
             if embedder is not None:
@@ -395,10 +405,13 @@ class ReindexRunner:
         except RuntimeError as exc:
             if embedder is not None:
                 steps.close_embedder(embedder)
-            raise steps.StepFailed(
-                f"The model load could not obtain its memory reservation ({exc}). "
-                "Close other large applications or wait for the other model load, "
-                "then retry.") from exc
+            if "timeout" in str(exc).lower():
+                raise steps.StepFailed(
+                    f"The model load could not obtain its memory reservation ({exc}). "
+                    "Close other large applications or wait for the other model load, "
+                    "then retry.") from exc
+            logger.info("model load refused: %s", exc)
+            raise steps.StepFailed(MEMORY_REFUSED_MESSAGE) from exc
 
     def _activate(self, job: dict, embedder: Any, target: Any) -> tuple[dict, bool]:
         from superlocalmemory.core.embedding_reindex_activate import activate_job

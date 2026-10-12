@@ -99,6 +99,9 @@ def describe(job: dict | None) -> str:
 def _status_text(data: dict) -> str:
     lines = [f"Embedding model in use: {data.get('live') or 'not recorded yet'}",
              describe(data.get("job"))]
+    worker = data.get("worker") or {}
+    if worker.get("reason"):
+        lines.append(worker["reason"])
     if data.get("previous_vectors_kept"):
         lines.append(f"Previous model kept for rollback: {data.get('previous')} "
                      "(free it with: slm embedder forget-previous)")

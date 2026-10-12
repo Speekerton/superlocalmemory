@@ -44,10 +44,6 @@ def visual_recall(tmp_path):
     ("shared", {"include_global": False, "include_shared": True}),
 ])
 @pytest.mark.parametrize("gate", ["prepare", "search"])
-@pytest.mark.xfail(
-    strict=True, raises=AssertionError,
-    reason="PR-243 #2 handed to WP-6: engine.py omits scope flags in prepare and search",
-)
 def test_normal_recall_finds_visible_wordless_picture(
     visual_recall, monkeypatch, scope, flags, gate,
 ):

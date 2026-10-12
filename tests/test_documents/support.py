@@ -26,6 +26,7 @@ class FakeClient:
     def __init__(self, ocr=None, engine="rapidocr"):
         self.ocr, self.engine = ocr or {}, engine
         self.calls: list[tuple[str, int]] = []
+        self.classify_flags: list[bool] = []
 
     def _page(self, path) -> int:
         try:
@@ -33,7 +34,8 @@ class FakeClient:
         except ValueError:
             return 0
 
-    def prepare_image(self, path, out_dir, *, wait_cold=True):
+    def prepare_image(self, path, out_dir, *, wait_cold=True, classify=True):
+        self.classify_flags.append(classify)
         self.calls.append(("prepare", self._page(path)))
         stored = Path(out_dir) / "stored.png"
         stored.write_bytes(b"STRIPPED")

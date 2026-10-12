@@ -302,7 +302,7 @@ class JobRunner:
     def _thumb(self, png: Path) -> tuple[bytes | None, str | None]:
         out = Path(tempfile.mkdtemp(dir=self.work))
         try:
-            info = dict(self.ctx.client.prepare_image(png, out, wait_cold=True))
+            info = dict(self.ctx.client.prepare_image(png, out, wait_cold=True, classify=False))
             thumb = info.get("thumb_path")
             data = None
             if thumb:

@@ -202,6 +202,11 @@ class TestLiveCompactGoesThroughTheDaemon:
         source = inspect.getsource(unified_daemon)
         start = source.index('@application.post("/maintenance/compact")')
         body = source[start:start + 1600]
-        assert "require_permission(request, Permission.WRITE" in body
+        from superlocalmemory.access.rbac import Permission
+        from superlocalmemory.server.mutation_gate import rule_for
+
+        assert "require_global_manage(request)" in body
+        rule = rule_for("POST", "/maintenance/compact")
+        assert rule.scope == "global" and rule.permission == Permission.MANAGE
         assert "authorize_route_mutation(" in body
         assert "compact_vector_store" in body

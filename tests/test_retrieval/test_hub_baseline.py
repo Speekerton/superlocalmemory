@@ -14,7 +14,7 @@ import pytest
 from superlocalmemory.retrieval import hub_baseline as hb
 from superlocalmemory.storage import schema
 from superlocalmemory.storage.database import DatabaseManager
-from superlocalmemory.storage.migrations import M059_fact_hub_baseline as M059
+from superlocalmemory.storage.migrations import M061_fact_hub_baseline as M061
 from superlocalmemory.storage.models import AtomicFact, MemoryRecord
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "answerability"
@@ -70,7 +70,7 @@ def db(tmp_path):
     manager = DatabaseManager(tmp_path / "memory.db")
     manager.initialize(schema)
     conn = sqlite3.connect(tmp_path / "memory.db")
-    M059.apply(conn)
+    M061.apply(conn)
     conn.commit()
     conn.close()
     hb.PROBES._cache.clear()

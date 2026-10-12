@@ -144,9 +144,11 @@ def _alias_fix(row: tuple, profile_id: str, canonical: str) -> AliasFix | None:
                     float(confidence or 0.0), source, new_source, reason)
 
 
-def _plan_aliases(conn: sqlite3.Connection, plan: ProfilePlan,
-                  names: dict[str, str]) -> dict[str, list[str]]:
-    """Alias decisions; returns the aliases a lookup may use, lower -> ids."""
+def _plan_aliases(conn: sqlite3.Connection, plan: ProfilePlan, names: dict[str, str],
+                  skip: frozenset[str] = frozenset()) -> dict[str, list[str]]:
+    """Alias decisions; returns the aliases a lookup may use, lower -> ids.
+
+    An alias id in ``skip`` (an earlier run the user undid) is left as it is."""
     usable: dict[str, list[str]] = {}
     for row in _rows(conn, "SELECT alias_id, entity_id, alias, confidence, source "
                            "FROM entity_aliases WHERE profile_id = ? ORDER BY rowid",
@@ -155,6 +157,8 @@ def _plan_aliases(conn: sqlite3.Connection, plan: ProfilePlan,
         if canonical is None:
             continue
         fix = _alias_fix(row, plan.profile_id, canonical)
+        if fix is not None and fix.alias_id in skip:
+            fix = None
         if fix is not None:
             plan.aliases.append(fix)
             if fix.new_source is None:
@@ -223,13 +227,14 @@ def fact_names(content: str) -> list[str]:
     return out
 
 
-def _plan_facts(conn: sqlite3.Connection, plan: ProfilePlan, linker: _Linker) -> None:
+def _plan_facts(conn: sqlite3.Connection, plan: ProfilePlan, linker: _Linker,
+                skip: frozenset[str] = frozenset()) -> None:
     for fact_id, content, links_json in _rows(
             conn, "SELECT fact_id, content, canonical_entities_json "
                   "FROM atomic_facts WHERE profile_id = ? ORDER BY rowid", (plan.profile_id,)):
         old = tuple(dict.fromkeys(_decode(links_json)))
         plan.links[str(fact_id)] = old
-        if not old:
+        if not old or str(fact_id) in skip:
             continue
         names = fact_names(str(content or ""))
         new = tuple(dict.fromkeys(i for i in (linker.link(n, old) for n in names) if i))
@@ -238,30 +243,35 @@ def _plan_facts(conn: sqlite3.Connection, plan: ProfilePlan, linker: _Linker) ->
             plan.links[str(fact_id)] = new
 
 
-def plan_profile(conn: sqlite3.Connection, profile_id: str) -> ProfilePlan:
+def plan_profile(conn: sqlite3.Connection, profile_id: str,
+                 skip: frozenset[str] = frozenset()) -> ProfilePlan:
     plan = ProfilePlan(profile_id)
     entities = [(str(e), str(n or "")) for e, n in _rows(
         conn, "SELECT entity_id, canonical_name FROM canonical_entities "
               "WHERE profile_id = ? AND entity_id NOT LIKE ? ORDER BY rowid",
         (profile_id, PLACEHOLDER_PREFIX + "%"))]
     names = dict(entities)
-    aliases = _plan_aliases(conn, plan, names)
-    _plan_facts(conn, plan, _Linker(entities, aliases, plan))
+    aliases = _plan_aliases(conn, plan, names, skip)
+    _plan_facts(conn, plan, _Linker(entities, aliases, plan), skip)
     used = {i for f in plan.facts for i in f.new_ids}
     plan.new_entities = {k: v for k, v in plan.new_entities.items() if f"new:{k}" in used}
     from superlocalmemory.storage.entity_link_repair_junk import plan_junk
 
-    plan_junk(conn, plan, entities)
+    plan_junk(conn, plan, [(e, n) for e, n in entities if e not in skip])
     return plan
 
 
-def plan(conn: sqlite3.Connection) -> EntityRepairPlan:
-    """What a repair would change, read-only."""
+def plan(conn: sqlite3.Connection, skip: frozenset[str] = frozenset()) -> EntityRepairPlan:
+    """What a repair would change, read-only.
+
+    ``skip`` holds ids (facts, aliases, entities) an undone run touched: they
+    are left exactly as they are, so an undo is final until the user asks again.
+    """
     if not _has_column(conn, "atomic_facts", "entities_json"):
         return EntityRepairPlan([])
     profiles = [str(r[0]) for r in _rows(
         conn, "SELECT DISTINCT profile_id FROM canonical_entities ORDER BY profile_id")]
-    return EntityRepairPlan([plan_profile(conn, p) for p in profiles])
+    return EntityRepairPlan([plan_profile(conn, p, skip) for p in profiles])
 
 
 def report(conn: sqlite3.Connection, the_plan: EntityRepairPlan, sample: int = 8) -> dict:

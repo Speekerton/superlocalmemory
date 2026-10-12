@@ -54,9 +54,16 @@ def test_a_member_of_another_workspace_is_refused(company, path) -> None:
     client, rbac = company
     other = rbac.create_user("olga", "pw-123456789", "Olga")
     rbac.set_membership("clientx", other["user_id"], "member")
-    resp = _get(client, path, rbac.create_session(other["user_id"]))
-    assert resp.status_code == 403, resp.text[:200]
+    session = rbac.create_session(other["user_id"])
+    # Naming no workspace reads her own (bound to her session, PR 248 finding
+    # 2), never default's; naming default is refused.
+    resp = _get(client, path, session)
     assert _SECRET not in resp.text
+    sep = "&" if "?" in path else "?"
+    for key in ("profile", "profile_id"):
+        named = _get(client, f"{path}{sep}{key}=default", session)
+        assert named.status_code == 403, (key, named.text[:200])
+        assert _SECRET not in named.text
 
 
 @pytest.mark.parametrize("path", _PATHS)

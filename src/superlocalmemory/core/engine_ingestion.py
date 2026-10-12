@@ -95,8 +95,12 @@ def content_passes_admission(content: str) -> bool:
 
     from superlocalmemory.core.injection import is_low_quality
     from superlocalmemory.encoding.entropy_gate import EntropyGate
+    from superlocalmemory.encoding.non_answer import is_empty_structure, is_stub
 
-    return not is_low_quality(content) and EntropyGate().should_pass(content)
+    if is_empty_structure(content):
+        return False  # "[]", "{}" and the like carry nothing to remember
+    # A recognised receipt or session stub is kept durably (marked non-answer).
+    return is_stub(content) or (not is_low_quality(content) and EntropyGate().should_pass(content))
 
 
 def _prebuilt_fact_payload(fact: AtomicFact) -> dict:
@@ -234,8 +238,7 @@ def build_immediate_admission_handler(
             fact.scope = request.scope
             fact.shared_with = list(request.shared_with) or None
             fact.session_id = request.session_id or fact.session_id
-            if request.session_date:
-                fact.observation_date = request.session_date
+            fact.observation_date = fact.observation_date or observation_date
         else:
             from superlocalmemory.core.queryable_fact import queryable_fact
 
@@ -292,6 +295,21 @@ def build_immediate_admission_handler(
         if gate.truncated:
             from superlocalmemory.core.source_excerpt import attach_source_pointer
             fact = attach_source_pointer(fact, content, max_verbatim_chars)
+        from superlocalmemory.core.description_metadata import parent_labels
+
+        parent_rows = db.execute('SELECT * FROM memories WHERE memory_id=? AND profile_id=?',
+                                 (fact.memory_id, request.profile_id))
+        if parent_rows:
+            import json
+            parent = dict(parent_rows[0])
+            labels = parent_labels(db, parent)
+            existing_metadata = json.loads(parent['metadata_json'] or '{}')
+            additions = {key: value for key, value in labels.items()
+                         if not existing_metadata.get(key)}
+            if additions:
+                db.execute('UPDATE memories SET metadata_json=? WHERE memory_id=? AND profile_id=?',
+                           (json.dumps({**existing_metadata, **additions}),
+                            fact.memory_id, request.profile_id))
         return [store_fact_keeping_kind(db, fact, metadata=metadata, request=request)]
 
     return write_queryable
@@ -639,14 +657,19 @@ def build_engine_ingestion_command(
             state["provenance"] = provenance_complete
         if state.get("post_hooks") is False:
             try:
+                from superlocalmemory.core.agent_attribution import audit_fields
+                from superlocalmemory.core.audit_record import content_hash
+
                 engine._hooks.run_post("store", {
                     "operation": "store",
                     "agent_id": operation.trusted_actor_id,
                     "profile_id": operation.profile_id,
                     "content_preview": operation.raw_content[:100],
+                    "content_hash": content_hash(operation.raw_content),
                     "ingestion_operation_id": operation.operation_id,
                     "fact_ids": list(operation.final_fact_ids),
                     "fact_count": len(operation.final_fact_ids),
+                    **audit_fields(operation.metadata),
                 })
             except Exception as exc:
                 return MaterializationResult(

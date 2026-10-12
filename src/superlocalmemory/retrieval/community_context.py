@@ -33,6 +33,8 @@ import logging
 from collections import Counter
 from typing import Any
 
+from superlocalmemory.storage.erasure_visibility import aggregate_erasure_clause_for_db
+
 logger = logging.getLogger(__name__)
 
 #: ``thematic_context.member_fact_ids`` is a relevance sample, not the
@@ -52,10 +54,11 @@ def build_community_context(
     treats both as "no thematic context for this recall", never as a
     failure.
     """
+    erasure = aggregate_erasure_clause_for_db(db, "community_summaries")
     rows = [
         dict(r) for r in db.execute(
             "SELECT community_id, summary, keywords, fact_ids_json, "
-            "fact_count FROM community_summaries WHERE profile_id = ?",
+            f"fact_count FROM community_summaries WHERE profile_id = ?{erasure}",
             (profile_id,),
         )
     ]

@@ -21,8 +21,18 @@ def _engine():
                            _config=SimpleNamespace())
 
 
+def _admit_all(rows, db, pid, **kw):
+    """A stand-in store has no sources to check; the tiers are under test."""
+    from superlocalmemory.storage.models import RecallResponse
+
+    return rows, RecallResponse(source_fidelity_status="checked")
+
+
 def _run(query, rows=ROWS, **kw):
-    with patch.object(recall_fallback, "_fetch_candidates", lambda *a: list(rows)):
+    from superlocalmemory.retrieval import fallback_fidelity
+
+    with patch.object(recall_fallback, "_fetch_candidates", lambda *a: list(rows)), \
+            patch.object(fallback_fidelity, "admit_fallback", _admit_all):
         return recall_fallback.recall_keyword_fallback(_engine(), query, 1, **kw)
 
 

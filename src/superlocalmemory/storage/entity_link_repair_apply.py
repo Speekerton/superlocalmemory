@@ -266,8 +266,10 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
-def apply(db_path: str | Path) -> dict[str, Any]:
-    """Plan and apply in one transaction; returns counts and the run id."""
+def apply(db_path: str | Path, skip: frozenset[str] = frozenset()) -> dict[str, Any]:
+    """Plan and apply in one transaction; returns counts and the run id.
+
+    ``skip``: ids an undone run touched, left alone (see ``entity_link_repair.plan``)."""
     from superlocalmemory.storage.write_lock import get_write_lock
 
     started = time.monotonic()
@@ -276,7 +278,7 @@ def apply(db_path: str | Path) -> dict[str, Any]:
         with get_write_lock(Path(db_path)):
             conn.execute("BEGIN IMMEDIATE")
             try:
-                result = _apply_in(conn)
+                result = _apply_in(conn, skip)
                 conn.execute("COMMIT")
             except BaseException:
                 conn.execute("ROLLBACK")
@@ -288,8 +290,8 @@ def apply(db_path: str | Path) -> dict[str, Any]:
     return result
 
 
-def _apply_in(conn: sqlite3.Connection) -> dict[str, Any]:
-    the_plan = elr.plan(conn)
+def _apply_in(conn: sqlite3.Connection, skip: frozenset[str] = frozenset()) -> dict[str, Any]:
+    the_plan = elr.plan(conn, skip)
     summary: dict[str, Any] = {**the_plan.summary(), "edges_removed": 0,
                                "temporal_events_repointed": 0, "entities_created": 0,
                                "junk_entities_removed": 0}
@@ -321,6 +323,23 @@ def apply_with_backup(db_path: str | Path, root: str | Path) -> dict[str, Any]:
     if not copy:
         raise RuntimeError("the backup copy could not be made, so nothing was changed")
     return {**apply(db_path), "backup": copy}
+
+
+def touched_ids(execute, run_ids: list[str]) -> frozenset[str]:
+    """Every fact, alias and junk-entity id the given runs changed (from their undo record).
+
+    ``execute(sql, params)`` returns rows; ids of undone runs are never re-planned."""
+    if not run_ids or not execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (UNDO,)):
+        return frozenset()
+    out: set[str] = set()
+    for run_id in run_ids:
+        for row in execute(f"SELECT kind, payload FROM {UNDO} WHERE run_id = ? AND kind IN "
+                           "('facts','aliases','junk_entities')", (run_id,)):
+            for item in json.loads(row[1]):
+                out.add(str(item[0] if row[0] == "facts" else
+                            item["alias_id" if row[0] == "aliases" else "entity_id"]))
+    return frozenset(out)
 
 
 class UndoRefused(RuntimeError):
@@ -469,4 +488,4 @@ def _undo_in(conn: sqlite3.Connection, run_id: str) -> dict[str, int]:
 
 
 __all__ = ["BACKUP_LABEL", "RUNS", "UNDO", "UndoRefused", "apply", "apply_with_backup",
-           "count_effects", "undo"]
+           "count_effects", "touched_ids", "undo"]

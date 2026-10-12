@@ -112,8 +112,23 @@ def _footprint(engine, fact_ids: list[str]) -> dict[str, int]:
 
 
 def _live_index_has(engine, fact_id: str) -> bool:
+    """Keyword search, as recall runs it, finds the memory by its own words.
+
+    The live keyword index is SQLite FTS when the store has it and the
+    in-memory corpus only on legacy stores, so ask the channel, not a set.
+    """
     index = getattr(getattr(engine, "_retrieval_engine", None), "_bm25", None)
-    return index is not None and fact_id in getattr(index, "_fact_id_set", ())
+    if index is None:
+        return False
+    if fact_id in getattr(index, "_fact_id_set", ()):
+        return True
+    rows = engine._db.execute(
+        "SELECT content FROM atomic_facts WHERE fact_id = ?", (fact_id,))
+    if not rows:
+        return False
+    content = dict(rows[0])["content"]
+    hits = index.search(content, engine._profile_id, top_k=100)
+    return fact_id in {fid for fid, _score in hits}
 
 
 @pytest.mark.parametrize("decided", [False, True], ids=["proposed", "applied"])

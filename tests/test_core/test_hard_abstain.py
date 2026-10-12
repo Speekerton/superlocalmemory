@@ -151,6 +151,10 @@ def test_run_recall_hard_abstains_and_show_weak_reaches_the_contract(monkeypatch
 
     engine = SimpleNamespace(_sufficiency_judge=None, recall=recall)
     monkeypatch.setattr(recall_pipeline, "apply_ranking", lambda resp, *a, **k: resp)
+    # A stand-in store has no sources to check; the gate is what is under test.
+    from superlocalmemory.retrieval import source_fidelity_flags
+    monkeypatch.setattr(source_fidelity_flags, "flag_unverified",
+                        lambda results, *a, **k: results)
     config = SLMConfig.for_mode(Mode.A)
     kwargs = dict(fast=True, config=config, retrieval_engine=engine, trust_scorer=None,
                   embedder=None, db=SimpleNamespace(db_path=None), llm=None, hooks=None)

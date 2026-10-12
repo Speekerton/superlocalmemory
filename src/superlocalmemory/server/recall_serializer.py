@@ -385,6 +385,14 @@ def _retrieval_metadata(response):
     return {
         "incomplete_channels": list(getattr(response, "incomplete_channels", ()) or ()),
         "channel_status": dict(getattr(response, "channel_status", {}) or {}),
+        "source_fidelity_status": getattr(response, "source_fidelity_status", "not_checked"),
+        "source_fidelity_note": {
+            "degraded": "Source fidelity check unavailable; unchecked derivatives withheld.",
+            "unavailable": "No source store available; unchecked derivatives withheld.",
+        }.get(getattr(response, "source_fidelity_status", None)),
+        # 4.1.25 (N-11): seconds the entity graph was behind the store (0.0 =
+        # current; None = the graph did not run). A boost computed on a graph
+        # that is behind can differ from the next one, so it travels too.
         "graph_lag_s": getattr(response, "graph_lag_s", None),
         "reranker_status": (getattr(response, "reranker_status", "not_configured")
                             or "not_configured"),

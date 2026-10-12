@@ -6,7 +6,10 @@
   'use strict';
 
   var POLL_MS = 2000;
-  var SIZE_NOTE = 'about 1.5 GB';
+  var SIZE_NOTE = 'about 2.8 GB of disk space for the model and runtime';
+  function mediaSize(m) {
+    return m && m.installed_bytes ? (m.installed_bytes / 1024 ** 3).toFixed(1) + ' GB installed (measured)' : SIZE_NOTE + ' (estimate)';
+  }
 
   function el(tag, cls, text) {
     var e = document.createElement(tag);
@@ -84,7 +87,7 @@
     if (lowRam(m)) return;
     confirmThen({
       title: 'Turn on images and documents', target: 'Images and documents',
-      consequence: 'Downloads ' + SIZE_NOTE + ' of models. Everything stays on this computer.',
+      consequence: 'Installs ' + mediaSize(m) + '. Everything stays on this computer.',
       confirmLabel: 'Turn on',
     }, function () {
       msg.textContent = 'Starting…';
@@ -103,7 +106,7 @@
 
   function offCard(host, m, opts) {
     var card = cardShell('Turn on images and documents',
-      'Remember pictures and read PDFs: ' + SIZE_NOTE + ' of models, and it stays on this computer.');
+      'Remember pictures and read PDFs: ' + mediaSize(m) + ', and it stays on this computer.');
     var msg = messageLine(card);
     if (m.env_state === 'unsupported' && m.step) msg.textContent = m.step;
     if (lowRam(m) && m.ram_message) card.insertBefore(el('p', null, m.ram_message), msg);
@@ -170,8 +173,8 @@
     });
   }
 
-  function onCard(host, opts) {
-    var card = cardShell('Images and documents are on', 'Everything stays on this computer.');
+  function onCard(host, opts, m) {
+    var card = cardShell('Images and documents are on', mediaSize(m) + '. Everything stays on this computer.');
     var label = el('label', 'muted');
     var box = el('input');
     box.type = 'checkbox';
@@ -185,7 +188,7 @@
   }
 
   function pickCard(host, m, opts) {
-    if (isOn(m)) return onCard(host, opts);
+    if (isOn(m)) return onCard(host, opts, m);
     if (m.enabled && m.env_state === 'ready') return restartCard();
     if (m.enabled && m.env_state === 'installing') return installingCard(m);
     if (m.enabled && m.env_state === 'failed') return failedCard(host, m, opts);
@@ -277,8 +280,8 @@
       t.appendChild(el('p', 'muted', 'Almost done. Restart SuperLocalMemory to finish; the button is on the next page.'));
       t.appendChild(button(OPEN_MEDIA, 'btn sm primary', function () { goTo('media-pane'); }));
     } else {
-      t.appendChild(el('p', 'muted', 'Remember pictures and read PDFs. It downloads ' + SIZE_NOTE +
-        ' of models once, and nothing leaves this computer.'));
+      t.appendChild(el('p', 'muted', 'Remember pictures and read PDFs. Installs ' + mediaSize(m) +
+        ' once, and nothing leaves this computer.'));
       if (lowRam(m) && m.ram_message) t.appendChild(el('p', null, m.ram_message));
       else if (m.env_state === 'unsupported' && m.step) t.appendChild(el('p', null, m.step));
       var go = button('Turn on images & documents', 'btn sm primary', requestEnable);

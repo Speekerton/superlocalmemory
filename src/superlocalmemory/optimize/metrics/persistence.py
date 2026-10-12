@@ -59,7 +59,7 @@ class MetricsPersistence:
         """
         try:
             snap = db.metrics_load()
-            if snap.hits > 0 or snap.misses > 0:
+            if snap.hits > 0 or snap.misses > 0 or snap.compress_runs > 0:
                 # Restore counters from persisted snapshot
                 with collector._data_lock:
                     collector._hits = snap.hits
@@ -78,14 +78,13 @@ class MetricsPersistence:
                     collector._cache_entry_count = snap.cache_entry_count
                 logger.info(
                     "MetricsPersistence: restored %d hits, %d misses from llmcache.db",
-                    snap.hits, snap.misses,
+                    snap.hits,
+                    snap.misses,
                 )
         except Exception as exc:
             logger.warning("MetricsPersistence.load failed: %s", exc)
 
-    def start_background_flush(
-        self, collector: MetricsCollector, db: CacheDB
-    ) -> None:
+    def start_background_flush(self, collector: MetricsCollector, db: CacheDB) -> None:
         """Start a background thread that flushes every 60s."""
         if self._thread is not None and self._thread.is_alive():
             return
@@ -101,7 +100,9 @@ class MetricsPersistence:
                     logger.warning("MetricsPersistence background flush error: %s", exc)
 
         self._thread = threading.Thread(
-            target=_loop, name="slm-metrics-flush", daemon=True,
+            target=_loop,
+            name="slm-metrics-flush",
+            daemon=True,
         )
         self._thread.start()
 

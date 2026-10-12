@@ -36,6 +36,10 @@ def _run(monkeypatch):
 
     engine = SimpleNamespace(_sufficiency_judge=None, recall=lambda *a, **k: _response())
     monkeypatch.setattr(recall_pipeline, "apply_ranking", lambda resp, *a, **k: resp)
+    # A stand-in store has no sources to check; the gate is what is under test.
+    from superlocalmemory.retrieval import source_fidelity_flags
+    monkeypatch.setattr(source_fidelity_flags, "flag_unverified",
+                        lambda results, *a, **k: results)
     return recall_pipeline.run_recall(
         "recent decisions", "default", fast=True, config=SLMConfig.for_mode(Mode.A),
         retrieval_engine=engine, trust_scorer=None, embedder=None,

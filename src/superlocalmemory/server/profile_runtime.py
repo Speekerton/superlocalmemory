@@ -46,9 +46,29 @@ class TransitionDrainTimeout(Exception):
     """
 
 
+_REQUEST_PIN: ContextVar[object | None] = ContextVar("slm_request_pin", default=None)
+
+
 def current_request_profile() -> str | None:
     """Return the immutable profile snapshot admitted for this request."""
     return _REQUEST_PROFILE.get()
+
+
+def current_request_pin():
+    """The caller workspace pinned for this request (see ``caller_workspace``)."""
+    return _REQUEST_PIN.get()
+
+
+@contextmanager
+def pin_request_workspace(pin) -> Iterator[None]:
+    """Make ``pin`` this request's workspace for every gate and the handler."""
+    pin_token = _REQUEST_PIN.set(pin)
+    profile_token = _REQUEST_PROFILE.set(pin.profile_id)
+    try:
+        yield
+    finally:
+        _REQUEST_PROFILE.reset(profile_token)
+        _REQUEST_PIN.reset(pin_token)
 
 
 @dataclass(frozen=True, slots=True)
@@ -495,6 +515,9 @@ def reconfigure_daemon_engine(app_state, new_config, *, mode_change: bool) -> No
         # Direct route/unit usage without a resident daemon retains the
         # established persistence-only behavior.
         new_config.save(mode_change=mode_change)
+        if mode_change:
+            from superlocalmemory.server.mode_selection import publish_selection
+            publish_selection(new_config)
         return
     runtime = get_profile_runtime(app_state)
 
@@ -503,6 +526,9 @@ def reconfigure_daemon_engine(app_state, new_config, *, mode_change: bool) -> No
         # switch. Runtime truth always wins over that stale config snapshot.
         new_config.active_profile = snapshot.profile_id
         callback(new_config, mode_change=mode_change)
+        if mode_change:
+            from superlocalmemory.server.mode_selection import publish_selection
+            publish_selection(new_config)
 
     runtime.reconfigure(_commit)
 
@@ -565,7 +591,14 @@ class ProfileRuntimeMiddleware:
         from superlocalmemory.server.profile_lease import bind_request_lease
 
         scope.setdefault("state", {})["profile_snapshot"] = lease.snapshot
-        token = _REQUEST_PROFILE.set(lease.snapshot.profile_id)
+        # A signed-in caller's workspace was pinned before the gates ran and is
+        # theirs alone: a daemon switch landing now cannot change what they act
+        # on (PR 248 review, finding 2). A caller without a binding (the machine
+        # owner) is authorized independently of the workspace, so it acts on
+        # the generation it was admitted under, as before.
+        pin = scope["state"].get("caller_workspace")
+        bound = pin is not None and pin.bound
+        token = _REQUEST_PROFILE.set(pin.profile_id if bound else lease.snapshot.profile_id)
 
         async def _send(message) -> None:
             # Streaming bodies do not keep the request's admission. Any work
@@ -590,8 +623,10 @@ __all__ = [
     "TransitionDrainTimeout",
     "bind_profile_runtime",
     "commit_daemon_profile_switch",
+    "current_request_pin",
     "current_request_profile",
     "get_profile_runtime",
     "persist_active_profile",
+    "pin_request_workspace",
     "reconfigure_daemon_engine",
 ]

@@ -22,7 +22,9 @@ import hashlib
 import io
 import json
 import os
+import shutil
 import tarfile
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -74,20 +76,53 @@ def _originals(data_root: Path) -> list[Path]:
 def build_export(data_root: Path, destination: Path) -> dict[str, Any]:
     """Write the archive to ``destination`` (created owner-only) and return its manifest."""
     from superlocalmemory.infra.backup import MANAGED_DATABASES, BackupCoordinator
-    from superlocalmemory.infra.private_files import open_private_new
 
     data_root = Path(data_root)
     backup_set = BackupCoordinator(
         MANAGED_DATABASES, data_root, data_root / "backups").create_backup_set()
     set_dir = Path(backup_set.stores[0].file_path).parent if backup_set.stores else None
-    stores = [{"name": e.store_name, "sha256": e.sha256, "bytes": e.size_bytes}
-              for e in backup_set.stores]
+    with tempfile.TemporaryDirectory(prefix=".export-", dir=data_root / "backups") as scratch:
+        if set_dir is not None:
+            set_dir = _without_credentials(set_dir, Path(scratch) / "set")
+        return _write_archive(data_root, destination, backup_set.set_id, set_dir)
+
+
+def _without_credentials(set_dir: Path, copy: Path) -> Path:
+    """A copy of the set with accounts, sessions and sign-in links removed.
+
+    The local set keeps its bytes. Its ``manifest.json`` is rewritten for the
+    copy, with the new checksums and manifest hash, so the exported set still
+    verifies on its own.
+    """
+    from superlocalmemory.infra.backup_credentials import scrub_store
+
+    shutil.copytree(set_dir, copy, symlinks=True)
+    manifest_path = copy / "manifest.json"
+    native = json.loads(manifest_path.read_text(encoding="utf-8"))
+    for store in native.get("stores", []):
+        path = copy / store["store_name"]
+        if scrub_store(path, store["store_name"]):
+            store["sha256"], store["size_bytes"] = _sha256(path), path.stat().st_size
+    sums = "|".join(sorted(s["sha256"] for s in native.get("stores", [])))
+    native["manifest_hash"] = hashlib.sha256(sums.encode()).hexdigest()
+    manifest_path.write_text(json.dumps(native, indent=2), encoding="utf-8")
+    return copy
+
+
+def _write_archive(data_root: Path, destination: Path, set_id: str,
+                   set_dir: Path | None) -> dict[str, Any]:
+    from superlocalmemory.infra.backup_credentials import OMISSION
+    from superlocalmemory.infra.private_files import open_private_new
+
+    native = json.loads((set_dir / "manifest.json").read_text(encoding="utf-8")) if set_dir else {}
+    stores = [{"name": s["store_name"], "sha256": s["sha256"], "bytes": s["size_bytes"]}
+              for s in native.get("stores", [])]
     originals = _originals(data_root)
     manifest: dict[str, Any] = {
         "format": ARCHIVE_FORMAT, "version": ARCHIVE_VERSION,
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "set_id": backup_set.set_id, "stores": stores,
-        "media_originals": len(originals), "omitted": list(OMITTED),
+        "set_id": set_id, "stores": stores,
+        "media_originals": len(originals), "omitted": [*OMITTED, OMISSION],
     }
     fd = open_private_new(destination)
     with os.fdopen(fd, "wb") as raw, tarfile.open(fileobj=raw, mode="w:gz") as tar:

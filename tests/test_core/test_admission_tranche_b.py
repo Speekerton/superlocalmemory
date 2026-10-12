@@ -357,6 +357,7 @@ class TestTrancheBCliGates:
             args.profile = "default"
             args.json = False
             args.dry_run = True
+            args.repair_sketches = False
             args.content = "test content"
             try:
                 fn(args)

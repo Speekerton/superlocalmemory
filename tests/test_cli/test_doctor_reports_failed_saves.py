@@ -33,13 +33,13 @@ def _store(root: Path, dead: list[tuple[str, str]] = ()) -> Path:
 
 
 def _doctor_rows(root: Path, monkeypatch) -> dict[str, dict]:
-    from superlocalmemory.cli.commands import cmd_doctor
+    from tests.helpers.doctor import run_doctor_report
 
     monkeypatch.setenv("SLM_DATA_DIR", str(root))
     captured: list[dict] = []
     with patch("superlocalmemory.cli.json_output.json_print",
                side_effect=lambda event, data=None, **kw: captured.append(data or {})):
-        cmd_doctor(Namespace(json=True, quick=True))
+        run_doctor_report(Namespace(json=True, quick=True))
     assert captured, "doctor did not run"
     return {c["name"]: c for c in captured[-1]["checks"]}
 

@@ -47,6 +47,11 @@ async def _runtime_profile(get_engine: Callable, explicit: str = "") -> str:
     """Resolve an MCP default profile from daemon runtime truth."""
     if explicit:
         return explicit
+    from superlocalmemory.server.profile_runtime import current_request_profile
+
+    pinned = current_request_profile()
+    if pinned:
+        return str(pinned)
     import asyncio
 
     try:
@@ -908,6 +913,7 @@ def register_core_tools(server, get_engine: Callable) -> None:
                     "fact_type": f.fact_type.value,
                     "confidence": round(f.confidence, 3),
                     "date": f.observation_date,
+                    "stub": bool(getattr(f, "non_answer", False)),
                     **kind_fields(f, display_min_confidence=_display_min_confidence),
                 })
             items, tier_info = _search_tiers(query, items, filtered=bool(parsed_kind or _tags))
@@ -1065,6 +1071,8 @@ def register_core_tools(server, get_engine: Callable) -> None:
                     "fact_type": f.fact_type.value,
                     "created_at": f.created_at,
                     "session_id": f.session_id,
+                    # A stored stub: listed, never a recall answer (WP-19).
+                    "stub": bool(getattr(f, "non_answer", False)),
                     **kind_fields(f, display_min_confidence=_display_min_confidence),
                 })
             result = {"success": True, "results": items, "count": len(items)}
@@ -1200,7 +1208,7 @@ def register_core_tools(server, get_engine: Callable) -> None:
             return {"success": False, "error": str(exc)}
 
     @server.tool()
-    @admits(OperationKind.PROFILE_SWITCH)
+    @admits(OperationKind.PROFILE_SWITCH, http_kind=OperationKind.RECALL)
     async def switch_profile(profile_id: str) -> dict:
         """Switch the active memory profile. All operations scope to this profile."""
         try:
@@ -1208,6 +1216,12 @@ def register_core_tools(server, get_engine: Callable) -> None:
 
             engine = get_engine()
             old = engine.profile_id
+            from superlocalmemory.server.caller_workspace import switch_http_workspace
+
+            if switch_http_workspace(profile_id):
+                return {"success": True, "previous_profile": old,
+                        "current_profile": profile_id, "active_profile": profile_id,
+                        "scope": "session"}
             authorization = authorize_mcp_mutation(
                 engine,
                 "update",
@@ -1261,6 +1275,12 @@ def register_core_tools(server, get_engine: Callable) -> None:
                             f"this process's local profile store"
                         ),
                     }
+                from superlocalmemory.core.caller_session import http_session_bound
+
+                if result.get("scope") == "session" and http_session_bound():
+                    authorization.complete()
+                    return {**result, "previous_profile": old,
+                            "current_profile": acknowledged}
                 generation = int(result.get("generation", 0))
                 # Sync target is the DAEMON-CONFIRMED value, never the raw
                 # caller-supplied profile_id, even though they are equal
@@ -1321,6 +1341,12 @@ def register_core_tools(server, get_engine: Callable) -> None:
                 "current_profile": profile_id,
                 "generation": generation,
             }
+        except PermissionError:
+            from superlocalmemory.core.admission import refusal_result
+            from superlocalmemory.core.caller_session import presented_session
+
+            reason = "insufficient_roles" if presented_session() else "authentication_required"
+            return refusal_result(reason, OperationKind.RECALL)
         except Exception as exc:
             logger.exception("switch_profile failed")
             return {"success": False, "error": str(exc)}

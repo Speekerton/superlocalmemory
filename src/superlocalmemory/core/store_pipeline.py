@@ -556,6 +556,12 @@ def run_store(
         "profile_id": profile_id,
         "content_preview": content[:100],
     }
+    # What the audit entry binds: the text's hash and who saved it (L-16, L-15).
+    from superlocalmemory.core.agent_attribution import audit_fields
+    from superlocalmemory.core.audit_record import content_hash as _content_hash
+
+    hook_ctx["content_hash"] = _content_hash(content)
+    hook_ctx.update(audit_fields(metadata))
     if not pre_authorized:
         hooks.run_pre("store", hook_ctx)
 
@@ -686,6 +692,7 @@ def run_store(
     facts, protected_source_ids = source_fact_set(
         facts, content, record, queryable_facts,
         getattr(config.store, "max_verbatim_chars", 24000),
+        db=db,
     )
 
     if not facts:
@@ -944,15 +951,19 @@ def run_store(
             except Exception as exc:
                 logger.debug("Sheaf check skipped: %s", exc)
 
+        from superlocalmemory.storage.event_time import valid_from as _event_start
+
+        # Event-time start is mandatory even without a contradiction validator.
+        # fill_only: a duplicate re-save (merged into an older fact) must
+        # never replace a start a correction or extraction already set.
+        db.store_temporal_validity(
+            fact_id=fact.fact_id, profile_id=profile_id,
+            valid_from=_event_start(fact),
+            fill_only=True,
+        )
         # Phase 4: Temporal validation and contradiction detection
         if temporal_validator:
             try:
-                db.store_temporal_validity(
-                    fact_id=fact.fact_id,
-                    profile_id=profile_id,
-                    valid_from=fact.observation_date,
-                    valid_until=None,
-                )
                 invalidations = temporal_validator.validate_and_invalidate(
                     new_fact=fact,
                     profile_id=profile_id,

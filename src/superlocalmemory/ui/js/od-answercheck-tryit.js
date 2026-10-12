@@ -156,14 +156,14 @@
   }
 
   function renderVerdict(col, body) {
-    var block = body.answer_check || {};
+    var block = body.answer_check || { status:body.answer_check_status, abstained:body.abstained, answer_confidence:body.answer_confidence };
     var key = outcomeKey(block.status, block.detail, block.abstained, body.result_count);
     col.textContent = '';
     col.appendChild(el('h4', { style: 'font-size:13px;margin:0 0 8px', text: 'What the answer check said' }));
     var tone = OUTCOME_TONE[key] || 'warn';
     var heading = el('p', { class: 'ac-verdict-label', tabindex: '-1', 'data-outcome': key,
       style: 'font-size:20px;font-weight:700;margin:0 0 6px;color:var(--' +
-             (tone === 'neutral' ? 'fg' : tone) + ')', text: OUTCOME_TEXT[key] });
+             (tone === 'neutral' ? 'fg' : tone + '-text') + ')', text: OUTCOME_TEXT[key] });
     col.appendChild(heading);
     // Why it was not checked, in the server's own words (answer_check_note):
     // a recall that was not checked must never read like one that was.
@@ -187,6 +187,8 @@
     if (block.reordered) {
       col.appendChild(el('p', { style: 'font-size:12.5px;margin:0 0 4px', text: 'Reordered by Jev' }));
     }
+    col.appendChild(el('p', { class:'ac-confidence-help', text:'Answer confidence measures whether these memories answer this question. Stored fact confidence describes a saved statement; neither is a guarantee.' }));
+    if (block.status !== 'judged') col.appendChild(el('p', { text:'These memories may not answer your question.' }));
     col.appendChild(latencyBar(block));
     // Same stage breakdown as the Recent checks list, from the same fields
     // (embed_ms, rerank_ms, retrieval_ms, judge_ms) — not just the two-segment
@@ -197,7 +199,7 @@
                                 text: split }));
     }
     if (typeof body.retrieval_time_ms === 'number') {
-      col.appendChild(el('p', { style: 'font-size:11.5px;color:var(--fg-3);margin:2px 0 0',
+      col.appendChild(el('p', { style: 'font-size:11.5px;color:var(--fg-2);margin:2px 0 0',
         text: 'Round trip including the request: ' + ms(body.retrieval_time_ms) }));
     }
     heading.focus();
@@ -289,7 +291,7 @@
 
   window.SLMAnswerCheckTryIt = {
     mount: mount,
-    outcomeKey: outcomeKey,
+    outcomeKey: outcomeKey, renderVerdict: renderVerdict, renderFound: renderFound,
     OUTCOME_TEXT: OUTCOME_TEXT,
     OUTCOME_TONE: OUTCOME_TONE,
   };

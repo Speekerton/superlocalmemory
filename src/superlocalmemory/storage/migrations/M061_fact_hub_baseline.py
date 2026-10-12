@@ -1,6 +1,6 @@
 # Copyright (c) 2026 Varun Pratap Bhardwaj / Qualixar
 # Licensed under AGPL-3.0-or-later
-"""M059: each fact's hub baseline, for recall that knows when it doesn't know.
+"""M061: each fact's hub baseline, for recall that knows when it doesn't know.
 
 One new table (``retrieval/hub_baseline.py``): a fact's mean cosine against a
 fixed, versioned set of probe queries, in the embedding space it was measured
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import sqlite3
 
-NAME = "M059_fact_hub_baseline"
+NAME = "M061_fact_hub_baseline"
 DB_TARGET = "memory"
 #: Additive (one new table and one trigger on delete; an older build never
 #: reads the table, and the trigger touches only that table), so going back to

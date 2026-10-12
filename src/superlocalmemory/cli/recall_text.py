@@ -92,6 +92,9 @@ def empty_result_line(result: dict) -> str:
     warming note, never "That isn't in SuperLocalMemory."."""
     if result.get("warming_up") and result.get("status_note"):
         return str(result["status_note"])
+    status = result.get("source_fidelity_status")
+    if status in {"degraded", "unavailable"}:
+        return f"Source fidelity {status}: no verified results available."
     if incomplete_line(result):
         return "Nothing found yet."
     if result.get("abstention_note"):
@@ -99,6 +102,15 @@ def empty_result_line(result: dict) -> str:
     if result.get("no_confident_match"):
         return "No confident match."
     return "No matching memories found."
+
+
+def fidelity_line(result: dict) -> str:
+    """Expose withheld derivatives and give the operator a recovery action."""
+    note = str(result.get("source_fidelity_note") or "")
+    if result.get("source_fidelity_status") in {"degraded", "unavailable"}:
+        return (note + " Run slm doctor to diagnose the source store; repair any reported "
+                "storage/schema errors, then retry recall.").strip()
+    return note
 
 
 def remember_receipt_text(result: dict) -> str:

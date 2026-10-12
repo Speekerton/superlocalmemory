@@ -276,7 +276,7 @@ def register_resources(server, get_engine: Callable) -> None:
             # Top-accessed facts
             top_rows = engine._db.execute(
                 "SELECT fact_id, content, access_count FROM atomic_facts "
-                "WHERE profile_id = ? AND access_count > 0 "
+                f"WHERE profile_id = ? AND access_count > 0{engine._db.visible_fact_clause()} "
                 "ORDER BY access_count DESC LIMIT 5",
                 (pid,),
             )

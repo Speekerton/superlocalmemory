@@ -49,7 +49,8 @@ MOVE    action_outcomes, association_edges, atomic_facts, bm25_tokens,
         canonical_entities, ccq_audit_log, ccq_consolidated_blocks,
         completion_manifests, consolidation_log, correction_cases_overtaken,
         correction_events, dead_letter_operations, derivation_lineage,
-        embedding_metadata, embedding_quantization_metadata, entity_aliases,
+        embedding_metadata, embedding_quantization_metadata, enrichment_changes,
+        entity_aliases,
         fact_access_log, fact_consolidations, fact_context, fact_hub_baseline,
         fact_importance, fact_outcome_score, fact_retention, fact_temporal_validity,
         feedback_records, memories, memory_archive,
@@ -117,6 +118,8 @@ DECISIONS: dict[str, tuple[str, str]] = {
     "scene_fact_members": (MOVE, "scene members"),
     "fact_importance": (MOVE, "per-fact importance"),
     "fact_retention": (MOVE, "per-fact retention"),
+    "enrichment_changes": (MOVE, "undo ledger of automatic metadata improvements; it "
+                                 "follows the moved facts so a run stays undoable"),
     "fact_temporal_validity": (MOVE, "bitemporal validity"),
     "fact_outcome_score": (MOVE, "per-fact outcome score"),
     "fact_hub_baseline": (MOVE, "per-fact hub baseline"),
@@ -279,6 +282,10 @@ def _merge_entities(conn: Any, tables: set[str], source: str, target: str) -> li
             "last_seen = MAX(last_seen, COALESCE((SELECT last_seen FROM canonical_entities "
             "WHERE entity_id = ?), last_seen)) WHERE entity_id = ?", (old, old, old, new))
         conn.execute("DELETE FROM canonical_entities WHERE entity_id = ?", (old,))
+    if "enrichment_changes" in tables:  # keep moved improvement runs exactly undoable
+        from superlocalmemory.storage.enrichment_ledger import remap_entity_ids
+
+        remap_entity_ids(conn, source, {old: new for old, new in pairs})
     return [old for old, _new in pairs]
 
 

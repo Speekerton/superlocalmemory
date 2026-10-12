@@ -103,6 +103,9 @@ async def test_compress_normalize_mode_keeps_the_original(tools, monkeypatch):
             stored[fake_id] = data
             return fake_id
 
+        def retrieve(self, ccr_id, **kw):
+            return stored.get(ccr_id)
+
     monkeypatch.setattr(
         "superlocalmemory.mcp.tools_optimize.CCRStore.get_instance",
         lambda: _Store())
@@ -133,11 +136,15 @@ async def test_normalize_passes_executable_code_through_byte_for_byte(tools):
 
 
 async def test_normalize_leaves_fenced_code_byte_exact(tools, monkeypatch):
-    monkeypatch.setattr(
-        "superlocalmemory.mcp.tools_optimize.CCRStore.get_instance",
-        lambda: MagicMock(store=lambda *a, **k: str(uuid.uuid4())))
     fence = "```python\ns = 1\n\n\n\nt = 2\n```"
     content = f"Intro\n\n\n\nmore\n\n{fence}\n\n\n\nend"
+    monkeypatch.setattr(
+        "superlocalmemory.mcp.tools_optimize.CCRStore.get_instance",
+        lambda: MagicMock(
+            store=lambda *a, **k: str(uuid.uuid4()),
+            retrieve=lambda *a, **k: content.encode(),
+        ),
+    )
     result = await tools["slm_compress"](content=content, mode="normalize")
     assert fence in result["compressed"]
     assert result["compressed"].startswith("Intro\n\nmore")
@@ -162,7 +169,10 @@ async def test_compress_lossy_stores_ccr(tools, monkeypatch):
     mock_cr = MagicMock()
     mock_cr.get_instance.return_value = mock_router
     mock_ccr = MagicMock()
-    mock_ccr.get_instance.return_value = MagicMock(store=MagicMock(return_value=fake_id))
+    mock_ccr.get_instance.return_value = MagicMock(
+        store=MagicMock(return_value=fake_id),
+        retrieve=MagicMock(return_value=b"A" * 1000),
+    )
 
     monkeypatch.setattr("superlocalmemory.mcp.tools_optimize.CompressRouter", mock_cr)
     monkeypatch.setattr("superlocalmemory.mcp.tools_optimize.CCRStore", mock_ccr)
@@ -405,6 +415,8 @@ async def test_compress_oversize_content_no_crash(tools):
         reversible=True,
     )
     assert isinstance(result, dict)
+    assert result["ok"] is False
+    assert result["compressed"] == big_content and result["byte_exact"] is True
     assert result["ccr_id"] is None
     assert result["note"] is not None
     note_lower = result["note"].lower()

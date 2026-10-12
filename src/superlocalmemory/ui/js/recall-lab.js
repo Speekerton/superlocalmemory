@@ -91,6 +91,7 @@ document.addEventListener('click', function(e) {
 
     fetch('/api/v3/recall/trace', {
         method: 'POST',
+        slmInvalidatesCache: false,
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({query: query, limit: fetchLimit, synthesize: true})
     }).then(function(r) { return r.json(); }).then(function(data) {
@@ -120,6 +121,12 @@ document.addEventListener('click', function(e) {
         // whole point: every channel failing produces exactly zero results, so
         // the case most in need of an explanation is the one that would
         // otherwise show a bare 'No results found'.
+        if (window.SLMAnswerCheckTryIt) {
+            var verdict = document.createElement('div');
+            verdict.setAttribute('role', 'status');
+            metaDiv.appendChild(verdict);
+            window.SLMAnswerCheckTryIt.renderVerdict(verdict, data);
+        }
         var health = buildChannelHealth(recallLabState.channelStatus);
         if (health) metaDiv.appendChild(health);
 
@@ -193,8 +200,8 @@ function renderRecallPage() {
             ['badge bg-primary me-1', 'Query relevance: ' + r.score, ''],
             ['badge bg-secondary me-1', 'Semantic evidence: ' + (r.match_confidence == null ? 'unmeasured' : r.match_confidence), ''],
             ['badge bg-secondary me-1', 'Trust: ' + r.trust_score, ''],
-            ['badge bg-outline-info', 'Stored fact confidence: ' + (r.memory_confidence === undefined ? r.confidence : r.memory_confidence),
-             'border:1px solid #0dcaf0;color:#0dcaf0;'],
+            ['badge bg-outline-info', 'Stored fact confidence: ' + (r.confidence == null ? 'not recorded' : r.confidence),
+             'border:1px solid var(--cyan);color:var(--cyan-text);'],
         ].forEach(function(spec) {
             var badge = document.createElement('span');
             badge.className = spec[0];

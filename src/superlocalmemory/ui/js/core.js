@@ -459,11 +459,12 @@ function animateCounter(elementId, target) {
 // HTML Escaping — all dynamic text MUST pass through this before DOM insertion
 // ============================================================================
 
+// Safe in element text AND in quoted attribute values: quotes are escaped too.
+// A text-node round trip leaves " and ' alone, which let stored text close an
+// attribute and add an event handler (PR 251 review, finding 2).
 function escapeHtml(text) {
     if (!text) return '';
-    var div = document.createElement('div');
-    div.appendChild(document.createTextNode(String(text)));
-    return div.innerHTML;
+    return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 // ============================================================================

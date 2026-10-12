@@ -92,6 +92,8 @@ _LOWER_TECH = re.compile(r"(?<![\w.:/~\\-])([a-z][a-z0-9]*(?:[_:.][a-z0-9]+|\d[a
 _LETTER_AFTER = re.compile(r"\b([a-z]{3,}) ([A-Z])(?![\w-])")
 _SYSTEM_PHRASE = re.compile(r"(?<![\w-])([a-z]{3,}) (" + "|".join(sorted(_SYSTEM_NOUNS)) + r")\b")
 _QUOTED = re.compile(r"\"([^\"]{2,60})\"")
+_ROLE = re.compile(r"\b([A-Z][a-z]+)\s+(?:is|was)\s+(?:(?:our|my|the|a|an)\s+)?"
+                   r"(?:project|tool|application|service|colleague|teammate|client|company)\b")
 _IS_VERSION = re.compile(rf"^(?:{_VERSION})$")
 _LABEL = re.compile(r"(?:^|\n)\s*([A-Z][a-z]+):")
 
@@ -209,6 +211,10 @@ def extract_mentions(text: str, *, question: bool = False) -> list[str]:
     for m in _RUN.finditer(text):
         words = [w for w in m.group(1).split(" ") if w not in labels]
         _split_run(words, out, opens_sentence(text, m.start()))
+    # A name introduced by an explicit role ("Zephyr is our project") counts
+    # even at the start of a sentence, where the capitalisation rule abstains.
+    for m in _ROLE.finditer(text):
+        out.add(m.group(1), True)
     _lower_mentions(text, out)
     for m in _QUOTED.finditer(text):
         quoted = m.group(1).strip()

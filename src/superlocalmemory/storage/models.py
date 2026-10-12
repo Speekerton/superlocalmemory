@@ -220,6 +220,10 @@ class AtomicFact:
     # v3.4.65: Core Memory Block explicit pin (M015)
     pinned: bool = False
 
+    # WP-19 (M060): a stored stub (receipt, session boilerplate). Listed and
+    # counted like any memory, never used as a recall answer.
+    non_answer: bool = False
+
     # 4.1.19 (M052): nine-kind memory typing — all optional, all nullable.
     # NULL/None means untyped: no caller, user, model or rules pass has ever
     # classified this fact. Values and vocabulary live in
@@ -580,6 +584,9 @@ class RecallResponse:
     # "something has it, just not among this question's candidates". None
     # when the recall named no tags. Additive.
     tag_scope: dict | None = None
+    # checked / degraded / not_checked. Degraded recalls retain only source
+    # projections independently verified against the immutable memory table.
+    source_fidelity_status: str = "not_checked"
     # 4.1.25: the answer-support gate (``retrieval.support_gate``) -
     # "supported" / "unsupported", or "" when it did not run; its best
     # probability, threshold and recipe version; whether weak matches were

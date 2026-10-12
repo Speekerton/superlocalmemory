@@ -225,8 +225,37 @@ what is left out on purpose. Every checksum is read back from the finished archi
 before the download is offered. `config.json` (it can hold provider API keys) and
 the identity and access secrets are never bundled; copy `config.json` yourself if
 you want your settings. The archive is a temporary file, removed after the
-response, created readable by you only. There is no one-click restore: unpack it
-and restore the stores with the daemon stopped.
+response, created readable by you only. User accounts, sign-in sessions
+and the sign-in setting are removed from the exported stores, and upload
+links are never in a backup at all: password and token hashes never leave the
+computer. There is no one-click
+restore of this archive: unpack it and restore the stores with the daemon
+stopped.
+
+### Recovery points and restore
+
+The Backup page also keeps verified recovery points (all stores, safe settings
+and picture and document originals). Creating, verifying, exporting and
+restoring them acts on every workspace at once, so in company mode only the
+computer's owner or an administrator of every workspace can use them.
+
+A restore stops the service, holds the store so nothing else can write to it,
+takes a safety point, restores, and starts the service again. It is all or
+nothing: just before it writes, the stores, settings and vector index are
+copied as plain files, and if any step fails those copies are put back without
+running the restore again. Accounts, sessions and the sign-in setting are never rolled back; the
+ones you have now are kept. If even the rollback fails (or the restore is cut
+off while writing), the service stays stopped: every start, including hooks
+and `slm serve start`, refuses until the stores are recovered. Then run:
+
+```bash
+slm backup restore-safety-copy   # puts back the safety copy of the last restore
+slm serve start
+```
+
+`--id <recovery point>` restores a specific point instead. Only if you have
+repaired the stores another way, `slm backup clear-recovery-needed` lets the
+service start again.
 
 ---
 

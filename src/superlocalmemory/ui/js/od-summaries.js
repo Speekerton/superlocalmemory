@@ -42,6 +42,12 @@
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px">' +
         '<button class="tab" data-sum-act="day" data-target="today">Today</button>' +
         '<button class="tab" data-sum-act="day" data-target="yesterday">Yesterday</button>' +
+        '<button class="tab" data-sum-act="week" data-target="this">This week</button>' +
+        '<button class="tab" data-sum-act="week" data-target="last">Last week</button>' +
+        '<label>From <input type="date" id="' + id + '-sum-from"></label>' +
+        '<label>To <input type="date" id="' + id + '-sum-to"></label>' +
+        '<button class="tab" data-sum-act="range">Summarise dates</button>' +
+        '<span>Dates use your local time and when memories were saved.</span>' +
         // SLM runs as one global daemon and this is a browser tab: there is no
         // working directory to mean "this project", so the server lists the
         // projects (and sessions) it has actually seen and the user picks one.
@@ -78,6 +84,17 @@
     pane.addEventListener('click', function (e) {
       var el = e.target.closest('[data-sum-act="day"]');
       if (el) load(id, 'day', _dayTarget(el.dataset.target));
+      var week = e.target.closest('[data-sum-act="week"]');
+      if (week) {
+        var start = new Date();
+        start.setDate(start.getDate() - ((start.getDay() + 6) % 7) - (week.dataset.target === 'last' ? 7 : 0));
+        var end = new Date(start); end.setDate(start.getDate() + 6);
+        loadRange(id, _localDate(start), _localDate(end));
+      }
+      if (e.target.closest('[data-sum-act="range"]')) {
+        loadRange(id, document.getElementById(id + '-sum-from').value,
+          document.getElementById(id + '-sum-to').value);
+      }
     });
     pane.addEventListener('change', function (e) {
       var act = e.target.dataset && e.target.dataset.sumAct;
@@ -162,7 +179,7 @@
 
     // Coverage on every result, never only on bad ones.
     var meta = document.createElement('div');
-    meta.style.cssText = 'margin-top:10px;font-size:12px;color:var(--fg-3);line-height:1.6';
+    meta.style.cssText = 'margin-top:10px;font-size:12px;color:var(--fg-2);line-height:1.6';
     meta.textContent = provenance(d);
     out.appendChild(meta);
 
@@ -182,6 +199,18 @@
     if (sources) out.appendChild(sources);
   }
 
+  function loadRange(id, from, to) {
+    var out = document.getElementById(id + '-sum-out');
+    if (!out) return;
+    if (!from || !to || from > to) { out.textContent = 'Choose a start and end date in order.'; return; }
+    out.textContent = 'Building summary…';
+    fetch('/api/summary/range?start=' + encodeURIComponent(from) + '&end=' + encodeURIComponent(to) +
+      '&tz_offset_minutes=' + _offsetMinutes())
+      .then(function (r) { if (!r.ok) throw new Error('Could not read this period. Try a range of up to 366 days.'); return r.json(); })
+      .then(function (d) { _render(out, d); })
+      .catch(function (e) { out.textContent = e.message; });
+  }
+
   /* The memories the summary came from, each openable in place (fact-detail.js
    * expands a `.fact-result-item[data-fact-id]` on click). */
   function _sources(ids) {
@@ -194,11 +223,8 @@
       ' this came from — click one to open it';
     box.appendChild(head);
     ids.forEach(function (fid) {
-      var row = document.createElement('div');
-      row.className = 'fact-result-item';
-      row.setAttribute('data-fact-id', fid);
-      row.style.cssText = 'padding:4px 0;cursor:pointer;font-family:var(--mono, monospace)';
-      row.textContent = 'Memory ' + fid;
+      var row = window.slmSourceRow(fid, 'Memory ' + fid);
+      row.style.cssText = 'padding:4px 0;font-family:var(--mono, monospace)';
       box.appendChild(row);
     });
     return box;

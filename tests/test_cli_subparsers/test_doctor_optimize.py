@@ -28,7 +28,7 @@ def _make_args(**kwargs) -> Namespace:
 
 def _run_doctor_json(monkeypatch_fixture=None, patch_gather=None) -> list[dict]:
     """Run cmd_doctor with --json and return the checks list."""
-    from superlocalmemory.cli.commands import cmd_doctor
+    from tests.helpers.doctor import run_doctor_report
 
     captured: list[str] = []
 
@@ -43,9 +43,9 @@ def _run_doctor_json(monkeypatch_fixture=None, patch_gather=None) -> list[dict]:
                 "superlocalmemory.cli.commands._gather_optimize_surface_b",
                 return_value=patch_gather,
             ):
-                cmd_doctor(_make_args(json=True, quick=True))
+                run_doctor_report(_make_args(json=True, quick=True))
         else:
-            cmd_doctor(_make_args(json=True, quick=True))
+            run_doctor_report(_make_args(json=True, quick=True))
 
     assert captured, "json_print was never called — doctor did not run"
     data = json.loads(captured[-1])
@@ -151,14 +151,14 @@ def test_doctor_no_crash_when_metrics_empty_and_db_absent(tmp_path: Path):
     assert result["db_present"] is False, f"expected db_present=False, got {result['db_present']}"
     assert result["compress_runs"] == 0, f"expected compress_runs=0, got {result['compress_runs']}"
 
-    # Also verify cmd_doctor itself doesn't raise
-    from superlocalmemory.cli.commands import cmd_doctor
+    # Inspect this row even if an unrelated doctor check reports FAIL
+    from tests.helpers.doctor import run_doctor_report
     with patch("pathlib.Path.home", return_value=tmp_path), patch(
         "superlocalmemory.optimize.config.store._DEFAULT_CONFIG_PATH",
         optimize_json,
     ):
-        result_cmd = cmd_doctor(_make_args(json=False, quick=True))
-    assert result_cmd is None  # cmd_doctor returns None on success
+        result_cmd = run_doctor_report(_make_args(json=False, quick=True))
+    assert result_cmd is None  # report-only wrapper explicitly tolerates exit 1
 
 
 # ---------------------------------------------------------------------------
@@ -229,7 +229,7 @@ def test_embedding_probe_does_not_use_posix_select():
     from superlocalmemory.cli import commands
     from superlocalmemory.cli.commands import _readline_with_timeout
 
-    source = inspect.getsource(commands.cmd_doctor)
+    source = inspect.getsource(commands._cmd_doctor_checks)
     assert "select.select" not in source
     assert "_readline_with_timeout" in source
 

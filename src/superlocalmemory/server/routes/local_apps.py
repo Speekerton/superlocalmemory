@@ -11,7 +11,7 @@ from superlocalmemory.infra import mcp_processes
 from superlocalmemory.infra.data_root import canonical_data_root
 from superlocalmemory.server.daemon_diagnostics import run_doctor
 from superlocalmemory.server.loopback import is_loopback
-from superlocalmemory.server.rbac_enforce import require_manage
+from superlocalmemory.server.rbac_enforce import require_global_manage, require_manage
 
 router = APIRouter(tags=["local-apps"])
 PROFILES = [
@@ -46,7 +46,10 @@ def _gate(request: Request, *, mutation: bool = False) -> None:
         from superlocalmemory.server.write_identity import require_write_actor
 
         require_write_actor(request, getattr(request.app.state, "daemon_descriptor", None))
-    require_manage(request)
+    if mutation:
+        require_global_manage(request)
+    else:
+        require_manage(request)
 
 
 def _status() -> dict:

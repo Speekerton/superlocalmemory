@@ -41,7 +41,8 @@ MAX_BODY_BYTES = 1_048_576
 MAX_RESPONSE_BYTES = 4 * 1_048_576
 
 READ_TOOLS: frozenset[str] = frozenset({
-    "fetch", "get_assertions", "get_attribution", "get_behavioral_patterns",
+    # expand: one result's surroundings, through the same gate as fetch.
+    "expand", "fetch", "get_assertions", "get_attribution", "get_behavioral_patterns",
     "get_brain_evidence_status", "get_learned_patterns", "get_lifecycle_status",
     "get_memory_summary", "get_mode", "get_retention_stats", "get_soft_prompts",
     "get_status", "get_version", "health", "list_corrections", "list_recent",

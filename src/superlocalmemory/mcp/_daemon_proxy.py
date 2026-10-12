@@ -218,7 +218,7 @@ class DaemonPoolProxy:
         # value, like `tags` above, expands to repeated `key=value` pairs).
         params = urllib.parse.urlencode(_params, doseq=True)
         try:
-            from superlocalmemory.cli.daemon import daemon_request
+            from superlocalmemory.cli.daemon import DaemonRefused, daemon_request
 
             data = daemon_request(
                 "GET",
@@ -226,6 +226,15 @@ class DaemonPoolProxy:
                 timeout_seconds=self._timeout,
                 preserve_not_found=True,
             )
+        except DaemonRefused as exc:
+            # 401/403 is an answer, not an outage: retrying cannot change it.
+            return {
+                "ok": False,
+                "success": False,
+                "code": "NOT_AUTHORIZED",
+                "retryable": False,
+                "error": str(exc),
+            }
         except Exception as exc:
             # 4.1.14 audit: a live daemon refusing an unknown profile is
             # an answer, not an outage — surface it instead of collapsing

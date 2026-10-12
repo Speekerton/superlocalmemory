@@ -62,6 +62,9 @@ def _media_view(status: dict[str, Any], root: Path) -> dict[str, Any]:
         "precheck": status.get("precheck", {}),
     }
     view["ram"] = _ram_view()
+    from superlocalmemory.server.media_size import installed_bytes
+    view["installed_bytes"] = installed_bytes(root / "runtimes" / "media")
+    view["install_estimate_bytes"] = int(2.8 * 1024 ** 3)
     refusal = _ram_refusal(status.get("precheck") or {})
     view["ram_ok"], view["ram_message"] = not refusal, refusal
     if env.get("error_kind"):
@@ -104,9 +107,9 @@ def _gate(request: Request) -> None:
         raise HTTPException(403, detail="Changes to features are only accepted from this machine.")
     write_identity.require_write_actor(
         request, getattr(request.app.state, "daemon_descriptor", None), actor_kind="features")
-    from superlocalmemory.server.rbac_enforce import require_manage
+    from superlocalmemory.server.rbac_enforce import require_global_manage
 
-    require_manage(request)
+    require_global_manage(request)
 
 
 async def _body(request: Request) -> dict[str, Any]:

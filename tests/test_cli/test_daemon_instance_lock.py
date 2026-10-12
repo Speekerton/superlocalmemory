@@ -299,7 +299,7 @@ def test_parent_never_writes_the_record_when_the_child_does_not_win(
     fake.pid = 2_000_000
     monkeypatch.setattr(daemon_mod, "is_daemon_running", lambda: False)
     monkeypatch.setattr(daemon_mod, "_has_tcp_listener", lambda port: False)
-    monkeypatch.setattr(daemon_mod, "_wait_for_daemon", lambda timeout=60: False)
+    monkeypatch.setattr(daemon_mod, "_wait_for_daemon", lambda timeout=60, **kwargs: False)
     with patch("subprocess.Popen", return_value=fake):
         assert daemon_mod._start_daemon_subprocess(port=8765) is False
     for name, data in snapshot.items():
@@ -313,7 +313,7 @@ def test_parent_writes_no_record_files_at_all(root, monkeypatch):
     fake.pid = 2_000_001
     monkeypatch.setattr(daemon_mod, "is_daemon_running", lambda: False)
     monkeypatch.setattr(daemon_mod, "_has_tcp_listener", lambda port: False)
-    monkeypatch.setattr(daemon_mod, "_wait_for_daemon", lambda timeout=60: False)
+    monkeypatch.setattr(daemon_mod, "_wait_for_daemon", lambda timeout=60, **kwargs: False)
     with patch("subprocess.Popen", return_value=fake):
         daemon_mod._start_daemon_subprocess(port=8765)
     base = descriptor_path().parent

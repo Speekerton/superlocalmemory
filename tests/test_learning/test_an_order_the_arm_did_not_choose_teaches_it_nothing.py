@@ -30,6 +30,7 @@ from superlocalmemory.retrieval.jev_rerank import STATUS_LISTWISE
 from superlocalmemory.storage.migrations import M005_bandit_tables as _M005
 from superlocalmemory.storage.migrations import M044_play_carries_its_own_evidence as _M044
 from superlocalmemory.storage.migrations import M045_fact_outcome_score as _M045
+from tests._recall_sources import recall_sources
 
 _PROFILE = "default"
 
@@ -268,10 +269,10 @@ def test_a_hosted_reorder_does_not_train_the_arm_end_to_end(
     monkeypatch.setattr(recall_pipeline, "apply_ranking", ranking)
     engine = SimpleNamespace(_sufficiency_judge=_jev(keys, _Provider(), rerank_k=20),
                              recall=lambda *a, **k: response)
-    out = recall_pipeline.run_recall(
-        "which one?", _PROFILE, fast=True, config=mode_a_config, retrieval_engine=engine,
-        trust_scorer=None, embedder=None, db=SimpleNamespace(db_path=None), llm=None,
-        hooks=None)
+    with recall_sources(mode_a_config.base_dir, response.results) as db:
+        out = recall_pipeline.run_recall(
+            "which one?", _PROFILE, fast=True, config=mode_a_config, retrieval_engine=engine,
+            trust_scorer=None, embedder=None, db=db, llm=None, hooks=None)
     assert out.reranker_status == STATUS_LISTWISE
     assert out.results[0].fact.fact_id == "fact-3", "the provider put the last memory first"
 

@@ -28,6 +28,7 @@ reviewed list, so a new exit cannot quietly skip the screen.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import threading
@@ -185,6 +186,76 @@ class GatedClient:
 # -- httpx: async streaming -------------------------------------------------------
 
 
+class GatedAsyncClient:
+    """Reusable async pools whose requests and streams cannot skip screening."""
+
+    def __init__(self, *, timeout: Any = None, limits: Any = None,
+                 transport: Any = None, verify: Any = True) -> None:
+        self._timeout = timeout
+        self._limits = limits
+        self._transport = transport
+        self._verify = verify
+        self._clients: dict[bool, Any] = {}
+        self._closed = False
+
+    def _client_for(self, url: str) -> Any:
+        import httpx
+
+        if self._closed:
+            raise RuntimeError("the outbound client has been closed")
+        options = transport_options(url)
+        client = self._clients.get(options["trust_env"])
+        if client is None:
+            kwargs: dict[str, Any] = dict(options, verify=self._verify)
+            for name, value in (("timeout", self._timeout), ("limits", self._limits),
+                                ("transport", self._transport)):
+                if value is not None:
+                    kwargs[name] = value
+            client = httpx.AsyncClient(**kwargs)
+            self._clients[options["trust_env"]] = client
+        return client
+
+    @staticmethod
+    def _arguments(url: str, json_body: Any, content: Any,
+                   headers: Mapping[str, str] | None, kwargs: dict[str, Any]) -> dict[str, Any]:
+        if "data" in kwargs or "files" in kwargs:
+            raise OutboundBlocked("outbound bodies must use screened JSON or content")
+        body = _gated_body(url, json_body, content)
+        # Redaction can change the byte count. Let httpx compute the length of
+        # the screened body; never reuse the caller's original measurement.
+        filtered = {k: v for k, v in (headers or {}).items() if k.lower() != "content-length"}
+        return dict(kwargs, **body, headers=filtered, follow_redirects=False)
+
+    async def request(self, method: str, url: str, *, json: Any = None,  # noqa: A002
+                      content: Any = None, headers: Mapping[str, str] | None = None,
+                      **kwargs: Any) -> Any:
+        arguments = self._arguments(url, json, content, headers, kwargs)
+        return await self._client_for(url).request(method, url, **arguments)
+
+    async def post(self, url: str, **kwargs: Any) -> Any:
+        return await self.request("POST", url, **kwargs)
+
+    async def get(self, url: str, **kwargs: Any) -> Any:
+        return await self.request("GET", url, **kwargs)
+
+    @contextlib.asynccontextmanager
+    async def stream(self, method: str, url: str, *, json: Any = None,  # noqa: A002
+                     content: Any = None, headers: Mapping[str, str] | None = None,
+                     **kwargs: Any) -> AsyncIterator[Any]:
+        arguments = self._arguments(url, json, content, headers, kwargs)
+        async with self._client_for(url).stream(method, url, **arguments) as response:
+            yield response
+
+    async def aclose(self) -> None:
+        self._closed = True
+        clients, self._clients = list(self._clients.values()), {}
+        results = await asyncio.gather(*(client.aclose() for client in clients),
+                                       return_exceptions=True)
+        for result in results:
+            if isinstance(result, BaseException):
+                raise result
+
+
 @contextlib.asynccontextmanager
 async def astream_json(method: str, url: str, payload: Any, *,
                        headers: Mapping[str, str] | None = None,
@@ -249,6 +320,7 @@ def _send(req: urllib.request.Request, timeout: float) -> Any:
 
 
 __all__ = [
+    "GatedAsyncClient",
     "GatedClient",
     "OutboundBlocked",
     "astream_json",

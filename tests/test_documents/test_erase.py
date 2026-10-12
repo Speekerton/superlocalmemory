@@ -37,6 +37,37 @@ def test_erasing_one_page_memory_removes_only_that_page(tmp_path):
     assert _count(store, "media_items", "document_id = 'd1'") == 2
     assert _count(store, "media_vector_rows") == 2
     assert store.get_document("d1") is not None
+    # The stored PDF holds every page, the erased one included: it goes with the page (OPS-29).
+    assert not (files.media_root(root) / rel).exists()
+    assert store.get_document("d1")["source_relpath"] == ""
+
+
+def test_the_erased_page_is_not_left_readable_in_the_stored_pdf(tmp_path):
+    """OPS-29: the page's words were in the original, whose checksum never changed."""
+    root, db, store = make_root(tmp_path)
+    canary = b"%PDF-1.7 page one: OPS_PDF_CANARY_0 Alice Chen; page two: other person"
+    sha, rel = add_document(root, store, db, "d1", pages=PAGES, data=canary)
+    assert b"OPS_PDF_CANARY_0" in (files.media_root(root) / rel).read_bytes()
+
+    receipt = _erase(db, root, ["f-d1-1"])
+
+    assert receipt.all_erased
+    leftovers = [p for p in root.rglob("*") if p.is_file() and b"OPS_PDF_CANARY_0" in p.read_bytes()]
+    assert leftovers == []
+    assert [p["page_no"] for p in store.get_pages("d1")] == [2, 3], "the other pages remain usable"
+    assert _count(store, "media_items", "document_id = 'd1'") == 2
+    # a repeat is safe
+    assert _erase(db, root, ["f-d1-1"], op="op2").all_erased
+
+
+def test_a_source_that_cannot_be_removed_is_incomplete_not_certified(tmp_path, monkeypatch):
+    root, db, store = make_root(tmp_path)
+    _, rel = add_document(root, store, db, "d1", pages=PAGES)
+    monkeypatch.setattr(files, "remove_original", lambda *_a, **_k: False)
+
+    receipt = _erase(db, root, ["f-d1-1"])
+
+    assert not receipt.all_erased, "the proof must not certify a source that is still on disk"
     assert (files.media_root(root) / rel).exists()
 
 
@@ -121,7 +152,8 @@ def test_hard_removal_checks_profile_and_completeness(tmp_path):
     assert remove_document("nope", "p1", hard=True, eraser=Eraser(db, root), store=store) is False
     bad = Eraser(db, root, complete=False)
     assert remove_document("d1", "p1", hard=True, eraser=bad, store=store) is False
-    assert store.get_document("d1") is not None             # nothing is dropped when the erasure was incomplete
+    # nothing is dropped when the erasure was incomplete
+    assert store.get_document("d1") is not None
 
 
 def test_hard_removal_needs_an_eraser(tmp_path):

@@ -18,7 +18,9 @@ Who may change it. Every mutation needs a credential the product issues —
 the install token the dashboard sends on every change, the daemon
 capability, or an API key — even from this machine: these settings decide
 where memory text is sent and what is billed, so "a process that reached the
-port" is not enough. On top of that, MANAGE permission (``_require_manage``).
+port" is not enough. On top of that, authority over the whole installation
+(``_require_manage``: the machine owner or an administrator of every
+workspace), since the consent sends memories of every workspace out.
 GET is a plain read, open to anyone who can reach the dashboard, and it
 changes nothing and starts nothing.
 
@@ -44,7 +46,7 @@ import threading
 import time
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
@@ -158,9 +160,9 @@ def _require_credential(request: Request) -> None:
 
 def _require_manage(request: Request) -> None:
     """One explicit authorization boundary, same pattern as other v3 routes."""
-    from superlocalmemory.server.rbac_enforce import require_manage
+    from superlocalmemory.server.rbac_enforce import require_global_manage
 
-    require_manage(request)
+    require_global_manage(request)
 
 
 def _gate(request: Request) -> None:
@@ -477,9 +479,18 @@ def post_jev_consent(request: Request, body: JevConsentRequest):
     try:
         app_state = request.app.state
         with support.MUTATION_LOCK:
-            was_jev = (support.effective_retrieval().sufficiency_judge == judge_selection.MODE_JEV
+            before = support.effective_retrieval()
+            was_jev = (before.sufficiency_judge == judge_selection.MODE_JEV
                        or judge_selection.backend_of(support.live_judge(app_state))
                        == judge_selection.MODE_JEV)
+            # A receipt (who, when, which notice) before the setting changes (OPS-19).
+            from superlocalmemory.server.consent_receipts import record_change
+
+            record_change(request, "answer_check", before=before,
+                          accepted=bool(body.accepted), provider=body.provider)
+            if not body.accepted and before.sufficiency_jev_rerank_consent is True:
+                record_change(request, "rerank", before=before, accepted=False,
+                              provider=body.provider)
             retrieval = support.save(_consent_change(bool(body.accepted), body.provider))
             if was_jev:
                 # Rebuilt either way, so the running check uses the provider and
@@ -488,6 +499,8 @@ def post_jev_consent(request: Request, body: JevConsentRequest):
             if not support.enforce(app_state, retrieval):
                 return _not_confirmed()
             return support.build_status(app_state)
+    except HTTPException:
+        raise
     except Exception:
         return _internal_error()
 
@@ -537,10 +550,16 @@ def post_jev_rerank(request: Request, body: JevRerankRequest):
     try:
         app_state = request.app.state
         with support.MUTATION_LOCK:
+            before = support.effective_retrieval()
             if body.enabled:
-                refusal = _rerank_refusal(support.effective_retrieval(), body)
+                refusal = _rerank_refusal(before, body)
                 if refusal is not None:
                     return refusal
+            from superlocalmemory.server.consent_receipts import record_change, rerank_count
+
+            record_change(request, "rerank", before=before, accepted=bool(body.enabled),
+                          provider=body.provider,
+                          k=rerank_count(before))
             retrieval = support.save(_rerank_change(bool(body.enabled), body.provider))
             if body.enabled and judge_selection.jev_rerank_k(retrieval) <= 0:
                 return _error("The answer check settings just changed. Try again.", 409)
@@ -555,5 +574,7 @@ def post_jev_rerank(request: Request, body: JevRerankRequest):
             "Jev will also reorder results." if body.enabled
             else "Jev will no longer reorder results.")
         return status_body
+    except HTTPException:
+        raise
     except Exception:
         return _internal_error()

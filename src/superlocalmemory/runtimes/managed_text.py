@@ -124,13 +124,20 @@ class ManagedTextEmbedder:
             previous.stop()  # pictures were switched: never keep the old loadout beside the new one
         return client
 
-    def _embed(self, texts: list[str], prompt: str) -> list[list[float] | None]:
+    def _embed(self, texts: list[str], prompt: str, *,
+               strict: bool = False) -> list[list[float] | None]:
         client = None if self._closed else self._client()
         if client is None:
+            if strict:
+                raise MediaWorkerError(
+                    "The managed embedding environment is not ready. "
+                    "Run slm media enable to finish or repair setup, then retry the switch.")
             return [None] * len(texts)
         try:
             vectors = client.embed_texts(texts, prompt=prompt)
         except MediaWorkerError as exc:
+            if strict:
+                raise
             logger.info("managed text embedder: %s", exc)
             return [None] * len(texts)
         self._loaded_once = True
@@ -171,6 +178,20 @@ class ManagedTextEmbedder:
         if is_background_work():  # one text at a time so a recall that arrives meanwhile goes first
             return [self.embed(text) for text in texts]
         return self._embed(list(texts), "Document")
+
+    def embed_batch_strict(self, texts: list[str]) -> list[list[float] | None]:
+        """Reindex uses the same Document prompt, but receives the actual failure."""
+        if not texts:
+            raise ValueError("Cannot embed empty batch")
+        from superlocalmemory.core.recall_gate import is_background_work, wait_for_embedder_idle
+
+        if not is_background_work():
+            return self._embed(list(texts), "Document", strict=True)
+        vectors = []
+        for text in texts:
+            wait_for_embedder_idle()
+            vectors.extend(self._embed([text], "Document", strict=True))
+        return vectors
 
     def compute_fisher_params(self, embedding: list[float]) -> tuple[list[float], list[float]]:
         from superlocalmemory.core.embeddings import EmbeddingService

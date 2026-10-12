@@ -11,13 +11,14 @@ Uses V3 compliance modules: ABACEngine, AuditChain, RetentionEngine.
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, HTTPException, Query, Request
 
+from superlocalmemory.infra.data_root import DynamicStatePath
 from superlocalmemory.server.route_mutations import authorize_route_mutation
 from superlocalmemory.storage.memory_write import memory_write
 
-from .helpers import DB_PATH, MEMORY_DIR, get_active_profile, get_engine_lazy
+from .export_delivery import export_response
+from .helpers import DB_PATH, get_active_profile, get_engine_lazy
 
 logger = logging.getLogger("superlocalmemory.routes.compliance")
 router = APIRouter()
@@ -26,7 +27,7 @@ router = APIRouter()
 # (core/engine_wiring.py). The route MUST read that same file — an earlier
 # "audit.db" path pointed at a file nothing ever wrote, so the Compliance tab
 # always showed zero events.
-AUDIT_DB = MEMORY_DIR / "audit_chain.db"
+AUDIT_DB = DynamicStatePath("audit_chain.db")
 
 # Feature detection
 COMPLIANCE_AVAILABLE = False
@@ -78,10 +79,13 @@ async def compliance_status(request: Request):
         audit_events_count = 0
         recent_audit_events = []
         try:
+            from superlocalmemory.server.audit_view import present_event
+
             audit = AuditChain(str(AUDIT_DB))
-            recent_audit_events = audit.query(profile_id=profile, limit=30)
-            # get_stats() is global; count this profile's rows for the header.
-            audit_events_count = len(audit.query(profile_id=profile, limit=100000))
+            recent_audit_events = [present_event(e)
+                                   for e in audit.query(profile_id=profile, limit=30)]
+            # A COUNT, not 100,000 rows loaded per pane view (G-M4).
+            audit_events_count = audit.count(profile_id=profile)
         except Exception as exc:
             logger.debug("audit chain: %s", exc)
 
@@ -123,8 +127,13 @@ async def query_audit_trail(
     limit: int = Query(default=50, ge=1, le=500),
     event_type: Optional[str] = Query(default=None),
     since: Optional[str] = Query(default=None),
+    offset: int = Query(default=0, ge=0),
 ):
-    """Query audit trail events with optional filters."""
+    """Query audit trail events with optional filters, a page at a time.
+
+    ``total`` is how many events match (counted by the database); ``events`` is
+    the page of at most ``limit`` starting at ``offset``, newest first.
+    """
     if not COMPLIANCE_AVAILABLE:
         return {"available": False, "error": "Compliance engine not available"}
     # The audit trail reveals operations, actors, and fact_ids. This GET is not
@@ -135,20 +144,31 @@ async def query_audit_trail(
     require_http_mutation_actor(request, getattr(request.app.state, "daemon_descriptor", None),
                                 actor_kind="audit-read")
     try:
+        from superlocalmemory.server.audit_view import integrity_summary, present_event
+        from superlocalmemory.server.rbac_enforce import has_global_manage
+
         profile = get_active_profile()
+        # Installation-wide events (accounts, the login policy, sign-in) carry
+        # no workspace; whoever holds authority over the whole installation
+        # sees them next to the active workspace's (PR 248 review, finding 5).
+        installation = has_global_manage(request)
+        scope = (profile, "") if installation else profile
         audit = AuditChain(str(AUDIT_DB))
-        events = audit.query(
-            profile_id=profile, operation=event_type, start_date=since,
-            limit=limit,
-        )
-        chain_ok = True
-        try:
-            chain_ok = audit.verify_integrity()
-        except Exception:
-            pass
+        events = [present_event(e) for e in audit.query(
+            profile_id=scope, operation=event_type, start_date=since,
+            limit=limit, offset=offset,
+        )]
+        matching = audit.count(profile_id=scope, operation=event_type, start_date=since)
+        integrity = integrity_summary(audit)
         return {
-            "available": True, "events": events, "total": len(events),
-            "chain_verified": chain_ok, "active_profile": profile,
+            "available": True, "events": events, "total": matching,
+            "returned": len(events), "offset": offset,
+            "has_more": offset + len(events) < matching,
+            "chain_verified": integrity["verified"],
+            "integrity_label": integrity["label"],
+            "integrity": integrity["report"],
+            "active_profile": profile,
+            "includes_installation_events": installation,
             "filters": {"event_type": event_type, "since": since, "limit": limit},
         }
     except Exception:
@@ -159,36 +179,58 @@ async def query_audit_trail(
 def _erasure_succeeded(result: dict) -> bool:
     """One place that decides, so the surfaces cannot disagree.
 
-    The erasure reports two things, because they are two questions: whether the
-    data is gone, and whether that can be shown afterwards. This route used to
-    inline its own list of failure markers and the CLI used a different one, so
-    the API could say failure while the command line printed COMPLETE for the
-    same erasure.
-
-    Anything that leaves either question unanswered is a failure here. A caller
-    that wants the finer distinction reads ``erasure_complete`` and
-    ``erasure_provable`` from the body, which are both in it.
+    The verdict lives in ``compliance.erasure_outcome`` and is shared with the
+    command line: two questions (is the data gone; can that be shown afterwards)
+    and every ``*_failed`` / ``*_failures`` / residue marker the erasure leaves.
     """
-    markers = (
-        "vector_store_failures",
-        "audit_completion_failed",
-        "audit_request_failed",
-        "receipt_persist_failed",
-        "table_delete_failures",
-        "code_graph_failed",
-        "fact_expansion_fts_failed",
-        "working_sets_failed",
-        "residue_recount_failed",
-        "backup_scan_failed",
+    from superlocalmemory.compliance.erasure_outcome import erasure_succeeded
+
+    return erasure_succeeded(result)
+
+
+def _erasure_response(profile_key: str, profile: str, result: dict, **extra) -> dict:
+    """The body every erasure route returns: the counts, plus a statement of the outcome.
+
+    ``erasure_report`` says what was removed and what remains and how to retry
+    it; ``error`` carries one sentence of the same when the erasure is not
+    complete, which is where the dashboard reads a failure from.
+    """
+    from superlocalmemory.compliance import erasure_outcome
+
+    result = dict(result or {})
+    ok = erasure_outcome.erasure_succeeded(result)
+    body = {"success": ok, profile_key: profile, **extra, **result,
+            "erasure_report": erasure_outcome.describe(result)}
+    if not ok:
+        body["error"] = erasure_outcome.failure_message(result) or "The erasure did not finish."
+    return body
+
+
+async def _leave_profile_to_erase(request: Request, profile: str) -> str:
+    """Move the running service off ``profile``; returns "" or the reason it could not.
+
+    Nothing has been erased when this fails, and the answer says so.
+    """
+    import asyncio
+
+    from superlocalmemory.server.profile_runtime import (
+        commit_daemon_profile_switch,
+        get_profile_runtime,
     )
-    if any(result.get(marker) for marker in markers):
-        return False
-    # Present on the profile path; absent on the entity path, where its absence
-    # must not be read as a failure.
-    for verdict in ("erasure_complete", "erasure_provable"):
-        if verdict in result and not result.get(verdict):
-            return False
-    return True
+
+    try:
+        runtime = get_profile_runtime(request.app.state)
+        if runtime.snapshot.profile_id != profile:
+            return ""
+        await asyncio.to_thread(
+            runtime.transition, "default",
+            lambda prior, target: commit_daemon_profile_switch(request.app.state, prior, target),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("could not leave the profile to erase: %s", type(exc).__name__)
+        return ("The service could not move off this profile (it is busy). Nothing was erased; "
+                "try again in a moment.")
+    return ""
 
 
 @router.post("/api/compliance/retention-policy")
@@ -316,15 +358,23 @@ async def enforce_retention(request: Request):
 # ── GDPR Art. 15/20 — Right to Access / Portability ─────────────────────────
 
 @router.get("/api/compliance/gdpr/export")
-async def gdpr_export(request: Request):
+async def gdpr_export(
+    request: Request,
+    include_embeddings: bool = Query(
+        False, description="Include embeddings and other binary columns as base64"),
+):
     """Export ALL data for the active profile (GDPR Art. 20 portability).
 
-    Comprehensive 14-table export (memories, facts, entities, edges, trust,
-    feedback, behavioral patterns, provenance, audit, …) as a downloadable
-    JSON attachment. Read-only.
+    Comprehensive export (memories, facts, entities, edges, trust, feedback,
+    behavioral patterns, provenance, audit, media records, learned signals, …) as
+    a downloadable JSON attachment. Read-only.
+
+    The document is written to a temporary file and sent only when whole: an
+    export that fails answers with an error status and sends no file, and the
+    dashboard shows that error rather than a download that never came.
     """
     if not COMPLIANCE_AVAILABLE:
-        return {"available": False, "error": "Compliance engine not available"}
+        raise HTTPException(status_code=503, detail="Compliance engine not available")
     # A full-workspace data dump is an administrative action. Triggered by a
     # top-level navigation (a.href) that cannot carry a credential header, so
     # gate on the loopback-trusted mutation boundary (local owner allowed,
@@ -336,20 +386,18 @@ async def gdpr_export(request: Request):
     require_http_mutation_actor(request, getattr(request.app.state, "daemon_descriptor", None),
                                 actor_kind="gdpr-export")
     require_manage(request)
-    try:
-        engine = get_engine_lazy(request.app.state)
-        if engine is None:
-            return {"available": False, "error": "Engine not initialized"}
-        profile = get_active_profile()
-        data = GDPRCompliance(engine._db).export_profile_data(profile)
-        filename = f"slm-export-{profile}.json"
-        return JSONResponse(
-            content=data,
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
-    except Exception:
-        logger.exception("gdpr_export error")
-        return {"available": False, "error": "Internal server error"}
+    engine = get_engine_lazy(request.app.state)
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Engine not initialized")
+    profile = get_active_profile()
+
+    def write(fp) -> int:
+        summary = GDPRCompliance(engine._db).write_profile_export(
+            profile, fp, include_embeddings=include_embeddings)
+        return summary["total_items"]
+
+    return await export_response(
+        write, media_type="application/json", filename=f"slm-export-{profile}.json")
 
 
 # ── GDPR Art. 17 — Right to Erasure ─────────────────────────────────────────
@@ -391,11 +439,19 @@ async def gdpr_erase(request: Request, data: dict = {}):
             source_agent_id="http-gdpr-erase",
             profile_id=profile,
         )
+        # Move the service off the profile BEFORE erasing it. Left active, every
+        # request files the workspace row and its writes under that name again,
+        # so the erased workspace came back at the next page load; and nothing
+        # may be writing to a profile while it is erased.
+        moved = await _leave_profile_to_erase(request, profile)
+        if moved:
+            return {"success": False, "error": moved}
         result = GDPRCompliance(engine._db, engine=engine).forget_profile(profile)
         authorization.complete()
-        result = result or {}
-        success = _erasure_succeeded(result)
-        return {"success": success, "active_profile": profile, **result}
+        return _erasure_response("active_profile", profile, result)
+    except HTTPException:
+        # A refusal (401/403) is the answer, not a failure of the erase.
+        raise
     except Exception:
         logger.exception("gdpr_erase error")
         return {"success": False, "error": "Internal server error"}
@@ -446,12 +502,10 @@ async def gdpr_erase_entity(request: Request, data: dict = {}):
         )
         result = GDPRCompliance(engine._db, engine=engine).forget_entity(entity_name, profile)
         authorization.complete()
-        result = result or {}
-        success = _erasure_succeeded(result)
-        return {
-            "success": success, "active_profile": profile,
-            "entity_name": entity_name, **result,
-        }
+        return _erasure_response("active_profile", profile, result, entity_name=entity_name)
+    except HTTPException:
+        # A refusal (401/403) is the answer, not a failure of the erase.
+        raise
     except Exception:
         logger.exception("gdpr_erase_entity error")
         return {"success": False, "error": "Internal server error"}

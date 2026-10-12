@@ -35,6 +35,24 @@ _NOT_RUNNING = ("the background re-index runs inside the SLM daemon, which is no
                 "serving this request; start it with: slm serve")
 
 
+def _require_read(request: Request) -> None:
+    """READ on the active workspace for the two status reads.
+
+    The command line has no session; it proves itself with the daemon
+    capability, so that is accepted too. Company mode with neither is a 401.
+    """
+    from fastapi import HTTPException
+
+    from superlocalmemory.access.rbac import Permission
+    from superlocalmemory.server.rbac_enforce import has_daemon_capability, require_permission
+
+    try:
+        require_permission(request, Permission.READ)
+    except HTTPException:
+        if not has_daemon_capability(request):
+            raise
+
+
 def _runner(request: Request) -> Any:
     return getattr(request.app.state, "embedding_reindex", None)
 
@@ -162,9 +180,9 @@ def _live_config(request: Request) -> Any:
 
 @router.post("")
 async def start_switch(request: Request):
-    from superlocalmemory.server.rbac_enforce import require_manage
+    from superlocalmemory.server.rbac_enforce import require_global_manage
 
-    require_manage(request)
+    require_global_manage(request)
     runner = _runner(request)
     if runner is None:
         return _no_runner()
@@ -186,6 +204,7 @@ async def start_switch(request: Request):
 
 @router.get("")
 async def reindex_status(request: Request):
+    _require_read(request)
     runner = _runner(request)
     if runner is None:
         return _no_runner()
@@ -194,10 +213,10 @@ async def reindex_status(request: Request):
 
 async def _call(request: Request, method: str, accepted: bool) -> JSONResponse:
     from superlocalmemory.core.embedding_reindex import Refused
-    from superlocalmemory.server.rbac_enforce import require_manage
+    from superlocalmemory.server.rbac_enforce import require_global_manage
     from superlocalmemory.storage.embedding_reindex_jobs import JobConflict
 
-    require_manage(request)
+    require_global_manage(request)
     runner = _runner(request)
     if runner is None:
         return _no_runner()
@@ -222,6 +241,7 @@ def _upgrade_plan(request: Request, runner: Any) -> dict:
 @router.get("/upgrade")
 async def upgrade_plan(request: Request):
     """What "Upgrade memory engine" would do and whether it can start now (read only)."""
+    _require_read(request)
     runner = _runner(request)
     if runner is None:
         return _no_runner()
@@ -260,9 +280,9 @@ def _start_upgrade(request: Request, runner: Any) -> JSONResponse:
 @router.post("/upgrade")
 async def start_upgrade(request: Request):
     """Start "Upgrade memory engine": the ordinary background switch to the managed model."""
-    from superlocalmemory.server.rbac_enforce import require_manage
+    from superlocalmemory.server.rbac_enforce import require_global_manage
 
-    require_manage(request)
+    require_global_manage(request)
     runner = _runner(request)
     if runner is None:
         return _no_runner()

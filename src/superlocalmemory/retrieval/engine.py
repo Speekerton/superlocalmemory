@@ -31,9 +31,8 @@ from superlocalmemory.core.config import (
     ChannelWeights,
     RetrievalConfig,
 )
-from superlocalmemory.retrieval import (channel_status as chstat, entity_graph_warmup,
-                                      kind_scope, project_search)
-from superlocalmemory.retrieval import visibility
+from superlocalmemory.retrieval import channel_status as chstat
+from superlocalmemory.retrieval import entity_graph_warmup, kind_scope, project_search, visibility
 from superlocalmemory.retrieval.fusion import FusionResult, weighted_rrf
 from superlocalmemory.retrieval.rerank_pool import rerank_pool
 from superlocalmemory.retrieval.strategy import QueryStrategy, QueryStrategyClassifier
@@ -295,6 +294,7 @@ class RetrievalEngine:
         # a dict on the engine would have two concurrent recalls overwriting
         # each other's report.
         channel_status: dict[str, str] = {}
+        graph_lag_s: float | None = None  # set when the entity graph ran
 
         # Profile shortcut (runs before channel search).
         #
@@ -512,6 +512,10 @@ class RetrievalEngine:
                     include_global=include_global, include_shared=include_shared)
                 if eg_scores is None:  # incomplete, never "found nothing"
                     dropped_channels.add("entity_graph")
+                else:
+                    graph_lag_s = entity_graph_warmup.lag_of(
+                        self._entity, profile_id, include_global=include_global,
+                        include_shared=include_shared)
                 channel_status["entity_graph"] = (chstat.WARMING if eg_scores is None
                                                   else chstat.OK if eg_scores else chstat.EMPTY)
                 if eg_scores:
@@ -706,6 +710,12 @@ class RetrievalEngine:
                 include_shared=include_shared,
             ))
 
+        from superlocalmemory.retrieval.scope_policy import authorized_fact_ids
+        allowed = authorized_fact_ids(
+            self._db, (fr.fact_id for fr in final_top), profile_id,
+            include_global=include_global, include_shared=include_shared,
+        )
+        final_top = [fr for fr in final_top if fr.fact_id in allowed]
         final_top = visibility.keep_loaded(final_top, facts)  # promotions from pre-admission channels
         # Trim facts to the selected, qualified result set.
         selected_ids = {fr.fact_id for fr in final_top}
@@ -733,6 +743,7 @@ class RetrievalEngine:
             community_context=self._community_context(results, profile_id),
             incomplete_channels=tuple(sorted(dropped_channels)),
             channel_status=dict(channel_status),
+            graph_lag_s=graph_lag_s,
             stage_ms=dict(stage_ms),
             project_scope=project_scope,
             tag_scope=tag_scope,

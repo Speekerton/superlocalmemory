@@ -460,11 +460,33 @@ configuration. Run it after any install or upgrade.
 
 ```bash
 slm doctor
-slm doctor --quick   # dependencies and configuration only
+slm doctor --quick   # fast checks, including daemon health
 slm doctor --deep    # read every database page (slow on a large store)
 slm doctor --fix     # re-download missing models and install sqlite-vec first
 slm doctor --json
 ```
+
+Every mode checks the daemon descriptor and makes at most one short `/health`
+probe (0.5-second timeout). Doctor never starts the daemon. A missing descriptor
+warns with `slm serve start`; a dead recorded process, invalid descriptor or
+unhealthy daemon fails with `slm restart`. A `/health` reply that is streaming,
+oversized or never completes counts as unhealthy (FAIL), still within the 1-second
+diagnostic deadline. If only the optional feature probe overruns, the Daemon row
+stays PASS and a separate "Daemon features" row warns. The check appears in JSON
+output too.
+
+The whole run has one overall deadline (180 seconds; 900 with `--deep` or `--fix`).
+If a check hangs, doctor prints the report so far plus a failing "Doctor deadline"
+row naming the check that did not finish, and exits 1.
+
+Exit codes: **0** when checks pass or report warnings only; **1** when any check
+fails. Doctor prints the complete report before exiting, including with `--json`.
+
+Doctor also reads the same failure counts as `slm ops status`: a "Failed saves"
+row warns when saves were given up on after repeated attempts (dead-lettered, so
+those memories may lack entities or graph links) and fails at 50 or more. Its fix
+line names the commands to run: `slm ops list`, then `slm ops resolve <id> --action
+retry` or `--action cancel`.
 
 ### `slm warmup`
 
@@ -512,6 +534,27 @@ sessions.
 ### `slm rotate-token`
 
 Rotate the SLM install token. Run `slm restart` afterwards.
+
+### `slm token show`
+
+Prints the SuperLocalMemory key (the install token) that the dashboard asks for
+when `SLM_REQUIRE_CREDENTIALS=1`. It tightens the token file to owner-only first
+and refuses to print a key owned by another account. The key opens write access:
+do not paste it into chat or a log. See [Auth write gate](auth-write-gate.md).
+
+### `slm team status` and `slm team policy`
+
+Company-mode login policy, from the terminal of the computer that runs SLM.
+
+```bash
+slm team status                       # Require login: on|off. Users: N.
+slm team policy --require-login on    # every user signs in
+slm team policy --require-login off   # the machine owner is the user again
+```
+
+Both take `--json`. They use a private capability file only the user running SLM
+can read, so a workspace's owner can never be locked out. See
+[Company mode](company-mode.md).
 
 ### `slm disable [--reason "..."]` and `slm enable`
 
@@ -765,6 +808,8 @@ for structured output.
 slm decay                   # Preview Ebbinghaus zone transitions
 slm decay --execute         # Apply them
 slm quantize --execute      # Apply embedding precision changes
+slm quantize --repair-sketches           # Preview QJL sketch repairs only
+slm quantize --repair-sketches --execute # Repair sketches without precision changes
 slm consolidate --cognitive # Include CCQ cognitive consolidation
 slm consolidate --dry-run
 slm soft-prompts            # List auto-learned soft prompts
@@ -772,6 +817,22 @@ slm soft-prompts            # List auto-learned soft prompts
 
 `decay`, `quantize`, `consolidate` and `soft-prompts` accept `--profile` and
 `--json`.
+
+`quantize --repair-sketches` repairs legacy or incompatible QJL sketches from
+retained original vectors. It preserves canonical vectors, base quantized bytes,
+bit widths and lifecycle state, and starts no embedding model. The default is a
+read-only preview; add `--execute` to apply repairs. Rows without usable original
+vectors are reported as needing re-embedding. Repeating the repair skips sketches
+that are already compatible.
+Repair uses the existing rotation matrix, including a legacy polar matrix when
+appropriate. If that matrix is missing or incompatible, restore it from backup
+before applying repairs.
+
+The full `quantize --execute` cycle also changes precision according to retention.
+Before applying, it prints preview counts for sketch repairs, precision downgrades,
+precision upgrades and forgotten-state transitions (whose vectors are kept).
+Counts can change if memories change concurrently. With `--json`, the preview is
+printed to stderr before execution and included as `data.plan` in the final JSON.
 
 ---
 
@@ -785,7 +846,7 @@ Versioned, checksummed JSONL bundles of memory evidence.
 slm evidence export /path/to/bundle.jsonl --profile default
 slm evidence verify /path/to/bundle.jsonl
 slm evidence import /path/to/bundle.jsonl --execute
-slm evidence import /path/to/bundle.jsonl --replace --execute
+slm evidence import /path/to/bundle.jsonl --replace --rollback-dir ./slm-rollback --execute
 slm evidence rebuild --execute   # Rebuild derived lexical state
 ```
 
@@ -804,12 +865,15 @@ memory content, no secrets) for manual inspection or support. `reliability
 Bayesian learner has moved off its prior and whether each schema-guarded path has
 ever run against this store.
 
-### `slm backup status|recovery-key|decrypt`
+### `slm backup status|recovery-key|decrypt|restore-safety-copy|clear-recovery-needed`
 
 Cloud backups are encrypted. `status` shows the encryption state;
 `recovery-key` shows the recovery key, or with `--import` reads one from stdin
 for a new computer; `decrypt <file> [-o OUT] [--recovery-key-stdin] [--force]`
-turns a downloaded backup into a plain `.db` file. See [Cloud
+turns a downloaded backup into a plain `.db` file;
+`restore-safety-copy [--id POINT]` puts back the safety copy a failed dashboard
+restore kept, with the service stopped; `clear-recovery-needed` lets the service
+start again after you repaired the stores yourself. See [Cloud
 backup](cloud-backup.md).
 
 ### `slm gdpr status|export|erase|verify`
@@ -817,11 +881,16 @@ backup](cloud-backup.md).
 ```bash
 slm gdpr status
 slm gdpr export --profile work --output work-export.json
+slm gdpr export --profile work --output work-export.json --include-embeddings
 slm gdpr erase --profile work --dry-run
 slm gdpr erase --profile work --yes     # irreversible
 slm gdpr verify --receipt-id <id>
 ```
 
+`export` streams the file to disk, so a large store needs little memory, and the
+file appears only when it is complete. Embeddings and other binary columns are
+left out unless you pass `--include-embeddings` (they are written as base64).
+The file lists what it left out and why under `export_manifest`.
 `erase` removes a whole profile and cannot be undone; it needs both `--profile`
 and `--yes`. `verify` checks an erasure receipt and exits 0 when it is intact,
 1 when tampered, 2 when not found. See [Compliance](compliance.md).
@@ -873,7 +942,16 @@ slm adapters start gmail
 slm adapters status gmail
 slm adapters stop gmail
 slm adapters disable gmail
+slm adapters folders                    # where the dashboard may point importers
+slm adapters allow-folder ~/Meetings    # approve one more folder (this computer only)
 ```
+
+The dashboard's Configure button only accepts a file or folder inside an import
+folder: `imports/` (or the older `import/` drop folder) in the data folder, or a
+folder approved here. Symlinks out of those folders, hidden folders and the rest
+of the data folder are refused. A path saved earlier, or edited by hand in
+`adapters.json`, is checked again on Start and by the importer itself; one that
+fails the check is not read, and the adapter says what to do.
 
 ### `slm ingest [--source ecc|jsonl]`
 
@@ -907,6 +985,9 @@ slm remote tls init --name my-laptop.local --ip 192.168.1.20
 slm remote enable --listen HOST:PORT
 slm remote keys add hermes-laptop --read-only --profile work
 slm remote keys list
+slm remote keys allow web-<connection id> mesh     # let a Web access connection use bot messages
+slm remote keys allow web-<connection id> media    # ...or pictures and documents
+slm remote keys disallow web-<connection id> mesh  # turn either off again
 slm remote keys revoke hermes-laptop
 slm remote check
 slm remote disable
@@ -971,7 +1052,21 @@ slm embedder rollback
 
 `switch` also takes `--endpoint` (an OpenAI-compatible URL), `--no-wait`
 (return once queued) and `--json`. `--provider` is `sentence-transformers`,
-`ollama` or `openai`; the default is the current one.
+`ollama`, `openai` or `slm-media`; the default is the current one.
+
+### `slm embedder upgrade` (preview)
+
+```bash
+slm embedder upgrade           # shows the plan and asks; --yes skips the question, --no-wait returns once queued
+slm embedder status            # progress
+slm embedder rollback          # go back to the previous engine
+slm embedder forget-previous   # free the previous engine's vectors (ends rollback)
+```
+
+Moves existing memories onto the same on-device model that reads pictures, in the
+background, with recall working throughout and one-click rollback. It is opt-in
+and never starts on its own; the same action is the **Upgrade memory engine**
+card in Settings. If it cannot run, the command prints the reason.
 
 ### `slm db integrity [--pages] [--json]`
 

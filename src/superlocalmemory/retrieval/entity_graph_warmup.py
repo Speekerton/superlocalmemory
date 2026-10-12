@@ -47,6 +47,19 @@ def score_candidates_unless_warming(
         return None
 
 
+def lag_of(channel: Any, profile_id: str, *, include_global: bool | None = None,
+           include_shared: bool | None = None) -> float | None:
+    """Seconds the channel's graph for this scope is behind the store, or None."""
+    lag = getattr(channel, "graph_lag_s", None)
+    if lag is None:
+        return None
+    try:
+        value = lag(profile_id, include_global=include_global, include_shared=include_shared)
+    except Exception:  # noqa: BLE001 -- a report, never a reason to fail recall
+        return None
+    return float(value) if isinstance(value, (int, float)) else None
+
+
 def channel_of(engine: Any) -> Any:
     """The engine's entity-graph channel, or None."""
     return getattr(getattr(engine, "_retrieval_engine", engine), "_entity", None)
@@ -77,4 +90,4 @@ def warm(engine: Any, profile_id: str) -> bool:
     return True
 
 
-__all__ = ["channel_of", "score_candidates_unless_warming", "warm"]
+__all__ = ["channel_of", "lag_of", "score_candidates_unless_warming", "warm"]

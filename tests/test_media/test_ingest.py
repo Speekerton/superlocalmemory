@@ -139,10 +139,28 @@ def test_happy_path(env):
     adm = env.runtime.requests[0]
     assert adm.content == "receipt from the cafe\n\n[Text in image]\nInvoice 42 total"
     assert adm.source_type == "media" and adm.profile_id == "p1"
-    assert adm.metadata["_slm_source"] == {"type": "media", "media_id": r.media_id, "origin": "tool"}
+    assert adm.metadata["_slm_source"] == {"type": "media", "media_id": r.media_id, "origin": "tool",
+                                            "content_sha256": hashlib.sha256(png()).hexdigest()}
     assert r.extracted_text_preview == "Invoice 42 total"
     assert env.store.knn([1.0] + [0.0] * (DIM - 1), "p1", 1)[0][0] == r.media_id
     assert not list((env.root / "media" / "tmp").iterdir())
+
+
+def test_save_succeeds_when_local_ocr_backend_is_unavailable(env, tmp_path, monkeypatch):
+    from superlocalmemory.runtimes import media_image_ops as ops
+
+    models = tmp_path / "models"
+    models.mkdir()
+    (models / "only-recognizer.onnx").write_bytes(b"partial installation")
+    def factory(**kw):
+        raise RuntimeError("offline missing model")
+    module = SimpleNamespace(__file__=str(tmp_path / "__init__.py"), RapidOCR=factory)
+    monkeypatch.setattr(ops.importlib, "import_module", lambda name: module)
+    monkeypatch.setattr(ops, "_apple_vision", lambda path: "")
+    monkeypatch.setattr(env.client, "ocr_image", lambda path, **kw: ops.ocr_image(str(path)))
+    result = save(env, content="keep this image")
+    assert result.status == "stored" and result.memory_id == "mem1"
+    assert env.runtime.requests[0].content == "keep this image\n\n[Image without text]"
 
 
 def test_the_real_worker_extension_has_a_leading_dot(env):

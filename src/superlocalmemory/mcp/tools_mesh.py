@@ -138,15 +138,21 @@ _PROJECT_PATH = ""  # v3.4.6: detected from cwd or CLAUDE_PROJECT_DIR
 _HEARTBEAT_INTERVAL = 25  # seconds (broker marks stale at 30s, dead at 60s)
 _HEARTBEAT_THREAD: threading.Thread | None = None
 _REGISTERED = False
+_MESH_SESSION_ID = ""
+_REGISTER_LOCK = threading.Lock()
 
 
 def _detect_project_path() -> str:
     """Detect current project path from env or cwd."""
-    return (
-        os.environ.get("CLAUDE_PROJECT_DIR")
+    project = (
+        os.environ.get("SLM_PROJECT_PATH")
+        or os.environ.get("CLAUDE_PROJECT_DIR")
         or os.environ.get("PROJECT_PATH")
         or os.getcwd()
     )
+    from superlocalmemory.core.project_identity import storable_project
+
+    return storable_project(project)
 
 
 _WEB_UNAVAILABLE = {
@@ -167,8 +173,9 @@ def _web_caller_refused() -> dict | None:
     return dict(_WEB_UNAVAILABLE) if remote else None
 
 
-def _mesh_request(method: str, path: str, body: dict | None = None, *,
-                  busy_ok: bool = False) -> dict | None:
+def _mesh_request(
+    method: str, path: str, body: dict | None = None, *, busy_ok: bool = False
+) -> dict | None:
     """Send an exact-instance, capability-authenticated mesh request.
 
     With ``busy_ok`` a 429 from the daemon comes back as ``{"busy": True}``.
@@ -177,8 +184,7 @@ def _mesh_request(method: str, path: str, body: dict | None = None, *,
         from superlocalmemory.cli.daemon import DaemonRateLimited, daemon_request
 
         try:
-            return daemon_request(method, f"/mesh{path}", body,
-                                  preserve_rate_limited=busy_ok)
+            return daemon_request(method, f"/mesh{path}", body, preserve_rate_limited=busy_ok)
         except DaemonRateLimited:
             return {"busy": True}
     except Exception as exc:
@@ -186,39 +192,62 @@ def _mesh_request(method: str, path: str, body: dict | None = None, *,
         return None
 
 
-def _ensure_registered() -> None:
-    """Register this session with the mesh broker if not already."""
-    global _REGISTERED, _PROJECT_PATH, _PEER_ID
-    if _REGISTERED:
-        return
+def _ensure_registered(project_path: str = "") -> None:
+    """Serialize registration and update project identity on the same session."""
+    global _REGISTERED, _PROJECT_PATH
+    from superlocalmemory.core.project_identity import storable_project
 
-    _PROJECT_PATH = _detect_project_path()
-    result = _mesh_request("POST", "/register", {
-        "peer_id": _PEER_ID,
-        "session_id": os.environ.get("CLAUDE_SESSION_ID", _PEER_ID),
-        "summary": _SESSION_SUMMARY or "SLM MCP session",
-        "project_path": _PROJECT_PATH,
-        # Peer identity is the canonical SLM_AGENT_ID (same var memory
-        # attribution uses), so Antigravity/Hermes/Cursor/etc. show as
-        # themselves instead of collapsing to "claude_code". Fall back to the
-        # legacy CLAUDE_AGENT_TYPE, then a generic default.
-        "agent_type": (
-            os.environ.get("SLM_AGENT_ID")
+    with _REGISTER_LOCK:
+        project = storable_project(project_path)
+        if project and project != _PROJECT_PATH:
+            _PROJECT_PATH = project
+            _REGISTERED = False
+        if not _REGISTERED:
+            _register_local_session()
+
+
+def _register_local_session():
+    global _REGISTERED, _PROJECT_PATH, _PEER_ID, _MESH_SESSION_ID
+    _PROJECT_PATH = _PROJECT_PATH or _detect_project_path()
+    _MESH_SESSION_ID = (
+        os.environ.get("SLM_SESSION_ID")
+        or os.environ.get("CLAUDE_SESSION_ID")
+        or os.environ.get("CLAUDE_CODE_SESSION_ID")
+        or _MESH_SESSION_ID
+        or _PEER_ID
+    )
+    result = _mesh_request(
+        "POST",
+        "/register",
+        {
+            "session_id": _MESH_SESSION_ID,
+            "summary": _SESSION_SUMMARY or "SLM MCP session",
+            "project_path": _PROJECT_PATH,
+            "agent_type": os.environ.get("SLM_AGENT_ID")
             or os.environ.get("CLAUDE_AGENT_TYPE")
-            or "claude_code"
-        ),
-    })
-    if result:
-        # v3.6.12 (mesh-1): the broker mints its OWN peer_id (RegisterRequest has
-        # no peer_id field, so our body value is dropped by pydantic). Adopt the
-        # broker's id BEFORE starting the heartbeat, otherwise heartbeat/send/
-        # inbox all target a non-existent peer → 404s and the session is reaped.
-        _PEER_ID = result.get("peer_id", _PEER_ID)
+            or "mcp_client",
+        },
+    )
+    if (
+        result
+        and result.get("ok") is not False
+        and isinstance(result.get("peer_id"), str)
+        and result["peer_id"]
+    ):
+        _PEER_ID = result["peer_id"]
         _REGISTERED = True
         _start_heartbeat()
-        pending = result.get("pending_messages", 0)
-        if pending > 0:
-            logger.info("Mesh: %d pending messages waiting", pending)
+
+
+def bind_local_project(project_path):
+    """Only a standalone local MCP host binds the process peer's project."""
+    if (
+        os.environ.get("SLM_MCP_EMBEDDED") == "1"
+        or os.environ.get("SLM_DISABLE_WARMUP_SIDE_EFFECTS") == "1"
+    ):
+        return
+    if _web_caller_refused() is None:
+        _ensure_registered(project_path=project_path)
 
 
 def _caller_peer() -> str:
@@ -280,7 +309,9 @@ def register_mesh_tools(server, get_engine: Callable) -> None:
 
         # Update summary
         result = await asyncio.to_thread(
-            _mesh_request, "POST", "/summary",
+            _mesh_request,
+            "POST",
+            "/summary",
             {"peer_id": _PEER_ID, "summary": _SESSION_SUMMARY},
         )
 
@@ -315,8 +346,9 @@ def register_mesh_tools(server, get_engine: Callable) -> None:
 
     @server.tool()
     @admits(OperationKind.MESH_SEND)
-    async def mesh_send(to: str, message: str, refs: list[str] | None = None,
-                        reply_to: int | None = None) -> dict:
+    async def mesh_send(
+        to: str, message: str, refs: list[str] | None = None, reply_to: int | None = None
+    ) -> dict:
         """Send a message to another peer session, broadcast, or project.
 
         Args:
@@ -335,9 +367,13 @@ def register_mesh_tools(server, get_engine: Callable) -> None:
         # Enforce the documented 4KB notification cap client-side too (the
         # broker also caps, but fail fast without a round-trip).
         if len(message.encode("utf-8")) > MAX_MESSAGE_SIZE:
-            return {"ok": False, "error": (
-                f"message too large (max {MAX_MESSAGE_SIZE} bytes) — "
-                "reference a file path instead")}
+            return {
+                "ok": False,
+                "error": (
+                    f"message too large (max {MAX_MESSAGE_SIZE} bytes) — "
+                    "reference a file path instead"
+                ),
+            }
         # M03: circuit breaker — fast-fail if daemon is repeatedly unreachable
         if not _SEND_CIRCUIT.allow_request():
             return {
@@ -369,11 +405,12 @@ def register_mesh_tools(server, get_engine: Callable) -> None:
         # Auto-mark unread messages as read. v3.6.12 (failopen-2): use .get("id")
         # — a malformed broker message without an "id" key used to raise KeyError
         # out to the agent, violating the never-raise contract.
-        unread_ids = [m["id"] for m in msg_list
-                      if not m.get("read") and m.get("id") is not None]
+        unread_ids = [m["id"] for m in msg_list if not m.get("read") and m.get("id") is not None]
         if unread_ids:
             await asyncio.to_thread(
-                _mesh_request, "POST", f"/inbox/{peer}/read",
+                _mesh_request,
+                "POST",
+                f"/inbox/{peer}/read",
                 {"message_ids": unread_ids},
             )
         return len(unread_ids)
@@ -403,9 +440,11 @@ def register_mesh_tools(server, get_engine: Callable) -> None:
         if peer is None:
             return {"messages": [], "count": 0, "unread": 0, "preface": PREFACE}
         from urllib.parse import quote
+
         project = _PROJECT_PATH or _detect_project_path()
         messages = await asyncio.to_thread(
-            _mesh_request, "GET",
+            _mesh_request,
+            "GET",
             f"/inbox/{peer}?project_path={quote(project, safe='')}",
         )
         msg_list = (messages or {}).get("messages", [])
@@ -442,21 +481,31 @@ def register_mesh_tools(server, get_engine: Callable) -> None:
         except (TypeError, ValueError, OverflowError):
             wait = 1
         if peer is None:
-            return {"messages": [], "timed_out": True, "preface": PREFACE,
-                    "error": "mesh unavailable"}
+            return {
+                "messages": [],
+                "timed_out": True,
+                "preface": PREFACE,
+                "error": "mesh unavailable",
+            }
         from urllib.parse import quote
+
         project = _PROJECT_PATH or _detect_project_path()
         result = await asyncio.to_thread(
             lambda: _mesh_request(
                 "GET",
                 f"/inbox/{peer}/wait?timeout_s={wait}&project_path={quote(project, safe='')}",
-                busy_ok=True),
+                busy_ok=True,
+            ),
         )
         if result and result.get("busy"):
             return {"ok": False, "error": "too many waits, retry shortly"}
         if result is None:
-            return {"messages": [], "timed_out": True, "preface": PREFACE,
-                    "error": "mesh daemon unreachable"}
+            return {
+                "messages": [],
+                "timed_out": True,
+                "preface": PREFACE,
+                "error": "mesh daemon unreachable",
+            }
         msg_list = result.get("messages", [])
         await _mark_read(peer, msg_list)
         return {
@@ -488,7 +537,9 @@ def register_mesh_tools(server, get_engine: Callable) -> None:
 
         if action == "set" and key:
             result = await asyncio.to_thread(
-                _mesh_request, "POST", "/state",
+                _mesh_request,
+                "POST",
+                "/state",
                 {"key": key, "value": value, "set_by": _PEER_ID},
             )
             return result or {"ok": False, "error": "Failed to set state"}
@@ -526,13 +577,14 @@ def register_mesh_tools(server, get_engine: Callable) -> None:
         # Require a non-empty absolute path; a relative/blank path is ambiguous
         # and lets a caller probe arbitrary strings via the coordination store.
         if not file_path or not (
-            file_path.startswith("/")
-            or (len(file_path) >= 3 and file_path[1] == ":")
+            file_path.startswith("/") or (len(file_path) >= 3 and file_path[1] == ":")
         ):
             return {"ok": False, "error": "file_path must be a non-empty absolute path"}
         await asyncio.to_thread(_ensure_registered)
         result = await asyncio.to_thread(
-            _mesh_request, "POST", "/lock",
+            _mesh_request,
+            "POST",
+            "/lock",
             {"file_path": file_path, "action": action, "locked_by": _PEER_ID},
         )
         return result or {"ok": False, "error": "Lock operation failed"}
@@ -556,10 +608,13 @@ def register_mesh_tools(server, get_engine: Callable) -> None:
         """
         if (refused := _web_caller_refused()) is not None:
             return refused
+        await asyncio.to_thread(_ensure_registered)
         result = await asyncio.to_thread(_mesh_request, "GET", "/status")
         if result:
             result["my_peer_id"] = _PEER_ID
-            result["heartbeat_active"] = _HEARTBEAT_THREAD is not None and _HEARTBEAT_THREAD.is_alive()
+            result["heartbeat_active"] = (
+                _HEARTBEAT_THREAD is not None and _HEARTBEAT_THREAD.is_alive()
+            )
         return result or {
             "broker_up": False,
             "error": "Cannot reach mesh broker. Is the daemon running? (slm serve start)",

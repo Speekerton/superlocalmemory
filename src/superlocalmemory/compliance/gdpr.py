@@ -13,92 +13,13 @@ Part of Qualixar | Author: Varun Pratap Bhardwaj
 
 from __future__ import annotations
 
-import json
 import logging
-import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
 from superlocalmemory.core.derived_cache_policy import clears_derived_cache
 
 logger = logging.getLogger(__name__)
-
-# C1 — Backup residue obligations
-# Imported lazily inside methods to avoid circular-import risk at module load.
-# The sentinel guards against environments where infra.backup_obligations is
-# unavailable (e.g. minimal test installs); compliance logic degrades safely.
-_BACKUP_OBLIGATIONS_AVAILABLE: bool | None = None
-
-
-def _get_backup_obligations_module():
-    """Lazy import guard — returns module or None if unavailable."""
-    global _BACKUP_OBLIGATIONS_AVAILABLE
-    try:
-        import superlocalmemory.infra.backup_obligations as _m
-        _BACKUP_OBLIGATIONS_AVAILABLE = True
-        return _m
-    except Exception as exc:  # noqa: BLE001
-        if _BACKUP_OBLIGATIONS_AVAILABLE is None:
-            logger.warning("backup_obligations module unavailable: %s", exc)
-        _BACKUP_OBLIGATIONS_AVAILABLE = False
-        return None
-
-
-def _retention_days_from_config() -> int:
-    """Read the configured obligation retention window (default 90 days).
-
-    Consumes ``SLMConfig.backup_retention_days`` or any attribute matching
-    ('retention', 'retain') with numeric value on ``SLMConfig``.  The config
-    field is owned by another agent; we consume it here and fall back to 90.
-    """
-    try:
-        from superlocalmemory.core.config import SLMConfig
-        cfg = SLMConfig()
-        # Try the canonical field name first
-        for attr in ("backup_retention_days", "obligation_retention_days",
-                     "retention_window_days", "backup_obligation_retention_days"):
-            val = getattr(cfg, attr, None)
-            if isinstance(val, int) and val > 0:
-                return val
-        # Fallback: search nested sub-configs
-        for attr in dir(cfg):
-            if attr.startswith("_"):
-                continue
-            sub = getattr(cfg, attr, None)
-            if not hasattr(sub, "__dict__") and not hasattr(sub, "__dataclass_fields__"):
-                continue
-            for sub_attr in dir(sub):
-                if any(h in sub_attr.lower() for h in ("retention", "retain")):
-                    v = getattr(sub, sub_attr, None)
-                    if isinstance(v, int) and v > 0:
-                        return v
-    except Exception:  # noqa: BLE001
-        pass
-    return 90  # owner-set default
-
-#: Rows fetched per page when an export reads a table in full.
-_EXPORT_PAGE_ROWS = 1000
-
-
-def _every_row(cursor: sqlite3.Cursor) -> list[dict]:
-    """All rows of ``cursor`` as dicts, fetched a page at a time."""
-    out: list[dict] = []
-    while True:
-        page = cursor.fetchmany(_EXPORT_PAGE_ROWS)
-        if not page:
-            return out
-        out.extend(dict(row) for row in page)
-
-
-# Friendly export keys → canonical table names (stable Art.20 export contract).
-_EXPORT_ALIASES = {
-    "facts": "atomic_facts",
-    "entities": "canonical_entities",
-    "edges": "graph_edges",
-    "feedback": "feedback_records",
-    "scenes": "memory_scenes",
-}
-
 
 def _unproject_entity(entity_id: str) -> bool:
     """Remove an entity node from the graph projection, if there is one.
@@ -149,6 +70,10 @@ class GDPRCompliance:
     # `erasure_receipts` — tamper-evident audit chain for Art.17 erasure events;
     #   must survive the profile wipe so operators can prove deletion occurred.
     _NON_MEMORY_SCOPED = frozenset({"profiles", "erasure_receipts"})
+
+    #: Tables a database trigger protects from the generic sweep; each has a
+    #: dedicated erasure in ``compliance/erasure_sidecars.py``.
+    _GOVERNED_ERASURE = frozenset({"write_commits"})
 
     def __init__(self, db, *, engine=None, data_root: str | Path | None = None) -> None:
         self._db = db
@@ -240,34 +165,64 @@ class GDPRCompliance:
                 purged += 1
             else:
                 failures += 1
+        failures += self._sweep_projection_profile(graph, vector, profile_id)
         return purged, failures
 
+    @staticmethod
+    def _sweep_projection_profile(graph, vector, profile_id: str) -> int:
+        """Whole-profile removal in the projections; returns the failures.
+
+        Per-fact removal leaves the graph's entity nodes (they carry names), and
+        a Lance table keeps the files of every earlier version until they are
+        cleaned up, so a deleted vector stayed readable in the table's history.
+        """
+        failures = 0
+        remove = getattr(graph, "remove_profile", None)
+        if remove is not None:
+            try:
+                remove(profile_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("GDPR erase: graph profile removal failed: %s", exc)
+                failures += 1
+        compact = getattr(vector, "compact", None)
+        if compact is not None:
+            from datetime import timedelta
+
+            try:
+                outcome = compact(retention=timedelta(0))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("GDPR erase: vector history cleanup failed: %s", exc)
+                return failures + 1
+            if isinstance(outcome, dict) and outcome.get("ok") is False:
+                logger.warning("GDPR erase: vector history not cleaned: %s", outcome.get("reason"))
+                failures += 1
+        return failures
+
     def _purge_vector_and_ann(self, profile_id: str) -> tuple[int, int]:
-        engine = self._engine
-        if engine is None:
+        """Remove a profile's vectors from the store, the ANN index and the vec0 file.
+
+        Returns ``(purged, failures)``. A vector that was already absent is
+        neither: it needs no removal. A delete that FAILED counts as a failure
+        (it used to read as "nothing to delete"), and so does a vector still in
+        the index when the sweep reads it back.
+        """
+        if self._db is None and self._engine is None:  # nothing to read or remove
             return 0, 0
+        engine = self._engine
         store = getattr(engine, "_vector_store", None)
         ann = getattr(engine, "_ann_index", None)
+        purged = failures = 0
 
-        purged = 0
-        failures = 0
-
-        try:
-            db_fact_ids = [
-                dict(r)["fact_id"]
-                for r in self._db.execute(
-                    "SELECT fact_id FROM atomic_facts WHERE profile_id = ?",
-                    (profile_id,),
-                )
-            ]
-        except Exception as exc:
-            logger.warning("GDPR erase: fact_id enumeration failed: %s", exc)
-            db_fact_ids = []
-            failures += 1
+        db_fact_ids = self._fact_ids_for(profile_id) if self._db is not None else []
+        if db_fact_ids is None:
+            logger.warning("GDPR erase: fact_id enumeration failed")
+            db_fact_ids, failures = [], failures + 1
 
         store_available = store is not None and getattr(store, "available", False)
         store_fact_ids: list[str] = []
         if store_available:
+            from superlocalmemory.retrieval.vector_store import classify_delete
+
             try:
                 store_fact_ids = list(store.indexed_fact_ids(profile_id))
             except Exception as exc:
@@ -276,30 +231,55 @@ class GDPRCompliance:
                 store_fact_ids = list(db_fact_ids)
             for fid in store_fact_ids:
                 try:
-                    if store.delete(fid):
-                        purged += 1
-                    else:
-                        failures += 1
+                    outcome = classify_delete(store.delete(fid))
                 except Exception as exc:
                     logger.warning("GDPR erase: vector delete failed for %s: %s", fid, exc)
                     failures += 1
-        else:
-            # No usable vector backend: raw vec0/map payload cannot be removed.
-            # Count residual raw vectors as failures so the receipt cannot claim
-            # a complete erasure while physical vectors survive.
+                    continue
+                if outcome.failed:
+                    failures += 1
+                elif outcome:
+                    purged += 1
+        elif store is not None:
+            # A store that is open but unusable cannot take the removal.
             residue = self._count_vector_residue(profile_id)
             if residue:
                 failures += residue
 
         if ann is not None and hasattr(ann, "remove"):
-            all_to_purge = set(store_fact_ids) | set(db_fact_ids)
-            for fid in all_to_purge:
+            for fid in set(store_fact_ids) | set(db_fact_ids):
                 try:
                     ann.remove(fid)
                 except Exception as exc:
                     logger.warning("GDPR erase: ANN remove failed for %s: %s", fid, exc)
 
-        return purged, failures
+        swept, sweep_failures = self._sweep_physical_vectors(profile_id)
+        return purged + swept, failures + sweep_failures
+
+    def _sweep_physical_vectors(self, profile_id: str) -> tuple[int, int]:
+        """Empty the profile's partition of the vec0 file itself and read it back.
+
+        This is the only removal an erasure made WITHOUT an engine (the command
+        line) gets, and for an engine it catches rows no per-fact delete reached
+        (unmapped ones). ``(removed, failures)``; a file that cannot be opened to
+        check counts as a failure, never as clean.
+        """
+        db_path = getattr(self._db, "db_path", None)
+        if db_path is None:
+            return 0, 0
+        from superlocalmemory.retrieval import vector_physical
+        from superlocalmemory.storage.write_lock import get_write_lock
+
+        try:
+            with get_write_lock(Path(db_path)):
+                outcome = vector_physical.purge_profile(db_path, profile_id)
+        except vector_physical.VectorIndexUnreadable as exc:
+            logger.warning("GDPR erase: the vector index could not be checked: %s", exc)
+            return 0, 1
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("GDPR erase: the vector sweep failed: %s", exc)
+            return 0, 1
+        return outcome.removed, outcome.remaining
 
     def _count_vector_residue(self, profile_id: str) -> int:
         total = 0
@@ -356,74 +336,61 @@ class GDPRCompliance:
 
     # -- Right to Access (Art. 15) -----------------------------------------
 
-    def export_profile_data(self, profile_id: str) -> dict:
+    def export_profile_data(self, profile_id: str, *, include_embeddings: bool = False) -> dict:
         """Export ALL data for a profile in machine-readable format (Art. 15 /
         Art. 20). Covers every profile-scoped table discovered from the schema,
-        plus the profile record itself."""
-        self._audit("export", "profile", profile_id, "Full data export")
+        plus the profile record itself, the code graph, media records, learned
+        signals and audit records (``compliance/gdpr_export.py``).
 
-        data: dict = {"profile_id": profile_id, "exported_at": _now()}
-        for table in self._profile_scoped_tables():
-            try:
-                rows = self._db.execute(
-                    f"SELECT * FROM {table} WHERE profile_id = ?", (profile_id,)
-                )
-                data[table] = [dict(r) for r in rows]
-            except Exception as exc:  # pragma: no cover — defensive per-table
-                logger.warning("export: table %s skipped: %s", table, exc)
-
-        # Profile record itself (the tenant metadata).
-        try:
-            rows = self._db.execute("SELECT * FROM profiles WHERE profile_id = ?", (profile_id,))
-            data["profile_record"] = [dict(r) for r in rows]
-        except Exception:
-            data["profile_record"] = []
-
-        # C2 — include code_graph.db in Art.15 export (repo paths, file names,
-        # and symbol names are identifying data in a work context).
-        # Without an explicit root the files next to the memory database are
-        # this installation's — the same rule erasure uses. Reading is safe;
-        # leaving them out made the dashboard export silently incomplete.
-        export_root = self._data_root
-        if export_root is None:
-            db_path = getattr(self._db, "db_path", None)
-            if db_path is not None:
-                export_root = Path(db_path).resolve().parent
-        if export_root is not None:
-            code_graph_data = self._export_code_graph(export_root)
-            if code_graph_data is not None:
-                data["code_graph"] = code_graph_data
-
-            # Pictures, documents, connected folders and jobs live in media.db,
-            # another file the table sweep never reached. Records only.
-            from superlocalmemory.compliance.gdpr_media_export import export_media
-
-            media_data = export_media(export_root, profile_id, self._db)
-            if media_data is not None:
-                data["media"] = media_data
-
-            # What the system learned about how this person works: which
-            # questions they asked, which answers they found useful, and the
-            # weights derived from that. It was erased on request and could not
-            # be asked for -- which makes an export that claims to be everything
-            # untrue. It lives in a second file, so the table sweep above never
-            # reached it.
-            behaviour = self._export_learning_signals(export_root, profile_id)
-            if behaviour is not None:
-                data["learning_signals"] = behaviour
-
-        # total_items counts the canonical (table-name) keys only, before
-        # friendly aliases are added, so it is not double-counted.
-        data["total_items"] = sum(len(v) for v in data.values() if isinstance(v, list))
-
-        # Backward-compatible friendly aliases for the well-known keys (stable
-        # export contract) — they reference the same lists, not copies.
-        for friendly, table in _EXPORT_ALIASES.items():
-            if table in data:
-                data[friendly] = data[table]
-
+        Binary and vector columns are left out unless ``include_embeddings``;
+        the ``export_manifest`` key says what was left out and why. The result
+        is plain JSON: every value is already a JSON type. A large profile
+        should use :meth:`write_profile_export`, which does not hold the export
+        in memory.
+        """
+        data = self._profile_export(profile_id, include_embeddings).as_dict()
         logger.info("Exported %d items for profile '%s'", data["total_items"], profile_id)
         return data
+
+    def write_profile_export(
+        self, profile_id: str, fp, *, include_embeddings: bool = False,
+    ) -> dict:
+        """Stream the Art. 15 / 20 export of ``profile_id`` to ``fp``.
+
+        ``fp`` is a binary file opened ``w+b`` (the writer copies the friendly
+        aliases back out of it). Returns ``{"bytes", "total_items", "tables"}``.
+        Raises on failure; a half-written file is the caller's to discard.
+        """
+        summary = self._profile_export(profile_id, include_embeddings).write(fp)
+        logger.info("Exported %d items (%d bytes) for profile '%s'",
+                    summary["total_items"], summary["bytes"], profile_id)
+        return summary
+
+    def _profile_export(self, profile_id: str, include_embeddings: bool):
+        from superlocalmemory.compliance.export_encoding import ExportOptions
+        from superlocalmemory.compliance.gdpr_export import ProfileExport
+
+        self._audit("export", "profile", profile_id, "Full data export")
+        # Without an explicit root the files next to the memory database are
+        # this installation's -- the same rule erasure uses. Reading is safe;
+        # leaving them out made the dashboard export silently incomplete.
+        root = self._data_root
+        if root is None:
+            db_path = getattr(self._db, "db_path", None)
+            root = Path(db_path).resolve().parent if db_path is not None else None
+        # The code graph has no owner column; whose it is follows the same rule
+        # erasure uses (see _erase_code_graph): all of it if this is the only
+        # profile, otherwise what this profile's own memories link to.
+        shared_facts: list[str] | None = None
+        if not self._is_sole_profile(profile_id):
+            shared_facts = self._fact_ids_for(profile_id)
+            if shared_facts is None:  # could not tell which links are theirs: export none
+                shared_facts = []
+        return ProfileExport(
+            self._db, profile_id, self._profile_scoped_tables(), data_root=root,
+            options=ExportOptions(include_embeddings=include_embeddings),
+            code_graph_facts=shared_facts,
+        )
 
     # -- Right to Erasure (Art. 17) ----------------------------------------
 
@@ -608,6 +575,7 @@ class GDPRCompliance:
             from superlocalmemory.core.transactions.owners import OperationContext
 
             _erasure_svc = build_erasure_service_for_db(self._db, self._engine, data_root)
+            _requested_at = _time.time()
             _ctx = OperationContext(
                 operation_id=_uuid.uuid4().hex,
                 profile_id=profile_id,
@@ -621,7 +589,7 @@ class GDPRCompliance:
                 subject_type="profile",
                 subject_id=profile_id,
                 requested_by="gdpr",
-                requested_at=_time.time(),
+                requested_at=_requested_at,
                 remove_result=_remove_result,
             )
             if not _receipt.persisted:
@@ -707,12 +675,25 @@ class GDPRCompliance:
         counts["correction_cases_erased"] = erase_profile_cases(
             self._db, profile_id, erasure_id=_uuid.uuid4().hex)
 
+        # Stores outside memory.db that keep the person's words, and the receipt
+        # ledger whose rows the generic sweep below cannot delete (compliance/
+        # erasure_sidecars.py). Must run before the profile row goes.
+        if data_root is not None:
+            from superlocalmemory.compliance.erasure_sidecars import erase_profile_sidecars
+
+            erase_profile_sidecars(
+                data_root, getattr(self._db, "db_path", None), profile_id, counts)
+
+        self._scrub_profile_events(profile_id, _profile_fact_ids, counts)
+
         # Pass 2 — full-tenant wipe (every profile row in every table goes).
         # Each statement runs on its own connection with foreign keys ON (a
         # PRAGMA here would only reach a throwaway connection), so cascades
         # apply. FTS shadow rows are removed by the base-table delete triggers.
         table_delete_failures: list[str] = []
         for table in tables:
+            if table in self._GOVERNED_ERASURE:
+                continue  # removed above by its owner; a generic DELETE is refused
             try:
                 self._db.execute(f"DELETE FROM {table} WHERE profile_id = ?", (profile_id,))
             except Exception as exc:  # pragma: no cover — defensive per-table
@@ -809,41 +790,31 @@ class GDPRCompliance:
             logger.warning("GDPR erase: working-set discard failed: %s", exc)
             counts["working_sets_failed"] = 1
 
-        counts["erasure_complete"] = (
-            1
-            if (
-                residue_rows == 0
-                and not residue_recount_failed
-                and not table_delete_failures
-                and not counts.get("learning_db_failed")
-                and not counts.get("learning_db_skipped")
-                and not counts.get("vector_store_failures")
-                # A fact still in the graph is still recallable, so an erasure
-                # that could not reach the projection is not complete.
-                and not counts.get("graph_projection_failures")
-                and not counts.get("context_cache_failed")
-                and not counts.get("media_failed")
-                and not counts.get("owner_erasure_incomplete")
-                and not counts.get("backup_obligations_pending")
-                and not counts.get("backup_scan_failed")
-                and not counts.get("fts_residue_rows")
-                and not counts.get("working_sets_failed")
-                and not counts.get("code_graph_failed")
-                and not any(
-                    counts.get(f"{t}_failed") for t, _ in self._FACT_KEYED_TABLES
-                )
-            )
-            else 0
-        )
+        # Complete means nothing is marked as left. The markers are read by one
+        # function (compliance/erasure_outcome.py), the same one every surface
+        # uses, so this verdict cannot drift from what they report. Whether the
+        # tamper-evident receipt was written is the separate "provable" answer.
+        from superlocalmemory.compliance import erasure_outcome
+
+        leftovers = erasure_outcome.remaining_markers(counts, data_only=True)
+        if counts.get("learning_db_skipped"):
+            leftovers.append("learning_db_skipped")
+        counts["erasure_complete"] = 0 if leftovers else 1
+
+        # The receipt must state the FINAL outcome. The owner receipt written
+        # earlier (while the facts were still there to be proven absent) said
+        # COMPLETE before the sweep, the sidecars and the backups were checked;
+        # writing it once, early, is how a failed erasure came to show a
+        # COMPLETE receipt. Re-finalise under the same id with the aggregate as
+        # one more proof, so the stored receipt is the one a reader should trust.
+        self._finalize_aggregate_receipt(
+            _erasure_svc, _ctx, _remove_result, _requested_at, profile_id, leftovers, counts)
 
         # Whether the data is gone and whether we can PROVE it is gone are two
         # different questions, and one answer cannot carry both. Article 5(2) is
         # accountability: an erasure whose tamper-evident receipt was not
         # written really did delete the rows, and really cannot be demonstrated
-        # afterwards. Folding that into erasure_complete would report an
-        # erasure that happened as one that did not; leaving it out entirely —
-        # which is what happened until now — lets a caller reading one field
-        # believe it covers both.
+        # afterwards.
         counts["erasure_provable"] = (
             1
             if (
@@ -853,7 +824,6 @@ class GDPRCompliance:
             )
             else 0
         )
-
         try:
             from superlocalmemory.compliance.audit import AuditChain
             from superlocalmemory.infra.data_root import state_path
@@ -873,8 +843,89 @@ class GDPRCompliance:
             logger.error("GDPR erase: completion audit-chain log failed: %s", exc)
             counts["audit_completion_failed"] = 1
 
+        # The statement every surface shows: what was removed, what remains, how to retry.
+        counts["erasure_report"] = erasure_outcome.describe(counts)
         logger.info("GDPR erasure for '%s': %d tables, %s", profile_id, len(tables), counts)
         return counts
+
+    def _scrub_profile_events(
+        self, profile_id: str, fact_ids: tuple[str, ...], counts: dict,
+    ) -> None:
+        """Blank the profile's event previews (the HTTP path files events under ``default``)."""
+        from superlocalmemory.core import erasure_scrub
+
+        try:
+            ids = set(fact_ids)
+            for sql in ("SELECT memory_id AS i FROM memories WHERE profile_id = ?",
+                        "SELECT operation_id AS i FROM ingestion_operations WHERE profile_id = ?"):
+                try:
+                    ids.update(str(dict(r)["i"]) for r in self._db.execute(sql, (profile_id,)))
+                except Exception:  # noqa: BLE001 - a store without the table has none of its ids
+                    continue
+            counts["event_previews"] = erasure_scrub.scrub_profile_events(
+                self._db, profile_id, ids)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("GDPR erase: event preview scrub failed: %s", type(exc).__name__)
+            counts["event_previews_failed"] = 1
+
+    def _journal_entity_erasure(
+        self, profile_id: str, entity_id: str, erasure_id: str | None, counts: dict,
+    ) -> None:
+        """Journal the erased entity outside every backup, so a restore erases it again."""
+        root = self._sidecar_root()
+        if root is None:
+            return
+        import uuid
+
+        from superlocalmemory.infra import erased_subjects
+
+        try:
+            erased_subjects.record(root, profile_id, "entity", [entity_id],
+                                   erasure_id or uuid.uuid4().hex)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("entity erasure journal not written: %s", type(exc).__name__)
+            counts["restore_journal_failed"] = 1
+
+    def _sidecar_root(self) -> Path | None:
+        """The data root whose side stores a targeted erasure must also clean."""
+        if self._data_root is not None:
+            return self._data_root
+        db_path = getattr(self._db, "db_path", None)
+        return Path(db_path).resolve().parent if db_path is not None else None
+
+    def _erase_cached_copies(self, profile_id: str, texts: list[str], counts: dict) -> None:
+        """Remove cached copies (MCP cache, compression originals) of just-erased words."""
+        from superlocalmemory.compliance.erasure_sidecars import erase_cached_text, needles_from
+
+        erase_cached_text(self._sidecar_root(), profile_id, needles_from(texts), counts)
+
+    def _finalize_aggregate_receipt(
+        self, service, context, remove_result, requested_at: float, profile_id: str,
+        leftovers: list[str], counts: dict,
+    ) -> None:
+        """Replace the early owner receipt with one that states the whole outcome."""
+        import hashlib
+
+        from superlocalmemory.core.transactions import ErasureProofRecord
+
+        residue = tuple(sorted(leftovers))
+        digest = hashlib.sha256(
+            ("profile-erasure:" + profile_id + ":" + ",".join(residue)).encode()).hexdigest()
+        try:
+            receipt = service.finalize(
+                self._db, context, subject_type="profile", subject_id=profile_id,
+                requested_by="gdpr", requested_at=requested_at,
+                extra_proofs=[ErasureProofRecord(
+                    owner="profile_erasure", erased=not residue, checksum=digest,
+                    residue=residue)],
+                remove_result=remove_result,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("GDPR erase: final receipt failed: %s", type(exc).__name__)
+            counts["receipt_persist_failed"] = 1
+            return
+        if not receipt.persisted:
+            counts["receipt_persist_failed"] = 1
 
     @clears_derived_cache
     def forget_entity(self, entity_name: str, profile_id: str) -> dict:
@@ -885,6 +936,11 @@ class GDPRCompliance:
         """
         import time
 
+        from superlocalmemory.compliance.erasure_outcome import subject_ref
+
+        # The receipt, the audit chain and the log say which erasure this was
+        # without keeping the name that was erased.
+        ref = subject_ref("entity", entity_name)
         requested_at = time.time()
         audit_request_ok = True
         try:
@@ -897,7 +953,7 @@ class GDPRCompliance:
                 profile_id=profile_id,
                 metadata={
                     "basis": "GDPR Art.17 right-to-erasure",
-                    "entity": entity_name,
+                    "entity": ref,
                 },
             )
         except Exception as exc:
@@ -906,7 +962,7 @@ class GDPRCompliance:
         self._audit(
             "delete",
             "entity",
-            entity_name,
+            ref,
             f"GDPR entity erasure in profile {profile_id}",
             profile_id=profile_id,
         )
@@ -924,11 +980,12 @@ class GDPRCompliance:
         # Delete facts mentioning this entity — use ErasureService for projection
         # erasure so the receipt captures real per-owner proofs (not proofs:[]).
         rows = self._db.execute(
-            "SELECT fact_id, memory_id FROM atomic_facts WHERE profile_id = ? "
+            "SELECT fact_id, memory_id, content FROM atomic_facts WHERE profile_id = ? "
             "AND canonical_entities_json LIKE ?",
             (profile_id, f'%"{eid}"%'),
         )
         targets = [(dict(r)["fact_id"], dict(r).get("memory_id")) for r in rows]
+        erased_texts = [str(dict(r).get("content") or "") for r in rows] + [entity_name]
         target_fact_ids = [fid for fid, _ in targets]
         counts["facts"] = len(targets)
         from superlocalmemory.core import erasure_scrub  # words outside projections
@@ -948,7 +1005,7 @@ class GDPRCompliance:
             ctx = OperationContext(
                 operation_id=op_id,
                 profile_id=profile_id,
-                subject_id=entity_name,
+                subject_id=ref,
                 fact_ids=tuple(sorted(target_fact_ids)),
             )
             erasure_svc.remove(self._db, ctx)
@@ -956,14 +1013,16 @@ class GDPRCompliance:
                 self._db,
                 ctx,
                 subject_type="entity",
-                subject_id=entity_name,
+                subject_id=ref,
                 requested_by="gdpr",
                 requested_at=requested_at,
             )
             if not receipt.persisted:
                 counts["receipt_persist_failed"] = 1
             if not receipt.all_erased:
-                counts["vector_store_failures"] = sum(1 for p in receipt.proofs if not p.erased)
+                from superlocalmemory.compliance.erasure_outcome import apply_proofs
+
+                apply_proofs(counts, receipt.proofs)
 
         # The same residue the profile wipe had: the search-expansion index is
         # keyed on a fact, not a profile, and ``delete_fact`` does not touch it.
@@ -1006,28 +1065,23 @@ class GDPRCompliance:
             "DELETE FROM canonical_entities WHERE entity_id = ? AND profile_id = ?",
             (eid, profile_id),
         )
+        self._erase_cached_copies(profile_id, erased_texts, counts)
         # The graph holds its own copy of this node, with the name in it.
         # Deleting the row above does not reach it.
         if not _unproject_entity(eid):
             counts["projection_failed"] = 1
         counts["entity"] = 1
+        self._journal_entity_erasure(profile_id, eid, op_id if targets else None, counts)
         if not audit_request_ok:
             counts["audit_request_failed"] = 1
 
         # The same two questions the profile path answers. Their absence here
         # meant a caller could not tell a complete entity erasure from a partial
         # one at all — it just got a dict of counts.
+        from superlocalmemory.compliance import erasure_outcome
+
         counts["erasure_complete"] = (
-            0
-            if any(
-                counts.get(marker)
-                for marker in (
-                    "vector_store_failures",
-                    "audit_request_failed", "text_scrub_failed", "projection_failed",
-                    *(f"{table}_failed" for table, _ in self._FACT_KEYED_TABLES),
-                )
-            )
-            else 1
+            0 if erasure_outcome.remaining_markers(counts, data_only=True) else 1
         )
         counts["erasure_provable"] = (
             1
@@ -1037,12 +1091,12 @@ class GDPRCompliance:
             else 0
         )
 
-        logger.info("Entity erasure '%s' in '%s': %s", entity_name, profile_id, counts)
+        logger.info("Entity erasure %s in '%s': %s", ref, profile_id, counts)
         return counts
 
     @clears_derived_cache
     def forget_facts(self, fact_ids, profile_id: str, *, subject_id: str) -> dict:
-        """Erase a chosen set of facts of one profile, with a receipt. See ``compliance.erase_facts``."""
+        """Erase chosen facts of one profile, with a receipt (``compliance.erase_facts``)."""
         from superlocalmemory.compliance.erase_facts import erase_facts
 
         return erase_facts(self, list(fact_ids), profile_id, subject_id)
@@ -1169,194 +1223,20 @@ class GDPRCompliance:
     def _erase_code_graph(
         self, data_root: Path, *, profile_id: str = "", sole_profile: bool = True,
     ) -> dict:
-        """Erase this profile's share of the live code_graph.db (C2 — Art.17).
+        """Erase this profile's share of the live code_graph.db (C2 - Art.17).
 
-        The graph carries repository paths, file names and symbol names, and no
-        table in it has a profile_id. When the store holds ONE profile the whole
-        graph belongs to that person and wiping it is exactly right.
-
-        When it holds more than one, wiping it destroys the other people's data
-        too — and an erasure request that erases a second data subject is itself
-        a breach, not an over-achievement. So in that case only the rows that
-        are unambiguously this profile's are removed: ``code_memory_links``
-        joins a code node to an SLM fact, and facts carry a profile. The graph
-        of the source code stays, because it describes a repository rather than
-        a person, and the receipt says plainly that it was left.
-
-        Fail-open: an error is recorded in the returned dict so the caller can
-        surface it, but it does NOT abort the rest of the erasure.
+        See :mod:`superlocalmemory.compliance.erasure_code_graph`: the whole graph
+        when this is the only profile, otherwise only the links to this profile's
+        own memories. Fail-open: an error is recorded in the returned dict so the
+        caller can surface it, but it does NOT abort the rest of the erasure.
         """
-        result: dict = {"rows_deleted": 0}
-        code_graph_path = data_root / "code_graph.db"
-        if not code_graph_path.exists():
-            return result
-        try:
-            conn = sqlite3.connect(str(code_graph_path))
-            conn.isolation_level = None  # autocommit so VACUUM can run
-            try:
-                conn.execute("PRAGMA foreign_keys=OFF")
-                tables = [
-                    row[0]
-                    for row in conn.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table' "
-                        "AND name NOT LIKE 'sqlite_%'"
-                    ).fetchall()
-                ]
-                total = 0
-                conn.execute("BEGIN")
-                if sole_profile:
-                    for tbl in tables:
-                        # Skip FTS virtual-table shadow files — deleting base rows handles them
-                        if tbl.endswith((
-                            "_fts", "_fts_data", "_fts_idx",
-                            "_fts_content", "_fts_docsize", "_fts_config",
-                        )):
-                            continue
-                        cur = conn.execute(f"DELETE FROM {tbl}")  # noqa: S608
-                        total += cur.rowcount
-                    result["scope"] = "whole_graph"
-                else:
-                    result["scope"] = "links_only"
-                    result["retained_reason"] = (
-                        "another profile shares this graph; the source-code "
-                        "structure describes a repository, not this person, and "
-                        "deleting it would erase another data subject's records"
-                    )
-                    owned = self._fact_ids_for(profile_id) if profile_id else []
-                    if owned is None:
-                        # Not knowing which links are this person's is a failure
-                        # to erase, not an empty erasure.
-                        raise sqlite3.OperationalError(
-                            "could not list this profile's facts, so its code "
-                            "links cannot be identified"
-                        )
-                    if "code_memory_links" in tables and owned:
-                        cur = conn.execute(
-                            "DELETE FROM code_memory_links WHERE slm_fact_id IN "
-                            "(SELECT value FROM json_each(?))",
-                            (json.dumps(owned),),
-                        )
-                        total += cur.rowcount
-                conn.execute("PRAGMA foreign_keys=ON")
-                conn.execute("COMMIT")
-                # VACUUM must run outside any transaction (autocommit mode required)
-                conn.execute("VACUUM")
-                result["rows_deleted"] = total
-            finally:
-                conn.close()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("GDPR erase: code_graph.db wipe failed: %s", exc)
-            result["error"] = str(exc)
-        return result
+        from superlocalmemory.compliance.erasure_code_graph import erase_code_graph
 
-    def _export_code_graph(self, data_root: Path) -> dict | None:
-        """Read code_graph.db for Art.15 export (C2).
-
-        Returns a dict keyed by table name whose values are lists of row dicts,
-        or None if the file does not exist or cannot be read.
-        """
-        code_graph_path = data_root / "code_graph.db"
-        if not code_graph_path.exists():
-            return None
-        export: dict = {}
-        try:
-            uri = f"file:{code_graph_path}?mode=ro"
-            conn = sqlite3.connect(uri, uri=True, timeout=5)
-            conn.row_factory = sqlite3.Row
-            try:
-                tables = [
-                    row[0]
-                    for row in conn.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table' "
-                        "AND name NOT LIKE 'sqlite_%'"
-                    ).fetchall()
-                ]
-                for tbl in tables:
-                    if tbl.endswith((
-                        "_fts", "_fts_data", "_fts_idx",
-                        "_fts_content", "_fts_docsize", "_fts_config",
-                    )):
-                        continue
-                    try:
-                        # Every row, read a page at a time: a fixed LIMIT here
-                        # once cut a large repository's graph at 10,000 rows
-                        # and the export said nothing.
-                        export[tbl] = _every_row(
-                            conn.execute(f"SELECT * FROM {tbl}")  # noqa: S608
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning("GDPR export: code_graph table %s failed: %s", tbl, exc)
-            finally:
-                conn.close()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("GDPR export: code_graph.db read failed: %s", exc)
-            return None
-        return export if export else None
-
-    def _export_learning_signals(
-        self, data_root: Path, profile_id: str
-    ) -> dict | None:
-        """Read this workspace's rows out of ``learning.db`` for an export.
-
-        Everything the system inferred about how somebody works is personal
-        data about them, and an export that leaves it out is not the export it
-        says it is. Erasure already covers this file; asking for it did not.
-
-        Scoped by ``profile_id`` wherever the table has one, and skipped where
-        it does not -- a table with no workspace column holds nothing that can
-        be attributed to one workspace, and returning it would export another
-        workspace's rows into this person's file.
-
-        Every row, never a sample: a fixed ``LIMIT`` here once returned the
-        oldest 10,000 Answer Check history rows of a profile holding more and
-        said nothing. Rows are read in pages so the database is not asked to
-        materialise the whole table at once.
-        """
-        learning_path = data_root / "learning.db"
-        if not learning_path.exists():
-            return None
-        export: dict = {}
-        try:
-            conn = sqlite3.connect(
-                f"file:{learning_path}?mode=ro", uri=True, timeout=5,
-            )
-            conn.row_factory = sqlite3.Row
-            try:
-                tables = [
-                    row[0] for row in conn.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table' "
-                        "AND name NOT LIKE 'sqlite_%'"
-                    ).fetchall()
-                ]
-                for table in tables:
-                    if table.endswith((
-                        "_fts", "_fts_data", "_fts_idx",
-                        "_fts_content", "_fts_docsize", "_fts_config",
-                    )):
-                        continue
-                    try:
-                        columns = {
-                            row[1] for row in
-                            conn.execute(f"PRAGMA table_info({table})")  # noqa: S608
-                        }
-                        if "profile_id" not in columns:
-                            continue
-                        rows = _every_row(conn.execute(
-                            f"SELECT * FROM {table} WHERE profile_id = ?",  # noqa: S608
-                            (profile_id,),
-                        ))
-                        if rows:
-                            export[table] = rows
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning(
-                            "export: learning table %s skipped: %s", table, exc,
-                        )
-            finally:
-                conn.close()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("export: learning.db could not be read: %s", exc)
-            return None
-        return export or None
+        owned = None
+        if not sole_profile:
+            owned = self._fact_ids_for(profile_id) if profile_id else []
+        return erase_code_graph(
+            Path(data_root), sole_profile=sole_profile, owned_fact_ids=owned)
 
     # -- C1: backup obligation helpers -------------------------------------
 
@@ -1367,78 +1247,20 @@ class GDPRCompliance:
         erasure_id: str,
         counts: dict,
     ) -> int:
-        """Scan backup snapshots and record any that contain *profile_id* data.
+        """Record snapshots that hold, or may hold, *profile_id*; see ``erasure_backups``.
 
-        Returns the total count of pending obligations after recording
-        (including those created in prior erasure passes for the same profile).
-        Fail-closed: any unhandled exception propagates to the caller who sets
-        ``backup_scan_failed`` to block the completeness claim.
+        Returns the pending obligation count (earlier erasures of the same
+        profile included). Fail-closed: any unhandled exception propagates to
+        the caller, who sets ``backup_scan_failed`` to block the completeness
+        claim.
         """
-        bom = _get_backup_obligations_module()
-        if bom is None:
-            logger.warning(
-                "GDPR erase: backup_obligations module unavailable — "
-                "backup residue will not be tracked for profile %r",
-                profile_id,
-            )
-            # Cannot track → treat as pending so completeness is blocked.
-            return 1
+        from superlocalmemory.compliance.erasure_backups import record_backup_obligations
 
-        backup_dir = data_root / "backups"
-        retention_days = _retention_days_from_config()
-        store = bom.BackupObligationStore(data_root)
-
-        # Scan all backup snapshots for this profile's data.
         try:
-            hits = bom.scan_backup_snapshots_for_profile(backup_dir, profile_id)
+            return record_backup_obligations(data_root, profile_id, erasure_id, counts)
         except Exception as exc:  # noqa: BLE001
-            logger.error(
-                "GDPR erase: backup snapshot scan raised: %s — "
-                "failing closed to block completeness",
-                exc,
-            )
-            counts["backup_scan_error"] = str(exc)
-            raise  # propagate so caller sets backup_scan_failed
-
-        snapshots_with_data = len(hits)
-        counts["backup_snapshots_scanned"] = snapshots_with_data
-        recorded = 0
-        for snap_path, snap_epoch in hits:
-            try:
-                store.record(
-                    profile_id=profile_id,
-                    erasure_id=erasure_id,
-                    snapshot_path=snap_path,
-                    snapshot_epoch=snap_epoch,
-                    retention_days=retention_days,
-                )
-                recorded += 1
-            except Exception as exc:  # noqa: BLE001
-                # Recording failure for a single snapshot must not silently
-                # skip the obligation — log and count so completeness is blocked.
-                logger.error(
-                    "GDPR erase: failed to record obligation for snapshot %r: %s",
-                    snap_path, exc,
-                )
-                counts["backup_record_errors"] = counts.get("backup_record_errors", 0) + 1
-                # Still include in pending count (fail-closed).
-                recorded += 1
-
-        # A restore's leftovers hold the same words: the deltas (memories written
-        # after a copy, verbatim) lose this profile's rows now, and every
-        # pre-restore copy that still holds it is registered like a backup.
-        # Raises on failure, which blocks the completeness claim (fail-closed).
-        from superlocalmemory.storage._restore_retention import cover_profile_erasure
-
-        covered = cover_profile_erasure(data_root, profile_id, erasure_id=erasure_id,
-                                        store=store, retention_days=retention_days)
-        counts.update(covered)
-        recorded += covered["pre_restore_copies_registered"]
-
-        counts["backup_obligations_recorded"] = recorded
-        # Return the authoritative pending count (includes obligations from prior
-        # erasure passes for the same profile that were not yet discharged).
-        return store.count_pending(profile_id)
+            counts["backup_scan_error"] = type(exc).__name__
+            raise
 
     # -- I7: post-erasure residue scanner ----------------------------------
 

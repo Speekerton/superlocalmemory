@@ -6,11 +6,11 @@ import pytest
 
 from superlocalmemory.core.config import ChannelWeights, RetrievalConfig
 from superlocalmemory.retrieval import channel_status as chstat
-from superlocalmemory.retrieval.engine import RetrievalEngine, apply_channel_weights
+from superlocalmemory.retrieval.engine import apply_channel_weights
 from superlocalmemory.retrieval.media_channel import MediaChannel
 from superlocalmemory.storage.models import Mode
 
-from ._media_support import FakeClient, MemoryDb, blend, make_store, mid, unit
+from ._media_support import FakeClient, MemoryDb, make_store, mid, unit
 from .test_evidence_floor import _build_engine, _make_fact
 
 pytestmark = pytest.mark.usefixtures("closes_retrieval_engines")
@@ -19,7 +19,7 @@ TEXT = [_make_fact("t1", "the red bicycle"), _make_fact("t2", "a blue door")]
 
 
 def _text_engine(**kw):
-    return _build_engine(facts=TEXT, semantic_results=[("t1", 0.9), ("t2", 0.7)],
+    return _build_engine(facts=TEXT, semantic_results=[("t1", 0.9), ("t2", 0.85)],
                          bm25_results=[("t1", 2.0)], **kw)
 
 
@@ -125,7 +125,7 @@ def test_ids_and_scores_match_what_recall_returned_before_pictures_existed():
     resp = _text_engine().recall("red bicycle", "default", Mode.A, limit=10)
     assert _snapshot(resp) == [
         ("t1", 0.515, {"semantic": 0.9, "bm25": 2.0}),
-        ("t2", 0.5086, {"semantic": 0.7, "bm25": 0.0}),
+        ("t2", 0.5086, {"semantic": 0.85, "bm25": 0.0}),
     ]
     assert resp.channel_weights == {"semantic": 1.5, "bm25": 1.0, "entity_graph": 1.0,
                                     "temporal": 1.0, "spreading_activation": 1.0, "hopfield": 0.8}

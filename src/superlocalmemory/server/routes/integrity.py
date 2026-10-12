@@ -40,14 +40,13 @@ def _db_path(request: Request) -> Path:
 
 
 def _manage(request: Request) -> None:
-    from superlocalmemory.access.rbac import Permission
     from superlocalmemory.server import write_identity
-    from superlocalmemory.server.rbac_enforce import require_permission
+    from superlocalmemory.server.rbac_enforce import require_global_manage
 
     write_identity.require_write_actor(
         request, getattr(request.app.state, "daemon_descriptor", None),
         actor_kind="integrity-repair")
-    require_permission(request, Permission.MANAGE)
+    require_global_manage(request)
 
 
 @router.get("")
@@ -130,3 +129,39 @@ def post_store_repair(request: Request) -> dict[str, Any]:
         raise HTTPException(409, detail="a check or repair is already running")
     return {"started": "repair"}
 
+
+
+class EntityRepairRequest(BaseModel):
+    root: str = Field(..., min_length=1, max_length=4096)
+    undo_run_id: str = Field("", max_length=64)
+
+
+def _drop_entity_caches(engine: Any) -> None:
+    """The entity channel keeps fact/entity maps; relinked facts must be seen."""
+    channel = getattr(getattr(engine, "_retrieval_engine", None), "_entity", None)
+    invalidate = getattr(channel, "invalidate_cache", None)
+    if invalidate is not None:
+        invalidate()
+
+
+@router.post("/repair-entities")
+def post_repair_entities(request: Request, body: EntityRepairRequest) -> dict[str, Any]:
+    """``slm db repair-entities --apply|--undo`` inside the running SLM."""
+    from superlocalmemory.infra.data_root import canonical_data_root
+    from superlocalmemory.storage import entity_link_repair_apply as ela
+
+    _manage(request)
+    own_root = canonical_data_root().resolve()
+    if Path(body.root).expanduser().resolve() != own_root:
+        raise HTTPException(409, detail=f"this SLM serves {own_root}, not {body.root}; "
+                                        "nothing was changed")
+    try:
+        result = (ela.undo(_db_path(request), body.undo_run_id) if body.undo_run_id
+                  else ela.apply_with_backup(_db_path(request), own_root))
+    except ela.UndoRefused as exc:
+        raise HTTPException(409, detail=str(exc)) from None
+    except Exception:
+        logger.exception("entity repair failed")
+        raise HTTPException(500, detail="entity repair failed; nothing was changed") from None
+    _drop_entity_caches(getattr(request.app.state, "engine", None))
+    return {**result, "ran_in": "daemon"}

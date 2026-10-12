@@ -6,6 +6,9 @@
     slm db repair [--json]                         what a repair would do, read-only
     slm db repair --apply --root PATH [--batch-size N] [--pause-ms MS] [--max-seconds S]
     slm db repair --undo RUN_ID --root PATH
+    slm db repair-entities [--json]                what an entity link repair would do
+    slm db repair-entities --apply --root PATH     backup copy, then relink (undo record kept)
+    slm db repair-entities --undo RUN_ID --root PATH
 
 ``--apply`` and ``--undo`` change the store, so they insist on ``--root``: the
 data folder you mean, which must be the one this command resolves to (from
@@ -40,6 +43,12 @@ def register_db_integrity_parsers(db_sub: Any) -> None:
     r.add_argument("--max-seconds", type=float, default=None,
                    help="Stop after this long; run again to continue")
     r.add_argument("--json", action="store_true", help="machine-readable output")
+    e = db_sub.add_parser("repair-entities", help="Undo wrong entity links left by the old "
+                                                  "fuzzy name merge (preview by default)")
+    e.add_argument("--apply", action="store_true", help="Back up, then make the changes")
+    e.add_argument("--undo", default="", metavar="RUN_ID", help="Put back what a run changed")
+    e.add_argument("--root", default="", help="The data folder to change (required to change)")
+    e.add_argument("--json", action="store_true", help="machine-readable output")
 
 
 def _root() -> Path:
@@ -48,13 +57,34 @@ def _root() -> Path:
     return canonical_data_root().resolve()
 
 
-def _emit(command: str, data: dict, use_json: bool, render) -> None:
+def _emit(command: str, data: dict, use_json: bool, render,
+          next_actions: list[dict] | None = None) -> None:
     if use_json:
         from superlocalmemory.cli.json_output import json_print
 
-        json_print(command, data=data)
+        json_print(command, data=data, **({"next_actions": next_actions} if next_actions else {}))
     else:
         render(data)
+
+
+def _damaged_indexes(keyword_index: dict | None, quick_check: Any = None) -> list[str]:
+    """Keyword indexes the health data or SQLite's own check says are damaged."""
+    from superlocalmemory.storage.integrity_diagnosis import damaged_indexes_in
+
+    named = list((keyword_index or {}).get("damaged") or [])
+    found = damaged_indexes_in(quick_check if isinstance(quick_check, list) else [])
+    return named + [t for t in found if t not in named]
+
+
+def _repair_step(damaged: list[str]) -> str:
+    return (f"slm db repair --apply --root {_root()}  (rebuilds {', '.join(damaged)} from your "
+            "stored memories and turns off the SQLite setting that damaged it; nothing is lost)")
+
+
+def _hint_actions(damaged: list[str]) -> list[dict]:
+    return ([{"command": _repair_step(damaged).split("  (")[0],
+              "description": "Rebuild the damaged keyword index from your memories"}]
+            if damaged else [])
 
 
 def _fail(command: str, code: str, message: str, use_json: bool) -> int:
@@ -88,6 +118,8 @@ def _render_plan(data: dict) -> None:
               f"longest write {s['max_lock_hold_ms']} ms")
         print(f"  done: {json.dumps(s['done'], sort_keys=True)}")
         print(f"  undo with: slm db repair --undo {s['run_id']} --root {data['root']}")
+    elif _damaged_indexes(data["plan"]["keyword_index"]):
+        print(f"Next step: {_repair_step(_damaged_indexes(data['plan']['keyword_index']))}")
 
 
 def cmd_db_integrity(args: Namespace) -> int:
@@ -96,7 +128,16 @@ def cmd_db_integrity(args: Namespace) -> int:
     db_path = _root() / "memory.db"
     if not db_path.exists():
         return _fail("db integrity", "NO_STORE", f"no store at {db_path}", args.json)
-    _emit("db integrity", health(db_path, pages=bool(args.pages)), args.json, _render_health)
+    data = health(db_path, pages=bool(args.pages))
+    damaged = _damaged_indexes((data.get("relational_integrity") or {}).get("keyword_index"),
+                               (data.get("page_integrity") or {}).get("quick_check"))
+
+    def render(d: dict) -> None:
+        _render_health(d)
+        if damaged:
+            print(f"Next step: {_repair_step(damaged)}")
+
+    _emit("db integrity", data, args.json, render, _hint_actions(damaged))
     return 0
 
 
@@ -157,7 +198,89 @@ def cmd_db_repair(args: Namespace) -> int:
         return 0
     data = {"root": str(root), "plan": result["after"], "summary": result, "changed": True}
     _emit("db repair", data, args.json, _render_plan)
+    damaged = _still_damaged(result)
+    if damaged:
+        print(f"The keyword index is still damaged after the repair: {', '.join(damaged)}. "
+              "It was rebuilt and then recreated from your stored memories and SQLite still "
+              "reports it malformed. Your memories are untouched. Run `slm doctor --deep` "
+              "and report this with its output at "
+              "https://github.com/qualixar/superlocalmemory/issues", file=sys.stderr)
+        return 1
     return 0 if result["status"] in ("finished", "stopped") else 1
 
 
-__all__ = ["cmd_db_integrity", "cmd_db_repair", "register_db_integrity_parsers"]
+def _still_damaged(result: dict) -> list[str]:
+    """Keyword indexes the repair could not make sound, from its own re-check."""
+    after = (result.get("after") or {}).get("keyword_index") or {}
+    return list(after.get("damaged") or [])
+
+
+def _render_entity_repair(data: dict) -> None:
+    print(f"Store: {data['root']}")
+    skip = {"root", "changed", "most_aliases_removed", "example_aliases_removed"}
+    for key, value in data.items():
+        if key not in skip:
+            print(f"  {key}: {value}")
+    for row in data.get("most_aliases_removed") or []:
+        print(f"  {row['entity']}: {row['aliases_removed']} wrong aliases")
+    if data.get("run_id"):
+        print(f"  undo with: slm db repair-entities --undo {data['run_id']} --root {data['root']}")
+    elif not data.get("changed") and data.get("facts_relinked"):
+        print(f"Next step: slm db repair-entities --apply --root {data['root']}")
+
+
+def _entity_preview(db_path: Path) -> dict:
+    import sqlite3
+
+    from superlocalmemory.storage import entity_link_repair as elr
+
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=30)
+    try:
+        return elr.report(conn, elr.plan(conn))
+    finally:
+        conn.close()
+
+
+def _entity_change(args: Namespace, root: Path, db_path: Path) -> dict:
+    from superlocalmemory.cli.daemon import daemon_request, is_daemon_running
+    from superlocalmemory.storage import entity_link_repair_apply as ela
+
+    if is_daemon_running():
+        result = daemon_request("POST", "/api/integrity/repair-entities",
+                                {"root": str(root), "undo_run_id": args.undo},
+                                timeout_seconds=3600, preserve_conflict=True)
+        if not isinstance(result, dict):
+            raise RuntimeError("SLM did not answer the entity repair request")
+        return result
+    result = ela.undo(db_path, args.undo) if args.undo else ela.apply_with_backup(db_path, root)
+    return {**result, "ran_in": "this process (SLM is not running)"}
+
+
+def cmd_db_repair_entities(args: Namespace) -> int:
+    root = _root()
+    db_path = root / "memory.db"
+    command = "db repair-entities"
+    if not db_path.exists():
+        return _fail(command, "NO_STORE", f"no store at {db_path}", args.json)
+    if not (args.apply or args.undo):
+        data = {"root": str(root), **_entity_preview(db_path), "changed": False}
+        _emit(command, data, args.json, _render_entity_repair)
+        return 0
+    named = Path(args.root).expanduser().resolve() if args.root else None
+    if named != root:
+        return _fail(command, "WRONG_ROOT",
+                     f"this would change {root}; pass --root {root} to confirm "
+                     f"(got {args.root or 'no --root'}). Nothing was changed.", args.json)
+    from superlocalmemory.cli.daemon import DaemonConflict
+    from superlocalmemory.storage.entity_link_repair_apply import UndoRefused
+
+    try:
+        result = _entity_change(args, root, db_path)
+    except (DaemonConflict, UndoRefused) as exc:
+        return _fail(command, "REFUSED", getattr(exc, "detail", str(exc)), args.json)
+    _emit(command, {"root": str(root), **result}, args.json, _render_entity_repair)
+    return 0
+
+
+__all__ = ["cmd_db_integrity", "cmd_db_repair", "cmd_db_repair_entities",
+           "register_db_integrity_parsers"]

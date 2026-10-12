@@ -21,7 +21,6 @@ from superlocalmemory.code_graph.models import (
     GraphEdge,
     GraphNode,
 )
-from superlocalmemory.storage.models import _new_id
 
 logger = logging.getLogger(__name__)
 

@@ -29,6 +29,7 @@ from superlocalmemory.media.store_doc_erase import DocumentEraseMixin
 from superlocalmemory.media.store_documents import DocumentsMixin
 from superlocalmemory.media.store_erase import EraseMixin
 from superlocalmemory.media.store_jobs import JobsMixin, utc_stamp
+from superlocalmemory.media.store_revet import RevetMixin
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +115,7 @@ def _exif_text(raw: Any) -> str:
     return json.dumps(kept, sort_keys=True)
 
 
-class MediaStore(JobsMixin, DocumentsMixin, DocumentEraseMixin, EraseMixin):
+class MediaStore(JobsMixin, DocumentsMixin, DocumentEraseMixin, EraseMixin, RevetMixin):
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
         self._wlock = threading.RLock()
@@ -405,6 +406,42 @@ class MediaStore(JobsMixin, DocumentsMixin, DocumentEraseMixin, EraseMixin):
             if m:
                 out.append((m[0], float(distance)))
         return sorted(out, key=lambda t: t[1])
+
+    def _visible_vector_rows(self, memory_ids: Sequence[str], space_id: str) -> list:
+        """Resolve authorized anchors/pages before KNN, so private items cannot crowd them."""
+        if not memory_ids:
+            return []
+        ids = json.dumps(list(memory_ids))
+        return self._read().execute(
+            "SELECT v.vec_rowid,i.media_id FROM media_vector_rows v JOIN media_items i "
+            "ON i.media_id=v.media_id WHERE v.space_id=? AND i.state='active' AND ("
+            "i.anchor_memory_id IN (SELECT value FROM json_each(?)) OR EXISTS ("
+            "SELECT 1 FROM doc_pages p,json_each(p.memory_ids_json) j "
+            "WHERE p.document_id=i.document_id AND p.page_no=i.page_no "
+            "AND j.value IN (SELECT value FROM json_each(?))))", (space_id, ids, ids),
+        ).fetchall()
+
+    def has_vectors_for_memories(self, memory_ids: Sequence[str]) -> bool:
+        space = self.active_space()
+        return bool(space and self._visible_vector_rows(memory_ids, space["space_id"]))
+
+    def knn_for_memories(self, vector: Sequence[float], memory_ids: Sequence[str],
+                         k: int) -> list[tuple[str, float]]:
+        """KNN over authorized source rows only; one bounded result set across all owners."""
+        space = self.active_space()
+        if space is None:
+            return []
+        allowed = dict(self._visible_vector_rows(memory_ids, space["space_id"]))
+        if not allowed:
+            return []
+        rows = self._read().execute(
+            f"SELECT rowid,distance FROM {vec_table(space['space_id'])} "
+            "WHERE embedding MATCH ? AND k=? AND rowid IN (SELECT value FROM json_each(?))",
+            (struct.pack(f"<{len(vector)}f", *vector), max(1, min(int(k), MAX_K)),
+             json.dumps(list(allowed))),
+        ).fetchall()
+        return sorted(((allowed[rowid], float(distance)) for rowid, distance in rows),
+                      key=lambda pair: (pair[1], pair[0]))
 
     def _drop_vector_rows(self, conn: sqlite3.Connection, where: str, args: Sequence[Any]) -> list[tuple]:
         rows = conn.execute(

@@ -49,8 +49,7 @@ from typing import Any, Optional
 # Must be set BEFORE any import of superlocalmemory.mcp.server.
 os.environ.setdefault("SLM_MCP_EMBEDDED", "1")
 
-from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, field_validator
 
@@ -486,6 +485,10 @@ from superlocalmemory.server.read_gates import (  # noqa: E402
     is_sensitive_dashboard_read as _is_sensitive_dashboard_read,
 )
 from superlocalmemory.server.read_gates import (  # noqa: E402
+    _capability_ok,
+    is_cli_status_read,
+)
+from superlocalmemory.server.read_gates import (  # noqa: E402
     mesh_read_gate as _mesh_read_gate,
 )
 from superlocalmemory.server.read_gates import (  # noqa: E402
@@ -530,7 +533,14 @@ def _rbac_write_gate(request, app_state):
         return None  # single-operator install — mutations are open
     token = (request.headers.get("x-slm-user-session", "")
              or (request.cookies.get("slm_session", "") if request.cookies else ""))
-    user = rbac.resolve_session(token) if token else None
+    from superlocalmemory.server.rbac_enforce import (
+        INVALID_SESSION_MESSAGE,
+        presented_session_user,
+    )
+
+    user, refused = presented_session_user(rbac, token)
+    if refused:
+        return JSONResponse(status_code=401, content={"error": INVALID_SESSION_MESSAGE})
     if user is None:
         if rbac.require_login():
             return JSONResponse(status_code=401,
@@ -1198,10 +1208,16 @@ class ObserveBuffer:
     def set_engine(self, engine) -> None:
         self._engine = engine
 
-    def enqueue(self, content: str, *, trusted_actor_id: str = "") -> dict:
+    def enqueue(
+        self, content: str, *, trusted_actor_id: str = "", profile_id: str = "",
+    ) -> dict:
         # The hash is only a duplicate-window and idempotency key; the text
-        # that is previewed, evented and stored is the prepared one.
-        content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        # that is previewed, evented and stored is the prepared one. A routed
+        # workspace is part of it, so the same words observed in two
+        # workspaces are two observations.
+        content_hash = hashlib.sha256(
+            (f"{profile_id}\x00{content}" if profile_id else content).encode("utf-8")
+        ).hexdigest()
         from superlocalmemory.memory_core import prepare_user_text
 
         content = prepare_user_text(
@@ -1262,7 +1278,7 @@ class ObserveBuffer:
             command = build_engine_ingestion_command(self._engine)
             receipt = command.submit(IngestionRequest(
                 content=content,
-                profile_id=self._engine._profile_id,
+                profile_id=profile_id or self._engine._profile_id,
                 source_type="http-observe",
                 idempotency_key=f"observe:v1:{content_hash}",
                 metadata={
@@ -2176,6 +2192,23 @@ async def lifespan(application: FastAPI):
         logger.debug("early config load for migration paths failed: %s", _cfg_exc)
         _path_config = None
 
+    # A dashboard restore holds the store (writer lease) from stop to restart.
+    # A daemon started meanwhile (a hook, a CLI call) must not run migrations
+    # or open the store under it; it exits and the next start proceeds.
+    if _path_config is not None:
+        from superlocalmemory.server.backup_restore_txn import restore_in_progress
+
+        _restore_busy = restore_in_progress(
+            Path(_memory_db_for_config(_path_config)).parent)
+        if _restore_busy:
+            logger.error("Not starting: %s", _restore_busy)
+            raise SystemExit(_restore_busy)
+        try:  # copies an interrupted restore left behind (never one it kept)
+            from superlocalmemory.server.backup_rollback import sweep_stale
+
+            sweep_stale(Path(_memory_db_for_config(_path_config)).parent)
+        except Exception as _sweep_exc:  # never block start-up on clean-up
+            logger.warning("could not remove stale restore copies: %s", _sweep_exc)
     try:
         from superlocalmemory.storage.backup import InsufficientDiskSpaceError
         from superlocalmemory.storage.migration_runner import apply_all
@@ -3378,6 +3411,15 @@ async def lifespan(application: FastAPI):
             upload_housekeeping.run(), name="upload-housekeeping"
         )
 
+    # Pictures saved while their memory was queued are linked to it once it commits.
+    _media_hk_task = getattr(application.state, "_media_housekeeping_task", None)
+    if _media_hk_task is None or _media_hk_task.done():
+        from superlocalmemory.server import media_housekeeping
+
+        application.state._media_housekeeping_task = asyncio.create_task(
+            media_housekeeping.run(), name="media-housekeeping"
+        )
+
     # v3.6.7: Start MCP Streamable-HTTP session manager (GOTCHA #1).
     # streamable_http_app() carries its own Starlette lifespan that initialises
     # an anyio task group inside the session manager. Without entering that
@@ -3488,6 +3530,12 @@ async def lifespan(application: FastAPI):
         try:
             yield
         finally:
+            from superlocalmemory.server.manual_heal import join_manual_heals
+            if not await asyncio.to_thread(join_manual_heals, application.state):
+                logger.warning("Manual component repair still running at shutdown")
+            from superlocalmemory.retrieval.fallback_fidelity import join_fallback_checks
+            if not await asyncio.to_thread(join_fallback_checks):
+                logger.warning("Fallback source admission still running at shutdown")
             remote_runtime = getattr(application.state, "remote_connection_runtime", None)
             if remote_runtime is not None:
                 try:
@@ -3536,6 +3584,13 @@ async def lifespan(application: FastAPI):
         _upload_hk = getattr(application.state, "_upload_housekeeping_task", None)
         if _upload_hk is not None and not _upload_hk.done():
             _upload_hk.cancel()
+    except Exception:  # pragma: no cover — defensive
+        pass
+
+    try:
+        _media_hk = getattr(application.state, "_media_housekeeping_task", None)
+        if _media_hk is not None and not _media_hk.done():
+            _media_hk.cancel()
     except Exception:  # pragma: no cover — defensive
         pass
 
@@ -3888,6 +3943,8 @@ def create_app() -> FastAPI:
     validation_errors.install(application)
 
     # -- Middleware --
+    from superlocalmemory.server.daemon_cors import DaemonCORSMiddleware
+    from superlocalmemory.server.origin import daemon_browser_origins
     from superlocalmemory.server.profile_runtime import ProfileRuntimeMiddleware
     from superlocalmemory.server.security_middleware import SecurityHeadersMiddleware
     application.add_middleware(
@@ -3897,14 +3954,9 @@ def create_app() -> FastAPI:
     application.add_middleware(SecurityHeadersMiddleware)
     application.add_middleware(GZipMiddleware, minimum_size=1000)
     application.add_middleware(
-        CORSMiddleware,
-        allow_origins=[
-            "http://localhost:8765", "http://127.0.0.1:8765",
-            "http://localhost:8767", "http://127.0.0.1:8767",  # legacy compat
-            # M-04 (3.7.9): removed the undocumented port 8417 origin — it had
-            # no known consumer and let any local service on 8417 make
-            # credentialed cross-origin requests to the API.
-        ],
+        DaemonCORSMiddleware,
+        # start_server resolves getsockname() before constructing the app.
+        allow_origins=daemon_browser_origins(identity_port),
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
         allow_headers=[
@@ -4116,8 +4168,13 @@ def create_app() -> FastAPI:
 
         from superlocalmemory.server.remote_tool_policy import RemoteToolScopeASGI
 
+        from superlocalmemory.core.caller_session import CallerSessionASGI
+
         # Remote callers: only the tools their key allows (default deny).
-        application.mount("/mcp", RemoteToolScopeASGI(AgentIDExtractorASGI(_mcp_app)))
+        # CallerSessionASGI hands the caller's sign-in to the tools, so a
+        # session REST accepts is the same identity over HTTP MCP (OPS-16).
+        application.mount("/mcp", RemoteToolScopeASGI(
+            CallerSessionASGI(AgentIDExtractorASGI(_mcp_app))))
         logger.info(
             "MCP HTTP transport mounted at /mcp (Streamable HTTP, mcp 2.0.0, "
             "stateless=%s, port %d; per-agent routing enabled)",
@@ -4421,6 +4478,16 @@ def _register_dashboard_routes(application: FastAPI) -> None:
                                 )
                             },
                         )
+            # RBAC mutation gate (4.1.25 governance audit G-C1/G-H3): every
+            # state-changing route needs a role once team accounts are on, so a
+            # route without a check of its own is still refused to a viewer
+            # and to a caller with no session in company mode.
+            if is_write:
+                from superlocalmemory.server.mutation_gate import mutation_gate
+
+                _resp = mutation_gate(request, application.state)
+                if _resp is not None:
+                    return _resp
             # RBAC read gate (C3/audit SEC-C-01): sensitive content reads must
             # also respect roles. Engages ONLY when RBAC is active (>=1 user) —
             # single-operator installs are unaffected. Owner (no session) reads
@@ -4431,9 +4498,23 @@ def _register_dashboard_routes(application: FastAPI) -> None:
             if _is_sensitive_dashboard_read(
                 request.method, request.url.path,
             ):
-                _resp = _rbac_read_gate(request, application.state)
+                _resp = _rbac_read_gate(
+                    request, application.state,
+                    machine_principal=(
+                        is_cli_status_read(request.method, request.url.path)
+                        and _capability_ok(request, application.state)
+                    ),
+                )
                 if _resp is not None:
                     return _resp
+            # Every other GET a signed-in user makes needs READ on the
+            # workspace it names (OPS-25): a route that honours ?profile= no
+            # longer reads a workspace the check never looked at.
+            from superlocalmemory.server.read_gates import user_read_gate
+
+            _resp = user_read_gate(request, application.state)
+            if _resp is not None:
+                return _resp
             _resp = _mesh_read_gate(request, application.state)
             if _resp is not None:
                 return _resp
@@ -4485,6 +4566,12 @@ def _register_dashboard_routes(application: FastAPI) -> None:
                     content={"error": "Auth subsystem unavailable; writes disabled."},
                 )
             return await call_next(request)
+
+    # The caller's workspace, resolved once and pinned before any gate runs:
+    # a signed-in person has their own active workspace, and the gates and the
+    # handler read the same value (PR 248 review, finding 2).
+    from superlocalmemory.server.caller_workspace import CallerWorkspaceMiddleware
+    application.add_middleware(CallerWorkspaceMiddleware, app_state=application.state)
 
     # Migration-readiness gate — outermost middleware; runs before auth and
     # rate-limiting.  When required schema migrations are in a failed state every
@@ -4569,6 +4656,9 @@ def _register_dashboard_routes(application: FastAPI) -> None:
     from superlocalmemory.server.routes.config_api import router as config_api_router
     application.include_router(config_api_router)
 
+    from superlocalmemory.server.routes.local_apps import router as local_apps_router
+    application.include_router(local_apps_router)
+
     # Optional hosted connections must never become a local startup requirement.
     try:
         from superlocalmemory.server.routes.connections import router as connections_router
@@ -4625,7 +4715,7 @@ def _register_dashboard_routes(application: FastAPI) -> None:
             pass
 
     # Optional routers
-    for _mod_name in ("learning", "lifecycle", "behavioral", "compliance", "insights", "timeline", "abstraction", "integrity", "overtaken"):
+    for _mod_name in ("learning", "learning_readiness", "lifecycle", "behavioral", "compliance", "insights", "timeline", "abstraction", "integrity", "overtaken"):
         try:
             _mod = __import__(
                 f"superlocalmemory.server.routes.{_mod_name}", fromlist=["router"],
@@ -4759,6 +4849,16 @@ def _register_daemon_routes(application: FastAPI) -> None:
             getattr(application.state, "daemon_descriptor", None),
         )
 
+    def _trusted_connection_agent(request: Request, trusted_actor_id: str) -> str:
+        """The connection's agent name, believed only from a capability holder."""
+        from superlocalmemory.core.agent_attribution import CONNECTION_HEADER
+        from superlocalmemory.mcp.agent_context import sanitize_agent_id
+
+        if not str(trusted_actor_id or "").startswith("daemon-capability:"):
+            return ""
+        name = (request.headers.get(CONNECTION_HEADER, "") or "").strip()
+        return sanitize_agent_id(name) if name else ""
+
     def _require_write_actor(request: Request) -> str:
         """Authenticate a local write and return its trusted actor.
 
@@ -4768,7 +4868,18 @@ def _register_daemon_routes(application: FastAPI) -> None:
         writers instead present the install token, which is never the daemon
         process capability.
         """
-        from superlocalmemory.server.write_identity import require_write_actor
+        from superlocalmemory.server.loopback import is_loopback
+        from superlocalmemory.server.write_identity import (
+            authenticated_request_actor,
+            require_write_actor,
+        )
+
+        if (request.client and is_loopback(request.client.host)
+                and not any(request.headers.get(key) for key in (
+                    "X-SLM-Daemon-Capability", "X-Install-Token", "X-SLM-API-Key"))):
+            return authenticated_request_actor(
+                request, getattr(application.state, "daemon_descriptor", None),
+                actor_kind="dashboard")
 
         return require_write_actor(
             request,
@@ -5040,7 +5151,9 @@ def _register_daemon_routes(application: FastAPI) -> None:
         if not isinstance(window, str):
             return window
         engine = _get_engine_or_503()
-        req_profile = (profile_id or "").strip()
+        from superlocalmemory.server.caller_workspace import route_to_bound
+        # A signed-in person's own workspace when they name none (finding 2).
+        req_profile = (profile_id or "").strip() or route_to_bound(engine._profile_id)
         # 4.1.14 audit: permission before existence on the read path, the
         # same order the write path enforces. Existence-first lets a caller
         # without READ probe which profile ids exist (404 vs data); READ on
@@ -5180,6 +5293,8 @@ def _register_daemon_routes(application: FastAPI) -> None:
         req: RememberRequest,
         request: Request,
         wait: bool = False,
+        # How a remote caller came in; it can only hide more.
+        caller_view: str = "",
     ):
         """Journal and commit a bounded, immediately-queryable receipt.
 
@@ -5200,7 +5315,9 @@ def _register_daemon_routes(application: FastAPI) -> None:
         # requests (the daemon is no longer single-profile for them); the
         # guard keeps its legacy slot below for an empty profile_id, where it
         # is trivially satisfied and unreachable for routed requests.
-        req_profile = (req.profile_id or "").strip()
+        from superlocalmemory.server.caller_workspace import route_to_bound
+        # A signed-in person's own workspace when they name none (finding 2).
+        req_profile = (req.profile_id or "").strip() or route_to_bound(engine._profile_id)
         if not req_profile:
             # Pass the STRIPPED value: whitespace-only input normalizes to
             # the empty legacy shape, so the guard stays a no-op for it
@@ -5289,6 +5406,18 @@ def _register_daemon_routes(application: FastAPI) -> None:
                     check_replaceable, engine._db, replaces=req.replaces,
                     profile_id=write_profile, scope=scope,
                 )
+                from superlocalmemory.retrieval.remote_view import hidden_among, parse_view
+
+                view = parse_view(caller_view)
+                if view:
+                    # A remote app replaces only what it may see: a hidden memory is
+                    # refused with the answer for an id that does not exist.
+                    from superlocalmemory.core.remember_replaces import named_facts, not_found
+
+                    named = await asyncio.to_thread(named_facts, engine._db.execute,
+                                                    replaces_id, write_profile)
+                    if hidden_among(view, engine._db, write_profile, [f.fact_id for f in named]):
+                        raise not_found(replaces_id)
             except ReplacesRejected as exc:
                 raise HTTPException(422, detail=exc.as_error()) from exc
 
@@ -5310,6 +5439,11 @@ def _register_daemon_routes(application: FastAPI) -> None:
                 from superlocalmemory.core.metadata_guard import strip_reserved_metadata
 
                 meta.update(strip_reserved_metadata(extra))
+            # Who saved it: the connection's agent when a capability holder
+            # names it, else the claimed label, marked as claimed (L-15).
+            from superlocalmemory.core.agent_attribution import bind as _bind_agent
+
+            meta = _bind_agent(meta, _trusted_connection_agent(request, trusted_actor_id))
             if "project" in meta:
                 # #150: one rule for what a project is (core.project_identity);
                 # a value that names none ("/", "  ") is not saved as one.
@@ -5466,6 +5600,9 @@ def _register_daemon_routes(application: FastAPI) -> None:
                 accept_after_ms=_REMEMBER_ADMISSION_DEADLINE_MS,
             )
             payload = dict(receipt.payload)
+            if wait:
+                from superlocalmemory.server.remember_completion import wait_for_completion
+                payload = await wait_for_completion(engine, payload, write_profile)
             if payload.get("status") == "accepted":
                 # The writer was busy past the deadline. The memory is durable
                 # in the admission journal and is being committed now; it is
@@ -5517,27 +5654,27 @@ def _register_daemon_routes(application: FastAPI) -> None:
             _elapsed = time.monotonic() - _store_started
             _remaining = _REMEMBER_TOTAL_CEILING_SECONDS - (time.monotonic() - _request_started)
             if wait:
-                enrich_budget = _REMEMBER_ENRICHMENT_WAIT_SECONDS
+                enrich_budget = 0.0
             else:
                 # The hand-off grace below is part of the ceiling, not on top of it.
                 enrich_budget = min(
                     1.0, _REMEMBER_ENRICHMENT_WAIT_SECONDS,
                     max(0.0, _remaining - _ENRICHMENT_HANDOFF_GRACE_SECONDS),
                 )
-            if enrich_budget <= 0.0:
+            if enrich_budget <= 0.0 and not wait:
                 logger.warning(
                     "the durable write used the whole %.1fs budget (%.2fs) — this "
                     "memory is findable by its wording and the background pass "
                     "will attach its vector",
                     _REMEMBER_TOTAL_CEILING_SECONDS, _elapsed,
                 )
-            enriched = 0
+            enriched = len(fact_ids) if wait else 0
             # Taken before submitting, released by the worker. If none is free
             # the pool is already saturated, and queueing behind it would mean
             # writing to the database after this response has been sent — so the
             # write is simply reported as findable by wording and the background
             # pass picks it up, which is the intended degradation.
-            # No time left inside the ceiling: no inline wait at all.
+            # Explicit wait already completed canonical materialization above.
             _permit = enrich_budget > 0.0 and _enrichment_semaphore.acquire(blocking=False)
             if not _permit and enrich_budget > 0.0:
                 logger.warning(
@@ -5599,7 +5736,7 @@ def _register_daemon_routes(application: FastAPI) -> None:
                 # One-release compatibility alias. The durable operation ID is
                 # opaque and replaces the integer pending.db row identifier.
                 "pending_id": payload["pending_id"],
-                "status": "queryable",
+                "status": payload.get("status", "queryable"),
                 "materialization_state": payload["materialization_state"],
                 "commit_sequence": payload.get("commit_sequence"),
                 "note": (
@@ -5608,10 +5745,7 @@ def _register_daemon_routes(application: FastAPI) -> None:
                     else "stored and searchable by wording; "
                          "searchable by meaning shortly"
                 ),
-                # Retained for callers that already read it. It used to be
-                # unconditionally true, because `wait` bought nothing. It now
-                # buys a larger best-effort enrichment budget — still never a
-                # guarantee, and still never a block on durability.
+                # Explicit wait completes the canonical operation after admission.
                 "wait_ignored": False if wait else True,
             }
             if replaced is not None:
@@ -5625,6 +5759,8 @@ def _register_daemon_routes(application: FastAPI) -> None:
                 if conflict is not None:
                     response["kind_conflict"] = conflict
             return response
+        except HTTPException:
+            raise
         except Exception as exc:
             from superlocalmemory.core.remember_admission import AdmissionRejected
             from superlocalmemory.core.remember_runtime import CanonicalRememberUnavailable
@@ -5714,21 +5850,46 @@ def _register_daemon_routes(application: FastAPI) -> None:
             getattr(application.state, "daemon_descriptor", None),
             actor_kind="http-observe",
         )
+        # A caller bound to another workspace observes into it. The shared
+        # workspace keeps its existing gate-free path (machine hooks call this).
+        engine = getattr(application.state, "engine", None)
+        routed = ""
+        if engine is not None:
+            from superlocalmemory.server.acting_profile import acting_profile
+
+            routed = acting_profile(engine.profile_id)
+            if routed == engine.profile_id:
+                routed = ""
+            else:
+                from superlocalmemory.access.rbac import Permission
+                from superlocalmemory.server.rbac_enforce import require_permission
+
+                require_permission(request, Permission.WRITE, profile=routed)
         result = _observe_buffer.enqueue(
             req.content,
             trusted_actor_id=actor_id,
+            profile_id=routed,
         )
         return result
 
     # v3.4.26: CCQ consolidation via daemon so MCP clients don't need to
     # import CognitiveConsolidator (which pulls sentence-transformers).
     @application.post("/consolidate/cognitive")
-    async def consolidate_cognitive_endpoint(body: dict, request: Request):
+    async def consolidate_cognitive_endpoint(request: Request, body: dict = Body(default_factory=dict)):
         _update_activity()
         engine = _get_engine_or_503()
+        # The workspace this caller is in (finding N10): checked, run and
+        # reported against the same value, never the shared engine's.
+        from superlocalmemory.server.acting_profile import (
+            acting_profile,
+            unknown_profile_response,
+        )
+        pid = acting_profile(engine.profile_id, body.get("profile_id"))
         from superlocalmemory.access.rbac import Permission
         from superlocalmemory.server.rbac_enforce import require_permission
-        require_permission(request, Permission.WRITE, profile=engine._profile_id)
+        require_permission(request, Permission.WRITE, profile=pid)
+        if (missing := unknown_profile_response(engine, pid)) is not None:
+            return missing
         from superlocalmemory.server.route_mutations import (
             authorize_route_mutation,
         )
@@ -5736,10 +5897,9 @@ def _register_daemon_routes(application: FastAPI) -> None:
             request,
             operation="update",
             source_agent_id="http-cognitive-consolidation",
-            profile_id=engine.profile_id,
+            profile_id=pid,
         )
         try:
-            pid = engine.profile_id
             from superlocalmemory.encoding.cognitive_consolidator import (
                 CognitiveConsolidator,
             )
@@ -5761,12 +5921,26 @@ def _register_daemon_routes(application: FastAPI) -> None:
     # v3.4.26: run_maintenance via daemon so MCP doesn't import
     # EbbinghausCurve, ForgettingScheduler, or ConsolidationWorker.
     @application.post("/maintenance/run")
-    async def run_maintenance_endpoint(body: dict, request: Request):
+    async def run_maintenance_endpoint(request: Request, body: dict = Body(default_factory=dict)):
         _update_activity()
         engine = _get_engine_or_503()
         from superlocalmemory.access.rbac import Permission
-        from superlocalmemory.server.rbac_enforce import require_permission
-        require_permission(request, Permission.WRITE, profile=engine._profile_id)
+        from superlocalmemory.server.acting_profile import (
+            acting_profile,
+            unknown_profile_response,
+        )
+        from superlocalmemory.server.rbac_enforce import (
+            require_global_manage,
+            require_permission,
+        )
+        # The vector-store step is installation-wide, so the caller needs
+        # authority over every workspace; the per-workspace steps then run on,
+        # and are authorized against, the workspace the caller is in (N10).
+        pid = acting_profile(engine.profile_id, body.get("profile_id"))
+        require_global_manage(request)
+        require_permission(request, Permission.MANAGE, profile=pid)
+        if (missing := unknown_profile_response(engine, pid)) is not None:
+            return missing
         from superlocalmemory.server.route_mutations import (
             authorize_route_mutation,
         )
@@ -5774,10 +5948,9 @@ def _register_daemon_routes(application: FastAPI) -> None:
             request,
             operation="update",
             source_agent_id="http-maintenance",
-            profile_id=engine.profile_id,
+            profile_id=pid,
         )
         try:
-            pid = engine.profile_id
             results: dict = {}
             try:
                 from superlocalmemory.core.maintenance import run_maintenance as _run_maint
@@ -5834,17 +6007,19 @@ def _register_daemon_routes(application: FastAPI) -> None:
     async def compact_vector_store_endpoint(request: Request):
         _update_activity()
         engine = _get_engine_or_503()
-        from superlocalmemory.access.rbac import Permission
-        from superlocalmemory.server.rbac_enforce import require_permission
-        require_permission(request, Permission.WRITE, profile=engine._profile_id)
+        from superlocalmemory.server.rbac_enforce import require_global_manage
+        require_global_manage(request)
+        from superlocalmemory.server.acting_profile import acting_profile
         from superlocalmemory.server.route_mutations import (
             authorize_route_mutation,
         )
+        # Compaction is installation-wide; the mutation is recorded against the
+        # workspace the caller is in, not the shared one.
         authorization = authorize_route_mutation(
             request,
             operation="update",
             source_agent_id="http-maintenance",
-            profile_id=engine.profile_id,
+            profile_id=acting_profile(engine.profile_id),
         )
         from superlocalmemory.core.maintenance_scheduler import compact_vector_store
         out = await asyncio.to_thread(compact_vector_store)
@@ -5852,8 +6027,23 @@ def _register_daemon_routes(application: FastAPI) -> None:
         return out
 
     @application.get("/status")
-    async def status():
+    async def status(request: Request):
         _update_activity()
+        from superlocalmemory.server.read_gates import status_details_allowed
+
+        if not status_details_allowed(request, application.state):
+            # Company mode, no session: only what finding the daemon needs.
+            from superlocalmemory.server.routes.helpers import SLM_VERSION
+
+            descriptor = application.state.daemon_descriptor
+            return {
+                "status": "running",
+                "version": SLM_VERSION,
+                "port": descriptor.port,
+                "pid": os.getpid(),
+                "instance_id": descriptor.instance_id,
+                "details_hidden": True,
+            }
         # Non-blocking peek — status must never force a re-init.
         engine = getattr(application.state, "engine", None)
         from superlocalmemory.server.profile_runtime import get_profile_runtime
@@ -6009,7 +6199,9 @@ def _register_daemon_routes(application: FastAPI) -> None:
             except Exception as exc:
                 logger.warning("Manual component heal failed (non-fatal): %s", exc)
 
-        threading.Thread(target=_run, daemon=True, name="manual-heal").start()
+        from superlocalmemory.server.manual_heal import start_manual_heal
+        if not start_manual_heal(application.state, _run):
+            raise HTTPException(503, detail="component repair unavailable during shutdown")
         return {"status": "started"}
 
     # ------------------------------------------------------------------
@@ -6023,28 +6215,30 @@ def _register_daemon_routes(application: FastAPI) -> None:
     ):
         """Return all failed/stuck/degraded operations — admin surface.
 
-        Requires MANAGE permission (OWNER or ADMIN role).  Returns three
-        categories: dead-letter DLQ entries, DEGRADED completion manifests,
-        and exhausted projection obligations.  Safe read-only; never mutates.
+        Requires MANAGE: the owner sees every workspace, a signed-in admin
+        only the workspaces they manage (OPS-22). Three categories:
+        dead-letter DLQ entries, DEGRADED completion manifests, and exhausted
+        projection obligations. Read-only. A store that cannot be read is a
+        503 that says so, never an empty list (OPS-10).
         """
-        from superlocalmemory.server.rbac_enforce import require_permission
-        from superlocalmemory.access.rbac import Permission
+        from superlocalmemory.server.ops_scope import listing_scope
 
-        require_permission(request, Permission.MANAGE)
+        scope = listing_scope(request, profile or None)
         _update_activity()
 
         config = getattr(application.state, "config", None)
         db_path = getattr(config, "db_path", None)
-        if db_path is None or not db_path.exists():
-            return {"dead_letter": [], "degraded_manifests": [],
-                    "exhausted_obligations": [], "total": 0}
+        from superlocalmemory.core.ops_remediation import list_failed_operations
 
-        try:
-            from superlocalmemory.core.ops_remediation import list_failed_operations
-            return list_failed_operations(db_path, profile_id=profile)
-        except Exception as exc:
-            logger.warning("list_failed_operations endpoint error: %s", exc, exc_info=True)
-            raise HTTPException(status_code=500, detail="Failed to query operations")
+        result = list_failed_operations(
+            db_path if db_path is not None else Path("memory.db.missing"),
+            allowed_profiles=scope,
+        )
+        if not result.get("success", False):
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse(status_code=503, content=result)
+        return result
 
     @application.post("/operations/{operation_id}/resolve")
     async def resolve_operation_endpoint(request: Request, operation_id: str):
@@ -6052,14 +6246,15 @@ def _register_daemon_routes(application: FastAPI) -> None:
 
         Body JSON: ``{"action": "retry"|"force_reconcile"|"cancel"}``
 
-        Requires MANAGE permission.  Writes an audit event for every mutation.
+        Requires MANAGE on the operation's own workspace (the owner: any).
+        Writes an audit event for every mutation.
         The action itself is delegated to ``core.ops_remediation.resolve_operation``.
         Returns ``{"success": bool, "action": str, "operation_id": str, ...}``.
         """
-        from superlocalmemory.server.rbac_enforce import require_permission
-        from superlocalmemory.access.rbac import Permission
+        from superlocalmemory.server.ops_scope import remediation_scope
 
-        require_permission(request, Permission.MANAGE)
+        # MANAGE is checked by remediation_scope, on the workspaces the
+        # operation belongs to (OPS-22), not on whichever one is active.
         _update_activity()
 
         body: dict = {}
@@ -6081,10 +6276,13 @@ def _register_daemon_routes(application: FastAPI) -> None:
             raise HTTPException(status_code=503, detail="Database not available")
 
         engine = getattr(application.state, "engine", None)
+        # MANAGE on the operation's own workspace, not the active one (OPS-22).
+        scope = remediation_scope(request, db_path, operation_id)
 
         try:
             from superlocalmemory.core.ops_remediation import resolve_operation
-            result = resolve_operation(db_path, engine, operation_id, action)
+            result = resolve_operation(db_path, engine, operation_id, action,
+                                       profiles=scope)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         except Exception as exc:
@@ -6094,17 +6292,23 @@ def _register_daemon_routes(application: FastAPI) -> None:
             )
             raise HTTPException(status_code=500, detail="Remediation failed")
 
-        # Audit trail — best effort, non-blocking
+        # Audit trail — best effort, non-blocking. The actor is the server's
+        # own view of the caller (X-Actor-Id is a claim, not authority) and
+        # the target is the workspace the operation belongs to (OPS-22).
         try:
             from superlocalmemory.compliance.audit import AuditChain
+            from superlocalmemory.server.ops_scope import actor_label
+
             audit_path = state_path("audit_chain.db")
-            actor_header = request.headers.get("X-Actor-Id", "admin")
+            targets = sorted(scope) if scope is not None else []
             AuditChain(str(audit_path)).log(
                 operation=f"ops_resolve:{action}",
-                agent_id=actor_header,
-                profile_id="",
+                agent_id=actor_label(request),
+                profile_id=",".join(targets),
                 content_hash="",
-                metadata={"operation_id": operation_id, "result": result},
+                metadata={"operation_id": operation_id, "target_profiles": targets,
+                          "success": bool(result.get("success")),
+                          "reason": str(result.get("reason") or "")[:200]},
             )
         except Exception:
             logger.debug("audit log for ops_resolve failed (non-fatal)", exc_info=True)
@@ -6190,6 +6394,12 @@ def _register_daemon_routes(application: FastAPI) -> None:
         # /remember and other dashboard mutations), not just the private CLI
         # capability — a non-technical user restarts from their own dashboard.
         _require_write_actor(request)
+        # The install token proves a loopback caller, not a person. Restarting
+        # the daemon interrupts everyone's work, so it is administration:
+        # where login is required it needs a signed-in administrator (or the
+        # daemon capability from the command line); personal mode is unchanged.
+        from superlocalmemory.server.rbac_enforce import require_global_manage
+        require_global_manage(request)
         import subprocess
         import sys as _sys
 
@@ -6237,6 +6447,11 @@ def _register_daemon_routes(application: FastAPI) -> None:
         # Warming loads at most what session_init would show. An unbounded
         # count from the request used to go straight into the recall.
         limit = max(1, min(int(req.max_results), _SESSION_OPEN_MAX_RESULTS))
+        # A caller bound to another workspace warms that one. Binding it
+        # already required READ there, so no further gate is added.
+        from superlocalmemory.server.acting_profile import acting_profile
+        routed = acting_profile(engine.profile_id)
+        _routed = {} if routed == engine.profile_id else {"profile_id": routed}
         try:
             from superlocalmemory.core.answer_check_scope import skip_answer_check
             from superlocalmemory.server.write_identity import (
@@ -6255,7 +6470,7 @@ def _register_daemon_routes(application: FastAPI) -> None:
                 # key at every session start. Results are unaffected.
                 with skip_answer_check():
                     return engine.recall(query, limit=limit, agent_id=actor_id,
-                                         **_session_facets)
+                                         **_routed, **_session_facets)
 
             # Off the event loop: a recall can take a second or more, and
             # every other client of this daemon would wait for it.
@@ -6284,8 +6499,10 @@ def _register_daemon_routes(application: FastAPI) -> None:
         _update_activity()
         engine = _get_engine_or_503()
         from superlocalmemory.access.rbac import Permission
+        from superlocalmemory.server.acting_profile import acting_profile
         from superlocalmemory.server.rbac_enforce import require_permission
-        require_permission(request, Permission.WRITE, profile=engine._profile_id)
+        pid = acting_profile(engine.profile_id)
+        require_permission(request, Permission.WRITE, profile=pid)
         from superlocalmemory.server.route_mutations import (
             authorize_route_mutation,
         )
@@ -6293,7 +6510,7 @@ def _register_daemon_routes(application: FastAPI) -> None:
             request,
             operation="update",
             source_agent_id="http-session-close",
-            profile_id=engine.profile_id,
+            profile_id=pid,
         )
         sid = req.session_id
         if not sid:
@@ -6303,8 +6520,9 @@ def _register_daemon_routes(application: FastAPI) -> None:
                 if db is not None and hasattr(db, "execute"):
                     rows = db.execute(
                         "SELECT session_id FROM memories "
-                        "WHERE session_id != '' ORDER BY created_at DESC LIMIT 1",
-                        (),
+                        "WHERE session_id != '' AND profile_id = ? "
+                        "ORDER BY created_at DESC LIMIT 1",
+                        (pid,),
                     )
                     if rows:
                         sid = str(rows[0][0])
@@ -6314,7 +6532,7 @@ def _register_daemon_routes(application: FastAPI) -> None:
             return {"ok": True, "session_id": "", "summary_events_created": 0,
                     "message": "no session to close"}
         try:
-            created = engine.close_session(sid)
+            created = engine.close_session(sid, profile_id=pid)
             authorization.complete()
             return {"ok": True, "session_id": sid,
                     "summary_events_created": int(created)}
@@ -6698,6 +6916,8 @@ def _ops_failure_counts(engine, application) -> dict:
             result["dead_letter_count"] = counts.get("dead_letter_count", 0)
             result["degraded_operations"] = counts.get("degraded_operations", 0)
             result["exhausted_obligations"] = counts.get("exhausted_obligations", 0)
+            # OPS-10: a count that could not be read is named, never "0 failures".
+            result["failure_counts_unavailable"] = list(counts.get("unavailable") or [])
     except Exception:
         pass
 
@@ -6936,8 +7156,11 @@ def start_server(port: int = _DEFAULT_PORT) -> None:
             bind_host, port, exc,
         )
         return
-    # The lifespan uses the configured port for its identity and health
-    # payload, so a CLI --port must be reflected there as well.
+    # Port 0 asks the kernel for an ephemeral listener. Resolve it before
+    # publishing identity or building the app's MCP origin and callback URL;
+    # those require the actual port even while the descriptor is "starting".
+    port = listener.getsockname()[1]
+    # The lifespan uses this port for its identity and health payload too.
     os.environ["SLM_DAEMON_PORT"] = str(port)
 
     # v3.4.23: rotate oversized logs before anything else so both the CLI

@@ -123,10 +123,10 @@ from __future__ import annotations
 import ast
 import hashlib
 import inspect
+import os
 import re
 import sqlite3
 import time
-import os
 from pathlib import Path
 
 import pytest
@@ -159,7 +159,11 @@ import pytest
 #: tables); the ceiling still follows the trailing serial by convention.
 #: 53 as of 4.1.20: +M053_answer_check_history (learning.db, two new tables).
 #: 54 as of 4.1.21: +M054_saved_views (learning.db, one new table).
-_EXPECTED_SCHEMA_VERSION: int = 54
+#: 55 as of 4.1.25: +M055_learning_attribution (learning.db; additive columns,
+#: one partial unique index, one new table).
+#: 58 as of WP-4b: +M056 recall indexes, M057 temporal version triggers,
+#: M058 covering fact index. All additive, with downgrade floor 51.
+_EXPECTED_SCHEMA_VERSION: int = 59
 
 #: Total migrations in the MIGRATIONS + DEFERRED_MIGRATIONS catalogue.
 #: M001–M043 with M008 absent = 42 total.
@@ -179,7 +183,9 @@ _EXPECTED_SCHEMA_VERSION: int = 54
 # 51 as of 4.1.19: +M052_memory_kinds (eager, memory.db, additive).
 # 52 as of 4.1.20: +M053_answer_check_history (eager, learning.db, additive).
 # 53 as of 4.1.21: +M054_saved_views (eager, learning.db, additive).
-_EXPECTED_MIGRATION_COUNT: int = 53
+# 54 as of 4.1.25: +M055_learning_attribution (eager, learning.db, additive).
+# 57 as of WP-4b: +M056, M057, M058 (deferred, memory.db, additive).
+_EXPECTED_MIGRATION_COUNT: int = 58
 
 #: Path to an installed reference package's migrations directory, if one exists.
 #:

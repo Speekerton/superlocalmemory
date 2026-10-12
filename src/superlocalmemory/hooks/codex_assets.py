@@ -15,6 +15,7 @@ SKILLS = (
     "slm-governance",
     "slm-graph",
     "slm-loop",
+    "slm-media",
     "slm-mesh",
     "slm-profile",
     "slm-recall",
@@ -37,6 +38,13 @@ AGENTS = ("slm-memory-advisor.toml", "slm-optimize-advisor.toml",
 #: 4.9 KB advisors with its own one-line stubs and there was nothing to restore
 #: from.
 MANIFEST_NAME = ".slm-managed.json"
+
+#: Records which SLM version last refreshed the Codex assets, beside the agent
+#: files.  ``slm doctor`` reads this to say what ``slm upgrade-hosts`` actually
+#: installed.  It used to read the Codex plugin cache under ``~/.codex/plugins``
+#: instead, which the upgrade never touches, and reported the old version after
+#: a successful refresh (4.1.25 audit L-21).
+VERSION_STAMP_NAME = ".slm-assets-version.json"
 
 #: Used only when the advisor source document is unavailable — an installation
 #: that ships no agent sources still gets a usable, if terse, subagent.
@@ -169,6 +177,29 @@ def _is_ours(target: Path, manifest: dict) -> bool:
         return False
 
 
+def _package_version() -> str:
+    try:
+        from importlib.metadata import version
+
+        return version("superlocalmemory")
+    except Exception:  # noqa: BLE001 - fall back to the version the source declares
+        from superlocalmemory import __version__
+
+        return __version__
+
+
+def read_version_stamp(home: Path | None = None) -> str | None:
+    """The SLM version that last refreshed the Codex assets, or ``None``."""
+    home = home or Path.home()
+    try:
+        loaded = json.loads(
+            (home / ".codex" / "agents" / VERSION_STAMP_NAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    found = loaded.get("version") if isinstance(loaded, dict) else None
+    return str(found) if found else None
+
+
 def _skills_read_elsewhere(home: Path, skills_root: Path) -> list[str]:
     """Skill paths Codex may read that this installer does not write.
 
@@ -241,6 +272,8 @@ def install_assets(*, home: Path | None = None, dry_run: bool = False, force: bo
         manifest[filename] = _digest(content)
     if writable:
         (agents_root / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    (agents_root / VERSION_STAMP_NAME).write_text(
+        json.dumps({"version": _package_version()}, indent=2), encoding="utf-8")
     return result
 
 
@@ -249,6 +282,7 @@ def remove_assets(*, home: Path | None = None, dry_run: bool = False) -> dict:
     home = home or Path.home()
     targets = [home / ".agents" / "skills" / skill for skill in SKILLS]
     targets += [home / ".codex" / "agents" / agent for agent in AGENTS]
+    targets.append(home / ".codex" / "agents" / VERSION_STAMP_NAME)
     existing = [target for target in targets if target.exists()]
     if not dry_run:
         for target in existing:
@@ -260,4 +294,7 @@ def status_assets(*, home: Path | None = None) -> dict:
     home = home or Path.home()
     skills = [x for x in SKILLS if (home / ".agents" / "skills" / x / "SKILL.md").exists()]
     agents = [x for x in AGENTS if (home / ".codex" / "agents" / x).exists()]
-    return {"installed": len(skills) == len(SKILLS) and len(agents) == len(AGENTS), "skills": skills, "agents": agents}
+    return {
+        "installed": len(skills) == len(SKILLS) and len(agents) == len(AGENTS),
+        "skills": skills, "agents": agents, "version": read_version_stamp(home),
+    }

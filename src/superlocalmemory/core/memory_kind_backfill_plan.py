@@ -47,7 +47,6 @@ from superlocalmemory.storage.memory_kinds import (
     AUTHORITY,
     KindAssignment,
     KindSource,
-    MemoryKind,
 )
 
 #: Plain-language reasons the dashboard and CLI show beside the backend.

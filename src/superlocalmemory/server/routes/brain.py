@@ -1629,21 +1629,17 @@ def _compute_shadow_preview(profile_id: str) -> dict:
                 (profile_id,),
             ).fetchone()
             cand_id = int(row[0]) if row and row[0] is not None else None
+            # Observations per arm of the live test. The arms are disjoint by
+            # design (one recall is served by one model), so the old
+            # "paired" count — the INTERSECT of the arms' query ids — was 0
+            # by construction (audit BRN-01). Report the real sample.
             paired = 0
             if cand_id is not None:
                 try:
                     c = conn.execute(
                         "SELECT COUNT(DISTINCT query_id) "
-                        "FROM shadow_observations "
-                        "WHERE candidate_id = ? "
-                        "  AND query_id IN ("
-                        "    SELECT query_id FROM shadow_observations "
-                        "    WHERE candidate_id = ? AND arm = 'active' "
-                        "    INTERSECT "
-                        "    SELECT query_id FROM shadow_observations "
-                        "    WHERE candidate_id = ? AND arm = 'candidate' "
-                        "  )",
-                        (cand_id, cand_id, cand_id),
+                        "FROM shadow_observations WHERE candidate_id = ?",
+                        (cand_id,),
                     ).fetchone()
                     paired = int(c[0]) if c and c[0] is not None else 0
                 except sqlite3.Error:

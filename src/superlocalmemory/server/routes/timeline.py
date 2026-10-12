@@ -16,10 +16,12 @@ import sqlite3
 
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
+
 from superlocalmemory.server.routes.helpers import DB_PATH, get_active_profile, get_read_connection
 from superlocalmemory.storage.database import (
     visible_fact_clause_for_connection,
 )
+from superlocalmemory.storage.erasure_visibility import erasure_clause_for_connection
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +117,8 @@ async def get_timeline(
             "REPLACE(COALESCE(observation_date, referenced_date, interval_start), ' ', 'T') || 'Z' "
             "AS event_date "
             "FROM temporal_events "
-            "WHERE profile_id = ? "
+            "WHERE profile_id = ?"
+            f"{erasure_clause_for_connection(conn, 'temporal_events')} "
             "AND COALESCE(observation_date, referenced_date, interval_start) >= ? "
             "ORDER BY event_date DESC LIMIT ?",
             (pid, start_date, INTERNAL_CEILING),

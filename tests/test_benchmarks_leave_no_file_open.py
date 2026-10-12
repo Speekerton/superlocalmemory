@@ -10,7 +10,7 @@ folder failed with WinError 32 and the command errored after its work was done.
 from __future__ import annotations
 
 import sys
-import tempfile
+import tempfile  # noqa: F401  (tests patch module.tempfile)
 from argparse import Namespace
 from pathlib import Path
 

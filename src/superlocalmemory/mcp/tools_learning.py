@@ -370,9 +370,13 @@ def _update_assertion_confidence(
 
         if reinforce:
             new_conf = old_conf + (1.0 - old_conf) * 0.15  # Bayesian nudge toward 1.0
+            # An explicit reinforcement is the one thing that reinstates a
+            # rejected rule; mining alone never does (audit BRN-02).
             db.execute(
                 "UPDATE behavioral_assertions SET confidence = ?, "
                 "reinforcement_count = reinforcement_count + 1, "
+                "source = CASE WHEN source = 'rejected' THEN 'reinstated' "
+                "ELSE source END, "
                 "last_reinforced_at = ?, updated_at = ? "
                 "WHERE id = ? AND profile_id = ?",
                 (round(new_conf, 4), now, now, assertion_id, profile_id),
@@ -386,15 +390,23 @@ def _update_assertion_confidence(
                 "WHERE id = ? AND profile_id = ?",
                 (round(new_conf, 4), now, now, assertion_id, profile_id),
             )
-            # Auto-delete if confidence drops below 0.2
+            # Below 0.2 the rule is REJECTED: kept as a tombstone at
+            # confidence 0 so the next mining pass cannot recreate it from the
+            # same events (it used to be deleted and came straight back —
+            # audit BRN-02). Every reader filters on confidence, so it is
+            # never injected; only an explicit reinforce reinstates it.
             if new_conf < 0.2:
                 db.execute(
-                    "DELETE FROM behavioral_assertions WHERE id = ? AND profile_id = ?",
-                    (assertion_id, profile_id),
+                    "UPDATE behavioral_assertions SET confidence = 0.0, "
+                    "source = 'rejected', updated_at = ? "
+                    "WHERE id = ? AND profile_id = ?",
+                    (now, assertion_id, profile_id),
                 )
                 return {
-                    "success": True, "action": "deleted",
-                    "reason": f"confidence dropped to {new_conf:.3f} (below 0.2 threshold)",
+                    "success": True, "action": "rejected",
+                    "reason": (f"confidence dropped to {new_conf:.3f} (below "
+                               "0.2); kept as a rejected rule mining will not "
+                               "recreate"),
                 }
 
         return {

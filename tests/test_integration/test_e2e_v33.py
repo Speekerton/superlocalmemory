@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import uuid
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
@@ -25,8 +24,6 @@ import pytest
 from superlocalmemory.core.config import (
     ChannelWeights,
     ForgettingConfig,
-    HopfieldConfig,
-    QuantizationConfig,
     RetrievalConfig,
     SLMConfig,
 )

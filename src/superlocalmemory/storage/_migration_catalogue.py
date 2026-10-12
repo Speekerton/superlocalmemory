@@ -10,7 +10,6 @@ the size limit. Moving an entry here changes nothing about when it runs.
 from __future__ import annotations
 
 from superlocalmemory.storage._migration_internals import Migration
-
 from superlocalmemory.storage.migrations import (
     M001_add_signal_features_columns as _M001,
 )
@@ -135,22 +134,55 @@ from superlocalmemory.storage.migrations import (
     M042_correction_case_ledger as _M042,
 )
 from superlocalmemory.storage.migrations import (
+    M043_quarantine_display_summaries as _M043,
+)
+from superlocalmemory.storage.migrations import (
     M044_play_carries_its_own_evidence as _M044,
 )
 from superlocalmemory.storage.migrations import (
     M045_fact_outcome_score as _M045,
+)
+from superlocalmemory.storage.migrations import (
     M046_prospective_memory_has_its_own_name as _M046,
+)
+from superlocalmemory.storage.migrations import (
     M047_fisher_vectors_are_stored_like_every_other_vector as _M047,
+)
+from superlocalmemory.storage.migrations import (
     M048_upcoming_holds_only_what_is_upcoming as _M048,
+)
+from superlocalmemory.storage.migrations import (
     M049_a_schema_version_marker_is_one_row as _M049,
+)
+from superlocalmemory.storage.migrations import (
     M050_execution_learning_v2 as _M050,
+)
+from superlocalmemory.storage.migrations import (
     M051_lifecycle_is_recomputed_not_resampled as _M051,
+)
+from superlocalmemory.storage.migrations import (
     M052_memory_kinds as _M052,
+)
+from superlocalmemory.storage.migrations import (
     M053_answer_check_history as _M053,
+)
+from superlocalmemory.storage.migrations import (
     M054_saved_views as _M054,
 )
 from superlocalmemory.storage.migrations import (
-    M043_quarantine_display_summaries as _M043,
+    M055_learning_attribution as _M055,
+)
+from superlocalmemory.storage.migrations import (
+    M056_recall_channel_indexes as _M056,
+)
+from superlocalmemory.storage.migrations import (
+    M057_temporal_retrieval_version as _M057,
+)
+from superlocalmemory.storage.migrations import (
+    M058_recall_fact_cover as _M058,
+)
+from superlocalmemory.storage.migrations import (
+    M059_erasure_visibility as _M059,
 )
 
 # Order matters: M003 creates the log table. The runner handles M003's own
@@ -224,6 +256,11 @@ MIGRATIONS: list[Migration] = [
     # learning.db so the upgrade copies only the smaller database.
     Migration(name=_M054.NAME, db_target="learning", ddl=_M054.DDL,
               dependencies=(_M003.NAME,)),
+    # M055: durable learning attribution (4.1.25). One outcome settles one
+    # play (bandit_plays.outcome_id, unique) and a shadow test records which
+    # arm and model served each recall. learning.db only; additive.
+    Migration(name=_M055.NAME, db_target="learning", ddl=_M055.DDL,
+              dependencies=(_M005.NAME, _M044.NAME)),
     # Review-gated correction metadata is self-contained in memory.db. It
     # contains identifiers only and does not alter temporal fact state.
     Migration(name=_M042.NAME, db_target="memory", ddl=_M042.DDL,
@@ -350,4 +387,9 @@ DEFERRED_MIGRATIONS: list[Migration] = [
     # maintenance backfill recomputes them from the forgetting curve.
     # No dependency: it clears one column no other migration reads.
     Migration(name=_M051.NAME, db_target="memory", ddl=_M051.DDL),
+    Migration(name=_M056.NAME, db_target="memory", ddl=_M056.DDL),
+    Migration(name=_M057.NAME, db_target="memory", ddl=_M057.DDL),
+    Migration(name=_M058.NAME, db_target="memory", ddl=_M058.DDL),
+    Migration(name=_M059.NAME, db_target="memory", ddl=_M059.DDL,
+              dependencies=(_M035.NAME,)),
 ]

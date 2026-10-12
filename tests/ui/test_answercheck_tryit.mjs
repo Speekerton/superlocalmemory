@@ -48,7 +48,7 @@ describe('Try it', function () {
     await ask(p, 'What is Project Kestrel\'s marketing budget?');
     assert.equal(label(p).dataset.outcome, 'abstained');
     assert.match(label(p).textContent, /I don’t have that/);
-    assert.match(label(p).getAttribute('style'), /var\(--violet\)/);
+    assert.match(label(p).getAttribute('style'), /var\(--violet-text\)/);
     assert.match(p.root.textContent, /Confidence 0\.18 — needs 0\.50 to count as an answer/);
     assert.equal(p.d.querySelectorAll('.ac-found li').length, 3);
     assert.match(p.root.textContent, /\+4 more/);

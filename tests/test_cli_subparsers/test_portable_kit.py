@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import copy
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -112,18 +111,20 @@ def _assert_slm_block_present(path: Path, desc: Any) -> None:
             servers = data[desc.server_key]
         assert "superlocalmemory" in servers
         block = servers["superlocalmemory"]
-        assert block["command"] == "slm"
+        expected = ([sys.executable, "-m", "superlocalmemory.cli", "mcp"]
+                    if desc.ide_id == "opencode" else sys.executable)
+        assert block["command"] == expected
     elif desc.fmt == "toml":
         import tomllib
         data = tomllib.loads(path.read_text(encoding="utf-8"))
         servers = data[desc.server_key]
         assert "superlocalmemory" in servers
-        assert servers["superlocalmemory"]["command"] == "slm"
+        assert servers["superlocalmemory"]["command"] == sys.executable
     elif desc.fmt == "yaml":
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         # continue uses contextProviders list
         providers = data.get(desc.server_key, [])
-        names = [p.get("params", {}).get("serverName") for p in providers]
+        names = [p.get("name") for p in providers]
         assert "superlocalmemory" in names
 
 
@@ -182,15 +183,8 @@ def _write_other_server(config_path: Path, desc: Any) -> Any:
 
     elif desc.fmt == "yaml":
         # continue contextProviders is a list
-        other_entry = {
-            "name": "mcp",
-            "params": {
-                "serverName": "othersrv",
-                "command": "other-cmd",
-                "args": ["--flag"],
-                "description": "some other provider",
-            },
-        }
+        # https://docs.continue.dev/reference
+        other_entry = {"name": "othersrv", "command": "other-cmd", "args": ["--flag"]}
         data = {desc.server_key: [copy.deepcopy(other_entry)]}
         config_path.write_text(yaml.safe_dump(data), encoding="utf-8")
         return copy.deepcopy(other_entry)
@@ -220,7 +214,7 @@ def _assert_other_server_deep_equal(
     elif desc.fmt == "yaml":
         data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
         providers = data.get(desc.server_key, [])
-        others = [p for p in providers if p.get("params", {}).get("serverName") != "superlocalmemory"]
+        others = [p for p in providers if p.get("name") != "superlocalmemory"]
         assert len(others) == 1, f"Expected 1 other provider, got {len(others)}"
         assert others[0] == snapshot, (
             f"Deep equality failed. Expected: {snapshot}, Got: {others[0]}"
@@ -427,7 +421,7 @@ def test_continue_list_dedupe(fake_home: Path):
     providers = data.get(desc.server_key, [])
     slm_entries = [
         p for p in providers
-        if p.get("params", {}).get("serverName") == "superlocalmemory"
+        if p.get("name") == "superlocalmemory"
     ]
     assert len(slm_entries) == 1, f"Duplicate entries found: {slm_entries}"
 
@@ -451,8 +445,8 @@ def test_toml_codex_roundtrip(fake_home: Path):
     data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     assert "superlocalmemory" in data[desc.server_key]
     block = data[desc.server_key]["superlocalmemory"]
-    assert block["command"] == "slm"
-    assert block["args"] == ["mcp"]
+    assert block["command"] == sys.executable
+    assert block["args"] == ["-m", "superlocalmemory.cli", "mcp"]
 
 
 # ---------------------------------------------------------------------------
@@ -533,10 +527,10 @@ def test_continue_yaml_profile_injected(fake_home: Path):
     data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     providers = data.get(desc.server_key, [])
     slm = next(
-        p for p in providers if p.get("params", {}).get("serverName") == "superlocalmemory"
+        p for p in providers if p.get("name") == "superlocalmemory"
     )
-    assert "env" in slm.get("params", {})
-    assert slm["params"]["env"]["SLM_MCP_PROFILE"] == "power"
+    assert "env" in slm
+    assert slm["env"]["SLM_MCP_PROFILE"] == "power"
 
 
 def test_continue_yaml_merge_update(fake_home: Path):
@@ -548,18 +542,9 @@ def test_continue_yaml_merge_update(fake_home: Path):
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Write SLM entry with old args
-    old_data = {
-        desc.server_key: [
-            {
-                "name": "mcp",
-                "params": {
-                    "serverName": "superlocalmemory",
-                    "command": "slm-old",
-                    "args": ["mcp"],
-                },
-            }
-        ]
-    }
+    old_data = {desc.server_key: [
+        {"name": "superlocalmemory", "command": "slm-old", "args": ["mcp"]}
+    ]}
     config_path.write_text(_yaml.safe_dump(old_data), encoding="utf-8")
 
     result = connect_ide("continue", home=fake_home)
@@ -567,7 +552,7 @@ def test_continue_yaml_merge_update(fake_home: Path):
 
 
 def test_continue_yaml_non_list_providers_recovered(fake_home: Path):
-    """If contextProviders is a dict (malformed), recover to list."""
+    """Invalid mcpServers must be rejected without discarding user settings."""
     import yaml as _yaml
 
     desc = IDE_MATRIX["continue"]
@@ -578,9 +563,11 @@ def test_continue_yaml_non_list_providers_recovered(fake_home: Path):
     bad_data = {desc.server_key: {"bad": "value"}}
     config_path.write_text(_yaml.safe_dump(bad_data), encoding="utf-8")
 
+    before = config_path.read_bytes()
     result = connect_ide("continue", home=fake_home)
-    assert result["error"] is None
-    assert result["mcp_config"] in ("wrote", "merged")
+    assert result["error"] is not None
+    assert result["mcp_config"] == "error"
+    assert config_path.read_bytes() == before
 
 
 def test_agents_md_source_error_skips_gracefully(fake_home: Path):
@@ -635,7 +622,6 @@ def test_codex_dry_run_fails_when_packaged_agents_asset_is_missing(fake_home: Pa
 
 def test_yaml_load_config_none_result(fake_home: Path, tmp_path: Path):
     """YAML file that parses to None (empty file) is treated as empty dict."""
-    import yaml as _yaml
     from superlocalmemory.hooks.portable_kit import _load_config
 
     empty_yaml = tmp_path / "config.yaml"
@@ -647,7 +633,7 @@ def test_yaml_load_config_none_result(fake_home: Path, tmp_path: Path):
 
 def test_yaml_load_config_non_dict_result(tmp_path: Path):
     """YAML file that parses to a scalar returns empty dict."""
-    import yaml as _yaml
+
     from superlocalmemory.hooks.portable_kit import _load_config
 
     scalar_yaml = tmp_path / "scalar.yaml"
@@ -724,7 +710,6 @@ def test_atomic_write_tmp_cleanup_on_os_replace_failure(tmp_path: Path, monkeypa
     from superlocalmemory.hooks.portable_kit import _atomic_write
 
     config_path = tmp_path / "config.json"
-    real_replace = os.replace
 
     def _fail_replace(src, dst):
         raise OSError("replace failed")

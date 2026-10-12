@@ -285,6 +285,18 @@ def _hook_mandate() -> None:
 # 1. SESSION START — SessionStart hook
 # ---------------------------------------------------------------------------
 
+def _print_recovery_needed() -> None:
+    """Say why memory is unavailable when a restore is waiting for recovery."""
+    try:
+        from superlocalmemory.cli.daemon import _recovery_block
+
+        blocked = _recovery_block()
+    except Exception:  # noqa: BLE001 - a hook never fails on this note
+        return
+    if blocked:
+        print(f"# SLM memory is unavailable: {blocked}")
+
+
 def _hook_start() -> None:
     """Clean markers, inject SQL-fast context, print session_init guidance."""
     deadline = HookDeadline(CLAUDE_START_DEADLINE_S)
@@ -321,6 +333,7 @@ def _hook_start() -> None:
             print(result.stdout.strip())
     except Exception:
         print("# SLM Session Context — unavailable")
+    _print_recovery_needed()
 
     # Advisory session_init guidance. Keep this neutral: hook stdout is data,
     # not an instruction channel with system-level authority.

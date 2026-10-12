@@ -76,6 +76,9 @@ _DDL = """CREATE TABLE IF NOT EXISTS upload_links (
 #: Added after the first release of the table: databases made before it get the column on first use.
 _ADD_AUTHORIZATION = "ALTER TABLE upload_links ADD COLUMN authorization_id TEXT NOT NULL DEFAULT ''"
 
+#: ``PRAGMA user_version`` once the links without an app have been ended (see ``UploadLinks._migrate``).
+_MIGRATION_DONE = 1
+
 _MESSAGES = {
     "invalid_kind": "An upload link is for an image or a document.",
     "note_too_long": "The note for an upload link is limited to 2000 characters.",
@@ -99,8 +102,10 @@ _MESSAGES = {
     "interrupted": "The save was interrupted. Ask the app for a new link.",
     "warming": "The picture tools on your computer are starting. Send the file again in a minute.",
     "revoked": "This upload link no longer works. Ask the app for a new one.",
+    "outdated": "This upload link expired with the update. Ask the app for a new one.",
     "not_allowed": "This computer no longer lets this app add files. Ask the owner to allow it again.",
     "invalid_request": "That upload request was not understood.",
+    "disk_full": files.DISK_FULL,
 }
 
 
@@ -193,6 +198,7 @@ class UploadLinks:
         self._lock = threading.RLock()
         self._ready = False
         self._columns_ok = False
+        self._migrated = False
         self._last_clean: int | None = None
 
     # -- storage ------------------------------------------------------------
@@ -225,6 +231,7 @@ class UploadLinks:
                 self._ensure_columns(conn)
                 conn.execute("BEGIN IMMEDIATE")
                 try:
+                    self._migrate(conn)
                     yield conn
                     conn.execute("COMMIT")
                 except BaseException:
@@ -241,6 +248,27 @@ class UploadLinks:
             with contextlib.suppress(sqlite3.OperationalError):  # another process added it first
                 conn.execute(_ADD_AUTHORIZATION)
         self._columns_ok = True
+
+    def _migrate(self, conn: sqlite3.Connection) -> None:
+        """Once per database: end the unfinished links no app asked for.
+
+        Links made before ``authorization_id`` existed carry an empty one and used to be honoured
+        for "any consenting app" until they ran out. They are ended here, with a plain message,
+        and the database is marked (``user_version``) so this never runs again.
+        """
+        if self._migrated:
+            return
+        if conn.execute("PRAGMA user_version").fetchone()[0] < _MIGRATION_DONE:
+            result = json.dumps({"ok": False, "code": "outdated", "message": _MESSAGES["outdated"]})
+            stale = conn.execute(
+                "SELECT upload_id FROM upload_links WHERE authorization_id = '' "
+                "AND state IN ('open','receiving','finishing')").fetchall()
+            for found in stale:
+                conn.execute("UPDATE upload_links SET state='failed', result_json=? WHERE upload_id=?",
+                             (result, found[0]))
+                self._unlink(self.temp_path(found[0]))
+            conn.execute(f"PRAGMA user_version = {_MIGRATION_DONE}")
+        self._migrated = True
 
     @staticmethod
     def _row(found: sqlite3.Row | None) -> UploadRow | None:
@@ -355,7 +383,13 @@ class UploadLinks:
             raise UploadError("too_much_data")
         path = self.temp_path(row.upload_id)
         path.unlink(missing_ok=True)
-        self._write(path, data, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+        try:
+            self._write(path, data, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+        except OSError as exc:
+            path.unlink(missing_ok=True)  # no half-written scratch file, and no attempt is spent
+            if files.is_disk_full(exc):
+                raise UploadError("disk_full") from None
+            raise
         conn.execute(
             "UPDATE upload_links SET state='receiving', total=?, received=?, next_index=1, attempts=attempts+1, "
             "started_at=COALESCE(started_at, ?), nonce=?, touched_at=?, result_json='' WHERE upload_id=?",
@@ -380,11 +414,23 @@ class UploadLinks:
                 raise UploadError("bad_order")
         except OSError:
             raise UploadError("bad_order") from None
-        self._write(path, data, os.O_WRONLY | os.O_APPEND)
+        try:
+            self._write(path, data, os.O_WRONLY | os.O_APPEND)
+        except OSError as exc:
+            if files.is_disk_full(exc):
+                self._trim(path, row.received)  # drop a half-written chunk; what arrived stays
+                raise UploadError("disk_full") from None
+            raise
         received = row.received + len(data)
         conn.execute("UPDATE upload_links SET received=?, next_index=next_index+1, touched_at=? WHERE upload_id=?",
                      (received, self._now(), row.upload_id))
         return received
+
+    @staticmethod
+    def _trim(path: Path, size: int) -> None:
+        """Cut the scratch file back to ``size`` bytes (best effort)."""
+        with contextlib.suppress(OSError):
+            os.truncate(path, size)
 
     @staticmethod
     def _write(path: Path, data: bytes, flags: int) -> None:

@@ -9,7 +9,6 @@ import pytest
 
 from superlocalmemory.remote_connections.gateway_provider import CloudGatewayProvider
 from superlocalmemory.remote_connections.grant_keys import GrantKeyStore
-from superlocalmemory.remote_connections.native_enrollment import NativeEnrollmentStore
 from superlocalmemory.remote_connections import runtime as runtime_module
 from tests.test_remote_connection_runtime import enrolled_runtime
 from tests.test_remote_native_enrollment_store import Backend, record

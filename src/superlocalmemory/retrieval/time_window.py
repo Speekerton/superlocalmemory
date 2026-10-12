@@ -34,6 +34,7 @@ __all__ = [
     "in_window",
     "infer_window_from_query",
     "has_primary_evidence",
+    "semantic_floor_on_channel_scale",
     "windowed_candidates",
 ]
 
@@ -199,16 +200,27 @@ def in_window(
     return start <= dt <= end
 
 
+def semantic_floor_on_channel_scale(min_semantic: float) -> float:
+    """``min_semantic`` is a raw cosine; the semantic channel stores every score as
+    ``(cosine + 1) / 2`` (``semantic_channel.py``, M-01), so the floor is compared on
+    that scale. Comparing the two directly made the floor fire at raw cosine 0.20,
+    which unrelated text passes every time, so recall never abstained. Measured on
+    a 26k-fact store with the built-in model: no-answer questions reach raw 0.53-0.61
+    against random facts, true answers sit at 0.62-0.90; raw 0.60 separates them.
+    """
+    return (min_semantic + 1.0) / 2.0
+
+
 def has_primary_evidence(channel_scores: Mapping[str, float] | None,
                          min_semantic: float, min_media: float = 0.30) -> bool:
     """The evidence floor's test (``RetrievalEngine._apply_evidence_floor``):
-    meaning at or above ``min_semantic``, or any keyword, entity or time
-    evidence, or a picture match at or above ``min_media``. Associative channels
-    (Hopfield, spreading activation) do not count.
+    meaning at or above the raw cosine ``min_semantic``, or any keyword, entity or
+    time evidence, or a picture match at or above ``min_media``. Associative
+    channels (Hopfield, spreading activation) do not count.
     """
     cs = channel_scores or {}
     return (
-        cs.get("semantic", 0.0) >= min_semantic
+        cs.get("semantic", 0.0) >= semantic_floor_on_channel_scale(min_semantic)
         or cs.get("bm25", 0.0) > 0.0
         or cs.get("entity_graph", 0.0) > 0.0
         or cs.get("temporal", 0.0) > 0.0

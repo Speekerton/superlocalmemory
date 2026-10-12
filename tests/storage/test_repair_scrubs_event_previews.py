@@ -273,6 +273,8 @@ def test_the_mcp_observe_tool_names_the_text_it_captured_by_hash():
     from superlocalmemory.mcp import tools_active
 
     source = inspect.getsource(tools_active)
-    start = source.index('_emit_event("memory.captured", {')
+    # Locate the emit however it is wrapped; the payload dict follows the name.
+    start = source.index('"memory.captured"')
+    assert "_emit_event(" in source[max(0, start - 80):start]
     emitted = source[start:source.index("}", start)]
     assert '"content_hash": hashlib.sha256(content.encode("utf-8")).hexdigest()' in emitted

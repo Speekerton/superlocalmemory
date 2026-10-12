@@ -4,12 +4,11 @@
 
 """Tests for IDE Connector — Task 17 of V3 build."""
 
-import json
 
 import pytest
-from pathlib import Path
+import yaml
 
-from superlocalmemory.hooks.ide_connector import IDEConnector, SLM_MARKER
+from superlocalmemory.hooks.ide_connector import SLM_MARKER, IDEConnector
 
 
 @pytest.fixture
@@ -93,8 +92,8 @@ def test_connect_json_ide(tmp_path):
     connector = IDEConnector(home=tmp_path)
     success = connector.connect("continue_dev")
     assert success
-    config = json.loads((tmp_path / ".continue" / "config.json").read_text(encoding="utf-8"))
-    assert "superlocalmemory" in config.get("mcpServers", {})
+    config = yaml.safe_load((tmp_path / ".continue" / "config.yaml").read_text(encoding="utf-8"))
+    assert [s["name"] for s in config["mcpServers"]] == ["superlocalmemory"]
 
 
 def test_get_status(tmp_path):

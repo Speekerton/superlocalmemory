@@ -8,20 +8,29 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 import os
+from pathlib import Path
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
-from superlocalmemory.core.session_identity import synthetic_session_id
+
 from superlocalmemory.core.config import CANONICAL_RECALL_LIMIT
+from superlocalmemory.core.session_identity import synthetic_session_id
 from superlocalmemory.core.status_contract import (
     COUNT_QUERIES,
     counts_from_sqlite,
     projection_queue_depth,
     store_size_mb,
 )
-from superlocalmemory.server.routes.helpers import SLM_VERSION, get_read_connection
 from superlocalmemory.server.route_mutations import authorize_route_mutation
+from superlocalmemory.server.routes.helpers import SLM_VERSION, get_read_connection
+
+if TYPE_CHECKING:
+    from superlocalmemory.core.config import LLMConfig, SLMConfig
+
+from superlocalmemory.storage.database import visible_fact_clause_for_connection
+from superlocalmemory.storage.erasure_visibility import erasure_endpoint_clause
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +95,9 @@ async def _apply_runtime_config(request: Request, config, *, mode_change: bool) 
 
 def _require_manage(request: Request) -> None:
     """Use one explicit authorization boundary for dashboard configuration."""
-    from superlocalmemory.server.rbac_enforce import require_manage
+    from superlocalmemory.server.rbac_enforce import require_global_manage
 
-    require_manage(request)
+    require_global_manage(request)
 
 
 def _resolve_profile(request: Request, requested: str = "") -> str:
@@ -260,8 +269,8 @@ async def set_mode(request: Request):
     """Switch operating mode. Body: {"mode": "a"|"b"|"c"}"""
     # SEC-H-01: mode switch reconfigures the whole engine — admin-only (MANAGE)
     # on top of machine auth. Owner keeps MANAGE; personal mode unaffected.
-    from superlocalmemory.server.rbac_enforce import require_manage
-    require_manage(request)
+    from superlocalmemory.server.rbac_enforce import require_global_manage
+    require_global_manage(request)
     try:
         body = await request.json()
         new_mode = body.get("mode", "").lower()
@@ -450,8 +459,8 @@ async def set_full_config(request: Request):
     V3.4.24: Also accepts embedding_* fields for custom embedding endpoints.
     """
     # SEC-H-01: sets the LLM provider + API key for the whole engine — admin-only.
-    from superlocalmemory.server.rbac_enforce import require_manage
-    require_manage(request)
+    from superlocalmemory.server.rbac_enforce import require_global_manage
+    require_global_manage(request)
     try:
         body = await request.json()
         if not isinstance(body, dict):
@@ -757,8 +766,8 @@ def _refuse_incompatible_embedding(
 async def set_embedding_config(request: Request):
     """Update embedding configuration independently of mode switch."""
     # SEC-H-01: swapping the embedding provider/key affects all recall — admin-only.
-    from superlocalmemory.server.rbac_enforce import require_manage
-    require_manage(request)
+    from superlocalmemory.server.rbac_enforce import require_global_manage
+    require_global_manage(request)
     try:
         body = await request.json()
         from superlocalmemory.core.config import SLMConfig, EmbeddingConfig
@@ -850,8 +859,8 @@ async def get_scope_config(request: Request):
 async def set_scope_config(request: Request):
     """Validate, persist, and hot-apply explicit multi-scope defaults."""
     # SEC-H-01: scope defaults govern cross-profile recall visibility — admin-only.
-    from superlocalmemory.server.rbac_enforce import require_manage
-    require_manage(request)
+    from superlocalmemory.server.rbac_enforce import require_global_manage
+    require_global_manage(request)
     try:
         body = await request.json()
         from superlocalmemory.core.config import SLMConfig, ScopeConfig
@@ -1190,10 +1199,10 @@ async def set_provider(request: Request):
     # Swapping the provider + API key redirects all LLM traffic (prompt/output
     # interception risk) — admin-only, on top of mutation auth.
     from superlocalmemory.server.route_mutations import authorize_route_mutation
-    from superlocalmemory.server.rbac_enforce import require_manage
+    from superlocalmemory.server.rbac_enforce import require_global_manage
     _auth = authorize_route_mutation(request, operation="update",
                                      source_agent_id="http-set-provider")
-    require_manage(request)
+    require_global_manage(request)
     try:
         body = await request.json()
         provider = body.get("provider", "")
@@ -1898,7 +1907,7 @@ async def get_associations(
     """Get association edges for a profile with content previews."""
     pid = _resolve_profile(request, profile)
     try:
-        from superlocalmemory.server.routes.helpers import get_active_profile, DB_PATH
+        from superlocalmemory.server.routes.helpers import DB_PATH
         import sqlite3
 
         if not DB_PATH.exists():
@@ -1916,7 +1925,11 @@ async def get_associations(
             "FROM association_edges ae "
             "LEFT JOIN atomic_facts sf ON sf.fact_id = ae.source_fact_id "
             "LEFT JOIN atomic_facts tf ON tf.fact_id = ae.target_fact_id "
-            "WHERE ae.profile_id = ? "
+            "WHERE ae.profile_id = ?"
+            f"{visible_fact_clause_for_connection(conn, 'sf')}"
+            f"{visible_fact_clause_for_connection(conn, 'tf')}"
+            f"{erasure_endpoint_clause(conn, 'ae', 'source_fact_id', 'sf')}"
+            f"{erasure_endpoint_clause(conn, 'ae', 'target_fact_id', 'tf')} "
         )
         if type:
             sql += "AND ae.association_type = ? "
@@ -1965,7 +1978,7 @@ async def get_association_stats(request: Request, profile: str = ""):
     """Get association graph statistics."""
     pid = _resolve_profile(request, profile)
     try:
-        from superlocalmemory.server.routes.helpers import get_active_profile, DB_PATH
+        from superlocalmemory.server.routes.helpers import DB_PATH
         import sqlite3
 
         if not DB_PATH.exists():
@@ -2034,10 +2047,13 @@ async def get_association_stats(request: Request, profile: str = ""):
             for dr in degree_rows:
                 fact_id = dr["fact_id"]
                 preview_row = conn.execute(
-                    "SELECT content FROM atomic_facts WHERE fact_id = ?",
-                    (fact_id,),
+                    "SELECT content FROM atomic_facts WHERE fact_id = ? AND profile_id = ?"
+                    f"{visible_fact_clause_for_connection(conn)}",
+                    (fact_id, pid),
                 ).fetchone()
-                preview = (dict(preview_row).get("content", "")[:80]) if preview_row else ""
+                if not preview_row:
+                    continue
+                preview = dict(preview_row).get("content", "")[:80]
                 top_facts.append({
                     "fact_id": fact_id,
                     "degree": dr["degree"],
@@ -2066,7 +2082,7 @@ async def get_consolidation_status(request: Request, profile: str = ""):
     """Get consolidation status and last run results."""
     pid = _resolve_profile(request, profile)
     try:
-        from superlocalmemory.server.routes.helpers import get_active_profile, DB_PATH
+        from superlocalmemory.server.routes.helpers import DB_PATH
         from superlocalmemory.core.config import SLMConfig
         import sqlite3
 
@@ -2161,7 +2177,6 @@ async def trigger_consolidation(request: Request):
         lightweight = body.get("lightweight", False)
         profile = body.get("profile", "")
 
-        from superlocalmemory.server.routes.helpers import get_active_profile
         pid = _resolve_mutation_profile(profile)
         _require_manage_for_profile(request, pid)
         authorization = authorize_route_mutation(
@@ -2213,7 +2228,8 @@ async def get_core_memory(request: Request, profile: str = ""):
     """Get all Core Memory blocks for a profile."""
     pid = _resolve_profile(request, profile)
     try:
-        from superlocalmemory.server.routes.helpers import get_active_profile, DB_PATH
+        from superlocalmemory.server.routes.helpers import DB_PATH
+        from superlocalmemory.storage.erasure_visibility import aggregate_erasure_clause
         import sqlite3
 
         if not DB_PATH.exists():
@@ -2225,7 +2241,10 @@ async def get_core_memory(request: Request, profile: str = ""):
         rows = conn.execute(
             "SELECT block_id, block_type, content, char_count, version, "
             "compiled_by, updated_at FROM core_memory_blocks "
-            "WHERE profile_id = ? ORDER BY block_type",
+            "WHERE profile_id = ?"
+            + aggregate_erasure_clause(
+                conn, "core_memory_blocks", column="source_fact_ids")
+            + " ORDER BY block_type",
             (pid,),
         ).fetchall()
 
@@ -2343,7 +2362,7 @@ async def get_vector_store_status(request: Request, profile: str = ""):
     try:
         from superlocalmemory.core.config import SLMConfig
         from superlocalmemory.server.routes.helpers import DB_PATH
-        import sqlite3
+        import sqlite3  # noqa: F401
 
         config = SLMConfig.load()
 
@@ -2403,7 +2422,7 @@ async def forgetting_stats(request: Request, profile: str = ""):
     """Get memory retention zone distribution."""
     pid = _resolve_profile(request, profile)
     try:
-        from superlocalmemory.server.routes.helpers import get_active_profile, DB_PATH
+        from superlocalmemory.server.routes.helpers import DB_PATH
         import sqlite3 as _sqlite3
 
         zones = {"active": 0, "warm": 0, "cold": 0, "archive": 0, "forgotten": 0}
@@ -2450,7 +2469,7 @@ async def run_forgetting(request: Request):
         body = await request.json()
         profile = body.get("profile", "")
 
-        from superlocalmemory.server.routes.helpers import get_active_profile, DB_PATH
+        from superlocalmemory.server.routes.helpers import DB_PATH
         from superlocalmemory.storage.memory_write import memory_write as _memory_write
         pid = _resolve_mutation_profile(profile)
         _require_manage_for_profile(request, pid)
@@ -2535,7 +2554,7 @@ async def quantization_stats(request: Request, profile: str = ""):
     """Get embedding quantization tier distribution."""
     pid = _resolve_profile(request, profile)
     try:
-        from superlocalmemory.server.routes.helpers import get_active_profile, DB_PATH
+        from superlocalmemory.server.routes.helpers import DB_PATH
         import sqlite3 as _sqlite3
 
         tiers = {"float32": 0, "int8": 0, "polar4": 0, "polar2": 0}
@@ -2598,7 +2617,7 @@ async def ccq_blocks(request: Request, profile: str = "", limit: int = 50):
     """Get CCQ consolidated blocks."""
     pid = _resolve_profile(request, profile)
     try:
-        from superlocalmemory.server.routes.helpers import get_active_profile, DB_PATH
+        from superlocalmemory.server.routes.helpers import DB_PATH
         import sqlite3 as _sqlite3
 
         if not DB_PATH.exists():
@@ -2658,7 +2677,7 @@ async def get_soft_prompts(request: Request, profile: str = ""):
     """Get active soft prompt templates."""
     pid = _resolve_profile(request, profile)
     try:
-        from superlocalmemory.server.routes.helpers import get_active_profile, DB_PATH
+        from superlocalmemory.server.routes.helpers import DB_PATH
         import sqlite3 as _sqlite3
 
         if not DB_PATH.exists():
@@ -2764,7 +2783,7 @@ async def get_graph_communities(request: Request, profile: str = ""):
     """
     pid = _resolve_profile(request, profile)
     try:
-        from superlocalmemory.server.routes.helpers import get_active_profile, DB_PATH
+        from superlocalmemory.server.routes.helpers import DB_PATH
         import sqlite3
 
         if not DB_PATH.exists():
@@ -2820,7 +2839,8 @@ async def get_graph_communities(request: Request, profile: str = ""):
                     fact_rows = conn.execute(
                         "SELECT af.content FROM fact_importance fi "
                         "JOIN atomic_facts af ON fi.fact_id = af.fact_id "
-                        "WHERE fi.profile_id = ? AND fi.community_id = ? "
+                        "WHERE fi.profile_id = ? AND fi.community_id = ?"
+                        f"{visible_fact_clause_for_connection(conn, 'af')} "
                         "ORDER BY fi.pagerank_score DESC LIMIT 20",
                         (pid, comm_id),
                     ).fetchall()
@@ -2846,7 +2866,8 @@ async def get_graph_communities(request: Request, profile: str = ""):
                 ent_rows = conn.execute(
                     "SELECT af.canonical_entities_json FROM fact_importance fi "
                     "JOIN atomic_facts af ON fi.fact_id = af.fact_id "
-                    "WHERE fi.profile_id = ? AND fi.community_id = ? "
+                    "WHERE fi.profile_id = ? AND fi.community_id = ?"
+                        f"{visible_fact_clause_for_connection(conn, 'af')} "
                     "ORDER BY fi.pagerank_score DESC LIMIT 10",
                     (pid, comm_id),
                 ).fetchall()
@@ -2917,7 +2938,7 @@ async def v33_overview(request: Request, profile: str = ""):
     """Get SLM 3.3 feature overview -- all new capabilities at a glance."""
     pid = _resolve_profile(request, profile)
     try:
-        from superlocalmemory.server.routes.helpers import get_active_profile, DB_PATH
+        from superlocalmemory.server.routes.helpers import DB_PATH
         import sqlite3 as _sqlite3
 
         overview: dict = {

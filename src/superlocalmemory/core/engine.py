@@ -29,7 +29,7 @@ from superlocalmemory.core.config import CANONICAL_RECALL_LIMIT, SLMConfig
 from superlocalmemory.core.engine_capabilities import Capabilities, CapabilityError
 from superlocalmemory.core.modes import get_capabilities
 from superlocalmemory.storage.models import (
-    AtomicFact, FactType, MemoryRecord, Mode, RecallResponse,
+    AtomicFact, MemoryRecord, Mode, RecallResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -573,7 +573,10 @@ class MemoryEngine:
         shared_with: list[str] | None = None,
         profile_id: str | None = None,
     ) -> list[str]:
-        """Store content and extract structured facts. Returns fact_ids.
+        """Store content and finish canonical materialization. Returns fact_ids.
+
+        Standalone callers own the work they queue, so enrichment finishes
+        before success. Without an embedder, lexical materialization suffices.
 
         Multi-scope: ``scope`` sets the visibility (personal/shared/global).
         ``shared_with`` is a list of profile_ids for shared scope.
@@ -602,7 +605,7 @@ class MemoryEngine:
             session_date=session_date,
             speaker=speaker,
             role=role,
-            require_complete=False,
+            require_complete=True,
             profile_id=profile_id,
         )
 
@@ -695,7 +698,8 @@ class MemoryEngine:
             def _best_effort_embed():
                 from superlocalmemory.core.recall_gate import background_work
                 with background_work():
-                    return _embedder_ref.embed(text)
+                    from superlocalmemory.core.bounded_embedding import embed_source
+                    return embed_source(_embedder_ref, text)
 
             _future = self._store_fast_embed_pool.submit(_best_effort_embed)
             try:
@@ -1032,8 +1036,6 @@ class MemoryEngine:
         pid = (profile_id or "").strip() or self._profile_id
         from superlocalmemory.core.engine_ingestion import _require_known_profile
         _require_known_profile(self, pid)
-        import re as _re
-        import uuid as _uuid
         from datetime import datetime, timezone
         from superlocalmemory.core.engine_ingestion import content_passes_admission
         if not content_passes_admission(content):
@@ -1067,45 +1069,12 @@ class MemoryEngine:
             metadata=metadata or {},
             scope=scope, shared_with=shared_with,
         )
-        self._db.store_memory(record)
-        # Lightweight regex entities (matches store_pipeline verbatim path) so
-        # the entity_graph channel has something to work with before enrichment.
-        ents = sorted(
-            {m.group(1) for m in _re.finditer(
-                r"\b([A-Z][a-z]+(?:\s[A-Z][a-z]+){0,3})\b", fact_text)}
-            | {m.group(1) for m in _re.finditer(r"\b([A-Z]{2,})\b", fact_text)}
-        )
-        # Workstream D (3.8.4) — warm-guard synchronous embed.
-        #
-        # Original contract (3.8.2): queryable admission NEVER acquires the
-        # embedding worker lock. On a clean Mode-A install the background model
-        # load owns that lock for up to 180s, turning the receipt-first path into
-        # a hidden synchronous wait. The canonical materializer promotes this
-        # fact with its full pipeline (embedding, Fisher, entities, graph edges).
-        #
-        # 3.8.4 extension: when the embedder is PROVABLY warm (_available is True)
-        # AND is a local embedder (not a remote cloud/OpenAI endpoint), compute the
-        # embedding synchronously with a hard 1s cap. On timeout or any
-        # exception, fall through to emb=None — the materializer fills it async.
-        # This preserves the 3.8.2 invariant for cold start while eliminating the
-        # semantic-channel blind spot on warm daemons (the top UX complaint).
+        from superlocalmemory.core.legacy_source_admission import admit_source
+        fact = admit_source(self._db, record, fact_text, now,
+                            getattr(self._config.store, "max_verbatim_chars", 24000))
+        fact_text = fact.content
+        # All model work follows the short durable source transaction.
         emb, fmean, fvar = self._warm_guard_embed(fact_text)
-        fact = AtomicFact(
-            fact_id=_uuid.uuid4().hex[:16], memory_id=record.memory_id,
-            profile_id=pid, content=fact_text,
-            fact_type=FactType.EPISODIC, entities=ents,
-            observation_date=session_date or now[:10],
-            confidence=0.7, importance=0.5,
-            # The vector is attached after this row exists, not with it. The
-            # projection that the meaning-based channel searches has a foreign
-            # key onto this row, so it cannot be written first; and writing this
-            # column first would hide the fact from the repair pass if the
-            # projection then failed. _attach_vector owns that ordering.
-            embedding=None, fisher_mean=None, fisher_variance=None,
-            created_at=now,
-            scope=scope, shared_with=shared_with,
-        )
-        self._db.store_fact(fact)  # FTS5 trigger → immediately BM25-recallable
         # Attach the vector so the meaning-based channel finds it now, through
         # the same ordering every other write path uses.
         if emb and index_external:
@@ -1190,6 +1159,13 @@ class MemoryEngine:
 
         pid = profile_id or self._profile_id
 
+        # One identity for this recall, allocated before ranking so the bandit
+        # play, any shadow-test assignment and the outcome ticket all carry the
+        # id the caller gets back (audit BRN-13: they used to be two UUIDs).
+        import uuid as _uuid
+
+        answer_id = _uuid.uuid4().hex
+
         from superlocalmemory.core.recall_pipeline import run_recall
         try:
             response = run_recall(
@@ -1213,6 +1189,7 @@ class MemoryEngine:
                 include_unknown=include_unknown,
                 answer_check=answer_check,
                 facets=facets,
+                query_id=answer_id,
             )
         except Exception:
             # Diagnostics are intentionally not recorded here.  A recall is a
@@ -1237,21 +1214,18 @@ class MemoryEngine:
         # allowed to influence ranking stays a separate, explicit setting that
         # remains off unless an operator turns it on.
         try:
-            import uuid
-
             from superlocalmemory.learning.outcome_queue import (
                 RecallEvent,
                 enqueue_recall,
             )
 
-            # A fresh id per answer, put on the response as well as the
+            # The id allocated above, put on the response as well as the
             # ticket. `calibration_id` was the obvious candidate and is wrong:
             # it is None on most paths, and an empty join key is exactly the
             # state that made all 162 recorded outcomes unmatchable. Returning
             # it is what makes it useful -- until an answer carried its own
             # name, no caller could quote one back, so an outcome could only
             # ever be matched by guessing from overlapping memories.
-            answer_id = uuid.uuid4().hex
             try:
                 response.query_id = answer_id
             except Exception:  # noqa: BLE001 -- an older response shape

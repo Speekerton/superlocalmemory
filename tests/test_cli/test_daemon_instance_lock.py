@@ -299,7 +299,7 @@ def test_parent_never_writes_the_record_when_the_child_does_not_win(
     fake.pid = 2_000_000
     monkeypatch.setattr(daemon_mod, "is_daemon_running", lambda: False)
     monkeypatch.setattr(daemon_mod, "_has_tcp_listener", lambda port: False)
-    monkeypatch.setattr(daemon_mod, "_wait_for_daemon", lambda timeout=60: False)
+    monkeypatch.setattr(daemon_mod, "_wait_for_daemon", lambda timeout=60, **kwargs: False)
     with patch("subprocess.Popen", return_value=fake):
         assert daemon_mod._start_daemon_subprocess(port=8765) is False
     for name, data in snapshot.items():
@@ -313,7 +313,7 @@ def test_parent_writes_no_record_files_at_all(root, monkeypatch):
     fake.pid = 2_000_001
     monkeypatch.setattr(daemon_mod, "is_daemon_running", lambda: False)
     monkeypatch.setattr(daemon_mod, "_has_tcp_listener", lambda port: False)
-    monkeypatch.setattr(daemon_mod, "_wait_for_daemon", lambda timeout=60: False)
+    monkeypatch.setattr(daemon_mod, "_wait_for_daemon", lambda timeout=60, **kwargs: False)
     with patch("subprocess.Popen", return_value=fake):
         daemon_mod._start_daemon_subprocess(port=8765)
     base = descriptor_path().parent
@@ -438,14 +438,14 @@ def test_ensure_daemon_does_not_unlink_the_start_lock(root, monkeypatch):
     assert daemon_mod._lock_file_path().exists()
 
 
-def test_cleanup_stops_the_guardian_before_clearing_the_record(root):
+def test_cleanup_stops_the_guardian_before_clearing_the_record(root, monkeypatch):
     from superlocalmemory.infra.instance_lock import get_instance_lock
     from superlocalmemory.server import unified_daemon
 
     lock = get_instance_lock()
     ours = _descriptor(state="ready")
     assert lock.try_acquire()
-    unified_daemon._ACTIVE_DAEMON_DESCRIPTOR = ours
+    monkeypatch.setattr(unified_daemon, "_ACTIVE_DAEMON_DESCRIPTOR", ours)
     try:
         from superlocalmemory.infra.daemon_identity import publish_if_owner
         publish_if_owner(ours, lock)
@@ -464,7 +464,6 @@ def test_cleanup_stops_the_guardian_before_clearing_the_record(root):
         assert unified_daemon._RECORD_GUARDIAN is None
         assert not descriptor_path().exists()
     finally:
-        unified_daemon._ACTIVE_DAEMON_DESCRIPTOR = None
         unified_daemon._stop_record_guardian()
         lock.release()
 

@@ -10,13 +10,10 @@ TDD Phase: RED first, then GREEN.
 
 from __future__ import annotations
 
-import time
-from dataclasses import dataclass, field
-from typing import Any
-from unittest.mock import MagicMock, patch
+from dataclasses import dataclass
+from unittest.mock import MagicMock
 
 import numpy as np
-import pytest
 
 
 # ---------------------------------------------------------------------------

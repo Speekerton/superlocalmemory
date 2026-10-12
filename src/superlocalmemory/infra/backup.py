@@ -85,6 +85,21 @@ MANAGED_DATABASES: tuple[str, ...] = (
 # ---------------------------------------------------------------------------
 
 
+def _as_utc(value: object) -> Optional[datetime]:
+    """A saved instant as an aware UTC datetime, or ``None`` when it is not a date.
+
+    ``create_backup`` saves an aware UTC time; comparing it to the naive local
+    ``datetime.now()`` raised, and the handler took "cannot compare" to mean
+    "overdue", so every scheduler check took another full backup. An older,
+    naive value is read as local time, as the code that wrote it meant it.
+    """
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except (ValueError, TypeError):
+        return None
+    return parsed.astimezone(timezone.utc)  # a naive value is taken as local time
+
+
 class BackupVerificationError(Exception):
     """Raised when a backup set fails checksum re-verification."""
 
@@ -254,6 +269,11 @@ class BackupCoordinator:
             encoding="utf-8",
         )
 
+        # The picture and PDF originals are files, not rows: they sit in the same mirror
+        # (backup_dir/media-originals) that BackupManager keeps, one copy shared by both.
+        from superlocalmemory.infra import backup_media
+
+        backup_media.sync_originals_quietly(self._base_dir, self._backup_dir)
         return manifest
 
     def restore_from_manifest(self, manifest: BackupSetManifest) -> None:
@@ -426,6 +446,12 @@ class BackupCoordinator:
 
         # Phase C succeeded — remove pre-restore snapshots.
         self._cleanup_pre_restore_snapshots(pre_restore_map, pre_restore_lance)
+
+        # The library database is back: put back the originals its rows point at.
+        if any(entry.store_name == "media.db" for entry in manifest.stores):
+            from superlocalmemory.infra import backup_media
+
+            backup_media.restore_originals_quietly(self._base_dir, self._backup_dir)
 
         # Phase D — GDPR obligation replay (invariant: no restore may resurrect
         # erased personal data).  Must run AFTER live files are in place and
@@ -635,12 +661,12 @@ class BackupManager:
         last = self.config.get("last_backup")
         if not last:
             return True
-        try:
-            last_dt = datetime.fromisoformat(last)
-            interval = timedelta(hours=self.config.get("interval_hours", DEFAULT_INTERVAL_HOURS))
-            return datetime.now() >= last_dt + interval
-        except (ValueError, TypeError):
+        last_dt = _as_utc(last)
+        if last_dt is None:
+            logger.warning("backup_config.last_backup %r is not a date; a backup is due", last)
             return True
+        interval = timedelta(hours=self.config.get("interval_hours", DEFAULT_INTERVAL_HOURS))
+        return datetime.now(timezone.utc) >= last_dt + interval
 
     def check_and_backup(self) -> Optional[str]:
         """Create a backup only when one is due. Returns filename or ``None``."""
@@ -743,18 +769,12 @@ class BackupManager:
         """Keep the picture and PDF originals beside the media.db copy (see ``backup_media``)."""
         from superlocalmemory.infra import backup_media
 
-        try:
-            backup_media.sync_originals(self.db_path.parent, self.backup_dir)
-        except Exception as exc:  # noqa: BLE001 - the database backups above already succeeded
-            logger.warning("media originals were not backed up (non-critical): %s", exc)
+        backup_media.sync_originals_quietly(self.db_path.parent, self.backup_dir)
 
     def _restore_media_originals(self) -> None:
         from superlocalmemory.infra import backup_media
 
-        try:
-            backup_media.restore_originals(self.db_path.parent, self.backup_dir)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("media originals were not put back: %s", exc)
+        backup_media.restore_originals_quietly(self.db_path.parent, self.backup_dir)
 
     def _enforce_retention(self) -> None:
         """Remove old backups exceeding the configured max."""
@@ -918,13 +938,13 @@ class BackupManager:
         next_backup = None
 
         if self.config.get("enabled") and self.config.get("last_backup"):
-            try:
-                last_dt = datetime.fromisoformat(self.config["last_backup"])
-                interval = timedelta(hours=self.config.get("interval_hours", DEFAULT_INTERVAL_HOURS))
-                nxt = last_dt + interval
-                next_backup = nxt.isoformat() if nxt > datetime.now() else "overdue"
-            except (ValueError, TypeError):
+            last_dt = _as_utc(self.config["last_backup"])
+            if last_dt is None:
                 next_backup = "unknown"
+            else:
+                hours = self.config.get("interval_hours", DEFAULT_INTERVAL_HOURS)
+                nxt = last_dt + timedelta(hours=hours)
+                next_backup = nxt.isoformat() if nxt > datetime.now(timezone.utc) else "overdue"
 
         hours = self.config.get("interval_hours", DEFAULT_INTERVAL_HOURS)
         if hours >= 168:
@@ -976,6 +996,22 @@ def _replay_obligations_after_restore(
         BackupRestoreError: if any obligation cannot be replayed.  The caller
             must treat the restore as failed and surface this to the operator.
     """
+    # Targeted erasures (one memory, one person's mentions) are journalled outside
+    # every backup; whatever snapshot is being restored, they are erased again.
+    try:
+        from superlocalmemory.infra.erased_subjects import replay_all
+
+        replayed = replay_all(data_root, restored_db_paths)
+    except Exception as exc:  # noqa: BLE001
+        raise BackupRestoreError(
+            f"Replaying targeted erasures into the restored store failed: {exc}.  "
+            "The restored database may contain memories that were erased on request.  "
+            "Manual remediation required."
+        ) from exc
+    if replayed["facts"] or replayed["entities"]:
+        logger.info("Restore replay: re-erased %d row(s) of targeted erasures",
+                    sum(replayed.values()))
+
     store = BackupObligationStore(data_root)
     obligations = store.list_pending_for_snapshot(snapshot_key)
 
@@ -1044,10 +1080,11 @@ def _replay_obligations_after_restore(
                     "data.  Manual remediation required."
                 ) from exc
 
-    # Discharge obligations for this specific snapshot so they do not block
-    # the completeness flag for future erasures of the same profile.
-    discharged = store.discharge_for_snapshot(snapshot_key, "replayed_on_restore")
+    # The obligation is NOT discharged: the live store is clean again, but the
+    # snapshot still holds the profile, and the next restore of it must replay
+    # this erasure too. It ends when the snapshot is removed or re-read clean.
+    noted = store.mark_replayed(snapshot_key)
     logger.info(
-        "Obligation replay: discharged %d obligations for snapshot %s",
-        discharged, snapshot_key,
+        "Obligation replay: re-erased the live store for %d obligation(s) of snapshot %s",
+        noted, snapshot_key,
     )

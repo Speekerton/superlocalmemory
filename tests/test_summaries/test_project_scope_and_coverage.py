@@ -133,10 +133,13 @@ class TestProjectPickerEndpoint:
     """The picker replaces a control that could not work. Keep it wired."""
 
     def test_endpoint_is_registered(self):
-        # 4.1.21: the summary routes moved to their own module.
-        from superlocalmemory.server.routes import summaries
+        # Test the registered HTTP surface, including nested routers.
+        from fastapi import FastAPI
 
-        paths = {r.path for r in summaries.router.routes}
+        from superlocalmemory.server.routes import summaries
+        app = FastAPI()
+        app.include_router(summaries.router)
+        paths = set(app.openapi()["paths"])
         assert "/api/summary/projects" in paths
 
     def test_label_shortens_long_paths_but_keeps_siblings_distinct(self):

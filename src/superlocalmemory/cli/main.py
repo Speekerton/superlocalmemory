@@ -51,7 +51,7 @@ quick start:
   slm remember "some fact"    Store a memory
   slm recall "search query"   Semantic search across memories
   slm list -n 20              Show 20 most recent memories
-  slm dashboard               Open web dashboard at localhost:8765
+  slm dashboard               Open web dashboard on the configured daemon port
 
 ide integration:
   slm mcp                     Start MCP server (used by IDEs)
@@ -80,13 +80,15 @@ _NO_DAEMON_COMMANDS = {
     "config", "evolve", "db",
     # v3.4.22 escape hatches — never auto-start the daemon on these.
     "disable", "enable", "clear-cache", "reconfigure", "benchmark",
-    "rotate-token",
+    "rotate-token", "token",
     # 4.1.20: remote access settings, keys and certificates are files only.
     "remote",
     "evidence",
     # v4.0.2 receipt summary is a direct read-only learning.db query.
     "brain",
     "diagnostics",
+    # Doctor must observe a stopped/crashed daemon without recovering it first.
+    "doctor",
     # LLD-06 — agents launched through wrap start the daemon on demand.
     "wrap",
     # V3.6 Optimize commands that are config read/write only.
@@ -336,9 +338,9 @@ def main() -> None:
     connect_p.add_argument(
         "--port",
         type=int,
-        default=8765,
+        default=None,
         dest="daemon_port",
-        help="SLM daemon port for http/http-mcp-remote transport (default: 8765)",
+        help="SLM daemon port for http/http-mcp-remote transport (default: configured instance)",
     )
     connect_p.add_argument(
         "--verify",
@@ -670,11 +672,15 @@ def main() -> None:
     trace_p.add_argument("--json", action="store_true", help="Output structured JSON (agent-native)")
 
     # -- Diagnostics (continued) ----------------------------------------
-    doctor_p = sub.add_parser("doctor", help="Pre-flight check: deps, embedding worker, connectivity")
+    doctor_p = sub.add_parser(
+        "doctor", help="Pre-flight check: deps, embedding worker, connectivity",
+        description="Check dependencies, configuration and daemon health. "
+        "Exit codes: 0 for passes or warnings only; 1 if any check fails.",
+    )
     doctor_p.add_argument("--json", action="store_true", help="Output structured JSON (agent-native)")
     doctor_p.add_argument(
         "--quick", action="store_true",
-        help="Run only the fast checks (deps + config); skip daemon/embedding probes",
+        help="Run fast checks, including daemon health; skip embedding worker and Ollama probes",
     )
     doctor_p.add_argument(
         "--deep", action="store_true",
@@ -741,7 +747,7 @@ def main() -> None:
 
     dashboard_p = sub.add_parser("dashboard", help="Open web dashboard")
     dashboard_p.add_argument(
-        "--port", type=int, default=8765, help="Port (default 8765)",
+        "--port", type=int, default=None, help="Port (default: configured instance)",
     )
 
     # V3.3.21: Daemon serve mode
@@ -858,6 +864,9 @@ def main() -> None:
         help="Apply precision changes",
     )
     quantize_p.add_argument("--profile", default="", help="Target profile")
+    quantize_p.add_argument("--repair-sketches", action="store_true",
+                            help="Repair QJL sketches only; preserve embedding precision "
+                                 "(preview by default)")
     quantize_p.add_argument("--json", action="store_true", help="Output structured JSON (agent-native)")
 
     consolidate_p = sub.add_parser("consolidate", help="Run memory consolidation pipeline")
@@ -1042,6 +1051,15 @@ def main() -> None:
         help="Rotate the SLM install token (run `slm restart` afterwards)",
     )
 
+    # `slm token show`: the key the dashboard asks for when a key is required.
+    token_p = sub.add_parser(
+        "token", help="Show the key the dashboard asks for when a key is required",
+    )
+    token_sub = token_p.add_subparsers(dest="token_command", title="token subcommands")
+    token_sub.add_parser(
+        "show", help="Print the SuperLocalMemory key (readable only by you)",
+    )
+
     # 4.1.20: remote access for AI tools on other computers (TLS, named keys).
     from superlocalmemory.cli.remote_commands import add_parser as _add_remote_parser
     _add_remote_parser(sub)
@@ -1181,6 +1199,8 @@ def main() -> None:
     register_view_parser(sub)
     from superlocalmemory.cli.corrections_cmd import register_corrections_parsers
     register_corrections_parsers(sub)  # 4.1.22: corrections your own actions overtook
+    from superlocalmemory.cli.outcome_cmd import register_outcome_parser
+    register_outcome_parser(sub)  # 4.1.25: report whether recalled memories helped
     from superlocalmemory.cli.embedder_cmd import register_embedder_parser
     register_embedder_parser(sub)
 
@@ -1217,6 +1237,11 @@ def main() -> None:
     gdpr_export_p.add_argument(
         "--output", default=None, metavar="FILE",
         help="Write export JSON to FILE (default: stdout)",
+    )
+    gdpr_export_p.add_argument(
+        "--include-embeddings", action="store_true", dest="include_embeddings",
+        help=("Include embeddings and other binary columns (base64). "
+              "Omitted by default: they are derived numbers and make the file much larger"),
     )
     gdpr_export_p.add_argument(
         "--json", action="store_true", help="Output structured JSON envelope",
@@ -1282,6 +1307,13 @@ def main() -> None:
         choices=["retry", "force_reconcile", "cancel"],
         help="Remediation action to apply")
     ops_resolve_p.add_argument(
+        "--json", action="store_true", help="Output structured JSON (agent-native)")
+    ops_repair_p = ops_sub.add_parser(
+        "repair-saves",
+        help="Re-file saves dead-lettered on another memory (dry run unless --apply)")
+    ops_repair_p.add_argument(
+        "--apply", action="store_true", help="Back up memory.db, then repair")
+    ops_repair_p.add_argument(
         "--json", action="store_true", help="Output structured JSON (agent-native)")
     ops_status_p = ops_sub.add_parser(
         "status", help="Quick failure count + writer stall overview")

@@ -47,6 +47,11 @@ async def _runtime_profile(get_engine: Callable, explicit: str = "") -> str:
     """Resolve an MCP default profile from daemon runtime truth."""
     if explicit:
         return explicit
+    from superlocalmemory.server.profile_runtime import current_request_profile
+
+    pinned = current_request_profile()
+    if pinned:
+        return str(pinned)
     import asyncio
 
     try:
@@ -95,6 +100,19 @@ def _routed_daemon_call(method: str, path: str, body: dict | None = None) -> dic
                 "error": exc.error_message or exc.message}
     except DaemonConflict as exc:  # e.g. a correction already open: retrying cannot help
         return {"success": False, "code": "CONFLICT", "retryable": False, "error": exc.detail}
+
+def _remember_path(replaces_id: str | None) -> str:
+    """``/remember``, marked with who is asking when a remote app replaces a memory.
+
+    The daemon then lets it replace only a memory it may see. A plain save, and any save from
+    this computer, keeps the bare path.
+    """
+    if replaces_id is None:
+        return "/remember"
+    from superlocalmemory.mcp.remote_visibility import with_view
+
+    return with_view("/remember")
+
 
 def _emit_event(event_type: str, payload: dict | None = None,
                 source_agent: str = "mcp_client") -> None:
@@ -304,7 +322,7 @@ def register_core_tools(server, get_engine: Callable) -> None:
                     resp = None
                     try:
                         resp = await _asyncio.to_thread(
-                            daemon_request, "POST", "/remember", body,
+                            daemon_request, "POST", _remember_path(replaces_id), body,
                             **request_flags,
                         )
                     except Exception as exc:
@@ -1101,7 +1119,7 @@ def register_core_tools(server, get_engine: Callable) -> None:
             return {"success": False, "error": str(exc)}
 
     @server.tool()
-    @admits(OperationKind.PROFILE_SWITCH)
+    @admits(OperationKind.PROFILE_SWITCH, http_kind=OperationKind.RECALL)
     async def switch_profile(profile_id: str) -> dict:
         """Switch the active memory profile. All operations scope to this profile."""
         try:
@@ -1109,6 +1127,12 @@ def register_core_tools(server, get_engine: Callable) -> None:
 
             engine = get_engine()
             old = engine.profile_id
+            from superlocalmemory.server.caller_workspace import switch_http_workspace
+
+            if switch_http_workspace(profile_id):
+                return {"success": True, "previous_profile": old,
+                        "current_profile": profile_id, "active_profile": profile_id,
+                        "scope": "session"}
             authorization = authorize_mcp_mutation(
                 engine,
                 "update",
@@ -1162,6 +1186,12 @@ def register_core_tools(server, get_engine: Callable) -> None:
                             f"this process's local profile store"
                         ),
                     }
+                from superlocalmemory.core.caller_session import http_session_bound
+
+                if result.get("scope") == "session" and http_session_bound():
+                    authorization.complete()
+                    return {**result, "previous_profile": old,
+                            "current_profile": acknowledged}
                 generation = int(result.get("generation", 0))
                 # Sync target is the DAEMON-CONFIRMED value, never the raw
                 # caller-supplied profile_id, even though they are equal
@@ -1222,6 +1252,12 @@ def register_core_tools(server, get_engine: Callable) -> None:
                 "current_profile": profile_id,
                 "generation": generation,
             }
+        except PermissionError:
+            from superlocalmemory.core.admission import refusal_result
+            from superlocalmemory.core.caller_session import presented_session
+
+            reason = "insufficient_roles" if presented_session() else "authentication_required"
+            return refusal_result(reason, OperationKind.RECALL)
         except Exception as exc:
             logger.exception("switch_profile failed")
             return {"success": False, "error": str(exc)}
@@ -1365,9 +1401,13 @@ def register_core_tools(server, get_engine: Callable) -> None:
 
             named = requested_profile(profile_id)
             if await asyncio.to_thread(is_daemon_running):
+                from superlocalmemory.mcp.remote_visibility import with_view
+
                 path = "/api/memories/" + urllib.parse.quote(fact_id, safe="")
                 if named:
                     path += "?profile_id=" + urllib.parse.quote(named, safe="")
+                # A remote app is marked, so the daemon deletes only what that app may see.
+                path = with_view(path)
                 result = await asyncio.to_thread(_routed_daemon_call, "DELETE", path)
                 if isinstance(result, dict) and result.get("code"):
                     return result
@@ -1443,7 +1483,10 @@ def register_core_tools(server, get_engine: Callable) -> None:
 
             named = requested_profile(profile_id)
             if await asyncio.to_thread(is_daemon_running):
-                path = "/api/memories/" + urllib.parse.quote(fact_id, safe="")
+                from superlocalmemory.mcp.remote_visibility import with_view
+
+                # A remote app is marked, so the daemon changes only what that app may see.
+                path = with_view("/api/memories/" + urllib.parse.quote(fact_id, safe=""))
                 body = {"content": content.strip(), **({"profile_id": named} if named else {})}
                 # A refusal (unknown profile, a correction already open) comes back
                 # with its code and retryable False; only no answer is retryable.
@@ -1531,7 +1574,10 @@ def register_core_tools(server, get_engine: Callable) -> None:
             if (profile_id or "").strip():
                 # Only when set, so a legacy call stays byte-identical.
                 payload["profile_id"] = profile_id.strip()
-            path = "/api/corrections/" + urllib.parse.quote(case_id, safe="") + "/" + action
+            from superlocalmemory.mcp.remote_visibility import with_view
+
+            path = with_view(
+                "/api/corrections/" + urllib.parse.quote(case_id, safe="") + "/" + action)
             result = await asyncio.to_thread(daemon_request, "POST", path, payload)
             if isinstance(result, dict) and result.get("success"):
                 return result

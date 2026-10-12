@@ -16,14 +16,12 @@ threads.
 from __future__ import annotations
 
 import threading
-import time
 from types import SimpleNamespace
 
 import pytest
 
 from superlocalmemory.core import engine_wiring, judge_selection, laya_runtime
 from superlocalmemory.retrieval import jev_judge, sufficiency
-from superlocalmemory.server.routes import answer_check
 
 from tests.test_server.test_answer_check_api import (  # noqa: F401 — fixtures
     FAKE_KEY,

@@ -6,9 +6,10 @@
 The semantic channel reports (cosine + 1) / 2, so an unrelated memory (cosine
 0) scores 0.5, and about 0.556 with the Fisher blend. Fusion is rank-based, so
 that offset never reorders anything; the one place an absolute semantic score
-decides an outcome is the evidence floor, whose 0.60 threshold is calibrated
-on this same scale (cosine 0.2). This pins that an unrelated memory cannot pass
-the floor on semantic score alone, so a nonsense question still abstains.
+decides an outcome is the evidence floor. Its 0.60 threshold is a raw cosine
+and is converted to this scale (0.80) before the comparison; comparing it raw
+let cosine 0.2 through, so recall never abstained. This pins that an unrelated
+memory cannot pass the floor on semantic score alone.
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ def test_an_orthogonal_vector_scores_one_half_on_the_channel_scale() -> None:
 def test_a_zero_cosine_memory_is_not_evidence_but_a_related_one_is() -> None:
     kept = RetrievalEngine._apply_evidence_floor(
         [_fr("unrelated", semantic=0.556, spreading_activation=0.9, hopfield=0.8),
-         _fr("related", semantic=0.61),
+         _fr("related", semantic=0.82),
          _fr("keyword", semantic=0.50, bm25=1.2)],
         facts={}, min_semantic=0.60)
     assert [k.fact_id for k in kept] == ["related", "keyword"]

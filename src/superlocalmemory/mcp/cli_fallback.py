@@ -27,7 +27,7 @@ import os
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
@@ -345,7 +345,7 @@ NON_BACKED_TOOLS: frozenset[str] = frozenset({
     "evolve_skill",
     # Version is plain text
     "get_version",
-    # Mesh P2P tools (8)
+    # Mesh P2P tools (9)
     "mesh_summary",
     "mesh_peers",
     "mesh_send",

@@ -24,7 +24,6 @@ from superlocalmemory.core.transactions.owners import (
 from superlocalmemory.core.transactions.tombstones import (
     TOMBSTONE_ABSENT,
     TOMBSTONE_CONFLICT,
-    TOMBSTONE_ERROR,
     TOMBSTONE_WRITTEN,
     _err,
     _table_exists,
@@ -278,6 +277,7 @@ class ErasureService:
             self._prove_owner(context, name) for name in sorted(self._owners)
         ]
         proofs.extend(extra_proofs)
+        proofs.extend(self._journal_proofs(db, context, subject_type))
         owners_erased = bool(proofs) and all(p.erased for p in proofs)
         # Fail closed: COMPLETE requires proven owner erasure AND, when the
         # caller threads its remove() result, a clean tombstone step (no
@@ -363,6 +363,29 @@ class ErasureService:
             completed_at=completed_at,
             persisted=persisted,
         )
+
+    @staticmethod
+    def _journal_proofs(
+        db: object, context: OperationContext, subject_type: str,
+    ) -> list[ErasureProofRecord]:
+        """Journal a targeted erasure outside every backup (see ``infra.erased_subjects``).
+
+        Adds a proof only when something is NOT done: the journal could not be
+        written (a restore would bring the facts back unnoticed), or a snapshot
+        still holds them (the erasure is not complete while it does).
+        """
+        if subject_type == "profile" or not context.fact_ids:
+            return []
+        from superlocalmemory.infra.erased_subjects import register_targeted_erasure
+
+        journalled, holding = register_targeted_erasure(
+            db, context.profile_id, tuple(sorted(set(context.fact_ids))), context.operation_id)
+        out: list[ErasureProofRecord] = []
+        if not journalled:
+            out.append(ErasureProofRecord("restore_journal", False, "", ("not-written",)))
+        if holding:
+            out.append(ErasureProofRecord("backup_copies", False, "", tuple(holding)))
+        return out
 
     def prove_erased(
         self, context: OperationContext, owner: str,

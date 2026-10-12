@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
-import importlib.util
 import pathlib
 import re
 import subprocess
 import sys
 import types
-
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 PLUGIN = REPO / "hermes-plugin"
@@ -67,7 +66,7 @@ def test_plugin_registers_all_skills_agents_and_lifecycle_hooks() -> None:
 def test_all_cli_commands_have_router_and_generated_slash_aliases() -> None:
     inventory = json.loads((PLUGIN / "command-inventory.json").read_text(encoding="utf-8"))
     commands = inventory["primary_commands"]
-    assert len(commands) == 71  # 4.1.25: + features, media, sources, team
+    assert len(commands) == 73  # 4.1.25: includes the outcome-reporting command
     assert len(set(commands)) == len(commands)
     runtime = _runtime()
     assert 'ctx.register_command("slm", plugin.slash_router' in runtime
@@ -212,7 +211,11 @@ def test_register_uses_real_hermes_hook_and_tool_shapes() -> None:
         def __init__(self):
             self.hooks, self.tools, self.commands, self.skills = {}, {}, {}, {}
         def register_hook(self, name, callback): self.hooks[name] = callback
-        def register_tool(self, name, namespace, schema, callback, description): self.tools[name] = (namespace, schema, callback, description)
+        # Hermes' real signature (hermes_cli/plugins.py): check_fn is the 5th argument, description is keyword.
+        def register_tool(self, name, namespace, schema, callback, check_fn=None, requires_env=None,
+                          is_async=False, description="", emoji="", override=False):
+            assert check_fn is None or callable(check_fn), (name, check_fn)
+            self.tools[name] = (namespace, schema, callback, description)
         def register_command(self, name, callback, description, arguments): self.commands[name] = callback
         def register_skill(self, name, path): self.skills[name] = path
 

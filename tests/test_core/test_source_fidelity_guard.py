@@ -207,19 +207,19 @@ def _one_fact(tmp_path: Path, fact: str) -> DatabaseManager:
     ("Ship the Android build before the iOS build", "order_reversed"),
     ("Costs were $21.50", "unsupported_number"),
 ])
-def test_heuristic_findings_flag_but_never_withhold(tmp_path: Path, fact: str,
+def test_deterministic_fidelity_findings_withhold_derived_facts(tmp_path: Path, fact: str,
                                                     reason: str) -> None:
-    """Only number_became_date withholds; the rest stay in answers, marked."""
+    """A derived fact with a fidelity failure is withheld; the source remains."""
     from superlocalmemory.core.source_fidelity_guard import withhold_if_unfaithful
 
     db = _one_fact(tmp_path, fact)
     got = withhold_if_unfaithful(db, profile_id="default", fact_id="f", content=fact,
                                  raw_content=POLICY_SOURCE)
-    assert got == f"source_fidelity_unverified:{reason}"
-    assert _state(db)["f"][0] == 0, "a heuristic finding must not take a fact out of answers"
+    assert got == f"source_fidelity:{reason}"
+    assert _state(db)["f"][0] == 1, "unsupported derived facts must stay out of answers"
 
 
-def test_recall_marks_unverified_results_and_leaves_the_rest(tmp_path: Path) -> None:
+def test_recall_excludes_unverified_results_and_leaves_the_rest(tmp_path: Path) -> None:
     from superlocalmemory.retrieval.source_fidelity_flags import flag_unverified
     from superlocalmemory.storage.models import AtomicFact, RetrievalResult
 
@@ -229,12 +229,12 @@ def test_recall_marks_unverified_results_and_leaves_the_rest(tmp_path: Path) -> 
     results = [RetrievalResult(fact=AtomicFact(fact_id=i, content=""), score=1.0,
                                evidence_chain=["bm25"]) for i in ("f", "v")]
     out = flag_unverified(results, db, "default")
-    assert out[0].evidence_chain == ["bm25", "source_fidelity_unverified:negation_lost"]
-    assert out[1].evidence_chain == ["bm25"], "the verbatim memory is never marked"
-    assert [r.score for r in out] == [1.0, 1.0] and results[0].evidence_chain == ["bm25"]
-    # a released fact is not marked, and an error never costs the recall
+    assert [r.fact.fact_id for r in out] == ["v"], "known damage is outside answers"
+    assert out[0].evidence_chain == ["bm25"], "the verbatim memory is never marked"
+    assert [r.score for r in out] == [1.0] and results[0].evidence_chain == ["bm25"]
+    # a released fact is not marked; an unreadable source never admits unchecked facts
     db.execute("INSERT INTO derivation_lineage (lineage_id,profile_id,object_type,object_id,"
                "operation_id,source_status,unresolved_reason) VALUES "
                "('l','default','fact','f','op','unresolved','source_fidelity_released:x')")
     assert flag_unverified(results, db, "default")[0].evidence_chain == ["bm25"]
-    assert flag_unverified(results, object(), "default") is results
+    assert flag_unverified(results, object(), "default") == []

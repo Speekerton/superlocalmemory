@@ -80,9 +80,9 @@ def _require_credential(request: Request) -> None:
 
 
 def _require_manage(request: Request) -> dict:
-    from superlocalmemory.server.rbac_enforce import require_manage
+    from superlocalmemory.server.rbac_enforce import require_global_manage
 
-    return require_manage(request)
+    return require_global_manage(request)
 
 
 def _gate(request: Request) -> str:

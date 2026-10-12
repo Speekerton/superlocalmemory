@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sqlite3
 
 from superlocalmemory.core.transactions.concrete_owners import build_erasure_service_for_db
 from superlocalmemory.core.transactions.erasure import ErasureService
@@ -79,7 +78,9 @@ def test_no_media_db_is_a_no_op_and_creates_nothing(tmp_path):
     receipt = _erase(db, "p1", ["f1"], root)
     assert receipt.proofs[0].owner == "media" and receipt.proofs[0].erased
     assert not media_db_path(root).exists()
-    assert sorted(p.name for p in root.rglob("*")) == before
+    # The only new file is the erasure journal that lives outside every backup.
+    created = set(p.name for p in root.rglob("*")) - set(before)
+    assert all(name.startswith("backup_obligations.db") for name in created), created
 
 
 def test_unknown_data_root_is_a_no_op(tmp_path):
@@ -134,3 +135,20 @@ def test_erasing_a_whole_profile_takes_rows_with_no_anchor_too(tmp_path):
     store.close()
     assert erase_profile(tmp_path / "none", "p1")["items"] == 0
     assert not (tmp_path / "none").exists()
+
+
+def test_erasing_the_image_also_removes_its_copy_in_the_backup_mirror(tmp_path):
+    """The backup folder mirrors the originals until its next sync; erasure left that copy."""
+    root, db, store = make_root(tmp_path)
+    db.add_memory("m1", fact_id="f1")
+    _, rel = add_image(root, store, media_id="a" * 32, memory_id="m1",
+                       data=b"private picture bytes")
+    mirrored = root / "backups" / "media-originals" / rel
+    mirrored.parent.mkdir(parents=True)
+    mirrored.write_bytes(b"private picture bytes")
+
+    _erase(db, "p1", ["f1"], root)
+
+    assert not (files.media_root(root) / rel).exists()
+    assert not mirrored.exists(), "the erased picture is still in backups/media-originals"
+    store.close()

@@ -365,9 +365,7 @@
   }
 
   function escapeHtml(s) {
-    var d = document.createElement('div');
-    d.textContent = s || '';
-    return d.innerHTML;
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   // ── Skill Lineage (Version DAG) ────────────────────────────
@@ -555,7 +553,7 @@
       var label = (item.skill_name || 'unknown');
       if (label.length > 16) label = label.substring(0, 14) + '..';
 
-      svg += '<g class="lineage-node" data-id="' + item.id + '" style="cursor:pointer">';
+      svg += '<g class="lineage-node" data-id="' + escapeHtml(String(item.id)) + '" style="cursor:pointer">';
       svg += '<rect x="' + pos.x + '" y="' + pos.y + '" width="' + nodeW + '" height="' + nodeH + '" ' +
         'rx="8" ry="8" fill="' + fillColor + '" fill-opacity="0.15" stroke="' + fillColor + '" stroke-width="2"/>';
       // Node label (skill name)
@@ -610,7 +608,7 @@
       var verified = item.blind_verified ? '<i class="bi bi-check-circle-fill" style="color:#22c55e"></i>' : '<i class="bi bi-dash-circle" style="color:var(--bs-secondary-color)"></i>';
       var created = item.created_at ? new Date(item.created_at).toLocaleDateString() : '-';
 
-      html += '<tr class="lineage-table-row" data-id="' + item.id + '" style="cursor:pointer">' +
+      html += '<tr class="lineage-table-row" data-id="' + escapeHtml(String(item.id)) + '" style="cursor:pointer">' +
         '<td style="font-weight:500">' + escapeHtml(item.skill_name || '') + '</td>' +
         '<td><span class="badge" style="background:' + color + '20;color:' + color + ';font-size:0.6875rem">' +
           escapeHtml(item.evolution_type || 'ORIGINAL') + '</span></td>' +

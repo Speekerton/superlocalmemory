@@ -1,5 +1,4 @@
 """Native device signing uses maintained cryptography/PyJWT primitives."""
-import hashlib
 import json
 import time
 import jwt

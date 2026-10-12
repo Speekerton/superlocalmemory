@@ -80,8 +80,19 @@ def describe(job: dict | None) -> str:
         line += f", {job['done']}/{job['total']} memories"
         if job.get("eta_seconds") is not None:
             line += f", about {int(job['eta_seconds'])} s left"
+    if job["state"] == "queued":
+        reason = job.get("queued_reason") or (
+            "Waiting for the background worker to start and load the model.")
+        line += "\n  Reason: " + reason
     if job.get("error"):
         line += f"\n  Reason: {job['error']}"
+    if job["state"] == "failed":
+        line += "\n  The current engine and its vectors are still in use."
+        if job.get("retry_command"):
+            line += f"\n  Retry after fixing the cause: {job['retry_command']}"
+        if job.get("retry_note"):
+            line += f"\n  Retry after fixing the cause: {job['retry_note']}"
+        line += "\n  Forget this failed attempt: slm embedder cancel"
     return line
 
 

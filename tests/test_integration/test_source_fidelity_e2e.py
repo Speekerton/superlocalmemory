@@ -122,7 +122,7 @@ class _StubModels(BaseHTTPRequestHandler):
         system = " ".join(str(m.get("content", "")) for m in messages if m.get("role") == "system")
         user = " ".join(str(m.get("content", "")) for m in messages if m.get("role") == "user")
         answer = "[]"
-        if "fact extraction engine" in system:
+        if "Extract 1-5 atomic statements supported by the source" in system:
             if "Kestrel" in user:
                 answer = json.dumps(KESTREL_EXTRACTION)
             elif "release owner" in user:
@@ -275,15 +275,15 @@ class TestModeBModelExtraction:
         assert contents, "the memory is still found"
         assert not any("2004-06" in c or "June 1st, 2004" in c for c in contents), contents
 
-    def test_polarity_damage_stays_in_answers_marked_unverified(self, mode_b_daemon) -> None:
-        """Heuristic findings never withhold; recall marks them in evidence_chain."""
+    def test_polarity_damage_is_withheld_and_reviewable(self, mode_b_daemon) -> None:
+        """Rule 1: heuristic damage is retained for review, outside recall answers."""
         _remember_and_enrich(mode_b_daemon, POLICY, "g03-b-policy")
         by_text = {f["content"]: f for f in _memory_facts(mode_b_daemon, POLICY)}
         damaged = POLICY_DAMAGE & set(by_text)
         assert damaged == POLICY_DAMAGE, "the stub's damaged facts reached the store"
         for text in damaged:
-            assert by_text[text]["quarantined"] == 0, text
-            assert by_text[text]["unresolved_reason"].startswith("source_fidelity_unverified:")
+            assert by_text[text]["quarantined"] == 1, text
+            assert by_text[text]["unresolved_reason"].startswith("source_fidelity:")
         assert by_text["The team uses GitHub Actions"]["quarantined"] == 0
         assert by_text[POLICY]["quarantined"] == 0, "the verbatim memory is never withheld"
 
@@ -293,11 +293,7 @@ class TestModeBModelExtraction:
             items += mode_b_daemon.recall(query, profile_id="default").get("results", [])
         seen = {str(i.get("content", "")): i for i in items}
         assert any("Never publish without approval" in c for c in seen), sorted(seen)
-        flagged = [t for t in damaged if t in seen]
-        assert flagged, "at least one damaged fact is recalled so its mark can be checked"
-        for text in flagged:
-            assert any(str(e).startswith("source_fidelity_unverified:")
-                       for e in seen[text].get("evidence_chain", [])), seen[text]
+        assert not damaged & set(seen), "damaged facts must never enter recall answers"
         for text in ({POLICY} | GOOD_TEXTS) & set(seen):
             assert not any(str(e).startswith("source_fidelity")
                            for e in seen[text].get("evidence_chain", [])), seen[text]
@@ -308,9 +304,11 @@ class TestModeBModelExtraction:
         stored = _rows(mode_b_daemon, "SELECT fact_id FROM atomic_facts WHERE quarantined = 1")
         assert withheld_ids == {r["fact_id"] for r in stored} and withheld_ids
         withheld_reasons = {r for f in listing["withheld"]["facts"] for r in f["reasons"]}
-        assert withheld_reasons == {"number_became_date"}, withheld_reasons
+        assert withheld_reasons == {
+            "number_became_date", "negation_lost", "order_reversed", "status_lost",
+        }, withheld_reasons
         review_reasons = {r for f in listing["to_review"]["facts"] for r in f["reasons"]}
-        assert {"negation_lost", "order_reversed", "status_lost"} <= review_reasons
+        assert not review_reasons
 
     def test_correction_apply_and_rollback_keep_the_measurement(self, mode_b_daemon) -> None:
         facts = _memory_facts(mode_b_daemon, KESTREL)
@@ -341,6 +339,28 @@ class TestModeBModelExtraction:
             assert _no_invented_2004_date(successor_row())
             contents = _recall_contents(mode_b_daemon, "Kestrel checkpoint recall time")
             assert not any("2004-06" in c or "June 1st, 2004" in c for c in contents)
+
+    def test_legacy_live_damage_stays_reviewable_outside_answers(self, mode_b_daemon) -> None:
+        memory_id = _rows(mode_b_daemon, "SELECT memory_id FROM memories WHERE content=?",
+                          (POLICY,))[0]["memory_id"]
+        legacy = "Publish with approval from the release owner"
+        conn = sqlite3.connect(mode_b_daemon.data_root / "memory.db", timeout=30)
+        try:
+            with conn:
+                conn.execute(
+                    "INSERT INTO atomic_facts (fact_id,memory_id,profile_id,content,fact_type) "
+                    "VALUES ('legacy-policy',?,'default',?,'semantic')", (memory_id, legacy),
+                )
+        finally:
+            conn.close()
+        contents = _recall_contents(mode_b_daemon, "publish approval release owner")
+        assert legacy not in contents
+        assert any("Never publish without approval" in content for content in contents)
+        listing = _fidelity_listing(mode_b_daemon)
+        review = {f["fact_id"]: f for f in listing["to_review"]["facts"]}
+        assert "negation_lost" in review["legacy-policy"]["reasons"]
+        assert _rows(mode_b_daemon, "SELECT quarantined FROM atomic_facts "
+                                   "WHERE fact_id='legacy-policy'")[0]["quarantined"] == 0
 
 
 class TestModeARules:

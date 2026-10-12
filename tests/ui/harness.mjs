@@ -139,6 +139,15 @@ export function buildHarness(containerIds, fetchStub) {
  * @param {string} filename - basename, e.g. 'math-health.js'
  */
 export function evalModule(window, filename) {
+    const dependencies = {
+        'od-summaries.js': ['od-source-button.js'],
+        'od-daily.js': ['od-source-button.js'],
+        'od-settings.js': ['od-settings-models.js', 'od-settings-groups.js'],
+        'od-memories.js': ['od-memory-knowledge.js', 'od-memory-drawer.js', 'od-memory-events.js'],
+        'od-operations.js': ['od-operations-layout.js', 'od-operations-compliance.js'],
+        'od-backup.js': ['od-backup-layout.js'],
+    };
+    for (const dependency of dependencies[filename] || []) evalModule(window, dependency);
     const code = readFileSync(join(SRC_JS, filename), 'utf8');
     const script = window.document.createElement('script');
     script.textContent = code;

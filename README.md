@@ -5,9 +5,11 @@
   <img src="assets/branding/slm-wordmark-light.svg" alt="SuperLocalMemory" width="380">
 </picture>
 
-### Long-term memory for your AI agents. On your computer, governed, and honest when it doesn't know.
+<p align="center"><img src="assets/mascot/slm-mascot-hero.png" width="180" alt="SuperLocalMemory mascot, a fluffy caped helper with the SLM logo, arms open"></p>
 
-Claude Code, Codex, Cursor, ChatGPT, Grok Bot and other MCP clients share one memory that lives on your machine. It learns from use, controls who may read and erase what, and says "I don't have that" instead of guessing.
+### The governed memory system for AI agents. On your computer, honest when it doesn't know.
+
+Claude Code, Codex, Cursor, ChatGPT, Grok Bot and other MCP clients share one memory that lives on your machine. It learns from use, controls who may read and erase what, and says "I don't have that" instead of guessing. It now remembers **pictures and documents** you can find by describing them, and lets **your bots talk to each other** through the same governed memory.
 
 [![PyPI](https://img.shields.io/pypi/v/superlocalmemory)](https://pypi.org/project/superlocalmemory/)
 [![npm](https://img.shields.io/npm/v/superlocalmemory)](https://www.npmjs.com/package/superlocalmemory)
@@ -23,6 +25,16 @@ Claude Code, Codex, Cursor, ChatGPT, Grok Bot and other MCP clients share one me
 
 </div>
 
+**Most agent memory is a vector store with a save button. SuperLocalMemory is a governed memory system:** every save passes an admission check and gets a receipt, every read respects roles, profiles and scopes, every erasure is provable, every recall can be checked for whether it actually answers the question, and all of it runs on your own computer with no model call required.
+
+## New: pictures and documents, and bots that talk to each other
+
+| Remember what you see | Let your bots talk to each other |
+|---|---|
+| Save a screenshot, a photo or a PDF, then find it weeks later by describing it: "the slide with the quarterly numbers", "the error dialog from the deploy". A picture model on your computer matches your words to the picture, OCR reads the text inside it, and each PDF page is indexed by its picture and its text. No generative model looks at your files and nothing leaves your machine.<br><br>Built in and **off by default**: one click in the dashboard, one question in the npm installer or upgrader, or `slm media enable`. Your existing memories and embeddings are never changed. Needs a computer with 16 GB of memory; the first set-up downloads about 1.5 GB. Connect a folder or an Obsidian vault with `slm sources`. | ChatGPT, Claude on the web, Grok Bot, Muse and Composio, connected through [Web access](#web-apps-and-bots-web-access), now join SLM-Mesh beside the agents on your computer (Claude Code, Codex, Hermes, Antigravity). They see each other with `mesh_peers`, send a named bot a message, read their inbox and read shared state.<br><br>Honest about real time: a message lands in the inbox at once, but a web app reads it when its next turn starts; SLM never pretends to wake a chat window. Each app needs two yeses: a box you tick when you connect it, and a switch on the **Web access** row in Connected apps (or `slm remote keys allow <key> mesh`). The **Bot messages** tab shows every bot by name. |
+
+[How pictures and documents work](#pictures-and-documents) · [Requirements and limits](docs/pictures-and-documents.md) · [How bot messaging works](#bot-to-bot-messaging)
+
 **Recall can be checked before your agent uses it.** With the answer check on, a judge decides whether the memories found actually answer the question: **Laya** runs fully on your Mac, and **Jev** runs online on Windows, Linux and macOS. When they don't answer it, recall marks the results `abstained`, so your agent can say "I don't have that" instead of handing over a confident wrong answer: a hallucination guard for retrieval ([answer check](#answer-check-laya-and-jev)).
 
 **Your bots and web apps can use the same memory.** Local agents connect over MCP, including the Grok Bot plugin on a shared bot computer. ChatGPT, Claude on the web, Muse, Composio and other web MCP clients can reach it through optional [Web access](#web-apps-and-bots-web-access): you sign in with GitHub for each app, choose whether it may only read or also save, and remove any app at once.
@@ -33,7 +45,7 @@ In Mode A, core remember and recall make no model-provider call unless you turn 
 ```bash
 npm install -g superlocalmemory   # primary route (Node 18+, Python 3.12+); or: pipx install superlocalmemory
 slm setup                         # pick Mode A to keep everything on this machine
-slm connect cursor                # or claude-code, codex, windsurf, zed ... 12 IDEs
+slm connect cursor                # or codex, windsurf, zed, claude-desktop ... (11 MCP configs; Claude Code uses the plugin)
 ```
 
 npm installs SLM into a package-owned virtual environment. The other primary route is pip in a Python virtual environment you activate: `python3 -m venv .venv`, activate it, then `python -m pip install superlocalmemory`. Repository clone: `./scripts/install.sh install` (macOS, Linux) or `.\scripts\install.ps1 -Action Install` (Windows); see [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -84,6 +96,10 @@ The picture at the top and these are captured from a real install in Mode A, wit
 |---|---|
 | ![Memories table filtered by kind: decisions, rules, corrections, facts, with the project each belongs to](docs/screenshots/dashboard/memories-kinds-projects.png) | ![Saved views: a saved question that runs the same search your agent uses and shows the memory each result came from](docs/screenshots/dashboard/saved-views.png) |
 
+<!-- SCREENSHOTS TO CAPTURE ON THE RELEASE BUILD, then add as a table row here:
+| Documents & Images: a picture found by describing it | Bot messages: every connected bot by name |
+docs/screenshots/dashboard/documents-images.png · docs/screenshots/dashboard/bot-messages.png -->
+
 ![Connected apps: Web access is on, linked with GitHub for the default profile, renews automatically, with a free daily allowance and a button to add an app or turn access off](docs/screenshots/dashboard/connected-apps.png)
 
 ## Why SuperLocalMemory
@@ -92,19 +108,21 @@ A vector store answers "what is similar". AI agent memory must also answer: is t
 
 **1. Governed memory, not a vector store.** Roles per workspace, personal / shared / global scopes with default-deny cross-profile recall, GDPR erasure with HMAC-verifiable receipts, retention rules and a hash-chained audit log. The [governed-memory paper](https://arxiv.org/abs/2608.08253) measures what the governed write path costs. Code: `src/superlocalmemory/access/`, `compliance/`.
 
-**2. A zero-LLM core built on published math.** Five retrieval channels, fusion and the learned ranker run without a language model; the published architecture scored 60.4% on LoCoMo with no LLM anywhere ([benchmarks](#benchmarks)). Fisher-information scoring, sheaf contradiction detection and Langevin lifecycle dynamics added 12.7 points ([architecture paper](https://arxiv.org/abs/2603.14588)).
+**2. A zero-LLM core built on published math.** Six retrieval channels and fusion run without a language model; the published architecture scored 60.4% on LoCoMo with no LLM anywhere ([benchmarks](#benchmarks)). Fisher-information scoring, sheaf contradiction detection and Langevin lifecycle dynamics added 12.7 points ([architecture paper](https://arxiv.org/abs/2603.14588)).
 
 **3. It says "I don't have that."** The [answer check](docs/answer-check.md) decides whether the top results answer the question, on your Mac (Laya) or online (Jev), and recall reports `abstained` instead of a confident wrong answer.
 
-**4. Memory that learns, and cannot quietly get worse.** A Thompson-sampling bandit tunes channel weights and a LightGBM ranker learns from reported outcomes. A retrained ranker is promoted only after a shadow A/B test on live recalls, and rolled back automatically if NDCG@10 drops 2% or more. Code: `learning/shadow_test.py`, `learning/model_rollback.py`.
+**4. Memory that learns, and cannot quietly get worse (opt-in).** With `SLM_RANKING` set, a Thompson-sampling bandit tunes channel weights and a LightGBM ranker learns from reported outcomes. A retrained ranker is served to half of live recalls and promoted only when an always-valid sequential test (mSPRT, α = 0.05) shows a higher reward from reported outcomes; after promotion it is rolled back automatically if mean settled reward drops 2% or more over a 200-recall watch window. That watch measures outcome reward, not NDCG. Off by default, so a fresh install ranks the same way every time. Code: `learning/shadow_test.py`, `learning/model_rollback.py`.
 
 **5. Memory with a sense of time.** Every fact records when it happened and when SLM learned it. Ask what was true last month (`--valid-at`) or what SLM knew before a date (`--known-as-of`). Unused memories fade and lose vector precision ([lifecycle paper](https://arxiv.org/abs/2604.04514)).
 
-**6. Many agents, one coordinated memory.** Every write records its agent, with Bayesian trust scores against poisoning ([trust paper](https://arxiv.org/abs/2603.02240)). SLM-Mesh gives parallel sessions messages, locks and shared state.
+**6. Many agents, one coordinated memory.** Every write records its agent, with Bayesian trust scores against poisoning ([trust paper](https://arxiv.org/abs/2603.02240)). SLM-Mesh gives parallel sessions messages, locks and shared state, and web apps and bots you connect can join it with your permission.
 
 **7. "Done" means a gate passed.** Bounded loops repeat a task until an independent check (tests, a schema, a linter) passes, never on the agent's word, and store every lap as auditable memory.
 
 **8. Context you don't pay for twice.** Exact cache and reversible compression work through MCP tools or a skill, with no proxy, so your full context window stays intact.
+
+**9. Memory that sees.** Screenshots, photos and PDF pages become memories you recall by describing them, with no generative model in the path. A picture counts as evidence only above the model's own similarity floor, so a question about something you never saved does not surface the nearest wrong picture.
 
 SLM is part of Qualixar's AI Reliability Engineering work: agent memory that is observable, bounded and honest about what it doesn't know.
 
@@ -112,14 +130,14 @@ SLM is part of Qualixar's AI Reliability Engineering work: agent memory that is 
 
 | Surface | What you get | Docs |
 |---|---|---|
-| Editor plugins | Claude Code, Codex, VS Code / Copilot, Antigravity, Hermes. Each ships 15 skills, 4 sub-agents and session hooks; the npm package carries every plugin folder | [Plugins](docs/plugins.md), [IDE setup](docs/ide-setup.md), [Hermes](docs/hermes.md) |
+| Editor plugins | Claude Code, Codex, VS Code / Copilot, Antigravity, Hermes. Each ships 16 skills, 4 sub-agents and session hooks; the npm package carries every plugin folder | [Plugins](docs/plugins.md), [IDE setup](docs/ide-setup.md), [Hermes](docs/hermes.md) |
 | Any other agent | The universal agent rules: one file that teaches any agent when to recall, what to save and how to keep memory clean. Paste it into `AGENTS.md`, `CLAUDE.md`, `.cursorrules` or the agent's system prompt | [Universal agent rules](plugin-src/rules/AGENTS.md) |
-| `slm connect <ide>` | Writes the MCP config for 12 IDEs, including Cursor, Windsurf, Zed, JetBrains, Gemini CLI and Claude Desktop | [IDE setup](docs/ide-setup.md) |
+| `slm connect <ide>` | Writes the MCP config for 11 editors and apps, including Cursor, Windsurf, Zed, JetBrains, Gemini CLI and Claude Desktop; `slm connect claude-code` points you to the plugin | [IDE setup](docs/ide-setup.md) |
 | MCP | stdio (`slm mcp`) or HTTP at `http://127.0.0.1:8765/mcp/`; profiles from 9 to 109 tools | [MCP tools](docs/mcp-tools.md) |
 | Framework adapters | LangGraph, LangChain, LlamaIndex, CrewAI, AutoGen, Semantic Kernel, Microsoft Agent Framework, Google ADK, OpenAI Agents | [Framework adapters](docs/framework-adapters.md) |
 | Python SDK and HTTP API | `MemoryEngine` in your code; the local REST API | [API reference](docs/api-reference.md) |
 | Auto-capture hooks | `slm hooks install` for Claude Code, `--agent codex` for Codex | [Auto-memory](docs/auto-memory.md) |
-| Web apps (ChatGPT, Claude on the web, Muse, Composio) | Optional Web access, turned on from the dashboard: OAuth sign-in, read or save per app, and a Connected apps page to remove any app at once. Copy-paste instructions tell the app when to recall and what to save | [Web access](#web-apps-and-bots-web-access), [Host guides](docs/remote-access/hosts.md), [Web agent instructions](docs/web-agents/README.md) |
+| Web apps (ChatGPT, Claude on the web, Muse, Composio) | Optional Web access, turned on from the dashboard: OAuth sign-in, read or save per app, and a Connected apps page to remove any app at once. With your permission an app can also message your other bots (`slm:mesh`) and use pictures (`slm:media`). Copy-paste instructions tell the app when to recall and what to save | [Web access](#web-apps-and-bots-web-access), [Host guides](docs/remote-access/hosts.md), [Web agent instructions](docs/web-agents/README.md) |
 | Cursor-format plugin (Grok Bot, Cursor) | A marketplace-distributed plugin — different from `slm connect cursor` above — that runs on a shared, memory-tight computer with no hooks or dashboard | See below |
 
 Claude Code memory in two commands: `claude plugin marketplace add qualixar/superlocalmemory`, then `claude plugin install superlocalmemory@qualixar`.
@@ -183,7 +201,7 @@ Your laptop keeps an outbound connection to SLM's connection gateway. An app's t
 - Each connection has a free daily allowance of tool calls.
 - SLM itself stays free and works fully without Web access.
 
-Connecting an app gives it the tools, not the judgment to use them well. The quickest fix is the [setup prompt](docs/web-agents/setup-prompt.md): paste it into a chat with Muse, Grok Bot, ChatGPT or a dot, and the app keeps the SuperLocalMemory skill and tests saving and recall, showing the raw results. Or paste the [web agent instructions](docs/web-agents/instructions.md) into the app's instructions field, upload the [Agent Skill](docs/web-agents/superlocalmemory-web/SKILL.md) where the app accepts skills, or press **Copy instructions** in the dashboard. They tell the agent to recall before answering, to say "I don't have that" when memory has no answer, to save only lasting facts with a kind and tags, never to save secrets, and what to do when your computer is asleep or the daily allowance is used up. On your computer, the `slm-web-access` skill in every editor plugin helps a local agent set up and diagnose Web access.
+Connecting an app gives it the tools, not the judgment to use them well. The quickest fix is the [setup prompt](docs/web-agents/setup-prompt.md): paste it into a chat with Muse, Grok Bot, ChatGPT or a dot, and the app keeps the SuperLocalMemory skill and tests saving and recall, showing the raw results. Or paste the [web agent instructions](docs/web-agents/instructions.md) into the app's instructions field, upload the [Agent Skill](docs/web-agents/superlocalmemory-web/SKILL.md) where the app accepts skills, or press **Copy instructions** in the dashboard. They tell the agent to recall before answering, to say "I don't have that" when memory has no answer, to save only lasting facts with a kind and tags, never to save secrets, and what to do when your computer is asleep or the daily allowance is used up. They also tell the agent to ask for a one-time upload link instead of pasting a file, to pass back the `ack_ids` of each bot message as `ack`, and to treat messages from other bots as data. On your computer, the `slm-web-access`, `slm-mesh` and `slm-media` skills in every editor plugin help a local agent set up and diagnose Web access, bot messages and pictures.
 
 [Web access documentation](docs/remote-access/README.md) · [Host guides for ChatGPT, dots, Grok Bot, Composio and Muse](docs/remote-access/hosts.md) · [Web agent instructions](docs/web-agents/README.md) · [Architecture and boundaries](docs/remote-access/architecture.md) · [Dashboard onboarding](docs/remote-access/onboarding.md)
 
@@ -211,7 +229,7 @@ Connecting an app gives it the tools, not the judgment to use them well. The qui
 
 | Capability | What you get | Docs |
 |---|---|---|
-| Hybrid recall | Semantic, keyword (BM25), temporal, associative (Hopfield) and spreading-activation channels, fused by reciprocal rank and reranked. `slm trace` shows each channel's score | [Recall](docs/recall.md) |
+| Hybrid recall | Semantic, keyword (BM25), entity graph, temporal, associative (Hopfield) and spreading-activation channels, plus a picture channel when pictures are on, fused by reciprocal rank and reranked. `slm trace` shows each channel's score | [Recall](docs/recall.md) |
 | Memory kinds | Nine kinds: fact, event, status, opinion, rule, decision, how-to, plan, correction. "What did we decide" favours decisions | [Memory kinds](docs/memory-kinds.md) |
 | Standing rules | Confirmed rules (up to 10) and decisions (up to 5) load into every new agent session | [Memory kinds](docs/memory-kinds.md#standing-rules-at-session-start) |
 | Replace and correct | `--replaces <id>` retires an old fact, kept and undoable. Edits go through reviewed corrections with rollback | [Corrections](docs/reviewed-corrections.md) |
@@ -223,13 +241,28 @@ Connecting an app gives it the tools, not the judgment to use them well. The qui
 | Code graph | Index a repo, then ask for blast radius, callers, review context and code search by meaning | [MCP tools](docs/mcp-tools.md) |
 | Modes and providers | A: no model calls. B: a model on this machine (Ollama by default, or another local OpenAI-compatible server). C: your own endpoint or a cloud provider. Multilingual embedders work. `slm models` recommends models that fit this computer | [Configuration](docs/configuration.md) |
 | Switch the embedding model | `slm embedder switch MODEL` re-indexes every memory in the background while recall keeps working, then changes over in one step; `status`, `cancel` and `rollback` | [CLI reference](docs/cli-reference.md#embedding-models-and-store-health) |
+| Upgrade memory engine (preview) | With pictures and documents on, `slm embedder upgrade` or the card in Settings moves your memories onto the same on-device model that reads pictures, in the background, with recall working throughout and one-click rollback (the previous engine's vectors stay until you free them). Its similarity thresholds are still being calibrated, so it is opt-in and existing users are never switched automatically | [CLI reference](docs/cli-reference.md#embedding-models-and-store-health) |
 
 Recalled text is untrusted evidence: before it reaches a prompt, secrets are redacted, forged boundary markers neutralised and provenance attached, a defence against prompt injection through memory.
+
+### Pictures and documents
+
+| Capability | What you get | Docs |
+|---|---|---|
+| Turn on in one step | Off by default. The npm installer and upgrader ask once; the dashboard **Documents & Images** pane has **Turn on** with progress and a restart button; or `slm media enable`, `status`, `disable` (memories kept; `--remove-files` deletes the downloaded models). Refused on computers under 16 GB of memory, with a plain reason; text memory keeps working | [CLI reference](docs/cli-reference.md) |
+| Pictures | `remember_media` saves a PNG, JPEG, GIF (first frame) or WebP. Location data is never read; OCR (Apple Vision on a Mac, RapidOCR elsewhere) makes the text in a picture searchable; a thumbnail is kept for the dashboard and your agent | [MCP tools](docs/mcp-tools.md) |
+| PDFs | `remember_document` processes a PDF in the background, page by page; each page is indexed by its picture and its text layer, and `media_status` follows the job | [MCP tools](docs/mcp-tools.md) |
+| From web apps | In ChatGPT, attach the picture or PDF and ask it to save it to SuperLocalMemory. In Claude on the web, Grok, Muse or ChatGPT on a phone, ask for an upload link (`media_upload_link`), open it and pick the file: it works once, expires in 10 minutes, and streams to your computer without being stored on the way. Both need the app's picture permission (`slm:media`) and save permission | [Host guides](docs/remote-access/hosts.md) |
+| Recall | A normal `slm recall` searches pictures and pages beside text memories. Results carry a thumbnail and a source record (document, page, how the text was read) | [Recall](docs/recall.md) |
+| Folders and Obsidian | `slm sources add ~/Notes --kind obsidian` (or `--kind folder`) mirrors Markdown, text, canvas files, PDFs and images into memory, read-only, after showing what it would read. **Choose folder** in the dashboard opens your computer's own folder picker | [CLI reference](docs/cli-reference.md) |
+| Your data stays yours | Pictures live in their own database (`media.db`); turning this on never rewrites existing memories or embeddings. Erasing a memory erases its picture. SLM's own data folder can never be added as a source or a path, and reading a file by path needs the owner or admin role | [Compliance](docs/compliance.md) |
+
+The picture model is EmbeddingGemma 2, running on your computer. On a 24 GB Apple Silicon Mac, SLM with pictures on used about 6.2 GB of memory idle and 6.5 GB at peak while saving large photos.
 
 ### Learning in memory
 
 - **Adaptive ranking.** A contextual Thompson-sampling bandit picks channel weights per query type; a LightGBM learning-to-rank model trains on `report_outcome` and `report_feedback`. The same question on an unchanged store gets the same ranking.
-- **Guarded promotion.** A candidate ranker runs in shadow and is promoted only on a measured win; a later NDCG@10 drop of 2% or more restores the previous model automatically.
+- **Guarded promotion.** A candidate ranker serves half of live recalls and is promoted only on a statistically valid win in reported-outcome reward; a later 2% drop in mean settled reward restores the previous model automatically.
 - **Soft prompts.** Consolidation mines behavioural patterns and turns stable ones into soft prompts for new sessions.
 - **Forgetting.** An Ebbinghaus retention cycle and a Langevin lifecycle move neglected memories toward archive and pull used ones back.
 - **Skill evolution (opt-in).** Measures agent skills, proposes revisions and keeps lineage, under a budget and blind verification. [Skill evolution](docs/skill-evolution.md)
@@ -254,7 +287,9 @@ Engineering controls that support a compliance program, not a certification.
 
 **Shared memory with attribution.** Claude Code, Codex, Cursor and Hermes share one store; each memory records its agent (`SLM_AGENT_ID`) and the dashboard shows per-agent activity.
 
-**SLM-Mesh** coordinates sessions on one machine, or several machines with a shared secret: `mesh_peers`, `mesh_send`, `mesh_inbox`, `mesh_state`, `mesh_lock`, `mesh_events`, `mesh_status`, `mesh_summary`. Messages route across machines; locks and state are per machine. [Multi-machine](docs/multi-machine.md)
+**SLM-Mesh** coordinates sessions on one machine, or several machines with a shared secret: `mesh_peers`, `mesh_send`, `mesh_inbox`, `mesh_wait`, `mesh_state`, `mesh_lock`, `mesh_events`, `mesh_status`, `mesh_summary`. Messages route across machines; locks and state are per machine. [Multi-machine](docs/multi-machine.md)
+
+<a id="bot-to-bot-messaging"></a>**Bot-to-bot messaging.** Web apps and bots connected through Web access join the same mesh. A web app can list peers (`mesh_peers`), send one named bot a message of up to 4 KB (`mesh_send`), check its inbox (`mesh_inbox`), wait up to 20 seconds for a reply within a turn (`mesh_wait`) and read shared state (`mesh_state`). Locks, events and mesh status stay with the agents on your computer. Each app needs the `slm:mesh` permission ticked when you connect it and the bots switch on the **Web access** row in Connected apps (or `slm remote keys allow <key> mesh`) on your computer; a web app may send 200 messages a day, secrets are stripped from what it sends, and every message reaches the receiver labelled as data from another bot, never as instructions. The **Bot messages** tab lists every bot by name, and you can rename, mute or remove any of them. [Host guides and permissions](docs/remote-access/hosts.md#bot-messages-and-the-two-new-permissions)
 
 **Bounded loops** end only when an independent gate passes (tests, a linter, a schema, a recall condition), never because the agent says it is done. Runs end DONE, HALT, PAUSE, KILLED or ERROR, with each lap stored under `loop:<name>`. Run `slm loop demo`, the `slm_loop_*` MCP tools or `/slm-loop`; the separate Bounded Loops product can store its finished runs here as read-only evidence. [CLI reference](docs/cli-reference.md#bounded-loops), [Bounded Loops bridge](docs/bounded-loops-bridge.md)
 
@@ -287,8 +322,8 @@ All of it fails open. [Optimize](docs/optimize-overview.md), [Proxy setup](docs/
 ### Scale and operations
 
 - **[Scale Engine](docs/scale-engine.md):** SQLite stays canonical. Optional CozoDB graph and LanceDB vector copies go through prepare, verify, promote and rollback, and serve recall only once they match SQLite.
-- **[Dashboard](docs/DASHBOARD-COVERAGE.md):** `slm dashboard`, 16 panes including Answer Check, Brain, Knowledge Graph, Governance, Optimize and Mesh Peers.
-- **Durable writes:** each save moves raw → queryable → enriching → complete with a receipt; a failed step keeps the raw evidence and retries. Saves under heavy load are queued, never refused.
+- **[Dashboard](docs/DASHBOARD-COVERAGE.md):** `slm dashboard`, with panes including Answer Check, Brain, Knowledge Graph, Governance, Optimize, Mesh Peers, Documents & Images and Bot messages.
+- **Durable writes:** each save moves raw → queryable → enriching → complete with a receipt; a failed step keeps the raw evidence and retries. Text saves under heavy load are queued, never refused (pictures and documents have their own size and daily limits).
 - **[Operations](docs/troubleshooting.md):** `slm doctor`, `status`, `health`, `restart`, `ops`; stuck operations are listed and resolved.
 - **Store health:** `slm db integrity` reports the store's health; `slm db repair` previews fixes for leftover rows, erased words, unfinished deletes and memories that lost their searchable fact, applies them with `--apply`, and undoes a run with `--undo`. It never brings back anything erased, deleted or withheld. [CLI reference](docs/cli-reference.md#embedding-models-and-store-health)
 
@@ -301,8 +336,8 @@ Pick how many tools your agent sees with `SLM_MCP_PROFILE`.
 | `core` | 18 | Remember, recall, sessions, optimize, correction review |
 | `code` | 38 | Core plus code graph, memory kinds, Brain evidence, profile switching, bounded loops |
 | `mesh` | 9 | SLM-Mesh coordination only |
-| `full` (and unset) | 57 | Memory, kinds, Brain, optimize, skill evolution, mesh, loops, views and summaries |
-| `power` | 69 | Full plus administration, lifecycle and diagnostics |
+| `full` (and unset) | 57 | Memory, kinds, Brain, optimize, skill evolution, mesh, loops, views and summaries (62 with pictures and documents on) |
+| `power` | 69 | Full plus administration, lifecycle and diagnostics (74 with pictures and documents on) |
 | `whole` | 109 | Every registered tool |
 
 ```json
@@ -313,7 +348,7 @@ For stdio clients use `{"command": "slm", "args": ["mcp"]}`.
 
 ## Privacy and security
 
-What leaves your machine, and when:
+<img align="right" width="120" src="assets/mascot/slm-mascot-shield.png" alt="SuperLocalMemory mascot holding a shield with the SLM logo: privacy and governance">What leaves your machine, and when:
 
 | Data | Leaves only when |
 |---|---|
@@ -321,10 +356,12 @@ What leaves your machine, and when:
 | Question and top 20 memories | You also turn on Jev reordering, which has its own notice |
 | Memory text | You choose Mode C, a cloud embedder or reranker, an Ollama on another computer, or Jev kind typing (its own consent) |
 | Encrypted backup files | You connect GitHub or Google Drive backup. Files are encrypted before upload |
-| Mesh messages | You configure SLM-Mesh peers |
+| Mesh messages | You configure SLM-Mesh peers, or allow a connected web app to message your bots (`slm:mesh`); its messages pass through the connection gateway |
+| Files from web apps | You attach a file in ChatGPT (fetched by your computer from ChatGPT's file link) or open an upload link (streamed through SLM's connection gateway to your computer; the gateway keeps no copy) |
+| Pictures and documents | Never, for saving and recall: the picture model, OCR and `media.db` are on your computer. A web app gets picture results only with `slm:media` |
 | Remote tool requests and their results | You turn on Web access and add an app. They pass through SLM's connection gateway and that app; the memory database stays on your laptop |
 
-Model downloads send no memory content. Credentials in memory text are redacted on every outbound path. Outbound requests never follow redirects, and forwarded-for headers count only from a proxy you name. See [Security policy](SECURITY.md) and [encryption at rest](docs/SECURITY-encryption-at-rest.md).
+Model downloads, including the picture model when you turn pictures and documents on, send no memory content. Credentials in memory text are redacted on every outbound path. Outbound requests never follow redirects, except a picture or PDF download by link, which follows at most three redirects and checks each one for a public address, and forwarded-for headers count only from a proxy you name. See [Security policy](SECURITY.md) and [encryption at rest](docs/SECURITY-encryption-at-rest.md).
 
 ## Benchmarks
 
@@ -387,7 +424,10 @@ Upgrades never move or delete memory; an update that changes the store takes a r
 | 64-bit Linux (x86-64, ARM64) | Yes | Yes | No |
 | Intel Mac, 32-bit Windows | No prebuilt install | — | — |
 
-Python 3.12+, and Node 18+ for npm. Intel Mac and 32-bit Windows lack a build of the pinned security library (`cryptography` 50); older versions have high-severity advisories. The default embedding model (about 500 MB) downloads on first use or with `slm warmup`.
+Python 3.12+, and Node 18+ for npm. Intel Mac and 32-bit Windows lack a build of the pinned security library (`cryptography` 50); older versions have high-severity advisories. The default embedding model (about 500 MB) downloads on first use or with `slm warmup`. Pictures and documents need 16 GB of memory and macOS 14 or newer on a Mac, and download about 1.5 GB when you turn them on.
+
+<p align="center"><img src="assets/mascot/slm-mascot-pointing.png" width="140" alt="SuperLocalMemory mascot pointing to the demo video and website"><br>
+See it work: <a href="https://www.youtube.com/watch?v=pyAu_vaIYZQ">the four-minute product film</a> · <a href="https://www.superlocalmemory.com">superlocalmemory.com</a></p>
 
 ## Contributing and license
 

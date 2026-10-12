@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from superlocalmemory.core import laya_process
+from superlocalmemory.core import laya_paths, laya_process
 from superlocalmemory.infra.instance_lock import InstanceLock
 from superlocalmemory.runtimes.model_sources import (
     HuggingFaceSource, LocalDirSource, ModelSource, classify_error,
@@ -94,8 +94,12 @@ def _python_supported() -> bool:
 
 
 def _platform_tag() -> str:
+    """``<system>-<machine>`` as the lock files name it (``linux-aarch64``, ``darwin-arm64``, ...)."""
     system = {"darwin": "darwin", "win32": "windows"}.get(sys.platform, "linux")
-    return f"{system}-{platform.machine().lower()}"
+    machine = platform.machine().lower()
+    if system == "linux" and machine == "arm64":
+        machine = "aarch64"  # Linux says aarch64; a few images report arm64 for the same CPU
+    return f"{system}-{machine}"
 
 
 def _base_python() -> tuple[str, str]:
@@ -175,6 +179,8 @@ class ManagedEnv:
         return canonical_data_root() / "runtimes" / self.spec.name
 
     def python(self) -> Path:
+        if reason := laya_paths.venv_refusal(self.root / "venv"):
+            raise RuntimeError(reason)
         sub = "Scripts/python.exe" if sys.platform == "win32" else "bin/python"
         return self.root / "venv" / sub
 
@@ -242,7 +248,9 @@ class ManagedEnv:
 
     def _base_changed(self, rec: dict[str, Any]) -> bool:
         path, version = _base_python()
-        return (rec.get("base_python"), rec.get("base_version")) != (path, version) or not self.python().exists()
+        return (bool(laya_paths.venv_refusal(self.root / "venv"))
+                or (rec.get("base_python"), rec.get("base_version")) != (path, version)
+                or not self.python().exists())
 
     def _unsupported_reason(self) -> str:
         if not _python_supported():
@@ -336,7 +344,8 @@ class ManagedEnv:
         """A venv built by a different base Python is rebuilt, and its packages are reinstalled."""
         rec = self._read()
         recorded = (rec.get("base_python"), rec.get("base_version"))
-        if recorded[0] and recorded != _base_python():
+        if (laya_paths.venv_refusal(self.root / "venv")
+                or recorded[0] and recorded != _base_python()):
             shutil.rmtree(self.root / "venv", ignore_errors=True)
             self._clear_markers("venv", "pip")
 

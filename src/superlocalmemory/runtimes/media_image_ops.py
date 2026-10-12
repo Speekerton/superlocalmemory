@@ -14,11 +14,14 @@ Error text never contains a path or file contents.
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import io
+import logging
 import os
 import secrets
 import sys
+from types import ModuleType
 
 MAX_PIXELS = 50_000_000
 _FORMATS = {"PNG": ("image/png", ".png"), "JPEG": ("image/jpeg", ".jpg"), "WEBP": ("image/webp", ".webp"),
@@ -26,6 +29,18 @@ _FORMATS = {"PNG": ("image/png", ".png"), "JPEG": ("image/jpeg", ".jpg"), "WEBP"
 _EXIF_FIELDS = {0x010F: "Make", 0x0110: "Model", 0x0112: "Orientation"}
 _EXIF_IFD, _DATE_ORIGINAL = 0x8769, 0x9003
 _THUMB_FALLBACK_EDGE = 240
+logger = logging.getLogger(__name__)
+
+# Bundled models from the pinned rapidocr==3.10.0 wheel. Explicit model paths
+# bypass OrtInferSession's default-model downloader, including checksum repair.
+_RAPIDOCR_MODELS = {
+    "Det": ("PP-OCRv6_det_small.onnx",
+            "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f"),
+    "Cls": ("ch_ppocr_mobile_v2.0_cls_mobile.onnx",
+            "e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c"),
+    "Rec": ("PP-OCRv6_rec_small.onnx",
+            "6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884"),
+}
 
 
 def _write_private(directory: str, ext: str, data: bytes) -> str:
@@ -136,7 +151,8 @@ def prepare_image(src: str, out_dir: str, *, thumb_edge: int = 320, thumb_max_by
         try:
             mime, ext = _FORMATS[fmt]
             result = {"mime": mime, "width": upright.width, "height": upright.height, "exif": fields,
-                      "phash": str(imagehash.phash(upright.convert("RGB")))}
+                      "phash": str(imagehash.phash(upright.convert("RGB"))),
+                      "visual_summary": visual_summary(upright) + _apple_subjects(src)}
             written.append(_write_private(out_dir, ext, _encode_original(upright, fmt, icc)))
             result.update(stored_path=written[0], stored_ext=ext)
             written.append(_write_private(out_dir, ".webp", _encode_thumb(upright, thumb_edge, thumb_max_bytes)))
@@ -168,6 +184,8 @@ def _apple_vision(path: str) -> str | None:
     handler = vision.VNImageRequestHandler.alloc().initWithURL_options_(
         foundation.NSURL.fileURLWithPath_(path), None)
     request = vision.VNRecognizeTextRequest.alloc().init()
+    request.setRecognitionLevel_(vision.VNRequestTextRecognitionLevelAccurate)
+    request.setAutomaticallyDetectsLanguage_(True)
     request.setUsesLanguageCorrection_(True)
     ok, _err = handler.performRequests_error_([request], None)
     if not ok:
@@ -176,25 +194,103 @@ def _apple_vision(path: str) -> str | None:
     return "\n".join(lines)
 
 
+def _apple_subjects(path: str) -> str:
+    """Use the installed offline Vision classifier for a bounded subject caption.
+
+    Apple's VNClassifyImageRequest supplies identifier/confidence observations:
+    https://developer.apple.com/documentation/vision/vnclassifyimagerequest
+    No downloads; unsupported hosts retain the measured pixel summary and OCR.
+    """
+    if sys.platform != "darwin":
+        return ""
+    try:
+        vision = importlib.import_module("Vision")
+        foundation = importlib.import_module("Foundation")
+        handler = vision.VNImageRequestHandler.alloc().initWithURL_options_(
+            foundation.NSURL.fileURLWithPath_(path), None)
+        request = vision.VNClassifyImageRequest.alloc().init()
+        ok, _ = handler.performRequests_error_([request], None)
+        if not ok:
+            return ""
+        subjects = [str(obs.identifier()).replace('_', ' ') for obs in (request.results() or [])
+                    if float(obs.confidence()) >= .8][:3]
+        return " Image classifier subjects: " + ", ".join(subjects) + "." if subjects else ""
+    except (ImportError, AttributeError, RuntimeError):
+        return ""
+
+
+def _local_ocr_params(module: ModuleType) -> dict[str, str] | None:
+    """Resolve the complete verified model set without invoking the backend."""
+    models = os.path.join(os.path.dirname(module.__file__), "models")
+    params = {}
+    for role, (filename, expected) in _RAPIDOCR_MODELS.items():
+        path = os.path.join(models, filename)
+        try:
+            with open(path, "rb") as handle:
+                actual = hashlib.file_digest(handle, "sha256").hexdigest()
+        except OSError:
+            logger.warning("RapidOCR model %s missing or unreadable; OCR unavailable", role)
+            continue
+        if actual != expected:
+            logger.warning("RapidOCR model %s corrupt; OCR unavailable", role)
+            continue
+        params[f"{role}.model_path"] = path
+    return params if len(params) == len(_RAPIDOCR_MODELS) else None
+
+
 def _rapidocr(path: str) -> str | None:
-    """Only when the package and its model files are already installed; never downloads."""
+    """Use verified local models only; an unavailable backend never blocks save."""
     try:
         module = importlib.import_module("rapidocr")
+        params = _local_ocr_params(module)
+        if params is None:
+            return None
+        result = module.RapidOCR(params=params)(path)
+        texts = getattr(result, "txts", None)
+        return "\n".join(texts) if texts else ""
     except ImportError:
-        return None
-    models = os.path.join(os.path.dirname(module.__file__), "models")
-    if not os.path.isdir(models) or not any(n.endswith(".onnx") for n in os.listdir(models)):
-        return None
-    result = module.RapidOCR()(path)
-    texts = getattr(result, "txts", None)
-    return "\n".join(texts) if texts else ""
+        logger.warning("RapidOCR unavailable: package or inference dependency missing")
+    except Exception as exc:  # noqa: BLE001 - optional inference must preserve save
+        logger.warning("RapidOCR unavailable (%s); OCR skipped", type(exc).__name__)
+    return None
 
 
 def ocr_image(path: str, *, engine: str = "auto") -> dict:
     """Read the text in an image: ``{"engine": "apple_vision|rapidocr|none", "text": str}``."""
     candidates = {"apple_vision": _apple_vision, "rapidocr": _rapidocr}
+    empty = None
     for name in (candidates if engine == "auto" else [engine] if engine in candidates else []):
         text = candidates[name](path)
         if text is not None:
-            return {"engine": name, "text": text}
-    return {"engine": "none", "text": ""}
+            result = {"engine": name, "text": text}
+            if text.strip() or engine != "auto":
+                return result
+            if empty is None:
+                empty = result
+    return empty or {"engine": "none", "text": ""}
+
+
+_COLORS = {
+    "black": (0, 0, 0), "white": (255, 255, 255), "gray": (128, 128, 128),
+    "red": (255, 0, 0), "green": (0, 128, 0), "blue": (0, 0, 255),
+    "yellow": (255, 255, 0), "cyan": (0, 255, 255), "magenta": (255, 0, 255),
+}
+
+
+def visual_summary(image):
+    """Describe measured dimensions and dominant colors of a small RGB sample."""
+    sample = image.convert("RGB")
+    try:
+        sample.thumbnail((32, 32))
+        counts = dict.fromkeys(_COLORS, 0)
+        for pixel in sample.getdata():
+            color = min(_COLORS, key=lambda key: sum(
+                (a - b) ** 2 for a, b in zip(pixel, _COLORS[key])))
+            counts[color] += 1
+        total = sum(counts.values())
+        colors = sorted(counts, key=lambda key: (-counts[key], key))[:3]
+        measured = ", ".join(f"{color} ({round(100 * counts[color] / total)}%)"
+                             for color in colors if counts[color])
+        return f"Image {image.width} by {image.height} pixels. Dominant pixel colors: {measured}."
+    finally:
+        sample.close()

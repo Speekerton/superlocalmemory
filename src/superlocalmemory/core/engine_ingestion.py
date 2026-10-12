@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import os
 import uuid
 from typing import TYPE_CHECKING, Protocol
 
@@ -258,7 +257,11 @@ def build_immediate_admission_handler(
         fact.embedding = None
         fact.fisher_mean = None
         fact.fisher_variance = None
-        memory_id = fact.memory_id or uuid.uuid4().hex
+        from superlocalmemory.storage.source_identity import reuse_source
+
+        reused = None if isinstance(prebuilt_payload, dict) else reuse_source(
+            db, request, metadata, fact)
+        memory_id = reused or fact.memory_id or uuid.uuid4().hex
         existing = db.execute(
             "SELECT profile_id FROM memories WHERE memory_id = ?",
             (memory_id,),
@@ -286,6 +289,9 @@ def build_immediate_admission_handler(
                 shared_with=list(request.shared_with) or None,
             )
             fact.memory_id = db.store_memory(record)
+        if gate.truncated:
+            from superlocalmemory.core.source_excerpt import attach_source_pointer
+            fact = attach_source_pointer(fact, content, max_verbatim_chars)
         return [store_fact_keeping_kind(db, fact, metadata=metadata, request=request)]
 
     return write_queryable
@@ -633,14 +639,19 @@ def build_engine_ingestion_command(
             state["provenance"] = provenance_complete
         if state.get("post_hooks") is False:
             try:
+                from superlocalmemory.core.agent_attribution import audit_fields
+                from superlocalmemory.core.audit_record import content_hash
+
                 engine._hooks.run_post("store", {
                     "operation": "store",
                     "agent_id": operation.trusted_actor_id,
                     "profile_id": operation.profile_id,
                     "content_preview": operation.raw_content[:100],
+                    "content_hash": content_hash(operation.raw_content),
                     "ingestion_operation_id": operation.operation_id,
                     "fact_ids": list(operation.final_fact_ids),
                     "fact_count": len(operation.final_fact_ids),
+                    **audit_fields(operation.metadata),
                 })
             except Exception as exc:
                 return MaterializationResult(
@@ -1016,10 +1027,14 @@ def build_engine_ingestion_command(
         if len(facts) != len(operation.final_fact_ids):
             raise RuntimeError("external projection facts are missing")
 
-        ann_required = engine._ann_index is not None
+        # Mode A remains fully materializable without a model. Empty vector
+        # indexes do not make optional embedding projections mandatory.
+        has_embedder = engine._embedder is not None
+        ann_required = has_embedder and engine._ann_index is not None
         vector_store = engine._vector_store
         vector_required = bool(
-            vector_store is not None and getattr(vector_store, "available", False)
+            has_embedder and vector_store is not None
+            and getattr(vector_store, "available", False)
         )
         ann_complete = True
         vector_complete = True

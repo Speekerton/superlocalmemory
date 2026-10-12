@@ -277,7 +277,7 @@ class TestFourChannelPipeline:
         """Facts appearing in more channels should rank higher via RRF.
 
         Both facts carry above-floor semantic evidence (v3.6.6 evidence floor
-        requires semantic >= 0.60 or other channel signal); this test isolates
+        requires raw cosine >= 0.60, stored >= 0.80, or other channel signal); this test isolates
         RRF *ranking*, not the floor (which is covered in test_evidence_floor).
         """
         facts = [
@@ -287,7 +287,7 @@ class TestFourChannelPipeline:
         db = _mock_db(facts)
         engine = _build_engine(
             db=db,
-            semantic_results=[("f_multi", 0.9), ("f_single", 0.65)],
+            semantic_results=[("f_multi", 0.9), ("f_single", 0.82)],
             bm25_results=[("f_multi", 0.8)],
         )
         response = engine.recall("q", "default")

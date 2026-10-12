@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 import logging
-import sys
 from pathlib import Path
 
 from superlocalmemory.ingestion.base_adapter import BaseAdapter, AdapterConfig, IngestItem
@@ -30,6 +29,14 @@ logger = logging.getLogger("superlocalmemory.ingestion.gmail")
 
 def _adapters_config_path() -> Path:
     return state_path("adapters.json")
+
+
+def _admitted(name: str, cfg: dict) -> str:
+    """The configured path, re-checked against the import folders; "" if refused."""
+    from superlocalmemory.infra.data_root import canonical_data_root
+    from superlocalmemory.ingestion.import_roots import saved_path
+
+    return saved_path(name, cfg, canonical_data_root())
 
 
 def _import_dir() -> Path:
@@ -77,6 +84,9 @@ class GmailAdapter(BaseAdapter):
 
     def _detect_tier(self) -> None:
         """Auto-detect the best available tier."""
+        from superlocalmemory.ingestion.adapter_config import validate_tier
+
+        validate_tier("gmail", self._tier)
         if self._tier != "auto":
             return
 
@@ -88,7 +98,7 @@ class GmailAdapter(BaseAdapter):
         # Check for explicit tier
         if cfg.get("tier") == "mbox" or cfg.get("mbox_path"):
             self._tier = "mbox"
-            self._mbox_path = cfg.get("mbox_path", "")
+            self._mbox_path = _admitted("gmail", cfg)
             return
 
         if cfg.get("tier") == "imap":
@@ -106,7 +116,7 @@ class GmailAdapter(BaseAdapter):
         mbox_files = list(mbox_dir.glob("*.mbox")) if mbox_dir.exists() else []
         if mbox_files:
             self._tier = "mbox"
-            self._mbox_path = str(mbox_files[0])
+            self._mbox_path = _admitted("gmail", {"mbox_path": str(mbox_files[0])})
             return
 
         logger.warning("No Gmail credentials or MBOX file found. "

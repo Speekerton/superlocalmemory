@@ -38,15 +38,35 @@ PLUGIN_NAME = "tests._isolation_plugin"
 LIVE_DAEMON_PORTS = frozenset({8765, 8767})
 
 # Capture the live roots before the environment below is rewritten.
+#
+# A process spawned by a test (multiprocessing "spawn") imports this module
+# again, but by then the parent has already pointed SLM_DATA_DIR at the test's
+# own tmp root. Recomputing would protect that tmp root and refuse the child's
+# legitimate writes, so a child inherits the parent's list instead. The
+# account's own ~/.superlocalmemory is always added, so an inherited list can
+# only widen protection, never drop the real store.
+_LIVE_ROOTS_ENV = "SLM_TEST_LIVE_ROOTS"
 _REAL_HOME = Path.home().resolve()
-_LIVE_DATA_ROOTS = live_data_roots()
-# The env-selected (or default) root, kept for SLM_TEST_REAL_DATA_ROOT below.
-_REAL_DATA_ROOT = Path(
-    os.environ.get("SLM_DATA_DIR")
-    or os.environ.get("SL_MEMORY_PATH")
-    or os.environ.get("SLM_HOME")
-    or (_REAL_HOME / ".superlocalmemory")
-).expanduser().resolve(strict=False)
+_INHERITED_ROOTS = (
+    os.environ.get(_LIVE_ROOTS_ENV, "")
+    if os.environ.get("SLM_TEST_ISOLATION") == "1" else ""
+)
+if _INHERITED_ROOTS:
+    _LIVE_DATA_ROOTS = frozenset(
+        Path(root) for root in _INHERITED_ROOTS.split(os.pathsep) if root
+    ) | live_data_roots(env={})
+    _REAL_DATA_ROOT = Path(
+        os.environ.get("SLM_TEST_REAL_DATA_ROOT") or _REAL_HOME / ".superlocalmemory"
+    )
+else:
+    _LIVE_DATA_ROOTS = live_data_roots()
+    # The env-selected (or default) root, kept for SLM_TEST_REAL_DATA_ROOT below.
+    _REAL_DATA_ROOT = Path(
+        os.environ.get("SLM_DATA_DIR")
+        or os.environ.get("SL_MEMORY_PATH")
+        or os.environ.get("SLM_HOME")
+        or (_REAL_HOME / ".superlocalmemory")
+    ).expanduser().resolve(strict=False)
 _LIVE_ROOT_GUARD = LiveRootGuard(_LIVE_DATA_ROOTS)
 
 
@@ -71,25 +91,35 @@ sys.addaudithook(_pytest_isolation_audit)
 # Establish a pytest-owned namespace before test modules are imported. Several
 # production modules resolve HOME and daemon paths at import time, so a normal
 # fixture is too late to protect the user's live installation.
-_TEST_ISOLATION_DIR = tempfile.TemporaryDirectory(prefix="slm-pytest-")
-_TEST_ROOT = Path(_TEST_ISOLATION_DIR.name).resolve()
-_TEST_HOME = _TEST_ROOT / "home"
-_TEST_DATA_DIR = _TEST_ROOT / "canonical-data"
-_TEST_DATA_DIR.mkdir(parents=True, exist_ok=True)
+#
+# A spawned child of an isolated session keeps the parent's namespace as it
+# found it in the environment: minting a fresh HOME and data root per child
+# gave every child its own lock and state files, so cross-process contracts
+# (one embedding worker, one row allocator) were never actually exercised.
+if _INHERITED_ROOTS:
+    _TEST_ISOLATION_DIR = None
+    _TEST_ROOT = Path(os.environ["SLM_TEST_ROOT"])
+else:
+    _TEST_ISOLATION_DIR = tempfile.TemporaryDirectory(prefix="slm-pytest-")
+    _TEST_ROOT = Path(_TEST_ISOLATION_DIR.name).resolve()
+    _TEST_HOME = _TEST_ROOT / "home"
+    _TEST_DATA_DIR = _TEST_ROOT / "canonical-data"
+    _TEST_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-os.environ["SLM_TEST_ISOLATION"] = "1"
-os.environ["SLM_TEST_ROOT"] = str(_TEST_ROOT)
-os.environ["SLM_TEST_REAL_DATA_ROOT"] = str(_REAL_DATA_ROOT)
-os.environ["HOME"] = str(_TEST_HOME)
-os.environ["USERPROFILE"] = str(_TEST_HOME)
-os.environ["XDG_CONFIG_HOME"] = str(_TEST_HOME / ".config")
-os.environ["XDG_CACHE_HOME"] = str(_TEST_HOME / ".cache")
-os.environ["XDG_DATA_HOME"] = str(_TEST_HOME / ".local" / "share")
-os.environ["SLM_DATA_DIR"] = str(_TEST_DATA_DIR)
-os.environ["SL_MEMORY_PATH"] = str(_TEST_ROOT / "wrong-legacy-alias")
-os.environ["SLM_HOME"] = str(_TEST_ROOT / "wrong-hook-alias")
-os.environ["SLM_DAEMON_PORT"] = str(20_000 + secrets.randbelow(40_000))
-os.environ["SLM_TEST_INSTANCE_CAPABILITY"] = secrets.token_urlsafe(32)
+    os.environ["SLM_TEST_ISOLATION"] = "1"
+    os.environ["SLM_TEST_ROOT"] = str(_TEST_ROOT)
+    os.environ["SLM_TEST_REAL_DATA_ROOT"] = str(_REAL_DATA_ROOT)
+    os.environ[_LIVE_ROOTS_ENV] = os.pathsep.join(sorted(str(r) for r in _LIVE_DATA_ROOTS))
+    os.environ["HOME"] = str(_TEST_HOME)
+    os.environ["USERPROFILE"] = str(_TEST_HOME)
+    os.environ["XDG_CONFIG_HOME"] = str(_TEST_HOME / ".config")
+    os.environ["XDG_CACHE_HOME"] = str(_TEST_HOME / ".cache")
+    os.environ["XDG_DATA_HOME"] = str(_TEST_HOME / ".local" / "share")
+    os.environ["SLM_DATA_DIR"] = str(_TEST_DATA_DIR)
+    os.environ["SL_MEMORY_PATH"] = str(_TEST_ROOT / "wrong-legacy-alias")
+    os.environ["SLM_HOME"] = str(_TEST_ROOT / "wrong-hook-alias")
+    os.environ["SLM_DAEMON_PORT"] = str(20_000 + secrets.randbelow(40_000))
+    os.environ["SLM_TEST_INSTANCE_CAPABILITY"] = secrets.token_urlsafe(32)
 for _unsafe_env in (
     "SLM_TEST_ALLOW_LIVE_HOME",
     "SLM_HOOK_DAEMON_URL",
@@ -142,4 +172,5 @@ def pytest_unconfigure(config) -> None:
     emits a ``ResourceWarning`` under ``-X dev`` and hides real fixture leaks
     in the same shutdown window.
     """
-    _TEST_ISOLATION_DIR.cleanup()
+    if _TEST_ISOLATION_DIR is not None:
+        _TEST_ISOLATION_DIR.cleanup()

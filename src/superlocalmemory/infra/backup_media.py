@@ -15,7 +15,13 @@ that can reach 2 GB would cost ten times the space. A file leaves the mirror onl
 is gone from the media folder *and* ``media.db`` no longer lists it, so erasing a picture
 also erases its backup copy, while a lost media folder never empties the mirror.
 
-Cloud backup never reads this folder: pictures stay on this computer.
+Only content-addressed originals are mirrored (``media.files.is_original``). Other files under
+``media/`` -- above all the upload-link database ``uploads.db`` and its ``-wal``/``-shm`` -- are live
+state: copied mid-write they would corrupt, and put back they would revive expired links and quotas.
+
+Every local backup path uses the two ``*_quietly`` helpers below, so a per-file backup
+(``BackupManager``) and a coherent set (``BackupCoordinator``) keep and restore the originals the
+same way, in the same mirror. Cloud backup never reads this folder: pictures stay on this computer.
 """
 
 from __future__ import annotations
@@ -46,6 +52,13 @@ def _human(size: int) -> str:
     if size >= 1024 ** 2:
         return f"{size / 1024 ** 2:.1f} MB"
     return f"{max(1, size // 1024)} KB"
+
+
+def _originals(base: Path) -> dict[str, Path]:
+    """The content-addressed originals under ``base``, by posix relative path."""
+    from superlocalmemory.media import files
+
+    return {rel: path for rel, path in _plain_files(base).items() if files.is_original(rel)}
 
 
 def _plain_files(base: Path) -> dict[str, Path]:
@@ -103,27 +116,67 @@ def _prune(mirror_files: dict[str, Path], present: dict[str, Path], listed: set[
     return removed
 
 
+def _present(slm_dir: Path) -> dict[str, Path]:
+    """The originals a sync would mirror: none without a library (``media.db``)."""
+    return _originals(slm_dir / "media") if (slm_dir / "media.db").exists() else {}
+
+
+def _needs_copy(src: Path, dest: Path) -> bool:
+    return not (dest.is_file() and dest.stat().st_size == src.stat().st_size)
+
+
+def pending_bytes(slm_dir: Path, backup_dir: Path) -> int:
+    """Bytes ``sync_originals`` would copy now: originals missing from the mirror or resized.
+
+    Read-only; the free-space check of a restore uses it to count what the safety point's own
+    sync writes before the point copies the whole mirror.
+    """
+    mirror = Path(backup_dir) / MIRROR_DIR
+    return sum(src.stat().st_size for rel, src in _present(Path(slm_dir)).items()
+               if _needs_copy(src, mirror / rel))
+
+
 def sync_originals(slm_dir: Path, backup_dir: Path) -> MirrorReport:
     """Bring the mirror up to date; copies only what is new. Skips entirely with no library or no files."""
     slm_dir, backup_dir = Path(slm_dir), Path(backup_dir)
-    present = _plain_files(slm_dir / "media") if (slm_dir / "media.db").exists() else {}
+    present = _present(slm_dir)
     mirror = backup_dir / MIRROR_DIR
     if not present and not mirror.is_dir():
         return MirrorReport()
     copied = 0
     for rel, src in present.items():
         dest = mirror / rel
-        if dest.is_file() and dest.stat().st_size == src.stat().st_size:
+        if not _needs_copy(src, dest):
             continue
         _copy_private(src, dest)
         copied += 1
+    # Prune looks at every file in the mirror, so a stray copy of live state left by an older
+    # backup (uploads.db) is removed too; it is in neither the folder's originals nor the library.
     kept = _plain_files(mirror)
     removed = _prune(kept, present, _listed(slm_dir)) if mirror.is_dir() else 0
-    total = sum(p.stat().st_size for p in _plain_files(mirror).values()) if mirror.is_dir() else 0
+    total = sum(p.stat().st_size for p in _originals(mirror).values()) if mirror.is_dir() else 0
     report = MirrorReport(files=len(present), copied=copied, removed=removed, bytes=total)
     logger.info("media originals: %d files, %s in the backup (%d new, %d removed)",
                 report.files, _human(total), copied, removed)
     return report
+
+
+def sync_originals_quietly(slm_dir: Path, backup_dir: Path) -> MirrorReport | None:
+    """``sync_originals`` for a backup whose databases are already safe: a failure is logged, never raised."""
+    try:
+        return sync_originals(slm_dir, backup_dir)
+    except Exception as exc:  # noqa: BLE001 - the database backups already succeeded
+        logger.warning("media originals were not backed up (non-critical): %s", exc)
+        return None
+
+
+def restore_originals_quietly(slm_dir: Path, backup_dir: Path) -> int:
+    """``restore_originals`` after the library database is back: a failure is logged, never raised."""
+    try:
+        return restore_originals(slm_dir, backup_dir)
+    except Exception as exc:  # noqa: BLE001 - the database restore already succeeded
+        logger.error("media originals were not put back: %s", exc)
+        return 0
 
 
 def restore_originals(slm_dir: Path, backup_dir: Path) -> int:
@@ -131,7 +184,7 @@ def restore_originals(slm_dir: Path, backup_dir: Path) -> int:
     slm_dir, backup_dir = Path(slm_dir), Path(backup_dir)
     media = slm_dir / "media"
     restored = 0
-    for rel, src in _plain_files(backup_dir / MIRROR_DIR).items():
+    for rel, src in _originals(backup_dir / MIRROR_DIR).items():
         dest = media / rel
         if ".." in Path(rel).parts or dest.exists():
             continue

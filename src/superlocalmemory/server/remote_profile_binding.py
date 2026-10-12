@@ -137,7 +137,9 @@ NEUTRAL_ARGUMENTS: frozenset[str] = frozenset({
     "output_summary", "pattern_id", "pattern_type", "payload", "prefer_project", "project",
     "project_strict",
     "project_path", "query", "recall_query_id", "receipt_id", "refs", "replaces",
-    "reply_to", "reversible", "run_id",
+    # report_id is an idempotency key, hashed with the routed profile by outcome_events;
+    # it cannot select a stored report or another workspace.
+    "reply_to", "report_id", "reversible", "run_id",
     "saved_by", "session_date", "session_id", "skill_name", "tags", "tags_match", "target",
     "timeout_s", "to", "tool_name", "ttl_seconds", "valid_at", "value", "window",
 })
@@ -147,7 +149,8 @@ NEUTRAL_ARGUMENTS: frozenset[str] = frozenset({
 MEDIA_ARGUMENTS: frozenset[str] = frozenset({
     "base64", "download_url", "file", "file_name", "job_id", "media_id", "path", "variant",
 })
-#: ``file`` is a chat app's attachment object (``openai/fileParams``). Only the two saving tools take it.
+#: ``file`` is a chat app's attachment object (``openai/fileParams``).
+#: Only the two saving tools take it.
 MEDIA_FILE_ARGUMENT_TOOLS: frozenset[str] = frozenset({"remember_media", "remember_document"})
 MEDIA_ARGUMENT_TOOLS: frozenset[str] = frozenset({
     "remember_media", "get_media", "remember_document", "media_status",

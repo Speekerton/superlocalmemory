@@ -17,7 +17,7 @@
   var TRUST = [
     { icon: 'monitor', title: 'Your memory stays on this computer', text: 'Apps ask this computer for what they need. Your database is never uploaded.' },
     { icon: 'approve', title: 'You approve every app', text: 'Nothing can connect until you set it up and sign in here.' },
-    { icon: 'eye', title: 'Read-only unless you allow saving', text: 'Apps can only look things up. Saving new memories is a separate choice.' }
+    { icon: 'eye', title: 'Read-only unless you allow saving', text: 'Internet apps can only look things up until you allow saving. Local apps use the tools you choose below.' }
   ];
 
   function buildHeader(ui) {
@@ -35,7 +35,7 @@
     });
     return h('header', { className: 'apps-hero' }, [
       titleRow,
-      h('p', { className: 'apps-lead', text: 'SuperLocalMemory is free and works fully on this computer. You only need this page if you want an AI on the internet — like ChatGPT, Claude on the web, Composio, Muse or a group bot — to use your memory.' }),
+      h('p', { className: 'apps-lead', text: 'See the AI apps connected on this computer and choose their memory tools. You can also connect internet apps — like ChatGPT, Claude on the web, Composio or Muse — below.' }),
       trust,
       h('p', { className: 'apps-note', text: 'Results an app reads are shared with that app. This computer must be on and online for apps to reach your memory.' })
     ]);
@@ -51,12 +51,15 @@
     if (!root) {
       root = ui.h('div', { id: 'od-apps-root', className: 'apps-root' });
       root.appendChild(buildHeader(ui));
+      if (typeof window.odCreateLocalAppsCard === 'function') root.appendChild(window.odCreateLocalAppsCard());
       if (!connections && typeof window.odCreateAiConnectionsCard === 'function') connections = window.odCreateAiConnectionsCard();
       if (connections) root.appendChild(connections);
       pane.textContent = ''; pane.appendChild(root);
     } else if (!options.preserveConnectionScope && connections && typeof connections.odRefreshConnectionStatus === 'function') {
       connections.odRefreshConnectionStatus();
     }
+    var localApps = root.querySelector('[data-local-apps]');
+    if (localApps && typeof localApps.odRefreshLocalApps === 'function') localApps.odRefreshLocalApps();
     return Promise.resolve();
   };
 }());

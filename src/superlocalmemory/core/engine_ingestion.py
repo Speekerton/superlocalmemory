@@ -1022,10 +1022,14 @@ def build_engine_ingestion_command(
         if len(facts) != len(operation.final_fact_ids):
             raise RuntimeError("external projection facts are missing")
 
-        ann_required = engine._ann_index is not None
+        # Mode A remains fully materializable without a model. Empty vector
+        # indexes do not make optional embedding projections mandatory.
+        has_embedder = engine._embedder is not None
+        ann_required = has_embedder and engine._ann_index is not None
         vector_store = engine._vector_store
         vector_required = bool(
-            vector_store is not None and getattr(vector_store, "available", False)
+            has_embedder and vector_store is not None
+            and getattr(vector_store, "available", False)
         )
         ann_complete = True
         vector_complete = True

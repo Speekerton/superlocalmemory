@@ -15,6 +15,7 @@ from superlocalmemory.retrieval import answer_check_status as acs
 from superlocalmemory.retrieval.sufficiency import SufficiencyVerdict
 from superlocalmemory.server.recall_serializer import recall_response_metadata
 from superlocalmemory.storage.models import AtomicFact, RecallResponse, RetrievalResult
+from tests._recall_sources import recall_sources
 
 #: The recall envelope's keys as of 4.1.19. The trace must never appear here:
 #: MCP and HTTP output stay byte-identical.
@@ -33,8 +34,10 @@ _ENVELOPE_4_1_20 = _ENVELOPE_4_1_19 | {
 _ENVELOPE_4_1_21 = _ENVELOPE_4_1_20 | {"project_scope"}
 #: 4.1.22: whether the answer was checked, in one word, and why.
 _ENVELOPE_4_1_22 = _ENVELOPE_4_1_21 | {"answerability", "answerability_reason", "tag_scope"}
-#: The live graph projection reports its lag on the current envelope.
-_ENVELOPE_4_1_25 = _ENVELOPE_4_1_22 | {"graph_lag_s"}
+#: 4.1.25: source fidelity and entity graph freshness also travel on the wire.
+_ENVELOPE_4_1_25 = _ENVELOPE_4_1_22 | {
+    "source_fidelity_status", "source_fidelity_note", "graph_lag_s",
+}
 
 
 @pytest.fixture(autouse=True)
@@ -80,10 +83,10 @@ def _run(judge, config, monkeypatch, n: int = 5):
         for i in range(n)])
     engine = SimpleNamespace(_sufficiency_judge=judge, recall=lambda *a, **k: response)
     monkeypatch.setattr(recall_pipeline, "apply_ranking", lambda resp, *a, **k: resp)
-    return recall_pipeline.run_recall(
-        "which one?", "default", fast=True, config=config, retrieval_engine=engine,
-        trust_scorer=None, embedder=None, db=SimpleNamespace(db_path=None), llm=None,
-        hooks=None)
+    with recall_sources(config.base_dir, response.results) as db:
+        return recall_pipeline.run_recall(
+            "which one?", "default", fast=True, config=config, retrieval_engine=engine,
+            trust_scorer=None, embedder=None, db=db, llm=None, hooks=None)
 
 
 def test_judge_time_is_measured(mode_a_config, monkeypatch) -> None:
@@ -117,6 +120,8 @@ def test_envelope_adds_only_the_check_explanation(mode_a_config, monkeypatch) ->
     out = _run(_SlowJudge(), mode_a_config, monkeypatch)
     meta = recall_response_metadata(out)
     assert set(meta) == _ENVELOPE_4_1_25
+    assert meta["source_fidelity_status"] == "checked"
+    assert meta["source_fidelity_note"] is None
     assert "answer_check_trace" not in repr(meta)
 
 

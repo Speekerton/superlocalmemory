@@ -1201,9 +1201,11 @@
     var saveBtn  = makeBtn('dmn-save', 'Save Daemon', true);
     var st       = makeSt('dmn');
     var restNote = makeRestartNote('dmn');
+    var livePort = document.createElement('span'); livePort.id = 'od-s-dmn-live-port'; livePort.textContent = 'Checking…';
     saveBtn.addEventListener('click', saveDaemon);
     return makeGrp('Daemon (port changes require restart)', 'settings', [
-      makeRow('API port', 'Port the SLM daemon listens on — changing this requires a restart', 'daemon.port', portInp),
+      makeRow('Live API port', 'The port this daemon is using now', '', livePort),
+      makeRow('API port after restart', 'Saved setting; an environment port override takes precedence', 'daemon.port', portInp),
       makeRow('Legacy port', 'Backward-compatible API port for older integrations', 'daemon.legacy_port', lpInp),
       makeRow('Enable legacy port', 'Keep the old API port open alongside the main port', 'daemon.enable_legacy_port', lpSw),
       makeRow('Idle timeout (seconds)', '0 = daemon runs forever · >0 = auto-stop after N idle seconds', 'daemon.idle_timeout', toInp),
@@ -1214,7 +1216,8 @@
     fetch('/api/v3/daemon/config').then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
         if (!d) return;
-        var p = q('dmn-port');    if (p) p.value = d.port || 8765;
+        var p = q('dmn-port');    if (p) p.value = d.configured_port || d.port || 8765;
+        var live = q('dmn-live-port'); if (live) live.textContent = (window.location.port || d.port || '—') + (d.configured_port && d.configured_port !== d.port ? ' · environment override' : '');
         var l = q('dmn-lport');   if (l) l.value = d.legacy_port || 8767;
         var s = q('dmn-lpen');
         if (s) { s.classList.toggle('on', d.enable_legacy_port !== false); s.setAttribute('aria-checked', String(d.enable_legacy_port !== false)); }

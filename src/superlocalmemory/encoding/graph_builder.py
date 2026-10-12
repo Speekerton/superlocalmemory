@@ -301,8 +301,11 @@ class GraphBuilder:
         self, new_fact: AtomicFact, profile_id: str,
         hub_cache: dict[str, int] | None = None,
     ) -> list[GraphEdge]:
-        """CAUSAL edges: causal markers + shared entity. Direction: cause -> effect."""
-        if not any(p.search(new_fact.content) for p in _CAUSAL_CUES):
+        """CAUSAL edges require an asserted, temporally prior cause endpoint."""
+        from superlocalmemory.encoding.causal_evidence import cause_clause, supports_cause
+
+        clause = cause_clause(new_fact.content)
+        if clause is None:
             return []
         if not new_fact.canonical_entities:
             return []
@@ -317,6 +320,8 @@ class GraphBuilder:
                 if causal_edge_count >= self._MAX_CAUSAL_EDGES_PER_ENTITY:
                     break
                 if other.fact_id == new_fact.fact_id or other.fact_id in seen:
+                    continue
+                if not supports_cause(other, new_fact, clause):
                     continue
                 if self._node_degree(other.fact_id, profile_id, hub_cache) >= self._MAX_HUB_DEGREE:
                     continue

@@ -15,6 +15,8 @@ from fastapi.testclient import TestClient
 from superlocalmemory.mcp._daemon_proxy import DaemonPoolProxy
 from superlocalmemory.mcp.remote_caller import remote_caller, remote_media_allowed
 from superlocalmemory.retrieval import visibility
+from superlocalmemory.storage.models import AtomicFact, RetrievalResult
+from tests._recall_sources import recall_sources
 
 
 def _sent_query(**kw) -> dict:
@@ -55,10 +57,14 @@ def _client(engine, seen: list) -> TestClient:
     return TestClient(app)
 
 
-@pytest.mark.parametrize("view,hide_media,vetted", [("remote", True, False), ("remote_media", False, True)])
-def test_the_daemon_recalls_under_the_remote_rules(engine_with_mock_deps, view, hide_media, vetted) -> None:
+@pytest.mark.parametrize("view,hide_media,vetted", [
+    ("remote", True, False), ("remote_media", False, True)])
+def test_the_daemon_recalls_under_the_remote_rules(
+    engine_with_mock_deps, view, hide_media, vetted,
+) -> None:
     seen: list = []
-    reply = _client(engine_with_mock_deps, seen).get("/recall", params={"q": "x", "caller_view": view})
+    reply = _client(engine_with_mock_deps, seen).get(
+        "/recall", params={"q": "x", "caller_view": view})
     assert reply.status_code == 200, reply.text
     (ctx,) = seen
     assert ctx.hide_media is hide_media and ctx.hide_sources is True
@@ -79,18 +85,26 @@ def test_an_unknown_view_gets_the_strictest_remote_rules(engine_with_mock_deps) 
     assert seen == [visibility.VisibilityContext(hide_media=True, hide_sources=True)]
 
 
-def test_the_keyword_fallback_hides_what_the_context_hides(tmp_path) -> None:
-    from superlocalmemory.server import recall_fallback
-    from tests.test_retrieval._media_support import MemoryDb
+def test_the_keyword_fallback_hides_what_the_context_hides(
+    tmp_path, engine_with_mock_deps,
+) -> None:
+    import json
 
-    db = MemoryDb()
-    db.add("m-pic", "f-pic", {"type": "media", "media_id": "a" * 32})
-    db.add("m-txt", "f-txt")
-    engine = SimpleNamespace(_db=db, profile_id="default", _config=SimpleNamespace())
-    rows = [{"fact_id": "f-pic", "content": "picture text"}, {"fact_id": "f-txt", "content": "plain"}]
-    with patch.object(recall_fallback, "_fetch_candidates", lambda *a: list(rows)):
-        with visibility.use(visibility.VisibilityContext(hide_media=True)):
-            out = recall_fallback.recall_keyword_fallback(engine, "q", 10)
-        local = recall_fallback.recall_keyword_fallback(engine, "q", 10)
+    from superlocalmemory.server import recall_fallback
+    engine = engine_with_mock_deps
+    rows = [
+        {"fact_id": "f-pic", "memory_id": "m-pic", "profile_id": "default",
+         "content": "picture text"},
+        {"fact_id": "f-txt", "memory_id": "m-txt", "profile_id": "default", "content": "plain"},
+    ]
+    candidates = [RetrievalResult(fact=AtomicFact(**row)) for row in rows]
+    with recall_sources(tmp_path, candidates, db=engine._db) as db:
+        db.execute("UPDATE memories SET metadata_json=? WHERE memory_id=?", (
+            json.dumps({"_slm_source": {"type": "media", "media_id": "a" * 32}}), "m-pic"))
+        with patch.object(recall_fallback, "_fetch_candidates", lambda *a: list(rows)):
+            with visibility.use(visibility.VisibilityContext(hide_media=True)):
+                out = recall_fallback.recall_keyword_fallback(engine, "q", 10)
+            local = recall_fallback.recall_keyword_fallback(engine, "q", 10)
     assert [r["fact_id"] for r in out["results"]] == ["f-txt"]
     assert [r["fact_id"] for r in local["results"]] == ["f-pic", "f-txt"]
+    assert out["source_fidelity_status"] == local["source_fidelity_status"] == "checked"

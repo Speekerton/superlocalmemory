@@ -21,7 +21,7 @@ URL = re.compile(r"https://mcp\.superlocalmemory\.com/u/" + CID + r"/[A-Za-z0-9_
 
 
 @pytest.fixture()
-def world(tmp_path, monkeypatch):
+def world(tmp_path, monkeypatch, media_enabled):
     store = RemoteKeyStore(tmp_path / "remote_keys.json")
     key, _ = store.add("web-" + CID, "write", profile="p2")
     store.set_extras(key.name, ["media"])

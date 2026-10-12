@@ -80,6 +80,10 @@ def describe(job: dict | None) -> str:
         line += f", {job['done']}/{job['total']} memories"
         if job.get("eta_seconds") is not None:
             line += f", about {int(job['eta_seconds'])} s left"
+    if job["state"] == "queued":
+        reason = job.get("queued_reason") or (
+            "Waiting for the background worker to start and load the model.")
+        line += "\n  Reason: " + reason
     if job.get("error"):
         line += f"\n  Reason: {job['error']}"
     return line

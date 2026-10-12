@@ -55,6 +55,8 @@ def reuse_source(db, request, metadata: dict, fact) -> str | None:
     for row in candidates:
         stored = dict(row)
         old = json.loads(stored.get("metadata_json") or "{}")
+        if _picture_identity(old) != _picture_identity(metadata):
+            continue
         from superlocalmemory.core.project_identity import project_key
 
         if project_key(old.get("project")) != project_key(metadata.get("project")):
@@ -71,6 +73,15 @@ def reuse_source(db, request, metadata: dict, fact) -> str | None:
         fact.memory_id = stored["memory_id"]
         return fact.memory_id
     return None
+
+
+def _picture_identity(metadata: dict):
+    """Pictures deduplicate by content hash, with legacy attachment IDs as fallback."""
+    source = metadata.get("_slm_source") or {}
+    if source.get("type") not in ("media", "document"):
+        return None
+    return (source.get("type"), source.get("content_sha256") or source.get("media_id"),
+            source.get("document_id"), source.get("page"))
 
 
 def matching_fact(db, fact):

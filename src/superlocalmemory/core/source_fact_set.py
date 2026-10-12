@@ -8,14 +8,20 @@ from superlocalmemory.encoding.fact_grounding import supported_facts
 from superlocalmemory.storage.models import AtomicFact, FactType
 
 
-def source_fact_set(facts, content, record, queryable_facts, max_chars=24000):
+def source_fact_set(facts, content, record, queryable_facts, max_chars=24000, *, db=None):
     """At most five supported derivatives plus an immutable source projection."""
     raw = content.strip().casefold()
     derived = [fact for fact in facts if fact.content.strip().casefold() != raw]
     from superlocalmemory.encoding.speaker_spans import with_actor
 
     context = with_actor(content, record.speaker, record.role)
-    derived = supported_facts(derived, context, record.session_date)[:5]
+    from superlocalmemory.core.source_fidelity_quarantine import store_review_candidates
+    from superlocalmemory.encoding.fact_extraction_result import FactExtraction, partition_facts
+
+    checked = partition_facts(FactExtraction(
+        derived, getattr(facts, "review_candidates", ())), context, record.session_date)
+    store_review_candidates(db, checked.review_candidates, record)
+    derived = supported_facts(checked, context, record.session_date)[:5]
     if queryable_facts:
         originals = list(queryable_facts)
     else:

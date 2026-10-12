@@ -129,8 +129,8 @@ def test_portable_host_connect_is_additive_and_idempotent(host: str, tmp_path: P
     if descriptor.fmt == "json":
         assert rendered[descriptor.server_key]["unrelated"] == preserved
         slm = rendered[descriptor.server_key]["superlocalmemory"]
-        assert slm["command"] == "slm"
-        assert slm["args"] == ["mcp"]
+        assert slm["command"] == sys.executable
+        assert slm["args"] == ["-m", "superlocalmemory.cli", "mcp"]
         assert slm["env"]["SLM_MCP_PROFILE"] == CERT_PROFILE
     else:
         providers = rendered[descriptor.server_key]
@@ -138,12 +138,12 @@ def test_portable_host_connect_is_additive_and_idempotent(host: str, tmp_path: P
         matches = [
             provider
             for provider in providers
-            if provider.get("params", {}).get("serverName") == "superlocalmemory"
+            if provider.get("name") == "superlocalmemory"
         ]
         assert len(matches) == 1
-        slm = matches[0]["params"]
-        assert slm["command"] == "slm"
-        assert slm["args"] == ["mcp"]
+        slm = matches[0]
+        assert slm["command"] == sys.executable
+        assert slm["args"] == ["-m", "superlocalmemory.cli", "mcp"]
         assert slm["env"]["SLM_MCP_PROFILE"] == CERT_PROFILE
 
 
@@ -193,4 +193,7 @@ async def test_generic_cli_clients_can_use_the_standard_stdio_mcp_contract(
     assert protocol_version
     names = {tool.name for tool in listed.tools}
     assert REQUIRED_LIFECYCLE_TOOLS <= names
-    assert not data_dir.exists(), "MCP discovery must not initialize a data store"
+    # An initialized transport owns a presence registry, not a memory store.
+    assert {path.name for path in data_dir.iterdir()} <= {"mcp-processes"}
+    assert not list(data_dir.rglob("*.db")), "MCP discovery must not initialize a data store"
+    assert not list((data_dir / "mcp-processes").glob("*.json")), "transport must unregister"

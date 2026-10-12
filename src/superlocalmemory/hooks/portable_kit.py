@@ -373,24 +373,51 @@ def _merge_yaml_list(
     *, block: dict[str, Any] | None = None,
 ) -> tuple[str, int]:
     """Merge Continue's current mcpServers list without clobbering user settings."""
+    before = copy.deepcopy(data)
     # https://docs.continue.dev/reference
     for key, value in {"name": "SLM Config", "version": "1.0.0", "schema": "v1"}.items():
         data.setdefault(key, value)
     providers = data.setdefault(desc.server_key, [])
     if not isinstance(providers, list) or any(not isinstance(p, dict) for p in providers):
         raise ValueError("mcpServers must be a list of server objects")
-    block = copy.deepcopy(block if block is not None else desc.server_block)
+    block = copy.deepcopy(
+        block if block is not None else _build_server_block(desc, "stdio", 8765, profile)
+    )
     if profile:
-        block["env"] = {"SLM_MCP_PROFILE": profile}
-    preserved = sum(p.get("name") != "superlocalmemory" for p in providers)
-    for i, entry in enumerate(providers):
-        if entry.get("name") == "superlocalmemory":
-            if entry == block:
-                return "unchanged", preserved
-            providers[i] = block
-            return "merged", preserved
-    providers.append(block)
-    return "wrote", preserved
+        block.setdefault("env", {})["SLM_MCP_PROFILE"] = profile
+    merged: list[dict[str, Any]] = []
+    replaced = False
+    for entry in providers:
+        if entry.get("name") != "superlocalmemory":
+            merged.append(entry)
+        elif not replaced:
+            merged.append(block)
+            replaced = True
+    preserved = len(merged) - int(replaced)
+    if not replaced:
+        merged.append(block)
+    data[desc.server_key] = merged
+    migrated = _remove_legacy_slm_provider(data)
+    status = "unchanged" if data == before else "merged" if replaced or migrated else "wrote"
+    return status, preserved
+
+
+def _remove_legacy_slm_provider(data: dict[str, Any]) -> bool:
+    """Remove only SLM's obsolete Continue entries, preserving other providers."""
+    legacy = data.get("contextProviders")
+    if not isinstance(legacy, list):
+        return False
+    remaining = [entry for entry in legacy if not (
+        isinstance(entry, dict) and isinstance(entry.get("params"), dict)
+        and entry["params"].get("serverName") == "superlocalmemory"
+    )]
+    if remaining == legacy:
+        return False
+    if remaining:
+        data["contextProviders"] = remaining
+    else:
+        del data["contextProviders"]
+    return True
 
 
 def _build_server_block(
@@ -425,10 +452,29 @@ def _build_server_block(
             block["type"] = "stdio"
     else:
         block = copy.deepcopy(desc.server_block)
+        _pin_stdio_runtime(block, desc.ide_id)
     if profile:
         env_key = "environment" if desc.ide_id == "opencode" else "env"
         block.setdefault(env_key, {})["SLM_MCP_PROFILE"] = profile
     return block
+
+
+def _pin_stdio_runtime(block: dict[str, Any], host: str) -> None:
+    """Pin the process while preserving each host's command/environment schema."""
+    from superlocalmemory.cli.deployment import security_environment
+    from superlocalmemory.infra.data_root import canonical_data_root
+
+    command = block.get("command")
+    if command == "slm":
+        block["command"] = sys.executable
+        block["args"] = ["-m", "superlocalmemory.cli", *block.get("args", [])]
+    elif isinstance(command, list) and command and command[0] == "slm":
+        block["command"] = [sys.executable, "-m", "superlocalmemory.cli", *command[1:]]
+    env_key = "environment" if host == "opencode" else "env"
+    block.setdefault(env_key, {}).update(
+        SLM_MCP_HOST=host, SLM_DATA_DIR=str(canonical_data_root()),
+        **security_environment(),
+    )
 
 
 def _check_daemon_health(daemon_port: int, timeout: float = 2.0) -> bool:

@@ -137,8 +137,7 @@ NEUTRAL_ARGUMENTS: frozenset[str] = frozenset({
     "output_summary", "pattern_id", "pattern_type", "payload", "prefer_project", "project",
     "project_strict",
     "project_path", "query", "recall_query_id", "receipt_id", "refs", "replaces",
-    # report_id only deduplicates outcomes; the writer namespaces it by profile.
-    "reply_to", "reversible", "report_id", "run_id",
+    "reply_to", "reversible", "run_id",
     "saved_by", "session_date", "session_id", "skill_name", "tags", "tags_match", "target",
     "timeout_s", "to", "tool_name", "ttl_seconds", "valid_at", "value", "window",
 })

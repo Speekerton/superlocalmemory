@@ -596,6 +596,8 @@ def register_core_tools(server, get_engine: Callable) -> None:
         ``max_tokens`` caps the returned results; it is never exceeded.
         If ``warming_up`` is true, tell the user SuperLocalMemory is still
         warming up and to retry shortly; do not conclude the memory is absent.
+        ``code: RECALL_BUSY`` means every recall slot is serving other agents:
+        wait a few seconds and ask again; it says nothing about the memory.
         ``include_related=true`` to see up to three close memories when the
         question is real but not answered exactly ("I don't have this exactly
         -- here are the closest memories."), each labelled ``tier: related``.

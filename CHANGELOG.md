@@ -13,6 +13,37 @@ and lets SLM remember pictures and documents. It also closes a long list of
 erasure, access-control and backup gaps. Upgrading never moves or deletes
 memory, and an update that changes the store takes a restore point first.
 
+### Many agents at once
+
+- **A question waits for its full answer instead of getting a keyword guess.** When
+  several agents ask at once, an agent's recall, `slm recall`, the Recall Lab and
+  saved views now wait their turn (up to about twelve seconds) and run the full
+  pipeline. If every slot is still busy, they get a plain "SuperLocalMemory is
+  answering other questions right now. Ask again in about N seconds" (HTTP 503 with
+  `Retry-After`, `code: RECALL_BUSY` over MCP, exit code 75 from the CLI), never a
+  stale keyword answer presented as recall. Hooks that run before a prompt keep their
+  three-second limit, so typing is never held up. Measured on a 27,000-memory store
+  with twelve agents asking at once: twelve full answers in 2.4 to 5.4 seconds, where
+  before two of the twelve fell back to keywords.
+- **The same question asked twice at once runs once.** Identical recalls in flight
+  share one run, and a complete answer is reused for a few seconds while nothing is
+  written. Any write (remember, update, delete, forget, a scope change) drops it at
+  once, so an agent never reads an answer from before its own write.
+- **Background work steps aside for questions.** Local-model extraction and summaries
+  in Mode B now wait while a recall is running (never more than twenty seconds), so a
+  long generation no longer sits in front of every recall.
+- **The dashboard reads once for everyone.** Memory health, totals and the compliance
+  pane are computed once and shared for a few seconds between every open dashboard;
+  a repeat look answers in milliseconds. The audit trail is opened once, with an
+  index for the workspace it is read for.
+- **"What am I working on" answers with your newest memories.** A present-tense
+  question no longer faces the word-match test (its answer shares no word with it),
+  so it stops saying "That isn't in SuperLocalMemory."
+- **Dashboard:** a "please wait" bar with the mascot while SLM starts or warms up;
+  loading and error messages carry the mascot; the folder dialog comes to the front
+  instead of opening behind other windows; Settings rows wrap instead of squeezing a
+  label to one letter per line.
+
 ### Recall quality
 
 - **Recall says so when nothing supports the question.** Every recall now comes back

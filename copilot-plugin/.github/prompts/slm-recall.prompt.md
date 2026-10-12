@@ -165,6 +165,14 @@ rest come back empty.
 `empty`, `no_candidates`, `disabled` and `not_configured` are normal. `error`,
 `timeout`, `no_embedding` and `warming` mean the answer is **incomplete, not
 negative** — say so to the user rather than reporting "no memories found".
+
+**Busy is not empty.** When many agents ask at once, recall waits up to about
+twelve seconds for a free slot. If it still cannot start, it returns
+`code: "RECALL_BUSY"`, `retryable: true` and a plain sentence ("Ask again in
+about N seconds"). Wait that long and ask again; never tell the user the memory
+lacks the answer. The same question asked twice at once runs once, and an answer
+is reused for a few seconds only while nothing is written, so a `remember` you
+just made is always visible to your next `recall`.
 `incomplete_channels` lists the channels abandoned at the time limit, so two
 runs of the same question that differ only there are an incomplete answer, not
 a changed memory.

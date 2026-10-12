@@ -56,6 +56,26 @@ again in a few minutes.", and with nothing found it prints that note instead of
 person and retry shortly. If the daemon is not running at all, recall says the
 service is needed rather than that it is warming up.
 
+## When many agents ask at once
+
+A question you or an agent asks (the MCP `recall` tool, `slm recall`, `GET /recall`,
+the Recall Lab, a saved view) always runs the full pipeline. When other agents are
+already being answered, it waits for a free slot, up to about twelve seconds. If the
+slots are still busy after that, it does not hand back a keyword guess. It answers:
+
+> SuperLocalMemory is answering other questions right now. Ask again in about N
+> seconds; nothing was lost.
+
+Over HTTP that is status 503 with a `Retry-After` header and `code: RECALL_BUSY` in
+the body. Over MCP the tool returns `code: RECALL_BUSY` and `retryable: true`. The
+CLI prints the sentence and exits with code 75. It says nothing about whether the
+memory exists; ask again.
+
+Two identical questions asked at the same moment share one run. A complete answer is
+reused for a few seconds, and only while nothing is written: any remember, update,
+delete or forget drops it at once. Hooks that add memories before your prompt keep a
+three-second limit and add nothing when they run out, so typing is never held up.
+
 ## Layered recall
 
 How much of each memory a recall returns is your choice, within a budget:

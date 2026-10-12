@@ -24,7 +24,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Generator, NoReturn
 
-from superlocalmemory.storage import projection_outbox, store_signature
+from superlocalmemory.storage import erasure_derived, projection_outbox, store_signature
 from superlocalmemory.storage.correction_cases import SAVED_SUCCESSOR_PARAMS, SAVED_SUCCESSOR_SQL
 from superlocalmemory.storage.embedding_codec import (
     decode_embedding,
@@ -3289,13 +3289,21 @@ class DatabaseManager:
         """
         try:
             scenes = self.get_scenes_for_fact(fact_id, profile_id, include_erasing=True)
+            erased_text = erasure_derived.fact_content(self.execute, profile_id, fact_id)
             for scene in scenes:
                 new_ids = [fid for fid in (scene.fact_ids or []) if fid != fact_id]
                 if new_ids:
+                    # The theme is the anchor fact's first 200 characters, so it
+                    # must not outlive the fact (storage/erasure_derived.py).
+                    theme = scene.theme
+                    if erasure_derived.theme_quotes(
+                            theme, scene.fact_ids or [], fact_id, erased_text):
+                        theme = erasure_derived.theme_from_members(
+                            self.execute, profile_id, new_ids)
                     self.execute(
-                        "UPDATE memory_scenes SET fact_ids_json = ? "
+                        "UPDATE memory_scenes SET fact_ids_json = ?, theme = ? "
                         "WHERE scene_id = ?",
-                        (json.dumps(new_ids), scene.scene_id),
+                        (json.dumps(new_ids), theme, scene.scene_id),
                     )
                 else:
                     self.execute(

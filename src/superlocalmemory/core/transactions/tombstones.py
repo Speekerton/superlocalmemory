@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import logging
 
+from superlocalmemory.storage import erasure_derived
+
 logger = logging.getLogger("superlocalmemory.core.transactions.erasure")
 
 
@@ -51,6 +53,12 @@ def _invalidate_display_summaries(conn: object, profile_id: str, fact_id: str) -
     except Exception as exc:  # noqa: BLE001 - table absent on older schemas
         if "no such table" not in str(exc).lower() and "malformed json" not in str(exc).lower():
             raise
+    # The persona stitches community summaries and the scene theme is the first
+    # 200 characters of its anchor fact. Neither names the fact once the erasure
+    # completes (the community row and the scene's member id are removed), so
+    # both are cleared while the link still exists (storage/erasure_derived.py).
+    erasure_derived.drop_personas_quoting(conn.execute, profile_id, fact_id)
+    erasure_derived.retheme_scenes_quoting(conn.execute, profile_id, fact_id)
 
 
 def write_tombstones_status(

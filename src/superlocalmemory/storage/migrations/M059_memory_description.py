@@ -9,7 +9,7 @@ import sqlite3
 NAME = 'M059_memory_description'
 DB_TARGET = 'memory'
 DOWNGRADE_FLOOR = 51
-DDL = '''-- M059 adds non_answer and the enrichment runs/changes ledger.
+DDL = '''-- M059 adds non_answer(+_user) and the enrichment runs/changes ledger.
 CREATE TABLE IF NOT EXISTS enrichment_runs (
     run_id TEXT PRIMARY KEY, enrichment_version TEXT NOT NULL,
     action TEXT NOT NULL DEFAULT 'enrichment', status TEXT NOT NULL,
@@ -46,13 +46,16 @@ def apply(conn: sqlite3.Connection) -> None:
     columns = {r[1] for r in conn.execute('PRAGMA table_info(atomic_facts)')}
     if columns and 'non_answer' not in columns:
         conn.execute('ALTER TABLE atomic_facts ADD COLUMN non_answer INTEGER DEFAULT 0')
+    if columns and 'non_answer_user' not in columns:
+        # The user's own "this is an answer" decision; NULL = none (review M1).
+        conn.execute('ALTER TABLE atomic_facts ADD COLUMN non_answer_user INTEGER')
 
 
 def verify(conn: sqlite3.Connection) -> bool:
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     columns = {r[1] for r in conn.execute('PRAGMA table_info(atomic_facts)')}
     return {'enrichment_runs', 'enrichment_changes'} <= tables and (
-        not columns or 'non_answer' in columns)
+        not columns or {'non_answer', 'non_answer_user'} <= columns)
 
 
 def repair(conn: sqlite3.Connection) -> None:

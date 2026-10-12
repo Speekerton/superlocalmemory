@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from superlocalmemory.core.description_metadata import VERSION, fact_description, parent_labels
+from superlocalmemory.encoding.non_answer import user_decided
 from superlocalmemory.storage import enrichment_ledger as ledger
 from superlocalmemory.storage.entity_index import record_fact_entities
 
@@ -203,7 +204,10 @@ class EnrichmentRunner:
         changed = 0
         def add(table, target, field, value, **kw):
             return ledger.add(self.db, run_id, fact.profile_id, table, target, field, value, **kw)
+        user_said = user_decided(self.db, fact.fact_id, fact.profile_id)
         for field, value in description.items():
+            if field == 'non_answer' and user_said:
+                continue  # the user's "this is an answer" always wins
             if field == 'entities_json':
                 value = json.dumps(list(dict.fromkeys([*fact.entities, *value])))
             changed += add('atomic_facts', fact.fact_id, field, value,

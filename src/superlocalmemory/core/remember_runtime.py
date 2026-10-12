@@ -1412,6 +1412,12 @@ def _propose_correction_successor(
         # predecessor's current kind onto this successor only when applied.
     )
     persisted_id = db.insert_fact_immutable(successor)
+    # A person edited this memory: neither side of the edit is a stub any
+    # more, and the automatic stub rule never re-flags them (WP-19 M1).
+    from superlocalmemory.encoding.non_answer import user_unmark
+
+    user_unmark(db, fact_id, profile_id)
+    user_unmark(db, persisted_id, profile_id)
     from superlocalmemory.storage.correction_cases import (
         CorrectionActor,
         propose_on_connection,

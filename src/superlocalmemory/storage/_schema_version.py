@@ -62,7 +62,7 @@ from pathlib import Path
 #: new learning.db table for learning attribution); the ceiling moves to it by
 #: the same convention, with ``DOWNGRADE_FLOOR`` 51.
 #: M056 adds recall indexes only; the ceiling follows the newest migration.
-#: M059 is additive (one atomic_facts column and the enrichment ledger tables),
+#: M059 is additive (two atomic_facts columns and the enrichment ledger tables),
 #: with ``DOWNGRADE_FLOOR`` 51.
 SUPPORTED_SCHEMA_VERSION: int = 59
 

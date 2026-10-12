@@ -18,7 +18,7 @@ from tests.test_storage.test_entity_link_repair import _build, _links, _state
 
 @pytest.fixture
 def engine(tmp_path):
-    from superlocalmemory.storage.migrations.M059_memory_description import apply
+    from superlocalmemory.storage.migrations.M060_memory_description import apply
     db = _build(tmp_path / 'memory.db')
     with sqlite3.connect(db.db_path) as conn:
         apply(conn)

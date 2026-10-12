@@ -17,7 +17,7 @@ TABLES = ('memories', 'atomic_facts', 'canonical_entities', 'fact_entity_associa
 
 
 def _store(path):
-    from superlocalmemory.storage.migrations.M059_memory_description import apply
+    from superlocalmemory.storage.migrations.M060_memory_description import apply
     db = DatabaseManager(path)
     db.initialize(schema)
     with sqlite3.connect(db.db_path) as conn:

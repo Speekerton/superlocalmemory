@@ -5,13 +5,13 @@
 Routes: /api/memories, /api/graph, /api/search, /api/clusters, /api/clusters/{id}
 Uses V3 MemoryEngine for store/recall. Falls back to direct DB for list/graph.
 """
-from anyio.from_thread import run as _on_loop  # body of a sync route
 import json
 import logging
 import re
 import uuid
 from typing import TYPE_CHECKING, Optional
 
+from anyio.from_thread import run as _on_loop  # body of a sync route
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from superlocalmemory.core.config import BROWSE_PAGE_SIZE
@@ -19,6 +19,10 @@ from superlocalmemory.retrieval import remote_view
 from superlocalmemory.storage.database import (
     stub_flag_sql_for_connection,
     visible_fact_clause_for_connection,
+)
+from superlocalmemory.storage.erasure_visibility import (
+    aggregate_erasure_clause,
+    memory_erasure_clause,
 )
 
 from .helpers import (
@@ -322,6 +326,28 @@ def _authorize_memory_mutation(
     return engine, profile_id, context
 
 
+def _authorize_review_read(request: Request, profile: str | None):
+    """``(engine, profile_id)`` for reading review cases: READ, not WRITE.
+
+    A viewer is the role meant to audit, so it may see pending corrections and
+    overtaken cases; acting on them stays WRITE (4.1.25 audit G-M5: listings
+    went through the mutation check and told a viewer it had tried to write).
+    The caller's role is checked before the profile's existence is revealed.
+    """
+    from superlocalmemory.access.rbac import Permission as _Perm
+    from superlocalmemory.server.rbac_enforce import require_permission as _rbac_require
+
+    _rbac_require(request, _Perm.READ, profile=profile)
+    engine = _get_engine(request)
+    if engine is None:
+        raise HTTPException(503, detail="Engine not initialized")
+    if profile is not None and not engine._db.execute(
+        "SELECT 1 AS one FROM profiles WHERE profile_id = ?", (profile,),
+    ):
+        raise _UnknownRoutedProfile(profile)
+    return engine, profile or engine.profile_id
+
+
 def _preview(content: str | None) -> str:
     """Truncate content for preview display."""
     if not content:
@@ -368,7 +394,7 @@ def _fetch_graph_data(
     if use_v3:
         # Recency-first: get the most recent nodes, then find their edges.
         # LEFT JOIN fact_importance for graph metrics (v3.4.1 — additive only).
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT af.fact_id as id, af.content, af.fact_type as category,
                    af.confidence as importance, af.session_id as project_name,
                    af.created_at,
@@ -377,6 +403,7 @@ def _fetch_graph_data(
             LEFT JOIN fact_importance fi
                 ON af.fact_id = fi.fact_id AND fi.profile_id = ?
             WHERE af.profile_id = ? AND af.confidence >= ?
+            {visible_fact_clause_for_connection(cursor.connection, "af")}
             ORDER BY af.created_at DESC
             LIMIT ?
         """, (profile, profile, min_importance / 10.0, max_nodes))
@@ -420,9 +447,10 @@ def _fetch_graph_data(
         # Compute clusters from memory_scenes
         clusters = []
         try:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT scene_id, theme, fact_ids_json
                 FROM memory_scenes WHERE profile_id = ?
+                {aggregate_erasure_clause(cursor.connection, "memory_scenes")}
             """, (profile,))
             for row in cursor.fetchall():
                 fact_ids = []
@@ -920,6 +948,17 @@ def get_graph(
         raise _internal_error("Graph error")
 
 
+def _presented(results: list) -> list:
+    """Search rows with the stored scope, sharing and project (UX-12)."""
+    from superlocalmemory.server.search_presentation import with_stored_fields
+
+    conn = get_db_connection()
+    try:
+        return with_stored_fields(conn, results)
+    finally:
+        conn.close()
+
+
 @router.post("/api/search")
 async def search_memories(request: Request, body: SearchRequest):
     """Semantic search using the daemon's in-process engine.
@@ -1053,6 +1092,7 @@ async def search_memories(request: Request, body: SearchRequest):
                 if parsed_kind:
                     results = [r for r in results
                               if r.get("memory_kind") == parsed_kind][:body.limit]
+                results = _presented(results)  # UX-12: scope, sharing, project
                 return {
                     "query": body.query,
                     "results": results,
@@ -1102,6 +1142,7 @@ async def search_memories(request: Request, body: SearchRequest):
             SELECT fact_id, memory_id, profile_id, content, confidence as memory_confidence,
                    fact_type as category, created_at{kind_select}
             FROM atomic_facts WHERE profile_id = ? AND {sql[0]}{kind_clause}
+            {visible_fact_clause_for_connection(conn)}
             ORDER BY {sql[2]}, confidence DESC LIMIT ?
         """, (active_profile, *sql[1], *kind_params, *sql[3], body.limit)).fetchall()
         from superlocalmemory.retrieval.fallback_fidelity import admit_fallback
@@ -1116,10 +1157,10 @@ async def search_memories(request: Request, body: SearchRequest):
             for row in rows:
                 row.update(kind_fields(row, display_min_confidence=_threshold))
 
-        results = [{
+        results = _presented([{
             **row, "score": None, "relevance_score": None, "ranking_score": None,
             "confidence": row.get("memory_confidence"), "rank_position": position,
-        } for position, row in enumerate(rows, start=1)]
+        } for position, row in enumerate(rows, start=1)])
 
         return {
             "query": body.query, "results": results, "total": len(results),
@@ -1153,10 +1194,11 @@ def get_clusters(request: Request):
 
         # V3 schema: memory_scenes stores fact_ids_json (JSON array)
         if _has_table(cursor, 'memory_scenes'):
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT scene_id as cluster_id, theme, fact_ids_json,
                        entity_ids_json, created_at as first_memory
                 FROM memory_scenes WHERE profile_id = ?
+                {aggregate_erasure_clause(cursor.connection, "memory_scenes")}
                 ORDER BY created_at DESC
             """, (profile,))
             raw_scenes = cursor.fetchall()
@@ -1193,7 +1235,8 @@ def get_clusters(request: Request):
                 except (json.JSONDecodeError, TypeError):
                     pass
             total_facts = cursor.execute(
-                "SELECT COUNT(*) as c FROM atomic_facts WHERE profile_id = ?",
+                "SELECT COUNT(*) as c FROM atomic_facts WHERE profile_id = ?"
+                f"{visible_fact_clause_for_connection(conn)}",
                 (profile,),
             ).fetchone()['c']
             unclustered = total_facts - len(all_scene_fact_ids)
@@ -1246,7 +1289,8 @@ def get_cluster_detail(
             # Get fact IDs from the scene's JSON array
             cursor.execute(
                 "SELECT fact_ids_json, theme FROM memory_scenes "
-                "WHERE scene_id = ? AND profile_id = ?",
+                "WHERE scene_id = ? AND profile_id = ?"
+                f"{aggregate_erasure_clause(conn, 'memory_scenes')}",
                 (cluster_id, profile),
             )
             scene_row = cursor.fetchone()
@@ -1263,6 +1307,7 @@ def get_cluster_detail(
                                confidence as importance, created_at
                         FROM atomic_facts
                         WHERE profile_id = ? AND fact_id IN ({ph})
+                        {visible_fact_clause_for_connection(conn)}
                         ORDER BY confidence DESC
                     """, [profile] + fact_ids[:limit])
                 else:
@@ -1345,6 +1390,10 @@ def get_memory_facts(request: Request, memory_id: str):
         )
         original = mem_map.get(memory_id, "")
         facts = engine._db.get_facts_by_memory_id(memory_id, active_profile)
+        if memory_id not in mem_map and not facts:
+            probe = getattr(type(engine._db), "is_memory_erasing", None)
+            if callable(probe) and probe(engine._db, memory_id, active_profile):
+                raise HTTPException(status_code=404, detail="Memory not found")
         fact_list = [
             {
                 "fact_id": f.fact_id,
@@ -1383,7 +1432,8 @@ def get_memory_detail(request: Request, memory_id: str):
         cursor.execute(
             "SELECT memory_id, content, session_id, speaker, role, "
             "session_date, created_at, metadata_json "
-            "FROM memories WHERE memory_id = ? AND profile_id = ?",
+            "FROM memories WHERE memory_id = ? AND profile_id = ?"
+            f"{memory_erasure_clause(conn)}",
             (memory_id, active_profile),
         )
         mem = cursor.fetchone()
@@ -1394,7 +1444,8 @@ def get_memory_detail(request: Request, memory_id: str):
         cursor.execute(
             "SELECT fact_id, content, fact_type, confidence, importance, "
             "access_count, created_at, entities_json "
-            "FROM atomic_facts WHERE memory_id = ? AND profile_id = ? "
+            "FROM atomic_facts WHERE memory_id = ? AND profile_id = ?"
+            f"{visible_fact_clause_for_connection(conn)} "
             "ORDER BY created_at ASC",
             (memory_id, active_profile),
         )
@@ -1437,8 +1488,10 @@ def get_fact_detail(request: Request, fact_id: str):
             "f.entities_json, f.canonical_entities_json, f.session_id, "
             "m.content AS source_memory_content "
             "FROM atomic_facts f "
-            "LEFT JOIN memories m ON f.memory_id = m.memory_id "
-            "WHERE f.fact_id = ? AND f.profile_id = ?",
+            "LEFT JOIN memories m ON f.memory_id = m.memory_id AND f.profile_id = m.profile_id"
+            f"{memory_erasure_clause(conn, 'm')} "
+            "WHERE f.fact_id = ? AND f.profile_id = ?"
+            f"{visible_fact_clause_for_connection(conn, 'f')}",
             (fact_id, active_profile),
         )
         row = cursor.fetchone()
@@ -1853,9 +1906,7 @@ def list_corrections(request: Request, limit: int = 100, profile_id: str = "",
     ``profile_id`` names it (authorized like a routed review), else the active one."""
     try:
         profile = _routed_profile(profile_id)
-        engine, target_profile, _context = _authorize_memory_mutation(
-            request, "update", "correction-list", run_pre_hook=False, profile=profile,
-        )
+        engine, target_profile = _authorize_review_read(request, profile)
         cases = _correction_store_for(engine, target_profile).list_cases(
             target_profile, limit=limit)
         from superlocalmemory.server.routes.overtaken import overtaken_for  # a user action closed
@@ -1884,9 +1935,7 @@ def get_correction(request: Request, case_id: str, profile_id: str = ""):
     routed profile when ``profile_id`` names it, else from the active one."""
     try:
         profile = _routed_profile(profile_id)
-        engine, target_profile, _context = _authorize_memory_mutation(
-            request, "update", case_id, run_pre_hook=False, profile=profile,
-        )
+        engine, target_profile = _authorize_review_read(request, profile)
         case = _correction_store_for(engine, target_profile).get_case(case_id)
         return {"success": True, "correction": _correction_case_response(case)}
     except HTTPException:

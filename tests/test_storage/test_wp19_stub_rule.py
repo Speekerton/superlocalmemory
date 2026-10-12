@@ -38,7 +38,7 @@ def test_label_plus_machine_id_or_session_boilerplate_is_a_stub(text):
 
 @pytest.fixture
 def db(tmp_path):
-    from superlocalmemory.storage.migrations.M059_memory_description import apply
+    from superlocalmemory.storage.migrations.M060_memory_description import apply
     manager = DatabaseManager(tmp_path / 'memory.db')
     manager.initialize(schema)
     with sqlite3.connect(manager.db_path) as conn:

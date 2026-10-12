@@ -13,7 +13,7 @@ from superlocalmemory.storage.models import AtomicFact, MemoryRecord
 @pytest.fixture
 def legacy_store(tmp_path):
     from superlocalmemory.storage.migrations.M013_bi_temporal_columns import repair
-    from superlocalmemory.storage.migrations.M059_memory_description import apply
+    from superlocalmemory.storage.migrations.M060_memory_description import apply
     db = DatabaseManager(tmp_path / 'memory.db')
     db.initialize(schema)
     with sqlite3.connect(db.db_path) as conn:

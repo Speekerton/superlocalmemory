@@ -20,7 +20,7 @@ from superlocalmemory.storage.models import AtomicFact, FactType, MemoryRecord
 @pytest.fixture
 def db(tmp_path):
     from superlocalmemory.storage.migrations.M013_bi_temporal_columns import repair
-    from superlocalmemory.storage.migrations.M059_memory_description import apply
+    from superlocalmemory.storage.migrations.M060_memory_description import apply
     manager = DatabaseManager(tmp_path / 'memory.db')
     manager.initialize(schema)
     with sqlite3.connect(manager.db_path) as conn:

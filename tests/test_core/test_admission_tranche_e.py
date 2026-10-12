@@ -197,6 +197,12 @@ class TestE2AuthorizeRouteMutationCallsAdmit:
         mock_request = MagicMock()
         mock_request.app.state = MagicMock()
         mock_request.app.state.daemon_descriptor = None
+        # No role store and no session: the caller is the machine itself. The
+        # route now resolves the real principal (OPS-26), so a MagicMock role
+        # store would invent a user.
+        mock_request.app.state.rbac = None
+        mock_request.headers = {}
+        mock_request.cookies = {}
 
         mock_engine = MagicMock()
         mock_engine.profile_id = "default"
@@ -231,6 +237,12 @@ class TestE2AuthorizeRouteMutationCallsAdmit:
         mock_request = MagicMock()
         mock_request.app.state = MagicMock()
         mock_request.app.state.daemon_descriptor = None
+        # No role store and no session: the caller is the machine itself. The
+        # route now resolves the real principal (OPS-26), so a MagicMock role
+        # store would invent a user.
+        mock_request.app.state.rbac = None
+        mock_request.headers = {}
+        mock_request.cookies = {}
 
         mock_engine = MagicMock()
         mock_engine.profile_id = "default"

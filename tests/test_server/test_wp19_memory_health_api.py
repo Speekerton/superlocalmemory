@@ -68,7 +68,7 @@ def test_undoing_twice_answers_422_with_a_plain_reason(monkeypatch, tmp_path):
 def test_entity_links_fix_undo_and_include_undone_over_http(monkeypatch, tmp_path):
     import sqlite3
 
-    from superlocalmemory.storage.migrations.M059_memory_description import apply
+    from superlocalmemory.storage.migrations.M060_memory_description import apply
     from tests.test_storage.test_entity_link_repair import _build
 
     monkeypatch.setattr(memory_health, 'require_permission', lambda *a, **k: None)

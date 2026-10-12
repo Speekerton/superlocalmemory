@@ -221,7 +221,7 @@ class AtomicFact:
     # v3.4.65: Core Memory Block explicit pin (M015)
     pinned: bool = False
 
-    # WP-19 (M059): a stored stub (receipt, session boilerplate). Listed and
+    # WP-19 (M060): a stored stub (receipt, session boilerplate). Listed and
     # counted like any memory, never used as a recall answer.
     non_answer: bool = False
 

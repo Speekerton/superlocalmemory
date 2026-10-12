@@ -17,7 +17,7 @@ from superlocalmemory.storage.migrations import (
     M042_correction_case_ledger,
 )
 from superlocalmemory.storage.migrations import M052_memory_kinds as m052
-from superlocalmemory.storage.migrations import M059_memory_description as m059
+from superlocalmemory.storage.migrations import M060_memory_description as m059
 from superlocalmemory.storage.models import AtomicFact, FactType, MemoryRecord
 
 ACTOR = 'daemon-capability:' + 'a' * 64

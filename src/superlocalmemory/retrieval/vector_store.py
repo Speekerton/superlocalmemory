@@ -24,9 +24,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Generator
 
-
-from superlocalmemory.storage.embedding_codec import encode_embedding
 from superlocalmemory.retrieval import vector_presence
+from superlocalmemory.storage.embedding_codec import encode_embedding
+from superlocalmemory.storage.erasure_visibility import erasure_clause_for_connection
 from superlocalmemory.storage.write_lock import get_write_lock
 
 logger = logging.getLogger(__name__)
@@ -541,6 +541,7 @@ class VectorStore:
                     " AND COALESCE(af.quarantined, 0) = 0 "
                     if self._has_quarantine_column() else ""
                 )
+                quarantine_filter += erasure_clause_for_connection(conn, "em")
                 if profile_id is not None:
                     # The profile is BOUND on the metadata side, not joined to
                     # fe.profile_id: reading the vec0 partition column runs a

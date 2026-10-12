@@ -46,9 +46,9 @@ def _require_read(request: Request) -> None:
 
 def _require_manage(request: Request) -> dict:
     """Require MANAGE for backup configuration, creation, and cloud access."""
-    from superlocalmemory.server.rbac_enforce import require_manage
+    from superlocalmemory.server.rbac_enforce import require_global_manage
 
-    return require_manage(request)
+    return require_global_manage(request)
 
 
 def _require_oauth_start(request: Request) -> None:

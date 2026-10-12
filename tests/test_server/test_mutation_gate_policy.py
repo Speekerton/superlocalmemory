@@ -216,12 +216,27 @@ def test_a_query_the_route_does_not_read_cannot_move_the_check(company):
 
 
 def test_tiers_are_checked_against_the_workspace_they_act_on(company):
+    """Re-tiering is the operation policy's "correct" (owner/admin), checked on
+    the workspace named, with the caller's real role (4.1.25 audit OPS-26: the
+    route evaluated every caller as the machine owner)."""
+    from superlocalmemory.core.security_primitives import ensure_install_token
+
     app, client, who = company
-    split = _split_user(app, who)
-    own = client.post("/api/tiers/evaluate?profile_id=teamb", headers=split)
-    other = client.post("/api/tiers/evaluate?profile_id=default", headers=split)
+    split = _split_user(app, who)  # viewer of default, member of teamb
+    rbac = app.state.rbac
+    rbac.create_user("teamb-admin", "password-1234")
+    uid = {u["username"]: u["user_id"] for u in rbac.list_users()}["teamb-admin"]
+    rbac.set_membership("default", uid, "viewer", added_by="test")
+    rbac.set_membership("teamb", uid, "admin", added_by="test")
+    admin_b = {"X-SLM-User-Session": rbac.create_session(uid),
+               "X-Install-Token": ensure_install_token()}
+
+    own = client.post("/api/tiers/evaluate?profile_id=teamb", headers=admin_b)
+    other = client.post("/api/tiers/evaluate?profile_id=default", headers=admin_b)
+    member = client.post("/api/tiers/evaluate?profile_id=teamb", headers=split)
     assert own.status_code != 403, (own.status_code, _message(own))
     assert other.status_code == 403
+    assert member.status_code == 403 and "role" in _message(member)
 
 
 def test_a_mesh_node_with_the_daemon_capability_still_reaches_the_mesh(company):
@@ -334,24 +349,16 @@ def test_personal_mode_the_gate_refuses_nothing_on_any_route(personal):
 
 
 def test_personal_mode_the_operator_still_changes_settings_and_restarts(personal, monkeypatch):
-    import traceback
-
     app, client, who, refused = personal
     spawned = []
-    callers = []
-
-    def record_spawn(*args, **kwargs):
-        spawned.append(args)
-        callers.append([(Path(f.filename).name, f.name) for f in traceback.extract_stack(limit=6)])
-
-    monkeypatch.setattr("subprocess.Popen", record_spawn)
+    monkeypatch.setattr("subprocess.Popen", lambda *a, **k: spawned.append(a))
 
     restart = client.post("/api/daemon/restart", headers=who["token"])
     optimize = client.put("/api/optimize/config", json={"cache_enabled": True},
                           headers=who["token"])
     switch = client.post("/api/profiles/default/switch", headers=who["token"])
 
-    assert restart.status_code == 200 and len(spawned) == 1, callers
+    assert restart.status_code == 200 and len(spawned) == 1, spawned
     assert optimize.status_code == 200, optimize.text
     assert switch.status_code == 200, switch.text
     assert refused == []

@@ -222,7 +222,7 @@
           '<div class="card-head">' +
             '<h3>Active retention policies</h3>' +
             '<div class="spacer"></div>' +
-            // New policy button — shows alert since write endpoint is not yet exposed
+            // New policy button: opens the retention-policy form
             '<button class="btn sm" id="od-new-policy-btn">' +
               safeIcon('plus') + ' New policy' +
             '</button>' +
@@ -783,7 +783,7 @@
     if (policies.length === 0) {
       retTbody.innerHTML =
         '<tr><td colspan="5" class="muted-info" style="text-align:center;padding:20px">' +
-        'No retention policies configured. Use the set_retention_policy MCP tool to add one.' +
+        'No retention policies yet. Use New policy to add one.' +
         '</td></tr>';
       return;
     }
@@ -839,10 +839,14 @@
   function showAuditChainStatus(auditFull) {
     var el = document.getElementById('od-audit-chain-status');
     if (!el || !auditFull) return;
-    var ok = auditFull.chain_verified !== false;
-    el.innerHTML = ok
-      ? '<span class="badge ok" style="margin-left:8px">Chain verified</span>'
-      : '<span class="badge danger" style="margin-left:8px">Chain integrity issue</span>';
+    // Say what the check covered (server label); never "verified" by default (L-16/G-L2).
+    var ok = auditFull.chain_verified === true;
+    var badge = document.createElement('span');
+    badge.className = 'badge ' + (ok ? 'ok' : 'danger');
+    badge.style.marginLeft = '8px';
+    badge.textContent = auditFull.integrity_label || (ok ? 'Order verified' : 'Integrity not checked');
+    el.textContent = '';
+    el.appendChild(badge);
   }
 
   /** Task C: re-fetch audit trail from API with a specific event_type filter. */
@@ -981,8 +985,7 @@
   }
 
   /**
-   * Wire the "New policy" button.
-   * Informs user that the write endpoint is not yet exposed.
+   * Wire the "New policy" button to the retention-policy form.
    */
   function wireNewPolicyBtn() {
     var btn = document.getElementById('od-new-policy-btn');

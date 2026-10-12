@@ -201,7 +201,7 @@ CREATE TABLE IF NOT EXISTS atomic_facts (
     -- re-authorised through and which the engine hydrates from.
     quarantined        INTEGER NOT NULL DEFAULT 0,
     -- Stored but never an answer (operational stubs such as "session ended");
-    -- listed only on request. Same enforcement point as quarantined (M059).
+    -- listed only on request. Same enforcement point as quarantined (M060).
     non_answer         INTEGER DEFAULT 0,
     -- The user's own decision (0 = "this is an answer"); NULL = none. It wins
     -- over the automatic stub rule forever (WP-19 review M1).
@@ -997,7 +997,7 @@ _ADDITIVE_COLUMNS: Final[tuple[tuple[str, str, str], ...]] = (
     # here, where a store gets it at start regardless of migration state.
     ("atomic_facts", "pinned", "INTEGER NOT NULL DEFAULT 0"),
     # WP-19: keeping operational stubs out of answers must not wait for the
-    # deferred M059 pass, and the visibility indexes cover it from the start.
+    # deferred M060 pass, and the visibility indexes cover it from the start.
     ("atomic_facts", "non_answer", "INTEGER DEFAULT 0"),
     ("atomic_facts", "non_answer_user", "INTEGER"),
 )

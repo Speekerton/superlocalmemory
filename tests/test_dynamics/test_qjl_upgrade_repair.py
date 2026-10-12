@@ -77,7 +77,7 @@ def test_doctor_reports_legacy_and_unrecoverable_counts(
 ):
     from argparse import Namespace
 
-    from superlocalmemory.cli.commands import cmd_doctor
+    from tests.helpers.doctor import run_doctor_report
 
     db, _, _, config = legacy_store
     if dimension_mismatch:
@@ -89,7 +89,7 @@ def test_doctor_reports_legacy_and_unrecoverable_counts(
         "superlocalmemory.cli.json_output.json_print",
         side_effect=lambda event, data=None, **kw: captured.append(data),
     ):
-        cmd_doctor(Namespace(json=True, quick=True))
+        run_doctor_report(Namespace(json=True, quick=True))
     row = next(row for row in captured[-1]["checks"] if row["name"] == "QJL sketches")
     assert row["status"] == "WARN"
     assert "2" in row["detail"] and "1" in row["detail"]

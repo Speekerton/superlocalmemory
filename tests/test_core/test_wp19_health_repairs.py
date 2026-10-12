@@ -13,7 +13,7 @@ from superlocalmemory.storage.models import AtomicFact, MemoryRecord
 
 @pytest.fixture
 def store(tmp_path):
-    from superlocalmemory.storage.migrations.M059_memory_description import apply
+    from superlocalmemory.storage.migrations.M060_memory_description import apply
     db = DatabaseManager(tmp_path / 'memory.db')
     db.initialize(schema)
     with sqlite3.connect(db.db_path) as conn:
@@ -196,7 +196,7 @@ def test_an_undone_automatic_sketch_repair_is_never_reapplied(tmp_path):
     from superlocalmemory.core.config import PolarQuantConfig, SLMConfig
     from superlocalmemory.core.engine_wiring import init_retrieval
     from superlocalmemory.core.health_repairs import undo_action
-    from superlocalmemory.storage.migrations.M059_memory_description import apply
+    from superlocalmemory.storage.migrations.M060_memory_description import apply
     from superlocalmemory.storage.models import Mode
 
     config = SLMConfig.for_mode(Mode.A, base_dir=tmp_path)

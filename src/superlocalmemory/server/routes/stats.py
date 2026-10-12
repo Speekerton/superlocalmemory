@@ -12,7 +12,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
 
-from .helpers import get_db_connection, dict_factory, get_active_profile, DB_PATH
+from superlocalmemory.storage.database import visible_fact_clause_for_connection
+from superlocalmemory.storage.erasure_visibility import memory_erasure_clause
+
+from .helpers import DB_PATH, dict_factory, get_active_profile, get_db_connection
 
 logger = logging.getLogger("superlocalmemory.routes.stats")
 router = APIRouter()
@@ -93,20 +96,23 @@ def get_stats():
 
         # Detect V3 schema
         try:
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='atomic_facts'")
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                           "AND name='atomic_facts'")
             use_v3 = cursor.fetchone() is not None
         except Exception:
             use_v3 = False
 
         if use_v3:
             cursor.execute(
-                "SELECT COUNT(*) as total FROM atomic_facts WHERE profile_id = ?",
+                "SELECT COUNT(*) as total FROM atomic_facts WHERE profile_id = ?"
+                f"{visible_fact_clause_for_connection(conn)}",
                 (active_profile,),
             )
             total_facts = cursor.fetchone()['total']
 
             cursor.execute(
-                "SELECT COUNT(*) as total FROM memories WHERE profile_id = ?",
+                "SELECT COUNT(*) as total FROM memories WHERE profile_id = ?"
+                f"{memory_erasure_clause(conn)}",
                 (active_profile,),
             )
             total_memories = cursor.fetchone()['total']
@@ -114,7 +120,9 @@ def get_stats():
             total_sessions = 0
             try:
                 cursor.execute(
-                    "SELECT COUNT(DISTINCT session_id) as total FROM atomic_facts WHERE profile_id = ?",
+                    "SELECT COUNT(DISTINCT session_id) as total FROM atomic_facts "
+                    "WHERE profile_id = ?"
+                    f"{visible_fact_clause_for_connection(conn)}",
                     (active_profile,),
                 )
                 total_sessions = cursor.fetchone()['total']
@@ -166,24 +174,27 @@ def get_stats():
                     pass
 
             # Fact type breakdown (replaces category in V3)
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT fact_type as category, COUNT(*) as count
                 FROM atomic_facts WHERE profile_id = ?
+                {visible_fact_clause_for_connection(conn)}
                 GROUP BY fact_type ORDER BY count DESC LIMIT 10
             """, (active_profile,))
             categories = cursor.fetchall()
 
             # Session breakdown (replaces project in V3)
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT session_id as project_name, COUNT(*) as count
                 FROM atomic_facts WHERE profile_id = ? AND session_id IS NOT NULL
+                {visible_fact_clause_for_connection(conn)}
                 GROUP BY session_id ORDER BY count DESC LIMIT 10
             """, (active_profile,))
             projects = cursor.fetchall()
 
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COUNT(*) as count FROM atomic_facts
                 WHERE created_at >= datetime('now', '-7 days') AND profile_id = ?
+                {visible_fact_clause_for_connection(conn)}
             """, (active_profile,))
             recent_memories = cursor.fetchone()['count']
 
@@ -341,7 +352,8 @@ def get_timeline(
 
         # Try V3 first
         try:
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='atomic_facts'")
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                           "AND name='atomic_facts'")
             use_v3 = cursor.fetchone() is not None
         except Exception:
             use_v3 = False
@@ -349,12 +361,14 @@ def get_timeline(
         table = "atomic_facts" if use_v3 else "memories"
         profile_col = "profile_id" if use_v3 else "profile"
         cat_col = "fact_type" if use_v3 else "category"
+        visible = visible_fact_clause_for_connection(conn) if use_v3 else ""
 
         cursor.execute(f"""
             SELECT {date_group} as period, COUNT(*) as count,
                    GROUP_CONCAT(DISTINCT {cat_col}) as categories
             FROM {table}
-            WHERE created_at >= datetime('now', '-' || ? || ' days') AND {profile_col} = ?
+            WHERE created_at >= datetime('now', '-' || ? || ' days')
+                  AND {profile_col} = ?{visible}
             GROUP BY {date_group} ORDER BY period DESC
         """, (days, active_profile))
         timeline = cursor.fetchall()
@@ -364,7 +378,7 @@ def get_timeline(
                 SELECT {date_group} as period, {cat_col} as category, COUNT(*) as count
                 FROM {table}
                 WHERE created_at >= datetime('now', '-' || ? || ' days')
-                  AND {cat_col} IS NOT NULL AND {profile_col} = ?
+                  AND {cat_col} IS NOT NULL AND {profile_col} = ?{visible}
                 GROUP BY {date_group}, {cat_col} ORDER BY period DESC, count DESC
             """, (days, active_profile))
             category_trend = cursor.fetchall()
@@ -373,7 +387,8 @@ def get_timeline(
                 SELECT COUNT(*) as total_memories,
                        COUNT(DISTINCT {cat_col}) as categories_used
                 FROM {table}
-                WHERE created_at >= datetime('now', '-' || ? || ' days') AND {profile_col} = ?
+                WHERE created_at >= datetime('now', '-' || ? || ' days')
+                  AND {profile_col} = ?{visible}
             """, (days, active_profile))
             period_stats = cursor.fetchone()
         else:

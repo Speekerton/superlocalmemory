@@ -11,7 +11,7 @@ from superlocalmemory.storage.models import AtomicFact, MemoryRecord
                                   'receipt: 0123abcd4567ef89'])
 def test_stubs_are_listed_with_a_flag_but_never_hydrated_for_recall(tmp_path, text):
     """Review H3: list/count/search show stubs (flagged); recall opts out of them."""
-    from superlocalmemory.storage.migrations.M059_memory_description import apply
+    from superlocalmemory.storage.migrations.M060_memory_description import apply
     db = DatabaseManager(tmp_path / 'memory.db')
     db.initialize(schema)
     try:
@@ -37,7 +37,7 @@ def test_stubs_are_listed_with_a_flag_but_never_hydrated_for_recall(tmp_path, te
 
 def test_list_recent_includes_stubs(tmp_path):
     from superlocalmemory.core.kind_query import list_recent_facts
-    from superlocalmemory.storage.migrations.M059_memory_description import apply
+    from superlocalmemory.storage.migrations.M060_memory_description import apply
     db = DatabaseManager(tmp_path / 'memory.db')
     db.initialize(schema)
     try:

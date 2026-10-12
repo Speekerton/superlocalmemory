@@ -108,7 +108,7 @@ def test_post_needs_manage_permission(ctx, monkeypatch):
     def deny(request):
         raise HTTPException(403, detail="manage permission required")
 
-    monkeypatch.setattr("superlocalmemory.server.rbac_enforce.require_manage", deny)
+    monkeypatch.setattr("superlocalmemory.server.rbac_enforce.require_global_manage", deny)
     assert client.post(URL, json={}).status_code == 403
     assert state["runner"].switched == []
 

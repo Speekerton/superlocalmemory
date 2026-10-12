@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import sqlite3
 
-NAME = 'M059_memory_description'
+NAME = 'M060_memory_description'
 DB_TARGET = 'memory'
 DOWNGRADE_FLOOR = 51
 DDL = '''-- M059 adds non_answer(+_user) and the enrichment runs/changes ledger.
@@ -46,7 +46,7 @@ def apply(conn: sqlite3.Connection) -> None:
             conn.execute(statement)
     repairs = {r[1] for r in conn.execute('PRAGMA table_info(memory_health_repairs)')}
     for column, ddl in (('attempts', 'INTEGER NOT NULL DEFAULT 1'), ('last_seen', 'TEXT')):
-        if column not in repairs:  # a store that ran an earlier draft of M059
+        if column not in repairs:  # a store that ran an earlier draft of M060
             conn.execute(f'ALTER TABLE memory_health_repairs ADD COLUMN {column} {ddl}')
     columns = {r[1] for r in conn.execute('PRAGMA table_info(atomic_facts)')}
     if columns and 'non_answer' not in columns:

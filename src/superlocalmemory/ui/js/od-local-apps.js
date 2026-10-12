@@ -16,19 +16,32 @@
     rows.forEach(function (row) {
       var option = document.createElement('option');
       option.value = row.id;
-      option.textContent = row.name + (row.description ? ' — ' + row.description : '');
+      option.textContent = row.name + (row.description ? ' — ' + row.description : '')
+        + (row.configured ? ' — set up' : '');
       select.appendChild(option);
     });
     if (rows.some(function (row) { return row.id === old; })) select.value = old;
+    else {
+      // Nothing chosen yet: suggest an app that still needs setting up.
+      var fresh = rows.filter(function (row) { return !row.configured; })[0];
+      if (fresh) select.value = fresh.id;
+    }
     select.setAttribute('aria-label', label);
   }
 
-  function appRow(state, app) {
+  function profileName(data, id) {
+    var match = (data.profiles || []).filter(function (p) { return p.id === id; })[0];
+    return match ? match.name : '';
+  }
+
+  function appRow(state, app, data) {
     var h = state.h;
     var row = h('li', { className: 'apps-row apps-local-row' });
     row.appendChild(h('strong', { text: app.name }));
     row.appendChild(h('span', { className: 'badge neutral', text: 'MCP · ' + app.code_version }));
     row.appendChild(h('span', { text: app.version_reported === false ? 'Tools unreported' : (app.tools || []).length + ' tools' }));
+    var tools = app.tools_profile ? profileName(data || {}, app.tools_profile) : '';
+    if (tools) row.appendChild(h('span', { className: 'badge neutral', text: tools }));
     if (app.stale_version) row.appendChild(h('span', { className: 'badge warn', text: 'Stale version' }));
     if (app.version_reported === false) row.appendChild(h('span', { className: 'badge warn', text: 'Version unreported' }));
     if (app.connection_evidence === 'live-process') row.appendChild(h('span', { className: 'badge warn', text: 'Connection unconfirmed' }));
@@ -62,10 +75,20 @@
       state.hostCounts.appendChild(state.h('span', { className: 'badge neutral', text: name + ': ' + counts[name] }));
     });
     state.list.textContent = '';
-    data.apps.forEach(function (app) { state.list.appendChild(appRow(state, app)); });
-    state.empty.hidden = data.apps.length > 0;
-    state.list.hidden = !data.apps.length;
-    fillSelect(state.host, data.available_hosts || [], 'Local app');
+    data.apps.forEach(function (app) { state.list.appendChild(appRow(state, app, data)); });
+    // Apps that carry SLM in their own settings but have no live session yet.
+    (data.configured_hosts || []).filter(function (host) { return !host.live; }).forEach(function (host) {
+      var row = state.h('li', { className: 'apps-row apps-local-row' });
+      row.appendChild(state.h('strong', { text: host.name }));
+      row.appendChild(state.h('span', { className: 'badge neutral', text: 'Set up' }));
+      row.appendChild(state.h('span', { className: 'muted-info', text: 'Open the app to connect.' }));
+      state.list.appendChild(row);
+    });
+    var shown = data.apps.length + (data.configured_hosts || []).filter(function (host) { return !host.live; }).length;
+    state.empty.hidden = shown > 0;
+    state.list.hidden = !shown;
+    if (state.failed) { state.message.textContent = ''; state.failed = false; }
+    fillSelect(state.host, (data.available_hosts || []).filter(function (host) { return !host.connected; }), 'Local app');
     fillSelect(state.profile, data.profiles || [], 'MCP tools');
     state.submit.disabled = !(state.host.options.length && state.profile.options.length);
   }
@@ -73,8 +96,13 @@
   function refresh(state) {
     if (state.loading) return Promise.resolve();
     state.loading = true; state.refresh.disabled = true;
-    return call(API).then(function (data) { render(state, data); })
+    // One quiet retry: a daemon that is busy for a moment is not a failed check.
+    var attempt = call(API).catch(function () {
+      return new Promise(function (resolve) { window.setTimeout(resolve, 1500); }).then(function () { return call(API); });
+    });
+    return attempt.then(function (data) { render(state, data); })
       .catch(function () {
+        state.failed = true;
         state.count.textContent = 'Status unavailable';
         state.hostCounts.textContent = '';
         state.list.textContent = ''; state.empty.hidden = true; state.submit.disabled = true;

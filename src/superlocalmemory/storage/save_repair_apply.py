@@ -21,7 +21,12 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
-from superlocalmemory.storage.save_repair import RefileItem, SavePlan
+from superlocalmemory.storage.save_repair import (
+    STALE_DEAD_LETTERS,
+    RefileItem,
+    SavePlan,
+    count_stale_dead_letters,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +35,7 @@ class SaveRepairResult:
     skipped: int
     agent_names_backfilled: int
     backup: str
+    stale_dead_letters_cleared: int = 0
 
 
 def backup_store(db_path: Path) -> Path:
@@ -125,7 +131,7 @@ def apply(db_path: Path, save_plan: SavePlan, *, backup: bool = True) -> SaveRep
 
     copy = backup_store(db_path) if backup else None
     db = DatabaseManager(db_path)
-    refiled = skipped = filled = 0
+    refiled = skipped = filled = cleared = 0
     try:
         with db.raw_connection() as conn:
             # Hold the writer reservation while rechecking the reviewed evidence
@@ -153,9 +159,13 @@ def apply(db_path: Path, save_plan: SavePlan, *, backup: bool = True) -> SaveRep
                     "AND COALESCE(json_extract(metadata_json,'$.agent_id'),'')=''",
                     (agent, memory_id))
                 filled += int(db.execute("SELECT changes() AS n")[0]["n"])
+            # Old failures of saves that later completed (after the re-files above,
+            # which delete their own rows, so only genuine leftovers are counted).
+            cleared = count_stale_dead_letters(conn)
+            db.execute(f"DELETE FROM {STALE_DEAD_LETTERS}")
     finally:
         db.close()
-    return SaveRepairResult(refiled, skipped, filled, str(copy) if copy else "")
+    return SaveRepairResult(refiled, skipped, filled, str(copy) if copy else "", cleared)
 
 
 __all__ = ["SaveRepairResult", "apply", "backup_store"]

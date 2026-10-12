@@ -206,6 +206,30 @@ def _ensure_registered(project_path: str = "") -> None:
             _register_local_session()
 
 
+def _local_app() -> str:
+    """The host app this MCP process serves, as the dashboard names it."""
+    from superlocalmemory.infra import mcp_processes as procs
+
+    explicit = os.environ.get("SLM_MCP_HOST", "")
+    if explicit in procs.HOST_NAMES:
+        return explicit
+    if os.environ.get("CLAUDECODE") == "1":
+        return "claude-code"
+    agent = os.environ.get("SLM_AGENT_ID", "").replace("_", "-")
+    if agent in procs.HOST_NAMES:
+        return agent
+    inferred = procs.infer_host(procs._ancestor_names())
+    return inferred if inferred != "local-app" else (agent or "local-app")
+
+
+def _display_name(app: str, project: str) -> str:
+    from superlocalmemory.infra import mcp_processes as procs
+
+    label = procs.HOST_NAMES.get(app, app)
+    folder = os.path.basename(project.rstrip("/\\")) if project else ""
+    return f"{label} · {folder}" if folder else label
+
+
 def _register_local_session():
     global _REGISTERED, _PROJECT_PATH, _PEER_ID, _MESH_SESSION_ID
     _PROJECT_PATH = _PROJECT_PATH or _detect_project_path()
@@ -216,6 +240,7 @@ def _register_local_session():
         or _MESH_SESSION_ID
         or _PEER_ID
     )
+    app = _local_app()
     result = _mesh_request(
         "POST",
         "/register",
@@ -226,6 +251,8 @@ def _register_local_session():
             "agent_type": os.environ.get("SLM_AGENT_ID")
             or os.environ.get("CLAUDE_AGENT_TYPE")
             or "mcp_client",
+            "app": app,
+            "display_name": _display_name(app, _PROJECT_PATH),
         },
     )
     if (
@@ -256,6 +283,19 @@ def _caller_peer() -> str:
     return _PEER_ID
 
 
+def _heartbeat_once() -> None:
+    """Beat once; a daemon that forgot this peer (restart, cleanup) gets it again."""
+    global _REGISTERED
+    if not _REGISTERED:
+        _ensure_registered()
+        return
+    result = _mesh_request("POST", "/heartbeat", {"peer_id": _PEER_ID})
+    if not result or result.get("ok") is False:
+        with _REGISTER_LOCK:
+            _REGISTERED = False
+        _ensure_registered()
+
+
 def _start_heartbeat() -> None:
     """Background thread that sends heartbeat to keep session alive."""
     global _HEARTBEAT_THREAD
@@ -266,7 +306,7 @@ def _start_heartbeat() -> None:
         while True:
             time.sleep(_HEARTBEAT_INTERVAL)
             try:
-                _mesh_request("POST", "/heartbeat", {"peer_id": _PEER_ID})
+                _heartbeat_once()
             except Exception:
                 pass
 
@@ -282,6 +322,8 @@ def auto_register_mesh() -> None:
     This ensures every Claude session is visible on the mesh from the start.
     """
     _ensure_registered()
+    # Keep trying while the daemon is not up yet: registration is not a one-shot.
+    _start_heartbeat()
 
 
 def register_mesh_tools(server, get_engine: Callable) -> None:

@@ -50,7 +50,8 @@ def _ram_refusal(precheck: dict[str, Any]) -> str:
     return media_ram_refusal(int(precheck.get("ram_bytes") or 0))
 
 
-def _media_view(status: dict[str, Any], root: Path) -> dict[str, Any]:
+def _media_view(status: dict[str, Any], root: Path, *, fresh: bool = True) -> dict[str, Any]:
+    """``fresh=False`` (the read route) serves the size from memory; changes measure it now."""
     env = status.get("env") or {}
     view = {
         "enabled": bool(status.get("enabled")),
@@ -62,8 +63,10 @@ def _media_view(status: dict[str, Any], root: Path) -> dict[str, Any]:
         "precheck": status.get("precheck", {}),
     }
     view["ram"] = _ram_view()
-    from superlocalmemory.server.media_size import installed_bytes
-    view["installed_bytes"] = installed_bytes(root / "runtimes" / "media")
+    from superlocalmemory.server import media_size
+
+    size_of = media_size.measure_now if fresh else media_size.cached_bytes
+    view["installed_bytes"] = size_of(root / "runtimes" / "media")
     view["install_estimate_bytes"] = int(2.8 * 1024 ** 3)
     refusal = _ram_refusal(status.get("precheck") or {})
     view["ram_ok"], view["ram_message"] = not refusal, refusal
@@ -94,7 +97,7 @@ def _apps_with_mesh(request: Request) -> int:
 def _overview(request: Request) -> dict[str, Any]:
     root = _data_root()
     status = feat.media_feature_status(root, env=_media_env())
-    return {"media": _media_view(status, root), "mesh": {"apps_with_mesh": _apps_with_mesh(request)}}
+    return {"media": _media_view(status, root, fresh=False), "mesh": {"apps_with_mesh": _apps_with_mesh(request)}}
 
 
 def _gate(request: Request) -> None:

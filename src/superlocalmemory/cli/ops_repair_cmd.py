@@ -40,6 +40,8 @@ def _describe(summary: dict, review: tuple) -> str:
     lines = [f"Saves to re-file: {summary['saves_to_refile']} {by_action}".rstrip(),
              f"Left alone for review: {summary['left_for_review']}"]
     lines += [f"  {op_id}: {why}" for op_id, why in review[:20]]
+    lines.append(f"Dead-letter entries of saves that later completed: "
+                 f"{summary['stale_dead_letters']}")
     lines.append(f"Agent names to backfill from their save record: "
                  f"{summary['agent_names_to_backfill']}")
     unknown = summary["memories_still_without_agent"]
@@ -72,9 +74,11 @@ def cmd_ops_repair_saves(args: Namespace) -> None:
     result = apply(db_path, plan)
     _print(args, {"dry_run": False, **summary, "refiled": result.refiled,
                   "skipped": result.skipped, "agent_names_backfilled":
-                  result.agent_names_backfilled, "backup": result.backup},
+                  result.agent_names_backfilled, "backup": result.backup,
+                  "stale_dead_letters_cleared": result.stale_dead_letters_cleared},
            f"Re-filed {result.refiled} saves ({result.skipped} had changed and were skipped); "
-           f"backfilled {result.agent_names_backfilled} agent names.\n"
+           f"backfilled {result.agent_names_backfilled} agent names; cleared "
+           f"{result.stale_dead_letters_cleared} dead-letter entries of saves that completed.\n"
            f"Backup: {result.backup}\nThe service enriches the re-filed saves on its next pass.")
 
 

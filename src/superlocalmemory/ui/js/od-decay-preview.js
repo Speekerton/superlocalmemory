@@ -17,7 +17,7 @@
   var DECAY_TRUSTS = [
     { trust: 0.0, color: '#e0245e', label: 'low trust' },
     { trust: 0.5, color: '#f59e0b', label: 'medium' },
-    { trust: 1.0, color: '#10b981', label: 'trusted' }
+    { trust: 1.0, color: '#8F76FF', label: 'trusted' }
   ];
 
   /* The decay rate is per HOUR, and the window is chosen so the three curves

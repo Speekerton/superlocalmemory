@@ -2,7 +2,7 @@
    Neural Glass Design System v1.0
    SuperLocalMemory Dashboard V2 "Neural Glass"
    Linear darkness + Raycast glass + Claude warmth
-   Brand accent: Qualixar Cyan #00D4AA
+   Brand accent: SuperLocalMemory violet #7C5CFF
    ============================================ */
 
 /* ============================================
@@ -69,8 +69,8 @@
   --ng-accent-text: #8A79F1;
 
   /* --- Status Colors --- */
-  --ng-status-success: #10b981;
-  --ng-status-success-bg: rgba(16, 185, 129, 0.10);
+  --ng-status-success: #A18CFF;
+  --ng-status-success-bg: rgba(124, 92, 255, 0.14);
   --ng-status-warning: #f59e0b;
   --ng-status-warning-bg: rgba(245, 158, 11, 0.10);
   --ng-status-error: #ef4444;
@@ -82,7 +82,7 @@
   --ng-border-subtle: rgba(255, 255, 255, 0.06);
   --ng-border-default: rgba(255, 255, 255, 0.10);
   --ng-border-prominent: rgba(255, 255, 255, 0.15);
-  --ng-border-accent: rgba(0, 212, 170, 0.30);
+  --ng-border-accent: rgba(124, 92, 255, 0.30);
 
   /* --- Shadows (Raycast macOS glass depth) --- */
   --ng-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -644,14 +644,14 @@
   border-color: var(--ng-accent) !important;
 }
 
-/* #10b981/--ng-status-success (16,185,129) measured 2.33-2.54:1 white-on-
+/* the old success green/--ng-status-success (16,185,129) measured 2.33-2.54:1 white-on-
    fill here — badly under WCAG AA (4.5:1); it's a fine accent for low-
    opacity badge tints and status dots (not a text-contrast pairing there)
    but too light/saturated for solid fill behind white button text.
    #198754 is Bootstrap's own default success green (same family, this
    file just never needed to override it for buttons) at 4.53:1 — reused
    rather than inventing a third green. */
-.ng-dark .btn-success { background: #198754 !important; border-color: #198754 !important; color: #fff !important; }
+.ng-dark .btn-success { background: #5B3FE0 !important; border-color: #5B3FE0 !important; color: #fff !important; }
 .ng-dark .btn-outline-success { color: var(--ng-status-success) !important; border-color: var(--ng-status-success) !important; }
 .ng-dark .btn-outline-secondary {
   color: var(--ng-text-secondary) !important;
@@ -898,7 +898,7 @@
 
 .ng-dark .alert-success {
   background: var(--ng-status-success-bg) !important;
-  border-color: rgba(16, 185, 129, 0.2) !important;
+  border-color: rgba(124, 92, 255, 0.25) !important;
   color: var(--ng-text-primary) !important;
 }
 
@@ -1172,15 +1172,15 @@ body.ng-dark #memory-timeline-chart {
      directions pass at once here, unlike the violet/ng-accent badges,
      because the background in BOTH cases is already very close to
      white — darkening the text only ever helps). Used everywhere this
-     file sets `color: #667eea` (sidebar active item + icon, footer
+     file sets `color: #5B3FE0` (sidebar active item + icon, footer
      links, .btn-outline-primary, .stat-icon, .ng-sidebar-badge/
-     .ng-badge-accent, .badge.bg-light) — border-color: #667eea (focus
+     .ng-badge-accent, .badge.bg-light) — border-color: #5B3FE0 (focus
      rings, not text) is intentionally left alone. */
-  color: #3e5ce5;
+  color: #5B3FE0;
   border-color: rgba(124, 106, 239, 0.25);
 }
 
-[data-bs-theme="light"] .ng-sidebar-item.active .ng-sidebar-icon { color: #3e5ce5; }
+[data-bs-theme="light"] .ng-sidebar-item.active .ng-sidebar-icon { color: #5B3FE0; }
 [data-bs-theme="light"] .ng-sidebar-icon { color: #9ca3af; }
 [data-bs-theme="light"] .ng-sidebar-footer { border-top-color: #e5e7eb; }
 
@@ -1273,7 +1273,7 @@ body.ng-dark #memory-timeline-chart {
 }
 
 [data-bs-theme="light"] .stat-card .stat-icon {
-  color: #3e5ce5 !important;
+  color: #5B3FE0 !important;
 }
 
 [data-bs-theme="light"] .table {
@@ -1297,7 +1297,7 @@ body.ng-dark #memory-timeline-chart {
 
 [data-bs-theme="light"] .form-control:focus,
 [data-bs-theme="light"] .form-select:focus {
-  border-color: #667eea !important;
+  border-color: #5B3FE0 !important;
   box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.15) !important;
 }
 
@@ -1320,20 +1320,20 @@ body.ng-dark #memory-timeline-chart {
    duplicated verbatim elsewhere in this file's LIGHT MODE OVERRIDES
    section — both copies were updated.) */
 [data-bs-theme="light"] .btn-primary {
-  background: #4c68e6 !important;
-  border-color: #4c68e6 !important;
+  background: #5B3FE0 !important;
+  border-color: #5B3FE0 !important;
   color: #fff !important;
 }
 
 [data-bs-theme="light"] .btn-success {
   /* See the .ng-dark .btn-success comment above — same fix, same reason. */
-  background: #198754 !important;
-  border-color: #198754 !important;
+  background: #5B3FE0 !important;
+  border-color: #5B3FE0 !important;
 }
 
 [data-bs-theme="light"] .btn-outline-primary {
-  color: #3e5ce5 !important;
-  border-color: #3e5ce5 !important;
+  color: #5B3FE0 !important;
+  border-color: #5B3FE0 !important;
 }
 
 [data-bs-theme="light"] .btn-outline-secondary {
@@ -1386,7 +1386,7 @@ body.ng-dark #memory-timeline-chart {
    near-white background elsewhere in this file (#3e5ce5: 5.15:1). The
    dark-theme equivalent is .ng-dark code above (already dashboard-only,
    not Bootstrap's own rule). */
-[data-bs-theme="light"] .app code { color: #3e5ce5; }
+[data-bs-theme="light"] .app code { color: #5B3FE0; }
 
 /* Not theme-scoped: Bootstrap's own --bs-progress-bar-color default is a
    flat white for every .bg-* variant, same as badges, but .progress-bar
@@ -1426,7 +1426,7 @@ body.ng-dark #memory-timeline-chart {
   border-top-color: #e5e7eb;
 }
 
-[data-bs-theme="light"] footer a { color: #3e5ce5; }
+[data-bs-theme="light"] footer a { color: #5B3FE0; }
 
 /* Light mode: sidebar profile select */
 [data-bs-theme="light"] .profile-select {
@@ -1449,12 +1449,12 @@ body.ng-dark #memory-timeline-chart {
 
 [data-bs-theme="light"] .ng-sidebar-badge {
   background: rgba(102, 126, 234, 0.12);
-  color: #3e5ce5;
+  color: #5B3FE0;
 }
 
 [data-bs-theme="light"] .ng-badge-accent {
   background: rgba(102, 126, 234, 0.10);
-  color: #3e5ce5;
+  color: #5B3FE0;
 }
 
 [data-bs-theme="light"] .ng-progress-bar {
@@ -1502,7 +1502,7 @@ body.ng-dark #memory-timeline-chart {
 }
 
 [data-bs-theme="light"] .stat-icon {
-  color: #3e5ce5 !important;
+  color: #5B3FE0 !important;
 }
 
 [data-bs-theme="light"] .form-control,
@@ -1531,21 +1531,21 @@ body.ng-dark #memory-timeline-chart {
    duplicated verbatim elsewhere in this file's LIGHT MODE OVERRIDES
    section — both copies were updated.) */
 [data-bs-theme="light"] .btn-primary {
-  background: #4c68e6 !important;
-  border-color: #4c68e6 !important;
+  background: #5B3FE0 !important;
+  border-color: #5B3FE0 !important;
   color: #fff !important;
 }
 
 [data-bs-theme="light"] .btn-success {
   /* See the .ng-dark .btn-success comment above — same fix, same reason. */
-  background: #198754 !important;
-  border-color: #198754 !important;
+  background: #5B3FE0 !important;
+  border-color: #5B3FE0 !important;
   color: #fff !important;
 }
 
 [data-bs-theme="light"] .badge.bg-light {
   background: rgba(124, 106, 239, 0.10) !important;
-  color: #3e5ce5 !important;
+  color: #5B3FE0 !important;
 }
 
 [data-bs-theme="light"] footer {
@@ -1554,7 +1554,7 @@ body.ng-dark #memory-timeline-chart {
 }
 
 [data-bs-theme="light"] footer a {
-  color: #3e5ce5;
+  color: #5B3FE0;
 }
 
 

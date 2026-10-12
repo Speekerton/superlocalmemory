@@ -15,6 +15,7 @@ database directly, so the two cannot disagree and doctor needs no daemon.
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 #: Dead-letter saves at or above this many are a FAIL; fewer are a WARN. One
@@ -43,13 +44,19 @@ def _plural(n: int, one: str, many: str) -> str:
 def _dead_letter_reasons(db_path: Path) -> list[tuple[str, int]]:
     """The most common reasons dead-lettered saves gave, as ``(reason, count)``."""
     try:
+        from superlocalmemory.core.ops_inspection import NOT_STALE
         from superlocalmemory.storage.memory_write import memory_read
 
+        query = (
+            "SELECT COALESCE(NULLIF(TRIM(error), ''), 'no reason recorded') AS reason, "
+            "COUNT(*) AS n FROM dead_letter_operations{where} GROUP BY reason "
+            "ORDER BY n DESC, reason LIMIT ?")
         with memory_read(db_path) as conn:
-            rows = conn.execute(
-                "SELECT COALESCE(NULLIF(TRIM(error), ''), 'no reason recorded') AS reason, "
-                "COUNT(*) AS n FROM dead_letter_operations GROUP BY reason "
-                "ORDER BY n DESC, reason LIMIT ?", (_REASONS_SHOWN,)).fetchall()
+            try:  # saves that later completed are not failures
+                rows = conn.execute(query.format(where=f" WHERE {NOT_STALE}"),
+                                    (_REASONS_SHOWN,)).fetchall()
+            except sqlite3.OperationalError:
+                rows = conn.execute(query.format(where=""), (_REASONS_SHOWN,)).fetchall()
         return [(str(r[0])[:_REASON_WIDTH], int(r[1])) for r in rows]
     except Exception:  # noqa: BLE001 -- the reasons are a courtesy; the count is the finding
         return []

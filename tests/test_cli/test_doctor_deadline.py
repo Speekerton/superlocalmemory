@@ -37,7 +37,8 @@ def test_feature_probe_preserves_explicit_user_session(free_port, monkeypatch):
 
 @pytest.mark.parametrize("behavior", ["silent", "stream", "large", "features", "healthy"])
 def test_whole_diagnostic_has_one_deadline(free_port, behavior):
-    record = build_descriptor(port=free_port, version="test", pid=os.getpid())
+    record = build_descriptor(port=free_port, version="test", pid=os.getpid(),
+                              started_at=time.time() - 3600)
     write_descriptor(record)
     stop = threading.Event()
     requests = []
@@ -52,7 +53,7 @@ def test_whole_diagnostic_has_one_deadline(free_port, behavior):
                 self.send_response(200)
                 self.end_headers()
                 if behavior == "stream" or (behavior == "features" and self.path != "/health"):
-                    until = time.monotonic() + 2
+                    until = time.monotonic() + CHECK_TIMEOUT + 1
                     while time.monotonic() < until and not stop.wait(0.05):
                         self.wfile.write(b" ")
                         self.wfile.flush()

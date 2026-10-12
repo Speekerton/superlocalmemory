@@ -145,7 +145,10 @@ def snapshot(root: Path, *, installed_version: str | None = None) -> dict[str, A
     apps = _registered_apps(root, current)
     from superlocalmemory.infra.mcp_legacy import discover
 
-    apps.extend(discover(root, {row["pid"] for row in apps}))
+    try:
+        apps.extend(discover(root, {row["pid"] for row in apps}))
+    except Exception:  # noqa: BLE001 - process listing is best effort; registered sessions stand
+        pass
     hosts = [
         {"host": host, "name": name, "count": sum(a["host"] == host for a in apps)}
         for host, name in HOST_NAMES.items()

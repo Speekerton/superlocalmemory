@@ -13,9 +13,18 @@ from superlocalmemory.infra.daemon_identity import DaemonDescriptor
 from superlocalmemory.infra.process_identity import compare_start_tokens, process_start_token_for
 
 HEALTH_TIMEOUT = 0.5
+# The optional feature status reads a few local files; a busy daemon on a large store
+# can take a second, which is slow but not broken.
+FEATURES_TIMEOUT = 2.0
 # Includes interpreter startup, local evidence, health and optional features.
-CHECK_TIMEOUT = 1.0
+CHECK_TIMEOUT = 3.0
 MAX_HEALTH_BYTES = 64 * 1024
+# A daemon started within WARMUP_WINDOW seconds may still be loading; its optional
+# feature status gets one longer retry (WARMUP_TIMEOUT) before doctor reports it.
+WARMUP_WINDOW = 120.0
+WARMUP_TIMEOUT = 3.0
+_WARMUP_MARGIN = 0.5  # the parent waits this much past the retry for the worker to exit
+STILL_STARTING = "Optional feature status is still starting - run slm doctor again in a minute"
 
 
 @dataclass(frozen=True)
@@ -29,6 +38,8 @@ class DaemonCheck:
     # Optional /api/v3/features trouble, reported on its own line. It never
     # changes the verdict of a daemon whose /health was proven.
     feature_warning: str = ""
+    # Informational only: the daemon is still starting, so not a warning and no restart.
+    feature_note: str = ""
 
 
 class ProbeTimeout(Exception):
@@ -52,10 +63,16 @@ def check_daemon() -> DaemonCheck:
         ) as worker:
             try:
                 output, _ = worker.communicate(timeout=max(0, deadline - time.monotonic()))
-            except subprocess.TimeoutExpired:
-                timed_out = True
-                worker.kill()
-                output, _ = worker.communicate()  # reap; returns everything it wrote
+            except subprocess.TimeoutExpired as first:
+                try:
+                    if not _is_warming(_parse_events(_as_text(first.output))):
+                        raise
+                    # A freshly started daemon earns its one longer feature probe.
+                    output, _ = worker.communicate(timeout=WARMUP_TIMEOUT + _WARMUP_MARGIN)
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    worker.kill()
+                    output, _ = worker.communicate()  # reap; returns everything it wrote
         events = _parse_events(output)
         final = next((e for e in events if e.get("event") == "final"), None)
         if final is not None and not timed_out:
@@ -65,6 +82,14 @@ def check_daemon() -> DaemonCheck:
         raise ValueError("diagnostic worker failed")
     except Exception:
         return DaemonCheck("WARN", "Daemon availability could not be inspected", "slm serve start")
+
+
+def _as_text(output) -> str:
+    return output.decode("utf-8", "replace") if isinstance(output, bytes) else (output or "")
+
+
+def _is_warming(events: list[dict]) -> bool:
+    return any(e.get("event") == "warming" for e in events)
 
 
 def _parse_events(output: str | None) -> list[dict]:
@@ -80,8 +105,8 @@ def _parse_events(output: str | None) -> list[dict]:
 
 
 def _check_from(event: dict) -> DaemonCheck:
-    fields = {k: event[k] for k in ("status", "detail", "fix", "media_status", "feature_warning")
-              if k in event}
+    fields = {k: event[k] for k in ("status", "detail", "fix", "media_status", "feature_warning",
+                                    "feature_note") if k in event}
     return DaemonCheck(**fields)
 
 
@@ -90,6 +115,8 @@ def _after_deadline(events: list[dict]) -> DaemonCheck:
     proven = next((e for e in events if e.get("event") == "health_ok"), None)
     if proven is not None:
         # /health already proved this exact daemon; only the optional probe overran.
+        if _is_warming(events):
+            return _check_from(dict(proven, feature_note=STILL_STARTING))
         proven = dict(proven, feature_warning=(
             f"Optional feature status did not finish within the {CHECK_TIMEOUT:g}s deadline"))
         return _check_from(proven)
@@ -214,19 +241,25 @@ def _inspect_daemon(deadline: float | None = None, emit=None) -> DaemonCheck:
         proven = DaemonCheck("PASS", f"Running and healthy (pid {record.pid})", descriptor=record)
         if emit is not None:
             emit({"event": "health_ok", **_public(proven)})
-        feature_warning = ""
+        feature_warning = feature_note = ""
         features = None
         try:
             features = _fetch_json(
-                record, "/api/v3/features", min(HEALTH_TIMEOUT, deadline - time.monotonic()),
+                record, "/api/v3/features", min(FEATURES_TIMEOUT, deadline - time.monotonic()),
             )
         except ProbeTimeout:
-            feature_warning = f"Optional feature status did not answer within {HEALTH_TIMEOUT:g}s"
+            if time.time() - record.started_at < WARMUP_WINDOW:
+                features, feature_note = _retry_while_starting(record, emit)
+            else:
+                feature_warning = (
+                    f"Optional feature status did not answer within {FEATURES_TIMEOUT:g}s "
+                    "(the daemon is slow to answer, not down)")
         except ValueError:
             feature_warning = "Optional feature status reply was oversized"
         media = (features or {}).get("media") or {}
         return DaemonCheck(
             "PASS", proven.detail, descriptor=record, feature_warning=feature_warning,
+            feature_note=feature_note,
             media_status={"restart_required": bool(media.get("restart_required"))},
         )
     except Exception:
@@ -234,10 +267,25 @@ def _inspect_daemon(deadline: float | None = None, emit=None) -> DaemonCheck:
         return DaemonCheck("WARN", "Daemon availability could not be inspected", "slm serve start")
 
 
+def _retry_while_starting(record: DaemonDescriptor, emit) -> tuple[dict | None, str]:
+    """One longer feature probe for a daemon that only just started.
+
+    Returns ``(features, note)``: the answer if it came, else a note saying the
+    daemon is still starting. Never a restart suggestion: it is not broken.
+    """
+    if emit is not None:
+        emit({"event": "warming"})
+    try:
+        return _fetch_json(record, "/api/v3/features", WARMUP_TIMEOUT), ""
+    except (ProbeTimeout, ValueError):
+        return None, STILL_STARTING
+
+
 def _public(result: DaemonCheck) -> dict:
     # Only public diagnostic data crosses the pipe. Never serialize credentials.
     return {"status": result.status, "detail": result.detail, "fix": result.fix,
-            "media_status": result.media_status, "feature_warning": result.feature_warning}
+            "media_status": result.media_status, "feature_warning": result.feature_warning,
+            "feature_note": result.feature_note}
 
 
 def _emit(event: dict) -> None:

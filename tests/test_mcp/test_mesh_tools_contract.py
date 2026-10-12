@@ -70,6 +70,10 @@ def test_mesh_mcp_tools_use_one_broker_identity_and_unread_delivery(monkeypatch)
     # it so this fixture owns the selected lower-priority PROJECT_PATH too.
     monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
     monkeypatch.setenv("PROJECT_PATH", "/sandbox/project")
+    # Name the host explicitly so the registration does not depend on which
+    # app runs the test (inside Claude Code, CLAUDECODE=1 would name it).
+    monkeypatch.setenv("SLM_MCP_HOST", "codex")
+    monkeypatch.delenv("CLAUDECODE", raising=False)
 
     async def exercise() -> None:
         assert (await collector.tools["mesh_summary"]("audit mesh"))["peer_id"] == "broker-peer"
@@ -99,6 +103,8 @@ def _assert_broker_calls(calls):
             "summary": "audit mesh",
             "project_path": "/sandbox/project",
             "agent_type": "mcp_client",
+            "app": "codex",
+            "display_name": "Codex · project",
         },
     )
     assert (

@@ -105,12 +105,22 @@
     if (!list) return;
     list.textContent = '';
     if (!views.length) {
-      list.appendChild(_el('div', { 'data-views-empty': '1', style: 'padding:14px;' +
-        'border:1px dashed var(--border);border-radius:var(--r-md);font-size:13px;' +
-        'color:var(--fg-2);line-height:1.6' },
-        'You have no saved views yet. Give one a name and a question below — for ' +
-        'example "Work log" with "what did I ship" over the last 7 days — then press ' +
-        'Save view. It appears here with a Run button.'));
+      var empty = _el('div', { 'data-views-empty': '1', 'class': 'slm-empty' });
+      empty.appendChild(_el('img', { 'class': 'slm-empty-mascot', src: '/static/assets/mascot/pointing-320.webp',
+        alt: '', width: '120', height: '120', loading: 'lazy' }));
+      var body = _el('div', { 'class': 'slm-empty-body' });
+      body.appendChild(_el('h4', { 'class': 'slm-empty-title' }, 'No saved views yet \u2014 that is fine'));
+      body.appendChild(_el('p', null, 'A saved view is a question you ask your memory often, ' +
+        'like \u201cwhat did I ship this week\u201d. Save it once and re-run it with one click.'));
+      var steps = _el('ol', { 'class': 'slm-empty-steps' });
+      ['Give the view a name below, for example \u201cWork log\u201d.',
+       'Type the question and pick how far back to look.',
+       'Press Save view. It appears here with a Run button.'].forEach(function (t) {
+        steps.appendChild(_el('li', null, t));
+      });
+      body.appendChild(steps);
+      empty.appendChild(body);
+      list.appendChild(empty);
       return;
     }
     views.forEach(function (v) {

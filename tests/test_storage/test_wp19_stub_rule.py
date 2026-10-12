@@ -16,6 +16,9 @@ from superlocalmemory.storage.models import AtomicFact, MemoryRecord
     'receipt: lunch with Priya', 'Session ID: abc123',
     'session ended', 'The session ended with a decision to use PostgreSQL.',
     'Run id: nightly-build-backup',
+    # Short all-digit numbers are ordinary: receipts, dates, counters (NEW-4).
+    'Receipt ID: 88291034', 'Memory: 20261012', 'Operation: 123456789',
+    'Run ID: 12345678901', 'Fact id: 00000000',
 ])
 def test_meaningful_short_text_is_never_a_stub(text):
     assert not is_stub(text)
@@ -26,6 +29,8 @@ def test_meaningful_short_text_is_never_a_stub(text):
     '[] session ended 2026-04-01', 'Receipt: AB12CD34EF',
     'operation_id=0123abcd4567ef89', 'memory id: 123e4567-e89b-12d3-a456-426614174000',
     'Run ID: 01ARZ3NDEKTSV4RRFFQ69G5FAV', 'session closed at 2026-10-12T11:28:00Z.',
+    # 12 or more digits is a machine id; hex needs a letter a-f and 8+ characters.
+    'Operation ID: 123456789012', 'Receipt: 20261012112800', 'Session: deadbeef',
 ])
 def test_label_plus_machine_id_or_session_boilerplate_is_a_stub(text):
     assert is_stub(text)

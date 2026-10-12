@@ -1,4 +1,4 @@
-"""A user's edit of a stub clears the stub flag for good (review M1)."""
+"""A user's accepted edit of a stub clears the stub flag for good (review M1, NEW-4)."""
 
 from __future__ import annotations
 
@@ -52,16 +52,45 @@ def _flags(db, fact_id):
     return row['non_answer'], row['non_answer_user']
 
 
-def test_editing_a_stub_unmarks_predecessor_and_successor(env):
+def _stub_edit(env, key):
     db, runtime = env
     text = 'Session ID: 9f8e7d6c5b4a'
     memory_id = db.store_memory(MemoryRecord(profile_id='default', content=text))
     fact_id = db.store_fact(AtomicFact(profile_id='default', memory_id=memory_id,
                                        content=text, fact_type=FactType.SEMANTIC))
     assert _flags(db, fact_id)[0] == 1
-    result = runtime.create_correction_successor(
-        'default', fact_id, 'succ0000000000a1', 'Session ID: 9f8e7d6c5b4b',
-        trusted_actor_id=ACTOR, idempotency_key='edit-1')
-    assert result['status'] == 'proposed'
+    proposed = runtime.create_correction_successor(
+        'default', fact_id, f'succ{key}', 'Session ID: 9f8e7d6c5b4b',
+        trusted_actor_id=ACTOR, idempotency_key=f'edit-{key}')
+    assert proposed['status'] == 'proposed'
+    return fact_id, proposed
+
+
+def _transition(runtime, proposed, action, key):
+    return runtime.transition_correction(
+        'default', proposed['case_id'], action=action, expected_version=proposed['version'],
+        actor_id=ACTOR, idempotency_key=f'{action}-{key}')
+
+
+def test_a_proposed_edit_does_not_clear_the_stub_flag(env):
+    db, _runtime = env
+    fact_id, proposed = _stub_edit(env, '0000000000a1')
+    assert _flags(db, fact_id) == (1, None)
+    assert _flags(db, proposed['successor_fact_id'])[1] is None
+
+
+def test_applying_the_edit_unmarks_predecessor_and_successor(env):
+    db, runtime = env
+    fact_id, proposed = _stub_edit(env, '0000000000a2')
+    applied = _transition(runtime, proposed, 'apply', 'a2')
+    assert applied['status'] == 'applied'
     assert _flags(db, fact_id) == (0, 0)
-    assert _flags(db, result['successor_fact_id']) == (0, 0)
+    assert _flags(db, proposed['successor_fact_id']) == (0, 0)
+
+
+def test_a_rejected_edit_leaves_the_original_flag_as_it_was(env):
+    db, runtime = env
+    fact_id, proposed = _stub_edit(env, '0000000000a3')
+    rejected = _transition(runtime, proposed, 'reject', 'a3')
+    assert rejected['status'] == 'rejected'
+    assert _flags(db, fact_id) == (1, None)

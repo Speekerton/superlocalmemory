@@ -323,30 +323,35 @@ def read(db: Any, fact_ids: Sequence[str], space: str | None) -> dict[str, tuple
     return {r["fact_id"]: (float(r["baseline_topk"]), float(r["baseline_mean"])) for r in rows}
 
 
-def pending(db: Any, space: str, limit: int) -> list:
-    """Facts with a vector but no baseline for this space and probe version."""
+def pending(db: Any, space: str, limit: int, after_rowid: int = 0) -> list:
+    """Facts with a vector but no baseline for this space and probe version,
+    after ``after_rowid`` (the pass's cursor)."""
     return db.execute(
-        f"SELECT af.fact_id, af.profile_id, af.embedding FROM atomic_facts af "
+        f"SELECT af.rowid AS rid, af.fact_id, af.profile_id, af.embedding FROM atomic_facts af "
         f"LEFT JOIN {TABLE} b ON b.fact_id = af.fact_id AND b.space = ? "
         "AND b.probe_version = ? WHERE af.embedding IS NOT NULL AND b.fact_id IS NULL "
-        "ORDER BY af.rowid LIMIT ?",
-        (space, PROBE_SET_VERSION, int(limit)))
+        "AND af.rowid > ? ORDER BY af.rowid LIMIT ?",
+        (space, PROBE_SET_VERSION, int(after_rowid), int(limit)))
+
+
+def backfill_batch(db: Any, embedder: Any, batch: int = BATCH,
+                   after_rowid: int = 0) -> tuple[int, int | None]:
+    """One bounded batch after the cursor: ``(written, next cursor)``; the
+    cursor is None when nothing remains. Rows that cannot be measured (a vector
+    from another space) are stepped past, so they never stall the pass."""
+    space = space_of(embedder)
+    if space is None or not table_ready(db):
+        return 0, None
+    found = pending(db, space, batch, after_rowid)
+    if not found:
+        return 0, None
+    written = _compute_rows(db, embedder, space, found)
+    return written, int(dict(found[-1])["rid"])
 
 
 def backfill_step(db: Any, embedder: Any, batch: int = BATCH) -> int:
     """Compute one bounded batch of missing baselines; 0 when none remain."""
-    space = space_of(embedder)
-    if space is None or not table_ready(db):
-        return 0
-    found = pending(db, space, batch)
-    if not found:
-        return 0
-    written = _compute_rows(db, embedder, space, found)
-    if written == 0:
-        # Every row in the batch was unusable (no vector in this space); stop
-        # rather than spin on the same rows.
-        return 0
-    return written
+    return backfill_batch(db, embedder, batch)[0]
 
 
 class Backfill:
@@ -376,13 +381,13 @@ class Backfill:
         yields the shared embedder to recall (``recall_gate.background_work``)."""
         from superlocalmemory.core.recall_gate import background_work
 
-        batches = 0
+        batches, cursor = 0, 0
         while not self._stop.is_set() and (max_batches is None or batches < max_batches):
             with background_work():
-                n = backfill_step(self._db, self._embedder, self._batch)
+                n, cursor = backfill_batch(self._db, self._embedder, self._batch, cursor)
             batches += 1
-            if n == 0:
+            self.written += n
+            if cursor is None:
                 self.finished = True
                 break
-            self.written += n
         return self.written

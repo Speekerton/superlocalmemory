@@ -6,7 +6,9 @@ One new table (``retrieval/hub_baseline.py``): a fact's mean cosine against a
 fixed, versioned set of probe queries, in the embedding space it was measured
 in. Rows are filled by a bounded, resumable background pass and at save time;
 recall only reads them. Ids and numbers, never memory text. A trigger removes a
-fact's row when the fact is deleted, so erasure leaves nothing behind.
+fact's row when the fact is deleted, so erasure leaves nothing behind, and
+another when its vector changes, so a re-embedded fact is measured again
+rather than judged on a stale baseline.
 """
 
 from __future__ import annotations
@@ -35,6 +37,13 @@ BEGIN
     DELETE FROM fact_hub_baseline WHERE fact_id = OLD.fact_id;
 END;
 """
+_REEMBED = """
+CREATE TRIGGER IF NOT EXISTS trg_hub_baseline_fact_reembedded
+AFTER UPDATE OF embedding ON atomic_facts
+BEGIN
+    DELETE FROM fact_hub_baseline WHERE fact_id = NEW.fact_id;
+END
+"""
 
 
 def _has_facts(conn: sqlite3.Connection) -> bool:
@@ -45,18 +54,28 @@ def _has_facts(conn: sqlite3.Connection) -> bool:
 _TABLE, _TRIGGER = (part.strip() for part in DDL.split("CREATE TRIGGER", 1))
 
 
+def _has_embedding(conn: sqlite3.Connection) -> bool:
+    return any(r[1] == "embedding" for r in conn.execute("PRAGMA table_info(atomic_facts)"))
+
+
 def apply(conn: sqlite3.Connection) -> None:
     conn.execute(_TABLE.rstrip(";"))
-    if _has_facts(conn):  # the trigger needs the table it watches
+    if _has_facts(conn):  # the triggers need the table they watch
         conn.execute("CREATE TRIGGER " + _TRIGGER)
+        if _has_embedding(conn):
+            conn.execute(_REEMBED)
 
 
 def verify(conn: sqlite3.Connection) -> bool:
     names = {r[0] for r in conn.execute(
-        "SELECT name FROM sqlite_master WHERE name IN "
-        "('fact_hub_baseline', 'trg_hub_baseline_fact_erased')")}
-    return "fact_hub_baseline" in names and (
-        not _has_facts(conn) or "trg_hub_baseline_fact_erased" in names)
+        "SELECT name FROM sqlite_master WHERE name IN ('fact_hub_baseline', "
+        "'trg_hub_baseline_fact_erased', 'trg_hub_baseline_fact_reembedded')")}
+    if "fact_hub_baseline" not in names:
+        return False
+    if not _has_facts(conn):
+        return True
+    return "trg_hub_baseline_fact_erased" in names and (
+        not _has_embedding(conn) or "trg_hub_baseline_fact_reembedded" in names)
 
 
 def repair(conn: sqlite3.Connection) -> None:

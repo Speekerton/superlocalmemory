@@ -157,3 +157,11 @@ def test_probe_vectors_are_unit_length() -> None:
     m = hb._unit_rows([[3.0, 4.0], [0.0, 0.0]])
     assert np.allclose(np.linalg.norm(m[0]), 1.0)
     assert np.allclose(m[1], 0.0)
+
+
+def test_unusable_rows_never_stall_the_backfill(db) -> None:
+    # The first rows hold vectors of another width; the pass steps past them.
+    _store(db, 6, vector=lambda i: [1.0] * 8 if i < 3 else [0.0, 1.0, float(i), 1.0])
+    emb = _Embedder()
+    assert hb.Backfill(db, emb, batch=2).run_until_done() == 3
+    assert set(hb.read(db, ["f3", "f4", "f5"], hb.space_of(emb))) == {"f3", "f4", "f5"}

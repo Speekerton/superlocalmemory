@@ -85,8 +85,11 @@ def probe(embedder: Any, dimension: int) -> None:
     try:
         vectors = list(_embed_batch(embedder, [PROBE_TEXT]))
     except Exception as exc:
-        raise StepFailed(f"The model did not answer a test request: {exc}. "
-                         "Check slm doctor and the model settings, then retry the switch.") from exc
+        detail = str(exc).strip().rstrip(".")
+        # Worker errors already carry their own next step; do not repeat advice.
+        advice = "" if "slm " in detail else (
+            " Check slm doctor and the model settings, then retry the switch.")
+        raise StepFailed(f"The model did not answer a test request: {detail}.{advice}") from exc
     if len(vectors) != 1:
         raise StepFailed("The embedding service did not complete the test request. "
                          "Run slm doctor, then retry the switch.")

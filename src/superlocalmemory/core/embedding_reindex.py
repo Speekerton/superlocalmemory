@@ -165,14 +165,12 @@ class ReindexRunner:
                                          secrets.get(self.data_root, secrets.PREVIOUS))
         finally:
             conn.close()
-        embedder = steps.build_embedder(prev)
         try:
+            # Same RAM reservation as a forward switch: a rollback load is a full model load.
+            embedder = self._load_embedder(prev)
             if embedder is None:
                 raise steps.StepFailed("it could not be started")
-            steps.probe(embedder, prev.dimension)
         except steps.StepFailed as exc:
-            if embedder is not None:
-                steps.close_embedder(embedder)
             raise Refused(f"the previous model {prev.model_name} is not available ({exc}); "
                           "make it available again, then retry the rollback") from exc
         try:

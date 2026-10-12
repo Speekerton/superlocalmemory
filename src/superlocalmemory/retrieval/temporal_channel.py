@@ -23,7 +23,7 @@ from dateutil.parser import parse as dateutil_parse
 
 from superlocalmemory.encoding.temporal_parser import TemporalParser
 from superlocalmemory.retrieval.fact_cover import fact_table
-from superlocalmemory.retrieval.scope_policy import authorized_topk
+from superlocalmemory.retrieval.scope_policy import authorized_topk, filter_authorized_results
 from superlocalmemory.retrieval.temporal_slice_cache import TemporalSliceCache
 from superlocalmemory.storage.database import _scope_where
 
@@ -155,7 +155,10 @@ class TemporalChannel:
                 # that is what this channel was asked about; entity matches
                 # follow, and anything already present keeps its better place.
                 seen = {fid for fid, _ in recent}
-                return recent + [(f, s) for f, s in entity_results if f not in seen]
+                return filter_authorized_results(
+                    self._db, recent + [(f, s) for f, s in entity_results if f not in seen],
+                    profile_id, include_global=include_global, include_shared=include_shared,
+                )
 
         events = self._load_events(
             profile_id, include_global=include_global, include_shared=include_shared,
@@ -237,8 +240,7 @@ class TemporalChannel:
                 "SELECT te.fact_id FROM temporal_events AS te "
                 "JOIN canonical_entities AS ce ON ce.entity_id = te.entity_id "
                 f"JOIN {fact_table(self._db)} ON af.fact_id = te.fact_id "
-                f"WHERE {where}{self._db.visible_fact_clause('af')} "
-                "AND ce.canonical_name COLLATE NOCASE = ? "
+                f"WHERE {where} AND ce.canonical_name COLLATE NOCASE = ? "
                 "ORDER BY af.created_at ASC, te.fact_id ASC",
                 (*params, name),
             )

@@ -223,6 +223,9 @@ describe("what's-new card placement", () => {
         const start = html.indexOf('id="dashboard-pane"');
         const at = html.indexOf('id="od-whatsnew"');
         assert.ok(start > 0 && at > start);
-        assert.ok(at < html.indexOf('class="kpi-strip"'));
+        // The home page leads with the numbers; the compact card sits in the
+        // right-hand column, before the Remember-something card.
+        assert.ok(at > html.indexOf('class="card kpi"'));
+        assert.ok(at < html.indexOf('id="quick-store-input"'));
     });
 });

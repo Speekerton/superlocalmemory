@@ -9,28 +9,39 @@
   }
   function mount(pane) {
     if (!pane || pane.querySelector('#daily-tasks')) return;
-    var card = node('section', '', 'daily-tasks'); card.className = 'card card-pad';
-    card.appendChild(node('h3', 'Ask your memory'));
+    var card = node('section', '', 'daily-tasks'); card.className = 'card card-pad dash-ask';
+    var head = node('div'); head.className = 'dash-ask-head';
+    head.appendChild(node('h3', 'Ask your memory'));
+    head.appendChild(node('span', 'Answers come from your saved notes, with the source shown.'));
+    card.appendChild(head);
     var form = node('form', '', 'daily-question-form');
     var label = node('label', 'What would you like to know?'); label.htmlFor = 'daily-question';
     var question = node('input', '', 'daily-question'); question.type = 'search'; question.maxLength = 500;
     question.className = 'form-control';
     var ask = node('button', 'Ask'); ask.type = 'submit'; ask.className = 'btn primary';
-    form.append(label, question, ask);
+    label.className = 'visually-hidden';
+    question.placeholder = 'What would you like to know?';
+    question.setAttribute('autocomplete', 'off');
+    form.className = 'dash-ask-form';
+    var row = node('div'); row.className = 'dash-ask-row'; row.append(question, ask);
+    form.append(label, row);
     var notice = node('p', 'The answer check uses your settings. Online checking sends the question and top memories to your chosen provider.');
+    notice.className = 'dash-help';
     var verdict = node('div', '', 'daily-verdict'); verdict.setAttribute('role', 'status');
     var answer = node('div', '', 'daily-answer');
     var sources = node('div', '', 'daily-sources');
     card.append(form, notice, verdict, answer, sources);
-    var activity = node('details'); activity.appendChild(node('summary', 'What have I done?'));
+    var activity = node('details'); activity.className = 'dash-quiet'; activity.appendChild(node('summary', 'What have I done?'));
     var summaries = node('div'); summaries.innerHTML = window.ODSummaries.controls('daily');
     activity.appendChild(summaries);
     activity.addEventListener('toggle', function () { if (activity.open) window.ODSummaries.onShow('daily'); });
     card.appendChild(activity);
     var work = node('div', '', 'daily-work'); work.setAttribute('role', 'status');
-    var refresh = node('button', 'Show background work', 'daily-work-refresh'); refresh.type = 'button'; refresh.className = 'btn';
+    var refresh = node('button', 'Show background work', 'daily-work-refresh'); refresh.type = 'button'; refresh.className = 'btn sm ghost dash-work-btn';
     refresh.addEventListener('click', function () { loadWork(work); });
-    card.append(refresh, work); pane.prepend(card);
+    card.append(refresh, work);
+    var slot = pane.querySelector('#od-dash-ask-slot');
+    if (slot) slot.appendChild(card); else pane.prepend(card);
     form.addEventListener('submit', function (e) {
       e.preventDefault(); var q = question.value.trim();
       if (q) search(q, ask, verdict, answer, sources);

@@ -71,7 +71,7 @@ window.refreshDashboard = function(options) {
 async function loadDashboardStats() {
     try {
         var r = await fetch('/api/stats', { credentials: 'same-origin' });
-        if (!r.ok) return false;
+        if (!r.ok) { markStatsUnavailable(); return false; }
         var data = await r.json();
         var ov = data.overview || {};
 
@@ -87,6 +87,7 @@ async function loadDashboardStats() {
         setKpiValue('k-edges', edges);
         setKpiValue('k-facts', facts);
         setKpiValue('k-clu',   clusters);
+        setTextById('k-mem-delta', facts.toLocaleString() + ' facts extracted');
 
         // Legacy hidden compat IDs (core.js loadStats() may race — that's OK,
         // the hidden IDs are only a data bridge, not visible).
@@ -97,8 +98,36 @@ async function loadDashboardStats() {
         loadDashboardSources(data);
         return true;
     } catch (e) {
-        // Non-fatal: KPI strip shows — values
+        // Non-fatal: the tiles say "Unavailable" with a retry, never a bare dash.
+        markStatsUnavailable();
         return false;
+    }
+}
+
+// A tile whose call failed or timed out: say so and offer a retry. The other
+// tiles keep their own values, one slow endpoint never blanks the page.
+function markStatsUnavailable() {
+    ['k-mem', 'k-nodes'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = '';
+        var span = document.createElement('span');
+        span.className = 'kpi-unavailable';
+        span.textContent = 'Unavailable';
+        el.appendChild(span);
+    });
+    ['k-edges', 'k-clu'].forEach(function (id) { setTextById(id, '0'); });
+    var delta = document.getElementById('k-mem-delta');
+    if (delta && !delta.querySelector('button')) {
+        delta.textContent = '';
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'kpi-retry'; b.textContent = 'Retry';
+        b.addEventListener('click', function (e) {
+            e.stopPropagation();
+            delta.textContent = ' ';
+            window.refreshDashboard({ force: true });
+        });
+        delta.appendChild(b);
     }
 }
 
@@ -173,9 +202,9 @@ async function loadDashboardFeed() {
     if (!feedEl) return true;
 
     var CATEGORY_COLORS = {
-        'episodic':  ['rgba(34,197,94,0.12)',  '#22c55e'],
+        'episodic':  ['rgba(124,92,255,0.14)', '#8F76FF'],
         'semantic':  ['rgba(139,92,246,0.12)', '#8b5cf6'],
-        'temporal':  ['rgba(6,182,212,0.12)',  '#06b6d4'],
+        'temporal':  ['rgba(255,46,136,0.14)', '#FF4F9C'],
         'opinion':   ['rgba(245,158,11,0.12)', '#f59e0b'],
         'default':   ['rgba(100,116,139,0.12)','#64748b'],
     };
@@ -446,6 +475,11 @@ async function loadDashboard() {
             parts.push('v' + (ver || '?'));
             subtitle.textContent = parts.join(' · ');
         }
+
+        // Hero chips: mode, profile, version
+        setTextById('dash-chip-mode', 'Mode ' + data.mode.toUpperCase() + (data.mode_name ? ' · ' + data.mode_name : ''));
+        setTextById('dash-chip-profile', 'Profile: ' + (data.profile || 'default'));
+        setTextById('dash-chip-version', ver ? 'v' + ver : 'Version unknown');
 
         // Update mode badge in sidebar (ng-premount hidden element)
         var badge = document.getElementById('mode-badge');

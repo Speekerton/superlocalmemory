@@ -17,18 +17,20 @@
     <!-- Inter Variable typeface (vendored) -->
     <link rel="stylesheet" href="static/vendor/inter-ui/inter-variable.min.css">
     <!-- Neural Glass Design System v1.0 -->
-    <link rel="stylesheet" href="static/css/neural-glass.css?v=bd71a1b9">
+    <link rel="stylesheet" href="static/css/neural-glass.css?v=a1174497">
     <!-- Brain tab styles (v3.4.21) -->
-    <link rel="stylesheet" href="static/css/brain.css?v=9b0f5384">
+    <link rel="stylesheet" href="static/css/brain.css?v=10ddc21a">
 
     <!-- Legacy dashboard styles (v3.4.21 — extracted to external file, no rule changes) -->
-    <link rel="stylesheet" href="static/css/legacy-dashboard.css?v=ded380a9">
+    <link rel="stylesheet" href="static/css/legacy-dashboard.css?v=067609e8">
     <!-- Open Design System v1.0 (app chrome, KPI strip, cards, sidebar, theme tokens) -->
-    <link rel="stylesheet" href="static/css/design-system.css?v=c72ed8f7">
+    <link rel="stylesheet" href="static/css/design-system.css?v=f3d6ab40">
     <!-- OD-Bootstrap bridge: tab-pane visibility, mobile sidebar, responsive shims -->
     <link rel="stylesheet" href="static/css/od-bridge.css">
     <!-- Connected apps pane + MCP & Tools pointer card (4.1.23) -->
     <link rel="stylesheet" href="static/css/od-apps.css?v=7600a0ed">
+    <!-- Website palette, responsive fixes, dashboard home, help UI (loaded last) -->
+    <link rel="stylesheet" href="static/css/theme-slm.css?v=da40edac">
 </head>
 <body>
 
@@ -148,76 +150,149 @@
                  No hardcoded numbers — honest loading/empty states only. -->
             <div class="tab-pane fade show active" id="dashboard-pane">
 
-              <div class="page-head">
-                <h2>Your memory, at a glance</h2>
-                <p id="od-dash-subtitle" class="muted">Connecting to daemon...</p>
-              </div>
+              <!-- Hero: mascot, title, and mode / profile / version chips (filled by loadDashboard in dashboard.js) -->
+              <header class="dash-hero page-head">
+                <img class="dash-mascot" src="static/assets/mascot/hero-320.webp"
+                     srcset="static/assets/mascot/hero-320.webp 320w, static/assets/mascot/hero-640.webp 640w"
+                     sizes="112px" width="112" height="112" alt="" decoding="async">
+                <div class="dash-hero-text">
+                  <h2>Your memory, at a glance</h2>
+                  <p id="od-dash-subtitle" class="muted">Connecting to daemon...</p>
+                  <div class="dash-chips" aria-label="Current setup">
+                    <span class="chip-pill violet" id="dash-chip-mode"><span class="skel skel-chip"></span></span>
+                    <span class="chip-pill" id="dash-chip-profile"><span class="skel skel-chip"></span></span>
+                    <span class="chip-pill" id="dash-chip-version"><span class="skel skel-chip"></span></span>
+                  </div>
+                </div>
+              </header>
 
-              <!-- 4.1.25: dismissible what's-new card, filled by od-features.js -->
-              <div id="od-whatsnew" style="margin-bottom:16px"></div>
-
-              <!-- KPI strip — 4 cards, values populated by loadDashboardStats() -->
-              <section class="kpi-strip" style="margin-bottom:16px">
-                <div class="card kpi">
-                  <div class="label"><i class="bi bi-journal-text" aria-hidden="true"></i> Total Memories</div>
-                  <div class="value num" id="k-mem">—</div>
+              <!-- KPI row. Each tile loads on its own and shows a skeleton, then a value or "Unavailable". -->
+              <section class="kpi-strip dash-kpis" aria-label="Key numbers">
+                <div class="card kpi" data-goto="memories-pane" id="kpi-mem">
+                  <div class="label"><i class="bi bi-journal-text" aria-hidden="true"></i> Memories</div>
+                  <div class="value num" id="k-mem"><span class="skel skel-num" role="img" aria-label="Loading"></span></div>
                   <div class="delta" id="k-mem-delta">&nbsp;</div>
                   <div class="spark" id="sp-mem"></div>
                 </div>
-                <div class="card kpi">
-                  <div class="label"><i class="bi bi-diagram-2" aria-hidden="true"></i> Graph Nodes</div>
-                  <div class="value num" id="k-nodes">—</div>
-                  <div class="delta" id="k-nodes-delta">&nbsp;</div>
+                <div class="card kpi" data-goto="media-pane" id="kpi-docs">
+                  <div class="label"><i class="bi bi-file-earmark-image" aria-hidden="true"></i> Documents &amp; pictures</div>
+                  <div class="value num" id="k-docs"><span class="skel skel-num" role="img" aria-label="Loading"></span></div>
+                  <div class="delta" id="k-docs-delta">&nbsp;</div>
+                </div>
+                <div class="card kpi" data-goto="graph-pane" id="kpi-graph">
+                  <div class="label"><i class="bi bi-diagram-2" aria-hidden="true"></i> Graph entities</div>
+                  <div class="value num" id="k-nodes"><span class="skel skel-num" role="img" aria-label="Loading"></span></div>
+                  <div class="delta"><span id="k-edges">&nbsp;</span> connections &middot; <span id="k-clu">&nbsp;</span> clusters</div>
                   <div class="spark" id="sp-nodes"></div>
+                  <div class="spark" id="sp-edges" hidden></div>
+                  <div class="spark" id="sp-clu" hidden></div>
+                  <span id="k-nodes-delta" hidden></span><span id="k-edges-delta" hidden></span><span id="k-clu-delta" hidden></span>
                 </div>
-                <div class="card kpi">
-                  <div class="label"><i class="bi bi-arrows-angle-expand" aria-hidden="true"></i> Connections</div>
-                  <div class="value num" id="k-edges">—</div>
-                  <div class="delta" id="k-edges-delta">&nbsp;</div>
-                  <div class="spark" id="sp-edges"></div>
+                <div class="card kpi" data-goto="apps-pane" id="kpi-apps">
+                  <div class="label"><i class="bi bi-plug" aria-hidden="true"></i> Connected apps &amp; bots</div>
+                  <div class="value num" id="k-apps"><span class="skel skel-num" role="img" aria-label="Loading"></span></div>
+                  <div class="delta" id="k-apps-delta">&nbsp;</div>
                 </div>
-                <div class="card kpi">
-                  <div class="label"><i class="bi bi-lightning-charge" aria-hidden="true"></i> Clusters</div>
-                  <div class="value num" id="k-clu">—</div>
-                  <div class="delta" id="k-clu-delta">&nbsp;</div>
-                  <div class="spark" id="sp-clu"></div>
+                <div class="card kpi" data-goto="answercheck-pane" id="kpi-ac">
+                  <div class="label"><i class="bi bi-shield-check" aria-hidden="true"></i> Answer check</div>
+                  <div class="value" id="k-ac"><span class="skel skel-num" role="img" aria-label="Loading"></span></div>
+                  <div class="delta" id="k-ac-delta">&nbsp;</div>
+                </div>
+                <div class="card kpi" data-goto="health-pane" id="kpi-health">
+                  <div class="label"><i class="bi bi-activity" aria-hidden="true"></i> Memory health</div>
+                  <div class="value" id="k-health"><span class="skel skel-num" role="img" aria-label="Loading"></span></div>
+                  <div class="delta" id="k-health-delta">&nbsp;</div>
                 </div>
               </section>
 
-              <!-- main grid: memory-growth card + system card -->
-              <div class="grid" style="grid-template-columns:1.6fr 1fr;align-items:start">
+              <!-- Ask your memory: the search card (od-daily.js mounts #daily-tasks here) -->
+              <div id="od-dash-ask-slot"></div>
 
-                <!-- memory growth + quick actions -->
-                <div class="card">
-                  <div class="card-head">
-                    <h3>Memory activity</h3>
-                    <span class="sub">facts added by day · past year</span>
-                    <div class="spacer"></div>
+              <div class="dash-cols">
+                <div class="dash-col">
+                  <div class="card">
+                    <div class="card-head">
+                      <h3>Recent memories</h3>
+                      <span class="sub">live stream</span>
+                      <div class="spacer"></div>
+                      <span class="badge neutral" style="border-radius:99px"><span class="dot"></span> live</span>
+                    </div>
+                    <!-- populated by loadDashboardFeed() in dashboard.js via GET /api/memories?limit=6 -->
+                    <div class="card-pad" id="feed">
+                      <div class="skel-rows" aria-label="Loading activity"><span class="skel skel-line"></span><span class="skel skel-line"></span><span class="skel skel-line"></span></div>
+                    </div>
                   </div>
-                  <div class="card-pad">
-                    <div id="sp-big"></div>
-                    <div style="display:flex;gap:26px;margin-top:16px;flex-wrap:wrap">
-                      <div>
-                        <div class="muted" style="font-size:12px">Avg / day</div>
-                        <div class="num" id="k-avg-day" style="font-size:19px;font-weight:650">—</div>
-                      </div>
-                      <div>
-                        <div class="muted" style="font-size:12px">Total facts</div>
-                        <div class="num" id="k-facts" style="font-size:19px;font-weight:650">—</div>
+
+                  <div class="card">
+                    <div class="card-head">
+                      <h3>Memory activity</h3>
+                      <span class="sub">facts added by day, past year</span>
+                      <div class="spacer"></div>
+                    </div>
+                    <div class="card-pad">
+                      <div id="sp-big"></div>
+                      <div class="dash-minis">
+                        <div>
+                          <div class="muted dash-mini-label">Average per day</div>
+                          <div class="num dash-mini-value" id="k-avg-day">&nbsp;</div>
+                        </div>
+                        <div>
+                          <div class="muted dash-mini-label">Total facts</div>
+                          <div class="num dash-mini-value" id="k-facts">&nbsp;</div>
+                        </div>
                       </div>
                     </div>
-                    <!-- Quick store / recall -->
-                    <div style="margin-top:20px;display:flex;flex-direction:column;gap:10px">
+                  </div>
+
+                  <div class="card">
+                    <div class="card-head"><h3>Where memories come from</h3></div>
+                    <div class="card-pad">
+                      <!-- populated by loadDashboardSources() from profile-scoped provenance -->
+                      <div id="src">
+                        <div class="skel-rows" aria-label="Loading sources"><span class="skel skel-line"></span><span class="skel skel-line"></span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="dash-col">
+                  <div class="card" id="dash-health-card">
+                    <div class="card-head">
+                      <h3>Memory health</h3>
+                      <div class="spacer"></div>
+                      <button type="button" class="btn sm ghost" data-goto="health-pane">Open</button>
+                    </div>
+                    <div class="card-pad" id="dash-health-body"><div class="skel-rows"><span class="skel skel-line"></span><span class="skel skel-line"></span></div></div>
+                  </div>
+
+                  <div class="card" id="dash-apps-card">
+                    <div class="card-head">
+                      <h3>Connected apps &amp; peers</h3>
+                      <div class="spacer"></div>
+                      <button type="button" class="btn sm ghost" data-goto="apps-pane">Manage</button>
+                    </div>
+                    <div class="card-pad" id="dash-apps-body"><div class="skel-rows"><span class="skel skel-line"></span><span class="skel skel-line"></span></div></div>
+                  </div>
+
+                  <!-- 4.1.25: dismissible what's-new card, filled by od-features.js -->
+                  <div id="od-whatsnew"></div>
+
+                  <div class="card">
+                    <div class="card-head">
+                      <h3>Remember something</h3>
+                      <span class="sub">quick store and recall</span>
+                    </div>
+                    <div class="card-pad dash-quick">
                       <div>
-                        <div class="muted" style="font-size:12px;margin-bottom:4px">Quick store</div>
-                        <div class="input-group input-group-sm" style="max-width:320px">
+                        <label class="muted dash-mini-label" for="quick-store-input">Quick store</label>
+                        <div class="input-group input-group-sm">
                           <input type="text" id="quick-store-input" class="form-control" placeholder="Type something to remember...">
                           <button class="btn btn-primary btn-sm" id="quick-store-btn">Store</button>
                         </div>
                       </div>
                       <div>
-                        <div class="muted" style="font-size:12px;margin-bottom:4px">Quick recall</div>
-                        <div class="input-group input-group-sm" style="max-width:320px">
+                        <label class="muted dash-mini-label" for="quick-recall-input">Quick recall</label>
+                        <div class="input-group input-group-sm">
                           <input type="text" id="quick-recall-input" class="form-control" placeholder="Search your memories...">
                           <button class="btn btn-success btn-sm" id="quick-recall-btn">Recall</button>
                         </div>
@@ -225,101 +300,40 @@
                       </div>
                     </div>
                   </div>
-                </div>
 
-                <!-- system health snapshot — wired to GET /api/v3/dashboard -->
-                <div class="card">
-                  <div class="card-head">
-                    <h3>System</h3>
-                    <div class="spacer"></div>
-                    <span class="badge ok" id="od-sys-badge"><span class="dot"></span> Healthy</span>
-                  </div>
-                  <div class="card-pad" style="display:flex;flex-direction:column;gap:2px">
-                    <div class="list-row">
-                      <span class="muted" style="width:120px">Mode</span>
-                      <b id="dashboard-mode">...</b>
+                  <!-- Engine details and mode switch, wired to GET /api/v3/dashboard -->
+                  <div class="card">
+                    <div class="card-head">
+                      <h3>Engine</h3>
+                      <div class="spacer"></div>
+                      <span class="badge ok" id="od-sys-badge"><span class="dot"></span> Healthy</span>
                     </div>
-                    <div class="list-row">
-                      <span class="muted" style="width:120px">Description</span>
-                      <span class="mono" id="dashboard-mode-desc">...</span>
-                    </div>
-                    <div class="list-row">
-                      <span class="muted" style="width:120px">LLM Provider</span>
-                      <span class="mono" id="dashboard-provider">...</span>
-                    </div>
-                    <div class="list-row">
-                      <span class="muted" style="width:120px">Model</span>
-                      <span class="mono" id="dashboard-model">...</span>
-                    </div>
-                    <div class="list-row">
-                      <span class="muted" style="width:120px">Math Layers</span>
-                      <span class="badge cyan">Scoring · Consistency · Lifecycle</span>
-                    </div>
-                    <div class="list-row">
-                      <span class="muted" style="width:120px">Base dir</span>
-                      <span class="mono" id="dashboard-basedir">~/.superlocalmemory</span>
-                    </div>
-                    <div class="list-row">
-                      <span class="muted" style="width:120px">Profile</span>
-                      <span class="mono" id="dashboard-profile">default</span>
-                    </div>
-                    <div class="list-row">
-                      <span class="muted" style="width:120px">Version</span>
-                      <span class="mono" id="dashboard-version">...</span>
-                    </div>
-                    <!-- Answer check (4.1.18): on-device Laya / hosted Jev /
-                         off. Populated by loadAnswerCheckSummary() in
-                         dashboard.js from GET /api/v3/answer-check. -->
-                    <div class="list-row">
-                      <span class="muted" style="width:120px">Answer check</span>
-                      <span class="mono" id="dashboard-answer-check">...</span>
-                    </div>
-                    <div class="list-row" style="margin-top:8px">
-                      <span class="muted" style="width:120px">Switch mode</span>
-                      <div class="btn-group btn-group-sm" role="group">
-                        <button class="btn btn-outline-primary mode-btn btn-sm" data-mode="a">A</button>
-                        <button class="btn btn-outline-primary mode-btn btn-sm" data-mode="b">B</button>
-                        <button class="btn btn-outline-primary mode-btn btn-sm" data-mode="c">C</button>
+                    <div class="card-pad dash-kv">
+                      <div class="list-row"><span class="muted">Mode</span><b id="dashboard-mode">...</b></div>
+                      <div class="list-row"><span class="muted">Description</span><span id="dashboard-mode-desc">...</span></div>
+                      <div class="list-row"><span class="muted">LLM provider</span><span class="mono" id="dashboard-provider">...</span></div>
+                      <div class="list-row"><span class="muted">Model</span><span class="mono" id="dashboard-model">...</span></div>
+                      <div class="list-row"><span class="muted">Math layers</span><span class="badge violet">Scoring · Consistency · Lifecycle</span></div>
+                      <div class="list-row"><span class="muted">Base dir</span><span class="mono" id="dashboard-basedir">~/.superlocalmemory</span></div>
+                      <div class="list-row"><span class="muted">Profile</span><span class="mono" id="dashboard-profile">default</span></div>
+                      <div class="list-row"><span class="muted">Version</span><span class="mono" id="dashboard-version">...</span></div>
+                      <!-- Answer check (4.1.18): populated by loadAnswerCheckSummary() in dashboard.js -->
+                      <div class="list-row"><span class="muted">Answer check</span><span id="dashboard-answer-check">...</span></div>
+                      <div class="list-row">
+                        <span class="muted">Switch mode</span>
+                        <div class="btn-group btn-group-sm" role="group">
+                          <button class="btn btn-outline-primary mode-btn btn-sm" data-mode="a">A</button>
+                          <button class="btn btn-outline-primary mode-btn btn-sm" data-mode="b">B</button>
+                          <button class="btn btn-outline-primary mode-btn btn-sm" data-mode="c">C</button>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <!-- recent activity + capture sources -->
-              <div class="grid" style="grid-template-columns:1.6fr 1fr;align-items:start;margin-top:16px">
-                <div class="card">
-                  <div class="card-head">
-                    <h3>Recent activity</h3>
-                    <span class="sub">live memory stream</span>
-                    <div class="spacer"></div>
-                    <span class="badge neutral" style="border-radius:99px">
-                      <span class="dot" style="background:var(--ok)"></span> live
-                    </span>
-                  </div>
-                  <!-- populated by loadDashboardFeed() in dashboard.js via GET /api/memories?limit=6 -->
-                  <div class="card-pad" id="feed">
-                    <div class="muted" style="padding:16px;text-align:center;font-size:13px">Loading activity...</div>
-                  </div>
-                </div>
-                <div class="card">
-                  <div class="card-head"><h3>Where memories come from</h3></div>
-                  <div class="card-pad">
-                    <!-- populated by loadDashboardSources() from profile-scoped provenance -->
-                    <div id="src">
-                      <div class="muted" style="padding:16px;text-align:center;font-size:13px">Loading...</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Hidden compat IDs: dashboard-memory-count is referenced by loadDashboard().
-                   stat-memories, stat-facts, stat-nodes, stat-edges are NOT here —
-                   they live in #stats-container (above tab-content) to avoid duplicate IDs.
-                   core.js loadStats() writes to those IDs in stats-container.
-                   loadDashboardStats() calls /api/stats independently and writes to #k-mem etc. -->
+              <!-- Hidden compat IDs: dashboard-memory-count is referenced by loadDashboard(). -->
               <div style="display:none" aria-hidden="true" id="legacy-compat-ids">
-                <!-- dashboard-memory-count: unique ID (old dashboard pane was replaced) -->
                 <span id="dashboard-memory-count">0</span>
               </div>
 
@@ -384,7 +398,7 @@
                         <div class="card p-2" style="font-size:0.8rem; max-height:550px; overflow-y:auto;">
                             <h6 class="mb-2"><i class="bi bi-palette"></i> Legend</h6>
                             <div class="mb-1"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#667eea;"></span> Semantic</div>
-                            <div class="mb-1"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#43e97b;"></span> Episodic</div>
+                            <div class="mb-1"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#9B82FF;"></span> Episodic</div>
                             <div class="mb-1"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#f093fb;"></span> Opinion</div>
                             <div class="mb-1"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#4facfe;"></span> Temporal</div>
                             <hr class="my-2">
@@ -1565,7 +1579,7 @@
     <script src="static/js/memories.js"></script>
     <script src="static/js/search.js"></script>
     <script src="static/js/modal.js"></script>
-    <script src="static/js/clusters.js?v=9f8dad5f"></script>
+    <script src="static/js/clusters.js?v=97cb9604"></script>
     <script src="static/js/timeline.js"></script>
     <script src="static/js/profiles.js"></script>
     <script src="static/js/settings.js?v=49d01464"></script>
@@ -1585,7 +1599,7 @@
     <script src="static/js/lifecycle.js"></script>
     <script src="static/js/compliance.js?v=f63afc16"></script>
     <script src="static/js/init.js?v=a4c439a7"></script>
-    <script src="static/js/dashboard.js?v=f361a6af"></script>
+    <script src="static/js/dashboard.js?v=de4b9207"></script>
     <script src="static/js/recall-lab.js?v=b250a4e0"></script>
     <script src="static/js/trust-dashboard.js?v=3d4e9da6"></script>
     <script src="static/js/math-health.js"></script>
@@ -1596,10 +1610,10 @@
     <!-- Neural Glass shell (v3.4.21 restructured) -->
     <script src="static/js/ng-health.js?v=800fbdb6"></script>
     <script src="static/js/ng-ingestion.js?v=229d3212"></script>
-    <script src="static/js/ng-skills.js?v=4a0077ff"></script>
+    <script src="static/js/ng-skills.js?v=cc37a0ee"></script>
     <script src="static/js/ng-mesh.js?v=df7cda66"></script>
     <!-- OD Shell v1.0 — replaces ng-shell.js; CSP-safe single-page tab switching -->
-    <script src="static/js/od-shell.js?v=213ddf4c"></script>
+    <script src="static/js/od-shell.js?v=ece40c47"></script>
     <!-- Optimize tab (v3.6.0) — runtime config for cache + compress + proxy -->
     <script src="static/js/optimize.js?v=b952ca8c"></script>
     <!-- B2 (v3.7.9): CSP-safe event delegation — replaces inline on*= handlers -->
@@ -1618,11 +1632,11 @@
     <script src="static/js/od-ops-health.js?v=5190513b"></script>
     <script src="static/js/od-store-check.js?v=165f9bf0"></script>
     <script src="static/js/od-team.js?v=827a1367"></script>
-    <script src="static/js/od-graph.js?v=e040ebe3"></script>
+    <script src="static/js/od-graph.js?v=c8d9ae42"></script>
     <script src="static/js/od-source-button.js?v=3c3833ab"></script>
     <script src="static/js/od-summaries.js?v=e127f1d2"></script>
-    <script src="static/js/od-views.js?v=d05b2179"></script>
-    <script src="static/js/od-daily.js?v=4cc9703a"></script>
+    <script src="static/js/od-views.js?v=7b7b2e67"></script>
+    <script src="static/js/od-daily.js?v=2c896d03"></script>
     <script src="static/js/od-memory-knowledge.js?v=f9ea0505"></script>
     <script src="static/js/od-memory-drawer.js?v=b6181efb"></script>
     <script src="static/js/od-memory-events.js?v=acb0b1ce"></script>
@@ -1635,7 +1649,7 @@
     <script src="static/js/od-mesh.js?v=84cb9103"></script>
     <script src="static/js/od-optimize.js?v=edfda39b"></script>
     <!-- 4.1.22: the decay preview and the background re-index panel, used by od-settings.js -->
-    <script src="static/js/od-decay-preview.js?v=bb7609a8"></script>
+    <script src="static/js/od-decay-preview.js?v=55b696c1"></script>
     <script src="static/js/od-reindex.js?v=c205e0b4"></script>
     <script src="static/js/od-engine-upgrade.js?v=c2231c0e"></script>
     <script src="static/js/od-settings-models.js?v=813bc0ef"></script>
@@ -1661,6 +1675,9 @@
     <script src="static/js/od-sources.js?v=7f82da51"></script>
     <script src="static/js/od-media-find.js?v=10cc0e63"></script>
     <script src="static/js/od-media.js?v=4171a7af"></script>
+    <script src="static/js/od-dash-home.js?v=82cd4e3d"></script>
+    <script src="static/js/od-help.js?v=e06df0d4"></script>
+    <script src="static/js/od-polish.js?v=2008f8b6"></script>
 
     <!-- Aggressive compression warning modal (v3.6.0 M-03) -->
     <div class="modal fade" id="optimizeAggressiveModal" tabindex="-1" aria-labelledby="optimizeAggressiveModalLabel" aria-hidden="true">

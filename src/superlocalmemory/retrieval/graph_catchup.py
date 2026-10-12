@@ -123,7 +123,7 @@ def _metrics_signature(db: Any, profile_id: str) -> str | None:
 
     Only a NEWER computation is a reason to rebuild: deleting a fact removes
     its row too (a count would then move on every delete, and every delete
-    would cost a full rebuild again -- E-M6).
+    would cost a full rebuild again).
     """
     try:
         rows = db.execute("SELECT MAX(computed_at) AS at FROM fact_importance "

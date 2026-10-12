@@ -273,7 +273,7 @@ _MODULES = {
 # accepted by the current migration. Unknown hashes are never reconciled.
 _KNOWN_EQUIVALENT_DDL_HASHES: dict[str, frozenset[str]] = {
     _M057.NAME: frozenset({
-        # Original WP-4b recounting triggers. M057.verify checks definitions;
+        # Original recounting triggers. M057.verify checks definitions;
         # M057.repair upgrades them and rebuilds the counter before acceptance.
         "1b33a4fa21a72714a8e6e95deb4509e644ce4410629ea2152d0deb6b903ab194",
         # Incremental-trigger fix-up before fact_id was watched (PR 250 #3).

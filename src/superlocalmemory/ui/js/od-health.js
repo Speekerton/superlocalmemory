@@ -271,7 +271,7 @@
     var daemonVal = !healthData ? 'Unreachable'
       : (RUNTIME_LABELS[runtime] || (healthData.status === 'ok' ? 'Healthy' : 'Degraded'));
     // The dashboard is served BY the daemon, so the page's own port is the
-    // daemon's real port (it was hard-coded to 8765 — audit BRN-21).
+    // daemon's real port (it was hard-coded to 8765).
     var livePort = (window.location && window.location.port) || '';
     var daemonDetail = healthData
       ? (livePort ? 'port ' + esc(livePort) + ' · ' : '') +

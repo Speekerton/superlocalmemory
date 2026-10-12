@@ -3577,8 +3577,8 @@ def cmd_doctor(args: Namespace) -> None:
 
     # 10c. Failed saves. `slm ops status` reports dead-lettered saves, degraded
     # operations and exhausted retries; doctor said nothing about them and read
-    # 0 failures on a store where 60 saves had been given up on (4.1.25 audit
-    # L-05). Same counts, same source, so the two commands cannot disagree.
+    # 0 failures on a store where 60 saves had been given up on.
+    # Same counts, same source, so the two commands cannot disagree.
     if db_path.exists():
         try:
             from superlocalmemory.cli.doctor_ops import failed_saves_finding

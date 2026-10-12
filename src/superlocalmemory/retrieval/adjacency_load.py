@@ -6,7 +6,7 @@
 
 Moved out of retrieval/entity_channel unchanged in behaviour; the channel keeps
 thin methods of the same names, which tests and the RCU builder wrap. Since
-N-11 a full load runs only for a first build, an evicted scope, a slot whose
+4.1.25 a full load runs only for a first build, an evicted scope, a slot whose
 currency the change log cannot prove, or a background compaction
 (retrieval/graph_catchup) -- never because a memory was written.
 """
@@ -48,7 +48,7 @@ def load_adjacency_from_db(
     adj: dict[str, list[tuple[str, float]]] = defaultdict(list)
     # The graph projection, when there is one, answers this in 395 ms where
     # SQLite takes 2,477 ms on the same 208k-edge store (hand-measured, see
-    # graph/cozo_adjacency for the run; no test reproduces it). Since N-11 this
+    # graph/cozo_adjacency for the run; no test reproduces it). Since 4.1.25 this
     # load runs for a first build or a background compaction only
     # (retrieval/graph_catchup), never per write. It declines global and
     # shared scope, because it stores one profile per edge and a short answer

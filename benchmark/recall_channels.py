@@ -1,7 +1,7 @@
 """Model-free synthetic recall profiler; never reads an existing store.
 
 Run with PYTHONPATH=src uv run --frozen python benchmark/recall_channels.py
---directory "$TMPDIR/wp4b" --facts 30000 --samples 20 --label before.
+--directory "$TMPDIR/recall-channels" --facts 30000 --samples 20 --label before.
 The directory must be new on the first run. Output includes cProfile and SQL plans.
 """
 
@@ -202,7 +202,7 @@ def synthetic_path(directory: Path, facts: int) -> tuple[Path, bool]:
     marker = directory / "synthetic-store.json"
     if marker.is_symlink():
         raise ValueError("synthetic manifest must not be a symlink")
-    expected = {"seeder": "wp4b-recall-channels-v2", "facts": facts, "complete": True}
+    expected = {"seeder": "recall-channels-v2", "facts": facts, "complete": True}
     if path.exists():
         if not marker.is_file() or json.loads(marker.read_text()) != expected:
             raise ValueError("existing database was not seeded by this profiler")
@@ -226,7 +226,7 @@ def main() -> None:
     if needs_seed:
         seed(db, args.facts, vectors=True, migrated=True)
         (path.parent / "synthetic-store.json").write_text(json.dumps(
-            {"seeder": "wp4b-recall-channels-v2", "facts": args.facts, "complete": True}))
+            {"seeder": "recall-channels-v2", "facts": args.facts, "complete": True}))
     result = profile_calls(db, path.parent, args.samples, args.label)
     (path.parent / f"{args.label}.json").write_text(json.dumps(result, indent=2))
     print(json.dumps({name: {k: v for k, v in row.items() if k in {"p50_ms", "p95_ms", "cold_ms"}}

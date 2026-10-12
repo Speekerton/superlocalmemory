@@ -73,8 +73,7 @@ Decision rule (``ALPHA`` = 0.05, two-sided):
 
 Replays are idempotent: the first observation for a query id wins, whichever
 arm it arrives on, in memory and in ``shadow_observations`` (whose
-``ndcg_at_10`` column name is historical — it stores the settled reward; see
-BRN-19, the value was never an NDCG).
+``ndcg_at_10`` column name is historical — it stores the settled reward; the value was never an NDCG).
 """
 
 from __future__ import annotations

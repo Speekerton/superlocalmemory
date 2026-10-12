@@ -280,7 +280,7 @@ async function slmFetch(input, init) {
 // ----------------------------------------------------------------------------
 // The exports used to be started with `a.href = ...; a.click()` and the page
 // printed "Export started" without looking at the answer. When the daemon failed
-// (4.1.25 audit G-C2) the person received nothing, or a file that said "Internal
+// the person received nothing, or a file that said "Internal
 // server error", and the page said it had worked. This fetches the file, so an
 // error status is an error on screen, and only a complete file is saved.
 // ============================================================================

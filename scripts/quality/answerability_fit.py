@@ -234,11 +234,51 @@ def curve(held: list[dict], recipe, coef, b) -> list[dict]:
     return points
 
 
+def gate_table(rows: list[dict], slice_of: dict[str, str]) -> dict:
+    """What recall actually did (the harness's gate pass), per slice: real
+    questions kept in the top 5, nonsense and no-answer questions abstained.
+    A nonsense question counts against a slice when it returned any memory
+    from that slice (the harness's own reading)."""
+    out = {}
+    for name in (None, *SLICES):
+        real = [r for r in rows if r["set"] == "real"
+                and (name is None or r.get("slice") == name)]
+        nonsense = [r for r in rows if r["set"] == "nonsense"]
+        unans = [r for r in rows if r["set"] == "unanswerable"]
+
+        def answered(r, sl=name):
+            keys = r.get("result_keys") or ()
+            return bool(keys) if sl is None else any(slice_of.get(k) == sl for k in keys)
+        out[name or "all"] = {
+            "real_top5": f"{sum(answered_today(r) for r in real)}/{len(real)}",
+            "nonsense_abstain": f"{sum(not answered(r) for r in nonsense)}/{len(nonsense)}",
+            "unanswerable_abstain": f"{sum(r['abstained'] for r in unans)}/{len(unans)}",
+            "real_missed": [r["qid"] for r in real if not answered_today(r)],
+            "nonsense_answered": [r["qid"] for r in nonsense if answered(r)],
+        }
+    return out
+
+
+def _gate_report(rows: list[dict]) -> dict:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "answerability_corpus", _HERE / "answerability_corpus.py")
+    corpus = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault("answerability_corpus", corpus)
+    spec.loader.exec_module(corpus)
+    slice_of = corpus.slice_of_key()
+    _, held = split(rows)
+    return {"held_out": gate_table(held, slice_of), "all": gate_table(rows, slice_of)}
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--rows", required=True)
     p.add_argument("--profile", default="a")
     p.add_argument("--out")
+    p.add_argument("--gate", action="store_true",
+                   help="report what recall did (the gate pass) on the held-out split")
     args = p.parse_args(argv)
     _bootstrap()
     from dataclasses import replace
@@ -252,6 +292,9 @@ def main(argv: list[str] | None = None) -> int:
     if not rows:
         print("answerability-fit: no feature rows for that profile", file=sys.stderr)
         return 2
+    if args.gate:
+        print(json.dumps(_gate_report(rows), indent=2))
+        return 0
     train, held = split(rows)
     recipe = replace(sr.ACTIVE, **imputations(train))
     coef, b = fit(train, recipe)

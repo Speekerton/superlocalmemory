@@ -46,3 +46,22 @@ def test_every_fitted_weight_keeps_its_declared_sign() -> None:
     assert set(fit.SIGNS) == set(sr.FEATURES)
     for name, weight in sr.ACTIVE.weights.items():
         assert weight * fit.SIGNS[name] >= 0, name
+
+
+def test_gate_table_reads_what_recall_did_per_slice() -> None:
+    fit = _fit()
+    rows = [
+        {"qid": "r1", "set": "real", "slice": "legacy", "rank": 2, "abstained": False,
+         "result_keys": ["a"]},
+        {"qid": "r2", "set": "real", "slice": "described", "rank": None, "abstained": True,
+         "result_keys": []},
+        {"qid": "n1", "set": "nonsense", "rank": None, "abstained": False,
+         "result_keys": ["stub"]},
+        {"qid": "u1", "set": "unanswerable", "rank": None, "abstained": True,
+         "result_keys": []},
+    ]
+    table = fit.gate_table(rows, {"a": "legacy", "stub": "described"})
+    assert table["all"]["real_top5"] == "1/2" and table["all"]["nonsense_abstain"] == "0/1"
+    assert table["legacy"]["nonsense_abstain"] == "1/1"  # the stub is not legacy
+    assert table["described"]["nonsense_answered"] == ["n1"]
+    assert table["all"]["unanswerable_abstain"] == "1/1"

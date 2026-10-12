@@ -40,6 +40,17 @@ class EnrichmentRunner:
         self.classifier = classifier
 
     def _backup(self):
+        """The product's pre-change safety copy, taken once per store.
+
+        Every later run is undoable from its own ledger, so a copy per batch,
+        per repair or per daily pass would only fill the disk. The first copy
+        (before anything was changed) is the one worth keeping.
+        """
+        earlier = self.db.execute(
+            "SELECT backup_point FROM enrichment_runs WHERE backup_point IS NOT NULL "
+            "AND backup_point!='' AND enrichment_version=? ORDER BY rowid LIMIT 1", (VERSION,))
+        if earlier:
+            return earlier[0]['backup_point']
         from superlocalmemory.storage.backup import _pre_migration_backup
         root = Path(self.db.db_path).parent
         point = _pre_migration_backup(
@@ -60,13 +71,21 @@ class EnrichmentRunner:
             age = datetime.now(UTC) - datetime.fromisoformat(current['updated_at'])
             if age.total_seconds() < 86400:
                 return current
+        # A later pass of the same version starts where the last one ended:
+        # facts saved since then (imports, older clients) are the only ones the
+        # fixed save pipeline may not have described.
+        start = (current.get('upper_rowid') or 0
+                 if current['status'] == 'completed'
+                 and current.get('enrichment_version') == VERSION else 0)
         counts = self.db.execute('SELECT COUNT(*) AS n,COALESCE(MAX(rowid),0) AS last '
-                                 'FROM atomic_facts')[0]
+                                 'FROM atomic_facts WHERE rowid>?', (start,))[0]
+        if start and not counts['n']:
+            return current
         run_id, stamp = uuid.uuid4().hex, now()
         self.db.execute(
-            'INSERT INTO enrichment_runs(run_id,enrichment_version,status,upper_rowid,total,'
-            'created_at,updated_at) VALUES (?,?,?,?,?,?,?)',
-            (run_id, VERSION, 'queued', counts['last'], counts['n'], stamp, stamp))
+            'INSERT INTO enrichment_runs(run_id,enrichment_version,status,cursor_rowid,'
+            'upper_rowid,total,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)',
+            (run_id, VERSION, 'queued', start, counts['last'], counts['n'], stamp, stamp))
         return status(self.db)
 
     def pause(self, run_id):

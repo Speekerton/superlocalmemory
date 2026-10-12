@@ -37,7 +37,9 @@ def read(db, table, target_id, profile_id, field):
     row = dict(rows[0])
     if table == 'memories':
         return json.loads(row['metadata_json'] or '{}').get(field), True
-    return row.get(field), True
+    if field not in row:
+        return None, False  # an older schema without this column: nothing to add
+    return row[field], True
 
 
 def write(db, table, target_id, profile_id, field, value):

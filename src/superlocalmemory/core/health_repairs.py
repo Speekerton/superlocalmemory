@@ -131,7 +131,7 @@ def _entities(engine, dry_run, idle):
     from contextlib import closing
 
     from superlocalmemory.storage.entity_link_repair import plan
-    from superlocalmemory.storage.entity_link_repair_apply import apply_with_backup
+    from superlocalmemory.storage.entity_link_repair_apply import apply
 
     db = engine._db
     with closing(sqlite3.connect(f'{Path(db.db_path).absolute().as_uri()}?mode=ro', uri=True)) as conn:
@@ -139,10 +139,12 @@ def _entities(engine, dry_run, idle):
         found = sum(len(p.facts) + len(p.aliases) + len(p.junk) for p in proposed.profiles)
     if dry_run or not found or not idle():
         return {'found': found, 'fixed': 0}
-    result = apply_with_backup(db.db_path, Path(db.db_path).parent, max_changes=25, idle=idle)
+    # The shared pre-change safety copy (taken once per store), then the
+    # native repair, whose own run ledger is what undo replays.
+    run_id = _new_run(db, 'entity-links')
+    result = apply(db.db_path, max_changes=25, idle=idle)
     fixed = sum(result.get(k, 0) for k in ('facts_relinked', 'aliases_removed',
                                           'aliases_kept_relabelled', 'junk_entities_removed'))
-    run_id = uuid.uuid4().hex
     _record(db, run_id, 'entity-links', found, fixed, native=result.get('run_id'))
     return {'found': found, 'fixed': fixed, 'run_id': run_id}
 

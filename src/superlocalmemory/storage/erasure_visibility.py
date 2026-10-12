@@ -49,10 +49,12 @@ def _memory_clause(prefix: str) -> str:
     return (
         " AND NOT EXISTS (SELECT 1 FROM projection_tombstones pt"
         f" WHERE pt.profile_id = {prefix}.profile_id AND pt.memory_id = {prefix}.memory_id)"
-        " AND NOT EXISTS (SELECT 1 FROM atomic_facts erasing"
-        " JOIN projection_tombstones pt ON pt.profile_id = erasing.profile_id"
-        " AND pt.fact_id = erasing.fact_id"
-        f" WHERE erasing.profile_id = {prefix}.profile_id"
+        # Drive from the (small) tombstone table: CROSS JOIN fixes the join
+        # order, so a large store never scans every fact once per memory.
+        " AND NOT EXISTS (SELECT 1 FROM projection_tombstones pt"
+        " CROSS JOIN atomic_facts erasing ON erasing.profile_id = pt.profile_id"
+        " AND erasing.fact_id = pt.fact_id"
+        f" WHERE pt.profile_id = {prefix}.profile_id"
         f" AND erasing.memory_id = {prefix}.memory_id)"
     )
 

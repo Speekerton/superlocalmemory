@@ -76,7 +76,7 @@ Real output from a fresh Mode A install, trimmed. Scores rank memories; they are
 
 **2. A second opinion that never leaves your Mac.** On Apple Silicon, SLM installs **Laya**, a small on-device model that judges whether the memories found actually answer the question. Prefer the cloud, or not on a Mac? **Jev** does the same check online, only after you tick its consent.
 
-**3. Your documents and screenshots become a knowledge base you can ask.** Save a photo, a screenshot or a PDF and find it weeks later by describing it — *"the slide with the quarterly numbers"*. A picture model and OCR run on your computer, every PDF page is indexed by its picture and its text, and every answer cites its file and page. No generative model ever looks at your files.
+**3. Your documents and screenshots become a knowledge base you can ask.** Save a photo, a screenshot or a PDF and find it weeks later by describing it — *"the slide with the quarterly numbers"*. The picture model is <img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/assets/branding/google-g.svg" width="18" alt="Google"> **Google's EmbeddingGemma 2**, running on your computer: one model reads both your words and your pictures, so a description finds the image. OCR runs locally too, every PDF page is indexed by its picture and its text, and every answer cites its file and page. No generative model ever looks at your files.
 
 **4. Karpathy's LLM-wiki idea, built in — with search kept.** Andrej Karpathy's [LLM-wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) turns raw documents into an organised knowledge base with an index and a health check. SLM does that from the data it already stores — a **document index** of every file with its people, projects and dates, and a **document health check** that finds empty pages, unlinked documents, duplicate pages and contradicted facts — while keeping real hybrid search for the moment you need to *find* something.
 
@@ -161,7 +161,7 @@ The verdict is one input to the support decision, with its own time budget, and 
 
 | Capability | What you get | Docs |
 |---|---|---|
-| **Pictures you find by describing them** | PNG, JPEG, GIF and WebP. A picture model matches your words to the image; OCR (Apple Vision on a Mac, RapidOCR elsewhere) makes the text inside it searchable; location data is never read | [Pictures and documents](https://github.com/qualixar/superlocalmemory/blob/main/docs/pictures-and-documents.md) |
+| **Pictures you find by describing them** | PNG, JPEG, GIF and WebP. Google's EmbeddingGemma 2 runs locally and puts text and pictures in one search space, so your words find the image; OCR (Apple Vision on a Mac, RapidOCR elsewhere) makes the text inside it searchable; location data is never read | [Pictures and documents](https://github.com/qualixar/superlocalmemory/blob/main/docs/pictures-and-documents.md) |
 | **PDFs, page by page** | Each page is indexed by its picture and its text; every answer says which file and page it came from, with a thumbnail | [Pictures and documents](https://github.com/qualixar/superlocalmemory/blob/main/docs/pictures-and-documents.md) |
 | **Document index** | A catalogue of every saved document with its pages and the people, projects and dates it mentions | [Pictures and documents](https://github.com/qualixar/superlocalmemory/blob/main/docs/pictures-and-documents.md) |
 | **Document health check** | Finds pages with no readable text, documents linked to nothing, duplicate pages and documents whose facts were contradicted | [Pictures and documents](https://github.com/qualixar/superlocalmemory/blob/main/docs/pictures-and-documents.md) |
@@ -222,7 +222,7 @@ Engineering controls that support a compliance program, not a certification.
 
 | Capability | What you get | Docs |
 |---|---|---|
-| **Three modes** | **A:** no language model at all. **B:** a model on this machine (Ollama or any local OpenAI-compatible server). **C:** your own endpoint or a cloud provider | [Configuration](https://github.com/qualixar/superlocalmemory/blob/main/docs/configuration.md) |
+| **Three modes** | **A:** no language model at all. **B:** a model on this machine (Ollama, with Google Gemma 3 and Gemma 4 in the model picker, or any local OpenAI-compatible server). **C:** your own endpoint or a cloud provider | [Configuration](https://github.com/qualixar/superlocalmemory/blob/main/docs/configuration.md) |
 | **Dashboard** | Search, knowledge graph, Entity Explorer, answer check, Memory health, documents and images, connected apps, bot messages, governance: `slm dashboard` | [Dashboard](https://github.com/qualixar/superlocalmemory/blob/main/docs/DASHBOARD-COVERAGE.md) |
 | **Scale engine** | SQLite + sqlite-vec are canonical; optional LanceDB and CozoDB copies serve only once they match SQLite | [Scale engine](https://github.com/qualixar/superlocalmemory/blob/main/docs/scale-engine.md) |
 | **Durable writes** | Every save moves raw → queryable → complete with a receipt; failures keep the evidence and retry; text saves under load are queued, never refused | [Architecture](https://github.com/qualixar/superlocalmemory/blob/main/docs/ARCHITECTURE.md) |

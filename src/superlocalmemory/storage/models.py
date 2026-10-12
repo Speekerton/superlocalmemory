@@ -561,3 +561,6 @@ class RecallResponse:
     # "something has it, just not among this question's candidates". None
     # when the recall named no tags. Additive.
     tag_scope: dict | None = None
+    # checked / degraded / not_checked. Degraded recalls retain only source
+    # projections independently verified against the immutable memory table.
+    source_fidelity_status: str = "not_checked"

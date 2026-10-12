@@ -44,6 +44,23 @@ def init_slm_media_embedder(config: Any) -> Any:
     return emb
 
 
+def _compatible_daemon_embedder(config: Any) -> Any | None:
+    """A full API client reuses the owned model instead of contending for its lock."""
+    if is_daemon_process():
+        return None
+    from pathlib import Path
+
+    from superlocalmemory.infra.data_root import canonical_data_root
+
+    root = canonical_data_root()
+    if Path(getattr(config, "base_dir", root)).expanduser().resolve() != root:
+        return None
+    from superlocalmemory.core.daemon_text_embedder import DaemonTextEmbedder
+
+    proxy = DaemonTextEmbedder(config.embedding)
+    return proxy if proxy.is_compatible else None
+
+
 def route_embedder(config: Any, *, try_ollama: Callable[[Any], Any | None],
                    try_service: Callable[[Any], Any | None]) -> Any | None:
     """The embedder for ``config.embedding.provider``; None means keyword-only.
@@ -57,6 +74,10 @@ def route_embedder(config: Any, *, try_ollama: Callable[[Any], Any | None],
     # The managed model (daemon: the worker; other processes: the daemon).
     if provider == PROVIDER:
         return init_slm_media_embedder(config)
+
+    shared = _compatible_daemon_embedder(config)
+    if shared is not None:
+        return shared
 
     # When the provider is ollama, Ollama's own vectors are primary: the stored vectors
     # were made by Ollama's nomic-embed-text, and sentence-transformers' nomic-embed-text-v1.5

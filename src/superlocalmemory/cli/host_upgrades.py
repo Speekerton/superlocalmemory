@@ -44,6 +44,7 @@ def cmd_upgrade_hosts(args: Namespace) -> None:
     if not targets:
         print("No existing SLM host integrations were detected.")
         print("Run `slm setup` for first-time setup, or use `--host <name>` to target one host.")
+        _report_reconnect_apps([])
         return
 
     operation = "Applying" if apply else "Previewing"
@@ -57,17 +58,32 @@ def cmd_upgrade_hosts(args: Namespace) -> None:
         detail = result.get("detail", "")
         print(f"  [{status}] {host}: {detail}")
 
-    if apply:
-        print("Restart affected host applications, then run `slm doctor` to verify SLM itself.")
+    _report_reconnect_apps(targets if apply else [])
+
+
+def _report_reconnect_apps(targets: list[str]) -> None:
+    from superlocalmemory.infra.data_root import canonical_data_root
+    from superlocalmemory.infra.mcp_processes import HOST_NAMES, snapshot
+
+    running = snapshot(canonical_data_root())
+    restart = set(targets) | {
+        app["host"] for app in running["apps"]
+        if app["stale_version"] or app.get("version_reported") is False
+    }
+    if restart:
+        names = ", ".join(HOST_NAMES.get(host, host) for host in sorted(restart))
+        print(f"Apps to restart or reconnect: {names}")
+        print("Use Dashboard → Connected apps to reconnect live MCP sessions, "
+              "then run `slm doctor`.")
 
 
 def _detected_hosts(home: Path | None = None) -> list[str]:
     """Return only hosts already containing an SLM-owned integration block."""
     from superlocalmemory.hooks.portable_kit import (
         IDE_MATRIX,
-        global_config_path,
         _load_config,
         _ParseError,
+        global_config_path,
     )
 
     effective_home = home or Path.home()
@@ -112,7 +128,7 @@ def _contains_slm_block(data: dict[str, Any], desc: Any) -> bool:
         providers = data.get(desc.server_key, [])
         return isinstance(providers, list) and any(
             isinstance(item, dict)
-            and item.get("params", {}).get("serverName") == "superlocalmemory"
+            and item.get("name") == "superlocalmemory"
             for item in providers
         )
     servers = data.get(desc.server_key, {})

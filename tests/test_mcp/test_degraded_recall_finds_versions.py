@@ -15,7 +15,11 @@ from pathlib import Path
 
 import pytest
 
-from superlocalmemory.storage.migrations import M011_archive_and_merge
+from superlocalmemory.storage.migrations import (
+    M011_archive_and_merge,
+    M018_ingestion_operations,
+    M019_derivation_lineage,
+)
 from superlocalmemory.storage.schema import create_all_tables
 
 _PROFILE = "default"
@@ -27,10 +31,8 @@ def store_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     conn = sqlite3.connect(str(tmp_path / "memory.db"))
     create_all_tables(conn)
     conn.executescript(M011_archive_and_merge.DDL)
-    conn.execute(
-        "INSERT INTO memories (memory_id, profile_id, content) "
-        "VALUES ('m1', ?, 'source')", (_PROFILE,),
-    )
+    M018_ingestion_operations.apply(conn)
+    M019_derivation_lineage.apply(conn)
     rows = [
         ("f-4.1.0", "4.1.0 added working memory"),
         ("f-4.1.20", "4.1.20 added answer check"),
@@ -41,11 +43,16 @@ def store_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
           for i in range(20)),
     ]
     for fid, content in rows:
+        memory_id = f"source-{fid}"
+        conn.execute(
+            "INSERT INTO memories (memory_id, profile_id, content) VALUES (?,?,?)",
+            (memory_id, _PROFILE, content),
+        )
         conn.execute(
             "INSERT INTO atomic_facts (fact_id, memory_id, profile_id, content,"
             " scope, created_at) VALUES "
-            "(?, 'm1', ?, ?, 'personal', datetime('now'))",
-            (fid, _PROFILE, content),
+            "(?, ?, ?, ?, 'personal', datetime('now'))",
+            (fid, memory_id, _PROFILE, content),
         )
     conn.commit()
     conn.close()
@@ -59,3 +66,4 @@ def test_a_version_question_reaches_that_release_first(store_dir: Path) -> None:
     assert got.results[0].fact.fact_id == "f-4.1.20", [
         item.fact.fact_id for item in got.results
     ]
+    assert got.metadata["source_fidelity_status"] == "checked"

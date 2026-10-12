@@ -39,6 +39,7 @@ QUERY_CACHE_MAX = 256
 MEDIA_SOURCE_TYPES = frozenset({"media", "document"})
 _IN_CHUNK = 500
 MISMATCH_LOG_S = 60.0
+MAX_PICTURE_CANDIDATES = 32
 
 
 class MediaChannel:
@@ -65,9 +66,14 @@ class MediaChannel:
         self._queries: OrderedDict[tuple[str, str, str], list[float]] = OrderedDict()
         self._lock = threading.Lock()
 
-    def is_active(self, profile_id: str) -> bool:
+    def is_active(self, profile_id: str, *, include_global: bool = False,
+                  include_shared: bool = False) -> bool:
         """Media on, a store, and one vector for this profile. Cached for 30 seconds."""
         now = self._clock()
+        if include_global or include_shared:
+            return self._probe(
+                profile_id, include_global=include_global, include_shared=include_shared,
+            )
         with self._lock:
             hit = self._active.get(profile_id)
             if hit is not None and now - hit[0] < self._ttl:
@@ -95,13 +101,23 @@ class MediaChannel:
             return self._enabled_factory is None or bool(self._enabled_factory())
         return self._embedder_factory() is not None
 
-    def _probe(self, profile_id: str) -> bool:
+    def _probe(self, profile_id: str, *, include_global: bool = False,
+               include_shared: bool = False) -> bool:
         try:
             plan = self._plan()
             if self._db is None or not self._on(plan):
                 return False
             store = self._store_factory()
-            if store is None or store.vector_count(profile_id) <= 0:
+            if store is None:
+                return False
+            if include_global or include_shared:
+                from superlocalmemory.retrieval.media_scope import visible_memories
+
+                memories = visible_memories(self._db, profile_id, include_global=include_global,
+                                             include_shared=include_shared)
+                if not store.has_vectors_for_memories(memories):
+                    return False
+            elif store.vector_count(profile_id) <= 0:
                 return False
             if plan is not None and not compatible(plan, store.active_signature()):
                 self._log_mismatch(profile_id)
@@ -160,10 +176,13 @@ class MediaChannel:
                 self._queries.popitem(last=False)
         return list(vector)
 
-    def prepare(self, query: str, profile_id: str) -> tuple[list[float] | None, str | None]:
+    def prepare(self, query: str, profile_id: str, *, include_global: bool = False,
+                include_shared: bool = False) -> tuple[list[float] | None, str | None]:
         """``(vector, None)`` to run, ``(None, 'warming')`` when only the worker is cold,
         ``(None, None)`` when the channel does not apply."""
-        if not self.is_active(profile_id):
+        if not self.is_active(
+            profile_id, include_global=include_global, include_shared=include_shared,
+        ):
             return None, None
         try:
             vector = self.query_vector(query)
@@ -172,23 +191,43 @@ class MediaChannel:
             vector = None
         return (vector, None) if vector is not None else (None, chstat.WARMING)
 
-    def search(self, vector: Sequence[float], profile_id: str, top_k: int) -> list[tuple[str, float]]:
+    def search(self, vector: Sequence[float], profile_id: str, top_k: int, *,
+               include_global: bool = False, include_shared: bool = False) -> list[tuple[str, float]]:
         """``[(fact_id, score)]`` best first; score is ``1 - cosine distance`` held to [0, 1]."""
         store = self._store_factory()
         if store is None or self._db is None:
             return []
-        scored = {mid: min(1.0, max(0.0, 1.0 - dist))
-                  for mid, dist in store.knn(vector, profile_id, top_k)}
+        limit = max(1, min(int(top_k), MAX_PICTURE_CANDIDATES))
+        if include_global or include_shared:
+            from superlocalmemory.retrieval.media_scope import visible_memories
+
+            memories = visible_memories(self._db, profile_id, include_global=include_global,
+                                        include_shared=include_shared)
+            matches = store.knn_for_memories(vector, memories, limit)
+        else:
+            matches = store.knn(vector, profile_id, limit)
+        floor = self.min_score(0.0)
+        scored = {mid: min(1.0, max(0.0, 1.0 - dist)) for mid, dist in matches
+                  if 1.0 - dist >= floor}
         by_memory: dict[str, float] = {}
         for media_id, memory_ids in store.memory_ids_of(list(scored)).items():
             for memory_id in memory_ids:
                 by_memory[memory_id] = max(by_memory.get(memory_id, 0.0), scored[media_id])
         best: dict[str, float] = {}
-        for fact_id, memory_id in self._facts_of(list(by_memory), profile_id):
+        for fact_id, memory_id in self._facts_of(list(by_memory), profile_id,
+                                               include_global=include_global,
+                                               include_shared=include_shared):
             best[fact_id] = max(best.get(fact_id, 0.0), by_memory[memory_id])
-        return sorted(best.items(), key=lambda kv: (-kv[1], kv[0]))
+        return sorted(best.items(), key=lambda kv: (-kv[1], kv[0]))[:limit]
 
-    def _facts_of(self, memory_ids: list[str], profile_id: str) -> list[tuple[str, str]]:
+    def _facts_of(self, memory_ids: list[str], profile_id: str, *,
+                  include_global: bool = False,
+                  include_shared: bool = False) -> list[tuple[str, str]]:
+        if include_global or include_shared:
+            from superlocalmemory.retrieval.media_scope import visible_facts
+
+            return visible_facts(self._db, memory_ids, profile_id, include_global=include_global,
+                                 include_shared=include_shared)
         rows: list[tuple[str, str]] = []
         for i in range(0, len(memory_ids), _IN_CHUNK):
             part = memory_ids[i:i + _IN_CHUNK]

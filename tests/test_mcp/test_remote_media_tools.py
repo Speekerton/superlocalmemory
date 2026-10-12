@@ -31,7 +31,7 @@ class Spy:
 
 
 @pytest.fixture
-def srv():
+def srv(media_enabled):
     s = SLMFastMCP("t")
     tools_media.register_media_tools(s)
     tools_media.register_document_tools(s)

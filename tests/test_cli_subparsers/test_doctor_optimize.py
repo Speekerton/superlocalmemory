@@ -229,7 +229,7 @@ def test_embedding_probe_does_not_use_posix_select():
     from superlocalmemory.cli import commands
     from superlocalmemory.cli.commands import _readline_with_timeout
 
-    source = inspect.getsource(commands.cmd_doctor)
+    source = inspect.getsource(commands._cmd_doctor_checks)
     assert "select.select" not in source
     assert "_readline_with_timeout" in source
 

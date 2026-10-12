@@ -334,8 +334,52 @@ def _hit_rank(keys: list[str], expected: list[str]) -> int | None:
     return None
 
 
+def _load_conditions_module():
+    name = "answerability_conditions"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, _HERE / "answerability_conditions.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _ask(engine, suite: str, memory_to_key: dict) -> list[dict]:
+    """The suite once, as it stands: what each question returned."""
+    rows = []
+    for set_name, q in _questions(suite):
+        response = engine.recall(q["question"], limit=RECALL_LIMIT, fast=True)
+        keys = [memory_to_key.get(r.fact.memory_id or "", "?") for r in response.results]
+        rows.append({
+            "qid": q["qid"], "set": set_name, "result_count": len(response.results),
+            "abstained": len(response.results) == 0,
+            "rank": None if q["expected"] == "abstain" else _hit_rank(keys, q["expected"]),
+            "tier": getattr(response, "support_tier", ""),
+            "warming_up": bool(getattr(response, "warming_up", False)),
+        })
+    return rows
+
+
+def measure_conditions(engine, suite: str, memory_to_key: dict, names: list[str],
+                       log=print) -> dict:
+    """The merge rule: each condition gated against gate-off (conditions module)."""
+    cond = _load_conditions_module()
+    out = {}
+    for name in names:
+        with cond.condition(engine, name):
+            gated = _ask(engine, suite, memory_to_key)
+            with cond.gate_off():
+                before = _ask(engine, suite, memory_to_key)
+        out[name] = {**cond.compare(gated, before),
+                     "warming_up": sum(r["warming_up"] for r in gated)}
+        log(f"condition {name}: {json.dumps(out[name], sort_keys=True)}")
+    return out
+
+
 def measure_profile(profile: str, store_root: Path, work: Path, *,
-                    warm_timeout_s: float = 300.0, log=print, suite: str = "hand") -> dict:
+                    warm_timeout_s: float = 300.0, log=print, suite: str = "hand",
+                    conditions: list[str] | None = None) -> dict:
     keymap = json.loads((store_root / "keymap.json").read_text(encoding="utf-8"))["keys"]
     data = work / f"data-{profile}"
     if data.exists():
@@ -395,11 +439,16 @@ def measure_profile(profile: str, store_root: Path, work: Path, *,
             if q["expected"] != "abstain":
                 hits = [f for f in feats if f["key"] in q["expected"]]
                 row["expected_features"] = hits[0] if hits else None
+        os.environ.pop("SLM_RECALL_NO_FLOOR", None)
+        os.environ.pop("SLM_RECALL_NO_SUPPORT_GATE", None)
+        by_condition = (measure_conditions(engine, suite, memory_to_key, conditions, log)
+                        if conditions else None)
     finally:
         os.environ.pop("SLM_RECALL_NO_FLOOR", None)
         os.environ.pop("SLM_RECALL_NO_SUPPORT_GATE", None)
         engine.close()
-    return {"profile": profile, "warm": warm, **summarise(rows, latencies), "rows": rows}
+    return {"profile": profile, "warm": warm, **summarise(rows, latencies), "rows": rows,
+            **({"conditions": by_condition} if by_condition else {})}
 
 
 def summarise(rows: list[dict], latencies: list[float]) -> dict:
@@ -496,7 +545,8 @@ def gate_failures(report: dict) -> list[str]:
 
 
 def run(work: Path, profiles: list[str], cache: Path | None = None, *,
-        warm_timeout_s: float = 300.0, log=print, suite: str = "hand") -> dict:
+        warm_timeout_s: float = 300.0, log=print, suite: str = "hand",
+        conditions: list[str] | None = None) -> dict:
     _bootstrap()
     work.mkdir(parents=True, exist_ok=True)
     _refuse_own_store(work)
@@ -507,7 +557,7 @@ def run(work: Path, profiles: list[str], cache: Path | None = None, *,
     for profile in profiles:
         report["profiles"].append(measure_profile(profile, store_root, work,
                                                   warm_timeout_s=warm_timeout_s, log=log,
-                                                  suite=suite))
+                                                  suite=suite, conditions=conditions))
     report["gate_failures"] = gate_failures(report)
     return report
 
@@ -521,6 +571,9 @@ def _parser() -> argparse.ArgumentParser:
                    help="question sets: hand-written, + generated dev half, the frozen "
                         "fresh half, or all")
     p.add_argument("--warm-timeout", type=float, default=300.0)
+    p.add_argument("--conditions", default="",
+                   help="also ask each condition gated and gate-off (merge rule): "
+                        "warm,probes_cold,ce_absent,keyword_only")
     p.add_argument("--out", help="full report (JSON)")
     p.add_argument("--rows", help="per-question rows (JSON Lines)")
     return p
@@ -534,10 +587,15 @@ def main(argv: list[str] | None = None) -> int:
     if not profiles or any(p not in ("a", "b") for p in profiles):
         print("answerability-eval: --profiles takes a, b or a,b", file=sys.stderr)
         return 2
+    conditions = [c.strip() for c in args.conditions.split(",") if c.strip()]
+    unknown = sorted(set(conditions) - set(_load_conditions_module().CONDITIONS))
+    if unknown:
+        print(f"answerability-eval: unknown condition(s) {', '.join(unknown)}", file=sys.stderr)
+        return 2
     try:
         report = run(Path(args.work), profiles, Path(args.cache) if args.cache else None,
                      warm_timeout_s=args.warm_timeout, log=lambda m: print(m, file=sys.stderr),
-                     suite=args.suite)
+                     suite=args.suite, conditions=conditions)
     except Refused as exc:
         print(f"answerability-eval: {exc}", file=sys.stderr)
         return 3
@@ -551,6 +609,7 @@ def main(argv: list[str] | None = None) -> int:
     summary = [{k: v for k, v in p.items() if k not in ("by_category", "separation")}
                for p in report["profiles"]]
     print(json.dumps({"corpus_digest": report["corpus_digest"], "profiles": summary,
+                      "conditions": {p["profile"]: p.get("conditions") for p in report["profiles"]},
                       "separation": {p["profile"]: p["separation"] for p in report["profiles"]},
                       "gate_failures": report["gate_failures"]}, indent=2, sort_keys=True))
     return 0

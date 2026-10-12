@@ -30,7 +30,7 @@ Developers who use AI coding agents and want decisions, conventions and fixes to
 
 ## What is in the book
 
-**How memory works.** [Architecture](Architecture), [How Remember Works](How-Remember-Works), [How Recall Works](How-Recall-Works), [Retrieval Score Contract](Retrieval-Score-Contract), [Answer Check](Answer-Check), [Memory Kinds](Memory-Kinds), [Modes Explained](Modes-Explained), [Profiles](Profiles).
+**How memory works.** [Architecture](Architecture), [How Remember Works](How-Remember-Works), [How Recall Works](How-Recall-Works), [Retrieval Score Contract](Retrieval-Score-Contract), [Answer Check](Answer-Check), [Memory Kinds](Memory-Kinds), [Modes Explained](Modes-Explained), [Profiles](Profiles), [Auto-Memory](Auto-Memory), [Active Memory](Active-Memory).
 
 **The living system.** [Living Brain](Living-Brain) (decay, consolidation, quantization, learning), [Knowledge Graph, Clusters, Summaries and Entities](Knowledge-Graph-and-Entities), [Skill Evolution](Skill-Evolution), [Health and Repair](Health-and-Repair), [Multi-Agent Memory](Multi-Agent-Memory).
 
@@ -38,9 +38,9 @@ Developers who use AI coding agents and want decisions, conventions and fixes to
 
 **Beyond text.** [Pictures and Documents](Pictures-and-Documents) (screenshots, photos, PDFs, folders and Obsidian vaults), [Ingestion Adapters](Ingestion-Adapters) (Gmail, Calendar, meeting transcripts).
 
-**Connected systems.** [Bots That Talk](Bots-That-Talk) (SLM-Mesh and bot messages), [Web Access and Connected Apps](Web-Access-and-Connected-Apps), [Bounded Loops](Bounded-Loops), [Framework Adapters](Framework-Adapters), [Optimize](Optimize) (caching and compression).
+**Connected systems.** [Bots That Talk](Bots-That-Talk) (SLM-Mesh and bot messages), [Web Access and Connected Apps](Web-Access-and-Connected-Apps), [Plugins, Skills and Hooks](Plugins-Skills-and-Hooks) (Claude Code, Cursor, Codex, Copilot, Hermes, Antigravity), [Bounded Loops](Bounded-Loops), [Framework Adapters](Framework-Adapters), [Optimize](Optimize) (caching and compression).
 
-**Operate and reference.** [Dashboard Tour](Dashboard-Tour), [Configuration](Configuration), [Upgrade Memory Engine](Upgrade-Memory-Engine), [CLI Reference](CLI-Reference), [MCP Tools](MCP-Tools), [Troubleshooting](Troubleshooting), [FAQ](FAQ), [Research Foundations](Research-Foundations), [Migration from V2](Migration-from-V2).
+**Operate and reference.** [Dashboard Tour](Dashboard-Tour), [Configuration](Configuration), [Upgrade Memory Engine](Upgrade-Memory-Engine), [CLI Reference](CLI-Reference), [MCP Tools](MCP-Tools), [Capabilities and Operations](Capabilities-and-Operations), [Troubleshooting](Troubleshooting), [FAQ](FAQ), [Research Foundations](Research-Foundations).
 
 ## The product in one list
 
@@ -64,3 +64,5 @@ Developers who use AI coding agents and want decisions, conventions and fixes to
 SLM's design is described in four arXiv preprints by Varun Pratap Bhardwaj, newest first: [SuperLocalMemory 4.0: The Governed Memory Operating System for AI Agents](https://arxiv.org/abs/2608.08253) (multi-scope isolation, role-based access, verified erasure, hash-chained audit and bi-temporal recall), [SuperLocalMemory V3.3: The Living Brain](https://arxiv.org/abs/2604.04514) (forgetting and cognitive quantization), [Information-Geometric Foundations for Zero-LLM Enterprise Agent Memory](https://arxiv.org/abs/2603.14588) and [Privacy-Preserving Multi-Agent Memory with Bayesian Trust Defense Against Memory Poisoning](https://arxiv.org/abs/2603.02240). See [Research Foundations](Research-Foundations).
 
 SLM is open source. The source, issues and releases are on [GitHub](https://github.com/qualixar/superlocalmemory), and the version history is in the [CHANGELOG](https://github.com/qualixar/superlocalmemory/blob/main/CHANGELOG.md).
+
+Pages for older releases, which are no longer supported, are kept in the [Archive](archive/Archive-Index).

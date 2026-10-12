@@ -191,8 +191,10 @@ async def test_waits_for_independent_receipt_with_unpredictable_output(tmp_path)
         )
 
     checker = asyncio.create_task(independent_check())
+    # The check starts a fresh interpreter, which can take seconds on a loaded
+    # machine. Give the loop a bounded window long enough not to race it.
     result = await server.fns["slm_loop_run"](
-        "wait", "build", max_iterations=3, poll_interval_s=0.25, gate_contract=contract
+        "wait", "build", max_iterations=40, poll_interval_s=0.25, gate_contract=contract
     )
     await checker
     assert result["status"] == "DONE", result

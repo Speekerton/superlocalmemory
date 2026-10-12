@@ -47,14 +47,17 @@ def _ws_origin_allowed(websocket: WebSocket) -> bool:
 
     Non-browser clients (CLI, MCP tools) carry no Origin header and are
     still pass the network/account gates. Browser origins must belong to
-    this daemon listener's exact HTTP origins.
+    this listener, including explicitly configured remote dashboards.
     """
     origin = websocket.headers.get("origin", "")
     if not origin:
         return True  # non-browser caller (CLI/MCP) — no origin to validate
 
     try:
-        from superlocalmemory.server.origin import daemon_browser_origins
+        from superlocalmemory.server.origin import (
+            daemon_browser_origins,
+            remote_browser_origin_allowed,
+        )
 
         descriptor = getattr(websocket.app.state, "daemon_descriptor", None)
         port = getattr(descriptor, "port", None)
@@ -62,6 +65,11 @@ def _ws_origin_allowed(websocket: WebSocket) -> bool:
             # The standalone dashboard uses the ASGI listener identity.
             port = (websocket.scope.get("server") or (None, None))[1]
         if port is not None and origin in daemon_browser_origins(int(port)):
+            return True
+        if port is not None and remote_browser_origin_allowed(
+                origin, port=int(port), host_header=websocket.headers.get("host", "")):
+            # The outer NonLocalAccessGate and the route's RBAC check still
+            # decide caller authority; an allowed origin is never a credential.
             return True
     except Exception:
         return False

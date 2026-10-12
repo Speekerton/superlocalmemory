@@ -241,6 +241,16 @@ def _format_envelope(results: list[dict], response: dict | None = None) -> dict:
         return {}
 
 
+def _switched_off() -> bool:
+    """``auto_recall.on_every_prompt`` (or auto-recall as a whole) is off."""
+    try:
+        from superlocalmemory.hooks import rules_engine
+
+        return not rules_engine.load().per_prompt_recall_on()
+    except Exception:  # fail open
+        return False
+
+
 def main() -> int:
     try:
         raw = sys.stdin.read()
@@ -269,7 +279,7 @@ def main() -> int:
         sys.stdout.write("{}")
         return 0
 
-    if _is_ack(prompt):
+    if _is_ack(prompt) or _switched_off():
         sys.stdout.write("{}")
         return 0
 

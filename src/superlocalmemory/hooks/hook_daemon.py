@@ -270,7 +270,7 @@ class HookDaemon:
     def _process_request(self, payload: dict) -> dict:
         from superlocalmemory.hooks.auto_recall_hook import (
             _is_ack, _get_mode_timeout, _detect_mode, _format_envelope,
-            _DEFAULT_LIMIT,
+            _DEFAULT_LIMIT, _switched_off,
         )
         from superlocalmemory.core.recall_queue import QueueTimeoutError
 
@@ -280,7 +280,7 @@ class HookDaemon:
         if not prompt or not isinstance(prompt, str):
             return {}
 
-        if _is_ack(prompt):
+        if _is_ack(prompt) or _switched_off():
             return {}
 
         try:

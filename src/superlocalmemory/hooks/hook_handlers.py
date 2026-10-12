@@ -133,8 +133,26 @@ def _daemon_post(path: str, body: dict, timeout: float = 3.0) -> bool:
         return False
 
 
+#: Hooks that recall on every prompt: ``auto_recall.on_every_prompt`` (4.1.25).
+PER_PROMPT_ACTIONS = frozenset({
+    "user_prompt_submit", "user_prompt_rehash", "auto_recall", "topic_shift", "codex-prompt",
+})
+
+
+def _per_prompt_recall_off() -> bool:
+    try:
+        from superlocalmemory.hooks import rules_engine
+
+        return not rules_engine.load().per_prompt_recall_on()
+    except Exception:  # fail open: the hook runs as it always has
+        return False
+
+
 def handle_hook(action: str) -> None:
     """Dispatch to the appropriate hook handler. Called from main() fast path."""
+    if action in PER_PROMPT_ACTIONS and _per_prompt_recall_off():
+        sys.stdout.write("{}")
+        sys.exit(0)
     # v3.4.22 (LLD-01 §4.7): Active-Brain hot-path handlers are routed here
     # as a Python fallback when the compiled ``slm-hook`` binary (LLD-06) is
     # unavailable. They read stdin, write stdout, and exit 0 themselves.
@@ -545,18 +563,9 @@ def _hook_stop(deadline: "HookDeadline | None" = None) -> None:
     session_id = os.environ.get("CLAUDE_SESSION_ID", "")
 
     # --- Save to SLM (v3.4.13: daemon HTTP, not subprocess) ---
-    _daemon_post("/remember", {
-        "content": summary,
-        "tags": "session-end",
-        # #150: saved under its project, so recall, the project filter and
-        # the project summary find it (the "[name]" prefix alone did not).
-        "metadata": {"project": project_dir},
-        "session_id": session_id,
-        "idempotency_key": (
-            f"hook-session-end:{session_id}"
-            if session_id else f"hook-session-end:{_safe_hash(summary)}"
-        ),
-    }, timeout=_post_timeout())
+    # 4.1.25: only while auto_capture.capture_session_summary is on.
+    if _captures_session_summary():
+        _remember_summary(summary, session_id, project_dir, _post_timeout())
 
     # --- Post-session skill evolution trigger (best-effort, via tool-event) ---
     if session_id and deadline.remaining() > 1.0:
@@ -610,6 +619,31 @@ def _hook_stop(deadline: "HookDeadline | None" = None) -> None:
     if watchdog is not None:
         watchdog.cancel()
     sys.exit(0)
+
+
+def _captures_session_summary() -> bool:
+    try:
+        from superlocalmemory.hooks import rules_engine
+
+        return rules_engine.load().captures_session_summary()
+    except Exception:  # fail open: the summary is saved as it always was
+        return True
+
+
+def _remember_summary(summary: str, session_id: str, project_dir: str,
+                      timeout: float) -> None:
+    _daemon_post("/remember", {
+        "content": summary,
+        "tags": "session-end",
+        # #150: saved under its project, so recall, the project filter and
+        # the project summary find it (the "[name]" prefix alone did not).
+        "metadata": {"project": project_dir},
+        "session_id": session_id,
+        "idempotency_key": (
+            f"hook-session-end:{session_id}"
+            if session_id else f"hook-session-end:{_safe_hash(summary)}"
+        ),
+    }, timeout=timeout)
 
 
 # ---------------------------------------------------------------------------

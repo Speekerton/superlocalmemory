@@ -49,7 +49,7 @@ from typing import Any, Optional
 # Must be set BEFORE any import of superlocalmemory.mcp.server.
 os.environ.setdefault("SLM_MCP_EMBEDDED", "1")
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, field_validator
@@ -5862,7 +5862,7 @@ def _register_daemon_routes(application: FastAPI) -> None:
     # v3.4.26: CCQ consolidation via daemon so MCP clients don't need to
     # import CognitiveConsolidator (which pulls sentence-transformers).
     @application.post("/consolidate/cognitive")
-    async def consolidate_cognitive_endpoint(body: dict, request: Request):
+    async def consolidate_cognitive_endpoint(request: Request, body: dict = Body(default_factory=dict)):
         _update_activity()
         engine = _get_engine_or_503()
         # The workspace this caller is in (finding N10): checked, run and
@@ -5908,7 +5908,7 @@ def _register_daemon_routes(application: FastAPI) -> None:
     # v3.4.26: run_maintenance via daemon so MCP doesn't import
     # EbbinghausCurve, ForgettingScheduler, or ConsolidationWorker.
     @application.post("/maintenance/run")
-    async def run_maintenance_endpoint(body: dict, request: Request):
+    async def run_maintenance_endpoint(request: Request, body: dict = Body(default_factory=dict)):
         _update_activity()
         engine = _get_engine_or_503()
         from superlocalmemory.access.rbac import Permission

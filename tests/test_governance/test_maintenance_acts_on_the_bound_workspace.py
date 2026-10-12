@@ -321,3 +321,55 @@ def test_proxy_recall_reports_a_refusal_as_not_retryable(monkeypatch):
     assert answer["ok"] is False
     assert answer["code"] == "NOT_AUTHORIZED"
     assert answer["retryable"] is False
+
+
+# -- PR 248 re-check 2: an empty body must reach the daemon, and a daemon that
+# answers with an error is never replaced by a local run on the shared workspace.
+
+
+@pytest.mark.parametrize("path", ["/consolidate/cognitive", "/maintenance/run"])
+def test_a_post_without_a_body_is_accepted(matrix, seen, path):
+    app, client, _, _ = matrix
+    r = client.post(path, headers=_bind_owner(app))
+    assert r.status_code == 200, r.text
+
+
+def test_daemon_request_sends_an_empty_json_body(monkeypatch):
+    from superlocalmemory.cli import daemon
+    from superlocalmemory.core import outbound_http
+
+    sent = {}
+
+    class _Resp:
+        def read(self):
+            return b"{}"
+
+    def fake_urlopen(req, timeout=None):
+        sent["data"] = req.data
+        sent["type"] = req.headers.get("Content-type")
+        return _Resp()
+
+    monkeypatch.setattr(daemon, "_verified_legacy_health",
+                        lambda: {"_legacy_port": 1, "status": "ok"})
+    monkeypatch.setattr(daemon, "descriptor_path",
+                        lambda: SimpleNamespace(exists=lambda: False))
+    monkeypatch.setattr(daemon, "read_descriptor", lambda *a, **k: None, raising=False)
+    monkeypatch.setattr(outbound_http, "urlopen", fake_urlopen)
+    daemon.daemon_request("POST", "/maintenance/run", {})
+    assert sent["data"] == b"{}"
+    assert sent["type"] == "application/json"
+
+
+@pytest.mark.parametrize("tool", ["consolidate_cognitive", "run_maintenance"])
+def test_a_running_daemon_that_does_not_complete_is_not_replaced_by_a_local_run(
+        monkeypatch, tool):
+    from superlocalmemory.cli import daemon
+    from superlocalmemory.mcp import tools_v33
+
+    monkeypatch.setattr(daemon, "is_daemon_running", lambda: True)
+    monkeypatch.setattr(daemon, "daemon_request", lambda *a, **k: None)
+    tools = _v33_tools("default")
+    result = asyncio.run(tools[tool]())
+    assert result["success"] is False
+    assert result.get("via") != "local"
+    assert "default" not in str(result.get("profile_id", result.get("profile", "")))

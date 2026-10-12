@@ -715,7 +715,9 @@ def daemon_request(
         import urllib.error
         import urllib.request
         url = f"http://127.0.0.1:{port}{path}"
-        data = json.dumps(body).encode() if body else None
+        # An empty dict is still a body: handlers that declare one reject a
+        # bodiless POST with 422, which callers would read as "no daemon".
+        data = json.dumps(body).encode() if body is not None else None
         headers = {"Content-Type": "application/json"} if data else {}
         if capability is not None and target_instance is not None:
             headers["X-SLM-Daemon-Capability"] = capability

@@ -29,6 +29,16 @@ from superlocalmemory.infra.data_root import state_path
 from superlocalmemory.mcp.shared import authorize_mcp_mutation
 
 
+class DaemonDidNotComplete(RuntimeError):
+    """The daemon is running but did not complete a request it was sent."""
+
+    def __init__(self, path: str) -> None:
+        super().__init__(
+            f"Your memory service is running but could not finish {path}. "
+            "Nothing was run on this machine instead; try again shortly."
+        )
+
+
 def _try_daemon_post(path: str, body: dict, timeout_s: float = 60.0) -> dict | None:
     """POST to the daemon, return parsed dict or None if daemon unavailable.
 
@@ -47,12 +57,18 @@ def _try_daemon_post(path: str, body: dict, timeout_s: float = 60.0) -> dict | N
         if not is_daemon_running():
             return None
         try:
-            return daemon_request("POST", path, body, timeout_seconds=timeout_s)
+            answer = daemon_request("POST", path, body, timeout_seconds=timeout_s)
         except DaemonRefused:
             # An answer, not an outage: running it locally would perform as the
             # machine owner what the workspace just declined.
             raise
-    except DaemonRefused:
+        if answer is None:
+            # The daemon is up but did not complete the request (an error
+            # status, a missing workspace, a timeout). A local run here would
+            # act on this process's workspace, not the caller's bound one.
+            raise DaemonDidNotComplete(path)
+        return answer
+    except (DaemonRefused, DaemonDidNotComplete):
         raise
     except Exception as exc:
         logger.warning("daemon POST %s failed: %s", path, exc)

@@ -13,7 +13,9 @@ from superlocalmemory.storage.models import AtomicFact, MemoryRecord
     ('event', 'observed', 'expected'),
     [('2026-03-02', '2026-04-01', '2026-03-02'),
      (None, '2026-04-01', '2026-04-01'),
-     (None, None, '2026-04-01T12:00:00+00:00')],
+     # Save time is transaction time, never an event start: unknown stays unknown,
+     # so a fact is not "not yet valid" for an as_of before it was saved.
+     (None, None, None)],
 )
 @pytest.mark.parametrize('writer', ['store_fact', 'insert_fact_immutable'])
 def test_every_save_writes_the_time_the_fact_became_true(

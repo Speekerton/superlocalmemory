@@ -223,7 +223,7 @@ class EnrichmentRunner:
         current = dict(self.db.execute(
             'SELECT * FROM atomic_facts WHERE fact_id=? AND profile_id=?',
                                         (fact.fact_id, fact.profile_id))[0])
-        start = current['referenced_date'] or current['observation_date'] or current['created_at']
+        start = current['referenced_date'] or current['observation_date']  # never save time
         changed += add('atomic_facts', fact.fact_id, 'valid_from', start)
         # A missing temporal row is legacy_unknown (storage/database.py): it is
         # never created here, because its transaction time would be invented.

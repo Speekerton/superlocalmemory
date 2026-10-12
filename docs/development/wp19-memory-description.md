@@ -6,8 +6,10 @@ offline; model suggestions may use only a local bounded classifier. Caller and
 user classifications are preserved.
 
 `valid_from` is event time: the referenced/event date when known, otherwise the
-observation date, otherwise save time. It is independent of system transaction
-time, which records when the product learned the fact. Unknown event dates stay
+observation date, otherwise unknown (never save time, which is transaction time:
+using it made undated facts "not yet valid" for an earlier `as_of`). It is
+independent of system transaction time, which records when the product learned
+the fact. Unknown event dates stay
 unknown; enrichment does not invent dates or labels to meet a coverage percentage.
 
 Implementation order, each with a failing regression then a passing commit:

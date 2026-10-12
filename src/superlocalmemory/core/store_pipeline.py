@@ -945,12 +945,14 @@ def run_store(
             except Exception as exc:
                 logger.debug("Sheaf check skipped: %s", exc)
 
+        from superlocalmemory.storage.event_time import valid_from as _event_start
+
         # Event-time start is mandatory even without a contradiction validator.
         # fill_only: a duplicate re-save (merged into an older fact) must
         # never replace a start a correction or extraction already set.
         db.store_temporal_validity(
             fact_id=fact.fact_id, profile_id=profile_id,
-            valid_from=fact.referenced_date or fact.observation_date or fact.created_at,
+            valid_from=_event_start(fact),
             fill_only=True,
         )
         # Phase 4: Temporal validation and contradiction detection

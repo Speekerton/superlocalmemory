@@ -52,9 +52,10 @@ def _now() -> str:
 def begin(root: Path, safety_id: str | None) -> dict | None:
     """Mark that a restore is about to write; returns the earlier marker, if any."""
     previous = read(root)
+    pid = os.getpid()
     write_json_atomic(_path(root), {
-        "phase": "writing", "worker_pid": os.getpid(), "safety_id": safety_id,
-        "previous": previous, "at": _now()})
+        "phase": "writing", "worker_pid": pid, "worker_identity": _identity(pid),
+        "safety_id": safety_id, "previous": previous, "at": _now()})
     return previous
 
 
@@ -103,6 +104,20 @@ def clear(root: Path) -> bool:
     return True
 
 
+def _identity(pid: int) -> dict:
+    """What tells this process apart from a later one given the same pid."""
+    from superlocalmemory.infra.process_identity import process_start_token_for
+
+    identity: dict = {"token": process_start_token_for(pid)}
+    try:
+        import psutil
+
+        identity["created"] = float(psutil.Process(pid).create_time())
+    except Exception:  # noqa: BLE001 - the token alone still identifies it
+        pass
+    return identity
+
+
 def _alive(pid) -> bool:
     try:
         os.kill(int(pid), 0)
@@ -113,13 +128,38 @@ def _alive(pid) -> bool:
     return True
 
 
+def _writer_alive(marker: dict) -> bool:
+    """The writer named in the marker is still running: same pid AND same process.
+
+    After a crash or reboot a pid can belong to another process (PR 251 S1),
+    so the start identity recorded with it must match too. A marker written
+    before identities were recorded falls back to the pid.
+    """
+    pid = marker.get("worker_pid")
+    if not _alive(pid):
+        return False
+    recorded = marker.get("worker_identity")
+    if not isinstance(recorded, dict):
+        return True
+    from superlocalmemory.infra.process_identity import compare_start_tokens
+
+    now = _identity(int(pid))
+    same = compare_start_tokens(recorded.get("token"), now.get("token"))
+    if same is not None:
+        return same
+    if recorded.get("created") is not None and now.get("created") is not None:
+        return abs(float(recorded["created"]) - float(now["created"])) < 1.0
+    return False  # the process cannot be proven to be the writer
+
+
 def refusal(root: Path) -> str | None:
     """The start-up refusal a marker means, or None when there is no marker."""
     marker = read(root)
     if marker is None:
         return None
-    if marker.get("phase") == "writing" and _alive(marker.get("worker_pid")):
-        return "A restore is replacing the memory store; start again when it finishes."
+    if marker.get("phase") == "writing" and _writer_alive(marker):
+        return ("A restore is replacing the memory store; start again when it finishes. "
+                f"If no restore is running, run `{RECOVER_COMMAND}`.")
     copies = kept_copies(marker)
     kept = f" The stores as they were before it are kept in {copies[0]}." if copies else ""
     return ("The last restore stopped part-way and the stores may be mixed, so the "

@@ -46,7 +46,8 @@ TOP_K = 5
 SLICES = ("legacy", "described")
 #: +1: can only raise support; -1: can only lower it.
 SIGNS = {"hub_corrected": 1, "keyword_coverage": 1, "cross_encoder": 1, "log_bm25": 1,
-         "entity_hit": 1, "oov_phrase": -1, "rare_miss": -1, "nonsense_similarity": -1}
+         "entity_hit": 1, "oov_phrase": -1, "rare_miss": -1, "nonsense_similarity": -1,
+         "orphan_terms": -1, "unframed_miss": -1}
 #: Lower bounds on a weight (raw feature scale). Keyword coverage must be able
 #: to carry an exact-keyword question when the cross-encoder is cold, the hub
 #: baselines are missing and the probes are not embedded. Unbounded, the fit
@@ -57,6 +58,9 @@ SIGNS = {"hub_corrected": 1, "keyword_coverage": 1, "cross_encoder": 1, "log_bm2
 #: floor on that plateau.
 MIN_WEIGHTS = {"keyword_coverage": 3.0}
 L2 = 0.001
+#: When no threshold separates the sets, keep the lowest real question by this
+#: much (logits), so a recall whose features move a little still answers it.
+REAL_MARGIN = 0.1
 ROUNDS = 8
 NEGATIVES_PER_QUESTION = 3
 UNANSWERABLE_WEIGHT = 0.3
@@ -88,8 +92,20 @@ def split(rows: list[dict], share: float = TRAIN_SHARE) -> tuple[list[dict], lis
     return train, held
 
 
-def answered_today(row: dict) -> bool:
+def hit_now(row: dict) -> bool:
+    """This run's recall put an expected memory in the top 5."""
     return row["rank"] is not None and row["rank"] <= TOP_K
+
+
+def answered_today(row: dict) -> bool:
+    """Recall as shipped before this work answers it (``--baseline`` rows), or,
+    without a baseline, this run did."""
+    return bool(row["today"]) if "today" in row else hit_now(row)
+
+
+def is_fresh(row: dict) -> bool:
+    """A question of the frozen final test half: never fitted, never tuned on."""
+    return str(row.get("source", "")).startswith("fresh_")
 
 
 # -- the model inputs ------------------------------------------------------------
@@ -231,16 +247,46 @@ def question_logit(row: dict, recipe, coef: np.ndarray, b: float,
 
 # -- the threshold and the table ---------------------------------------------------------
 
-def choose_threshold(held: list[dict], recipe, coef, b) -> dict:
+def choose_threshold(held: list[dict], recipe, coef, b, *,
+                     dev: list[dict] | None = None) -> dict:
+    """The widest-margin point between the highest held-out nonsense question and
+    the lowest real question recall answers today -- on the real side every
+    development question counts (``dev``; a real question in the training part
+    is still one that must not be lost). When no such point exists the
+    threshold keeps every real question (``feasible`` False) and the curve
+    below says what each lower real question costs."""
     nonsense = [question_logit(r, recipe, coef, b) for r in held if r["set"] == "nonsense"]
-    real = [question_logit(r, recipe, coef, b) for r in held
+    real = [question_logit(r, recipe, coef, b) for r in (dev or held)
             if r["set"] == "real" and answered_today(r)]
     hi_nonsense = max((z for z in nonsense if z is not None), default=-math.inf)
     lo_real = min((z for z in real if z is not None), default=math.inf)
     feasible = hi_nonsense < lo_real
-    z = (hi_nonsense + lo_real) / 2 if feasible else lo_real
+    z = (hi_nonsense + lo_real) / 2 if feasible else lo_real - REAL_MARGIN
     return {"feasible": feasible, "logit": z, "nonsense_max": hi_nonsense, "real_min": lo_real,
             "probability": 1 / (1 + math.exp(-z))}
+
+
+def real_floor_curve(dev: list[dict], recipe, coef, b, k: int = 8) -> list[dict]:
+    """For the ``k`` lowest real questions: a threshold just below each, and the
+    nonsense and no-answer questions it lets through (development half only)."""
+    real = sorted((question_logit(r, recipe, coef, b), r["qid"]) for r in dev
+                  if r["set"] == "real" and answered_today(r)
+                  and question_logit(r, recipe, coef, b) is not None)
+    out = []
+    for z, qid in real[:k]:
+        t = z - 1e-6
+        nonsense = [r["qid"] for r in dev if r["set"] == "nonsense"
+                    and (question_logit(r, recipe, coef, b) or -math.inf) >= t]
+        unans = [r for r in dev if r["set"] == "unanswerable"]
+        out.append({"keeps_down_to": qid, "logit": round(z, 3),
+                    "real_lost": [q for _, q in real if _ < z][:10],
+                    "nonsense_answered": len(nonsense),
+                    "nonsense_n": sum(r["set"] == "nonsense" for r in dev),
+                    "nonsense_answered_ids": nonsense[:25],
+                    "unanswerable_abstain": sum(
+                        (question_logit(r, recipe, coef, b) or -math.inf) < t for r in unans),
+                    "unanswerable_n": len(unans)})
+    return out
 
 
 def table(rows: list[dict], recipe, coef, b, z: float) -> dict:
@@ -291,10 +337,12 @@ def gate_table(rows: list[dict], slice_of: dict[str, str]) -> dict:
             keys = r.get("result_keys") or ()
             return bool(keys) if sl is None else any(slice_of.get(k) == sl for k in keys)
         out[name or "all"] = {
-            "real_top5": f"{sum(answered_today(r) for r in real)}/{len(real)}",
+            "real_top5": f"{sum(hit_now(r) for r in real)}/{len(real)}",
             "nonsense_abstain": f"{sum(not answered(r) for r in nonsense)}/{len(nonsense)}",
             "unanswerable_abstain": f"{sum(r['abstained'] for r in unans)}/{len(unans)}",
-            "real_missed": [r["qid"] for r in real if not answered_today(r)],
+            "real_missed": [r["qid"] for r in real if not hit_now(r)],
+            "real_lost_vs_today": [r["qid"] for r in real
+                                   if "today" in r and r["today"] and not hit_now(r)],
             "nonsense_answered": [r["qid"] for r in nonsense if answered(r)],
         }
     return out
@@ -309,8 +357,13 @@ def _gate_report(rows: list[dict]) -> dict:
     sys.modules.setdefault("answerability_corpus", corpus)
     spec.loader.exec_module(corpus)
     slice_of = corpus.slice_of_key()
-    _, held = split(rows)
-    return {"held_out": gate_table(held, slice_of), "all": gate_table(rows, slice_of)}
+    dev = [r for r in rows if not is_fresh(r)]
+    fresh = [r for r in rows if is_fresh(r)]
+    _, held = split(dev)
+    out = {"held_out": gate_table(held, slice_of), "dev_all": gate_table(dev, slice_of)}
+    if fresh:
+        out["fresh"] = gate_table(fresh, slice_of)
+    return out
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -320,6 +373,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out")
     p.add_argument("--gate", action="store_true",
                    help="report what recall did (the gate pass) on the held-out split")
+    p.add_argument("--baseline", help="rows of recall as shipped before (defines 'today')")
     args = p.parse_args(argv)
     _bootstrap()
     from dataclasses import replace
@@ -333,13 +387,22 @@ def main(argv: list[str] | None = None) -> int:
     if not rows:
         print("answerability-fit: no feature rows for that profile", file=sys.stderr)
         return 2
+    if args.baseline:
+        today = {r["qid"]: hit_now(r) for r in (
+            json.loads(line) for line in Path(args.baseline).read_text(
+                encoding="utf-8").splitlines() if line.strip())
+            if r.get("profile", args.profile) == args.profile and r["set"] == "real"}
+        rows = [{**r, "today": today[r["qid"]]} if r["qid"] in today else r for r in rows]
     if args.gate:
         print(json.dumps(_gate_report(rows), indent=2))
         return 0
+    # The frozen test half is never fitted, never used for the threshold and
+    # never scored here: run recall with the recipe and use --gate for it.
+    rows = [r for r in rows if not is_fresh(r)]
     train, held = split(rows)
     recipe = replace(sr.ACTIVE, **imputations(train))
     coef, b = fit(train, recipe)
-    chosen = choose_threshold(held, recipe, coef, b)
+    chosen = choose_threshold(held, recipe, coef, b, dev=rows)
     unmeasured = unmeasured_hub(train, recipe, coef, b, chosen["logit"])
     report = {
         "split": SPLIT_VERSION, "train": len(train), "held_out": len(held),
@@ -350,6 +413,7 @@ def main(argv: list[str] | None = None) -> int:
         "train_table": table(train, recipe, coef, b, chosen["logit"]),
         "all_table": table(rows, recipe, coef, b, chosen["logit"]),
         "held_out_curve": curve(held, recipe, coef, b),
+        "dev_real_floor_curve": real_floor_curve(rows, recipe, coef, b),
     }
     text = json.dumps(report, indent=2)
     if args.out:

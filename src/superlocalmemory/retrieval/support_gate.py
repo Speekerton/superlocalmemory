@@ -96,7 +96,20 @@ def features(evidence: Mapping[str, Any], query_evidence: Mapping[str, Any],
         "rare_miss": _num(evidence.get("rare_miss")) or 0.0,
         "nonsense_similarity": (profile if profile is not None
                                 else recipe.nonsense_similarity_missing),
+        # None: nothing to judge (no plain-word subject term) or no keyword
+        # index; neither is evidence that a word is missing.
+        "orphan_terms": _num(query_evidence.get("orphan_terms")) or 0.0,
+        # A keyword query (no question word) is answered only by a memory that
+        # carries its words; with a question word they may be what is asked.
+        "unframed_miss": _unframed_miss(evidence, query_evidence),
     }
+
+
+def _unframed_miss(evidence: Mapping[str, Any], query_evidence: Mapping[str, Any]) -> float:
+    coverage = _num(evidence.get("subject_coverage"))
+    if coverage is None or query_evidence.get("question_frame", True):
+        return 0.0
+    return 1.0 - coverage
 
 
 def logit(evidence: Mapping[str, Any], query_evidence: Mapping[str, Any],

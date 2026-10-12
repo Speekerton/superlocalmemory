@@ -48,6 +48,8 @@ FEATURES: tuple[str, ...] = (
     "oov_phrase",           # 1 when the question is out-of-vocabulary gibberish
     "rare_miss",            # share of the question's rare terms the memory lacks
     "nonsense_similarity",  # question's mean cosine to meaningless-sentence probes
+    "orphan_terms",         # share of the question's words NO stored memory contains
+    "unframed_miss",        # no question word: share of its words this memory lacks
 )
 
 
@@ -103,7 +105,7 @@ ANSWER_SUPPORT_V1 = SupportRecipe(
     weights={"hub_corrected": 16.547, "keyword_coverage": 3.0,
              "cross_encoder": 0.0893, "log_bm25": 0.0, "entity_hit": 0.0,
              "oov_phrase": -1.434, "rare_miss": -4.3724,
-             "nonsense_similarity": -31.3056},
+             "nonsense_similarity": -31.3056, "orphan_terms": 0.0, "unframed_miss": 0.0},
     intercept=9.0324,
     threshold=0.5864,  # logit 0.3491
     ce_clip=(-12.0, 10.0),
@@ -122,8 +124,48 @@ ANSWER_SUPPORT_V1 = SupportRecipe(
     },
 )
 
-_RECIPES = {r.version: r for r in (ANSWER_SUPPORT_V1,)}
-ACTIVE: SupportRecipe = ANSWER_SUPPORT_V1
+#: Fitted 12 October 2026 on the development half only: the hand-written sets
+#: plus the generated dev half (scripts/quality/answerability_questions.py),
+#: 723 questions, split answer-support-split-v1 (437 train, 286 held out). New
+#: inputs: orphan_terms and unframed_miss. The generated fresh half was never
+#: fitted, never used for the threshold.
+#:
+#: No threshold keeps every real question recall answers today AND abstains on
+#: 99% of development nonsense: one hand-written paraphrase with no shared word
+#: ("How did we stop write contention failures?", logit -0.746) sits below
+#: 17 of 394 development nonsense questions. This threshold keeps it,
+#: less a 0.1 margin (no real question lost); one just below the next real
+#: question (logit 1.291) would lose it and let 1 through. That choice is
+#: the owner's, not the fit's. Held-out below is at this threshold (train: real
+#: 120/120, nonsense 225/238).
+ANSWER_SUPPORT_V2 = SupportRecipe(
+    version="answer-support-v2",
+    weights={"hub_corrected": 12.7341, "keyword_coverage": 3.0,
+             "cross_encoder": 0.1324, "log_bm25": 0.0, "entity_hit": 0.0,
+             "oov_phrase": 0.0, "rare_miss": -1.6932,
+             "nonsense_similarity": -40.3182, "orphan_terms": -4.4236,
+             "unframed_miss": -5.4385},
+    intercept=13.8629,
+    threshold=0.3003,  # logit -0.8460: lowest real -0.7460 less 0.1
+    ce_clip=(-12.0, 10.0),
+    ce_missing=-9.05,
+    hub_missing_baseline=0.594,
+    hub_corrected_unmeasured=0.0,
+    nonsense_similarity_missing=0.39,
+    laya_unsupported=-1.5,  # prior: Laya is not available where the harness runs
+    metadata_bonus=0.5,     # prior: tags and projects are optional evidence
+    fitted_on="answerability-corpus-v2/d21fd3d53039f6e6/hand+generated-dev/answer-support-split-v1",
+    held_out={
+        "all": "real kept 77/77, nonsense abstain 152/156, "
+               "no-answer abstain 7/50",
+        "legacy": "real kept 32/32, nonsense abstain 155/156",
+        "described": "real kept 45/45, "
+                     "nonsense abstain 152/156",
+    },
+)
+
+_RECIPES = {r.version: r for r in (ANSWER_SUPPORT_V1, ANSWER_SUPPORT_V2)}
+ACTIVE: SupportRecipe = ANSWER_SUPPORT_V2
 
 
 def recipe(version: str) -> SupportRecipe:
@@ -131,4 +173,5 @@ def recipe(version: str) -> SupportRecipe:
     return _RECIPES[version]
 
 
-__all__ = ["ACTIVE", "ANSWER_SUPPORT_V1", "FEATURES", "SupportRecipe", "recipe"]
+__all__ = ["ACTIVE", "ANSWER_SUPPORT_V1", "ANSWER_SUPPORT_V2", "FEATURES", "SupportRecipe",
+           "recipe"]

@@ -18,7 +18,7 @@ RECIPE = sr.SupportRecipe(
     version="test-recipe",
     weights={"hub_corrected": 10.0, "keyword_coverage": 2.0, "cross_encoder": 0.2,
              "log_bm25": 0.1, "entity_hit": 0.5, "oov_phrase": -1.0, "rare_miss": -5.0,
-             "nonsense_similarity": -20.0},
+             "nonsense_similarity": -20.0, "orphan_terms": -3.0, "unframed_miss": -4.0},
     intercept=3.0, threshold=0.5, ce_clip=(-12.0, 10.0), ce_missing=-4.0,
     hub_missing_baseline=0.6, hub_corrected_unmeasured=0.12, nonsense_similarity_missing=0.40,
     laya_unsupported=-2.0, metadata_bonus=0.5, fitted_on="hand-written",
@@ -155,3 +155,21 @@ def test_the_keyword_fallback_drops_what_the_words_do_not_support() -> None:
     kept = recall_fallback.supported_rows("What did hub v0.3.4 fix?", rows)
     assert [r["fact_id"] for r in kept] == ["a"]
     assert recall_fallback.supported_rows("v0.3.4 snazzle", rows) == []
+
+
+def test_orphan_words_lower_support_and_unmeasured_is_neutral() -> None:
+    base = sg.probability(_ev(), QE, RECIPE)
+    assert sg.probability(_ev(), {**QE, "orphan_terms": 1 / 3}, RECIPE) < base
+    assert sg.features(_ev(), {**QE, "orphan_terms": None}, RECIPE)["orphan_terms"] == 0.0
+
+
+def test_a_keyword_query_must_find_its_words_in_the_memory() -> None:
+    """No question word: the words ARE the question, so the ones the memory
+    lacks count against it. With a question word, they may be the thing asked."""
+    unframed = {**QE, "question_frame": False}
+    framed = {**QE, "question_frame": True}
+    assert sg.features(_ev(subject_coverage=0.5), unframed, RECIPE)["unframed_miss"] == 0.5
+    assert sg.features(_ev(subject_coverage=0.5), framed, RECIPE)["unframed_miss"] == 0.0
+    assert sg.features(_ev(), unframed, RECIPE)["unframed_miss"] == 0.0  # unmeasured
+    assert sg.probability(_ev(subject_coverage=0.5), unframed, RECIPE) < \
+        sg.probability(_ev(subject_coverage=0.5), framed, RECIPE)

@@ -80,7 +80,8 @@ class MediaChannel:
             hit = self._active.get(key)
             if hit is not None and hit[1] == stamp and now - hit[0] < self._ttl:
                 return hit[2]
-        active = self._probe(profile_id, include_global=include_global, include_shared=include_shared)
+        active = self._probe(profile_id, include_global=include_global,
+                             include_shared=include_shared)
         with self._lock:
             self._active[key] = (now, stamp, active)
         return active

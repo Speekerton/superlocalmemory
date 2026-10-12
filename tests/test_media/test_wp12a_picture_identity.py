@@ -87,7 +87,8 @@ def _white_png(size: int = 8) -> bytes:
                 + struct.pack(">I", zlib.crc32(kind + body)))
 
     raw = b"".join(b"\x00" + b"\xff\xff\xff" * size for _ in range(size))
-    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0))
+    header = struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0)
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header)
             + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
 
 
@@ -139,18 +140,21 @@ def test_pixel_caption_never_enters_a_picture_memorys_words_or_facts(env, tmp_pa
             assert "pixel" not in lowered and "white" not in lowered and "image 8 by" not in lowered
             assert media_rerank.is_label_only(text)
         # The caption lives in the picture's own record, where the dashboard and fetch can show it.
-        assert "Dominant pixel colors: white (100%)" in env.store.get_item(receipt.media_id)["exif_json"]
+        record = env.store.get_item(receipt.media_id)["exif_json"]
+        assert "Dominant pixel colors: white (100%)" in record
         # The reranker leaves the wordless picture where the picture channel put it.
         fused = [FusionResult(fact_id="f1", fused_score=1.0, channel_ranks={"media": 1},
                               channel_scores={"media": 0.9})]
         assert media_rerank.neutral_ids(fused, {"f1": SimpleNamespace(content=facts[0])}) == {"f1"}
         # The answer check has nothing to judge.
-        results = [SimpleNamespace(fact=SimpleNamespace(fact_id="f1", content=facts[0], profile_id="default",
-                                                        memory_kind=""), channel_scores={"media": 0.9})]
+        fact = SimpleNamespace(fact_id="f1", content=facts[0], profile_id="default", memory_kind="")
+        results = [SimpleNamespace(fact=fact, channel_scores={"media": 0.9})]
         assert media_rerank.all_unreadable(results)
-        judge = SimpleNamespace(backend="local", top_k=3, assess=lambda *a, **k: pytest.fail("judged"))
+        judge = SimpleNamespace(backend="local", top_k=3,
+                                assess=lambda *a, **k: pytest.fail("judged"))
         engine = SimpleNamespace(_sufficiency_judge=judge, _db=None)
-        outcome = run_answer_check(engine, "what is in the picture?", SimpleNamespace(results=results))
+        outcome = run_answer_check(engine, "what is in the picture?",
+                                   SimpleNamespace(results=results))
         assert (outcome.status, outcome.detail) == (acs.STATUS_SKIPPED, acs.DETAIL_MEDIA_UNJUDGED)
         # A keyword search for the colour cannot reach it.
         assert not {"white", "pixels"} & set(content.lower().replace(".", " ").split())

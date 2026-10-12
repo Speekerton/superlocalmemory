@@ -79,10 +79,10 @@ def test_a_picture_with_many_facts_cannot_crowd_out_the_right_picture(tmp_path, 
     store = make_store(tmp_path, [(mid(1), "image", "pic-a", unit(0)),
                                   (mid(2), "image", "pic-b", blend(0, 1, .3))])
     try:
-        for memory in ("pic-a", "pic-b"):
-            db.store_memory(MemoryRecord(
-                memory_id=memory, profile_id="default", content=memory,
-                metadata={"_slm_source": {"type": "media", "media_id": mid(1 if memory == "pic-a" else 2)}}))
+        for memory, number in (("pic-a", 1), ("pic-b", 2)):
+            source = {"type": "media", "media_id": mid(number)}
+            db.store_memory(MemoryRecord(memory_id=memory, profile_id="default", content=memory,
+                                         metadata={"_slm_source": source}))
         for n in range(40):
             db.store_fact(AtomicFact(fact_id=f"a-{n:02d}", memory_id="pic-a", content=f"a {n}",
                                      profile_id="default", scope=scope))

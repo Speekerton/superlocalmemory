@@ -107,3 +107,12 @@ def test_a_job_in_flight_steps_aside_when_a_swap_pauses_background_work(store, t
     assert service.process_next() is True
     assert len(store.get_pages(receipt.document_id)) == 2
     assert store.get_document(receipt.document_id)["state"] == "ready"
+
+
+def test_a_rasterised_pdf_page_never_runs_the_picture_classifier(store, tmp_path):
+    receipt = _submit(store)
+    client = FakeClient()
+    service = make_service(store, Runtime(), client, fake_script(tmp_path, ["x" * 40, "y" * 40]))
+    service.process_next()
+    assert store.get_document(receipt.document_id)["state"] == "ready"
+    assert client.classify_flags == [False, False]

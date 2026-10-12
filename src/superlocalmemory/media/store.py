@@ -410,7 +410,8 @@ class MediaStore(JobsMixin, DocumentsMixin, DocumentEraseMixin, EraseMixin, Reve
                 out.append((m[0], float(distance)))
         return sorted(out, key=lambda t: t[1])
 
-    def _visible_vector_rows(self, memory_ids: Sequence[str], space_id: str, *, limit: int = -1) -> list:
+    def _visible_vector_rows(self, memory_ids: Sequence[str], space_id: str, *,
+                             limit: int = -1) -> list:
         """Resolve authorized anchors/pages before KNN, so private items cannot crowd them."""
         if not memory_ids:
             return []
@@ -421,7 +422,8 @@ class MediaStore(JobsMixin, DocumentsMixin, DocumentEraseMixin, EraseMixin, Reve
             "i.anchor_memory_id IN (SELECT value FROM json_each(?)) OR EXISTS ("
             "SELECT 1 FROM doc_pages p,json_each(p.memory_ids_json) j "
             "WHERE p.document_id=i.document_id AND p.page_no=i.page_no "
-            "AND j.value IN (SELECT value FROM json_each(?)))) LIMIT ?", (space_id, ids, ids, limit),
+            "AND j.value IN (SELECT value FROM json_each(?)))) LIMIT ?",
+            (space_id, ids, ids, limit),
         ).fetchall()
 
     def has_vectors_for_memories(self, memory_ids: Sequence[str]) -> bool:

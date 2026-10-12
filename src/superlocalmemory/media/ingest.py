@@ -427,7 +427,8 @@ def _store_it(job: _Job, data: bytes, src_sha: str, args: dict[str, Any]) -> Med
         media_id=media_id, profile_id=profile_id, kind="image", source_sha256=src_sha,
         stored_sha256=info["stored_sha"], phash=info.get("phash"), mime=info["mime"],
         bytes=info["stored_size"], width=info.get("width"), height=info.get("height"),
-        original_relpath=relpath, exif_json=_record_fields(info), captured_at=_captured_at(info.get("exif") or {}),
+        original_relpath=relpath, exif_json=_record_fields(info),
+        captured_at=_captured_at(info.get("exif") or {}),
         anchor_memory_id=saved.memory_id,
         origin="folder" if args.get("folder") else "tool", thumb_webp=info["thumb"],
         remote_ok=int(ocr.engine != "none" and ocr.scanned and ocr.secrets == 0 and ocr.pii == 0))

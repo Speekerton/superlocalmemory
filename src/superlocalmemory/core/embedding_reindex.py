@@ -383,7 +383,7 @@ class ReindexRunner:
                     except steps.StepFailed:
                         refused = bool(getattr(embedder, "memory_refused", False))
                         steps.close_embedder(embedder)
-                        if refused:  # a managed worker said no for lack of memory, not for lack of a vector
+                        if refused:  # a managed worker said no for lack of memory, not of a vector
                             raise steps.StepFailed(MEMORY_REFUSED_MESSAGE) from None
                         raise
                 return embedder

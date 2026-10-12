@@ -248,7 +248,8 @@ class MediaWorkerClient(MediaEmbedderPort):
         except RuntimeError as exc:
             if isinstance(exc, MediaWorkerError):
                 raise
-            raise MediaWorkerMemoryError("Not enough free memory to load the image model right now.") from exc
+            raise MediaWorkerMemoryError(
+                "Not enough free memory to load the image model right now.") from exc
         except OSError as exc:
             raise MediaWorkerError("The image model could not be started.") from exc
         if not reply.get("ok"):
@@ -387,9 +388,16 @@ class MediaWorkerClient(MediaEmbedderPort):
         reply = self._request(cmd, **fields)
         return {k: v for k, v in reply.items() if k not in ("ok", "id")}
 
-    def prepare_image(self, path: Path | str, out_dir: Path | str, *, wait_cold: bool = True) -> dict:
-        """Strip metadata, make a thumbnail and a perceptual hash; results are files in ``out_dir``."""
-        return self._image_request("prepare_image", wait_cold, path=str(path), out_dir=str(out_dir))
+    def prepare_image(self, path: Path | str, out_dir: Path | str, *, wait_cold: bool = True,
+                      classify: bool = True) -> dict:
+        """Strip metadata, make a thumbnail and a perceptual hash; results are files in ``out_dir``.
+
+        ``classify=False`` leaves out the subject classifier (for a rasterised document page).
+        """
+        fields: dict[str, Any] = {"path": str(path), "out_dir": str(out_dir)}
+        if not classify:
+            fields["classify"] = False
+        return self._image_request("prepare_image", wait_cold, **fields)
 
     def ocr_image(self, path: Path | str, *, wait_cold: bool = True) -> dict:
         """The text in an image: ``{"engine": ..., "text": ...}`` (engine ``none`` when none is installed)."""

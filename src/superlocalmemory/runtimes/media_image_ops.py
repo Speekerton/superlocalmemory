@@ -16,10 +16,12 @@ from __future__ import annotations
 
 import importlib
 import io
+import logging
 import os
 import secrets
 import sys
 
+logger = logging.getLogger(__name__)
 MAX_PIXELS = 50_000_000
 _FORMATS = {"PNG": ("image/png", ".png"), "JPEG": ("image/jpeg", ".jpg"), "WEBP": ("image/webp", ".webp"),
             "GIF": ("image/png", ".png")}  # a GIF keeps its first frame, stored as PNG
@@ -121,8 +123,11 @@ def _encode_thumb(upright, edge: int, max_bytes: int) -> bytes:
     return buf.getvalue()
 
 
-def prepare_image(src: str, out_dir: str, *, thumb_edge: int = 320, thumb_max_bytes: int = 32_768) -> dict:
+def prepare_image(src: str, out_dir: str, *, thumb_edge: int = 320, thumb_max_bytes: int = 32_768,
+                  classify: bool = True) -> dict:
     """Strip, thumbnail and hash an image; write both results into ``out_dir``.
+
+    ``classify=False`` skips the offline subject classifier (for a rasterised document page).
 
     Raises ValueError for anything that is not a plain PNG, JPEG, WEBP or GIF.
     On any failure nothing is left in ``out_dir``.
@@ -135,9 +140,10 @@ def prepare_image(src: str, out_dir: str, *, thumb_edge: int = 320, thumb_max_by
         upright, fields, icc = _load_upright(img)
         try:
             mime, ext = _FORMATS[fmt]
+            subjects = _apple_subjects(src) if classify else ""
             result = {"mime": mime, "width": upright.width, "height": upright.height, "exif": fields,
                       "phash": str(imagehash.phash(upright.convert("RGB"))),
-                      "visual_summary": visual_summary(upright) + _apple_subjects(src)}
+                      "visual_summary": visual_summary(upright) + subjects}
             written.append(_write_private(out_dir, ext, _encode_original(upright, fmt, icc)))
             result.update(stored_path=written[0], stored_ext=ext)
             written.append(_write_private(out_dir, ".webp", _encode_thumb(upright, thumb_edge, thumb_max_bytes)))
@@ -198,7 +204,8 @@ def _apple_subjects(path: str) -> str:
         subjects = [str(obs.identifier()).replace('_', ' ') for obs in (request.results() or [])
                     if float(obs.confidence()) >= .8][:3]
         return " Image classifier subjects: " + ", ".join(subjects) + "." if subjects else ""
-    except (ImportError, AttributeError, RuntimeError):
+    except Exception as exc:  # noqa: BLE001 - any binding failure: a save never fails for a caption
+        logger.warning("image classifier unavailable (%s); no subjects", type(exc).__name__)
         return ""
 
 

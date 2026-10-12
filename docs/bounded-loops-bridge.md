@@ -88,45 +88,81 @@ include their regular-file trees. Globs are expanded again for each run and
 admission, so added or removed matching files change the revision. Files outside
 these declarations never enter the run directory.
 
-Every run uses a fresh private directory outside the project. It copies only the
-pinned definition and declared artifacts, reading each input once and hashing
-the bytes copied. The revision is the SHA-256 of the sorted relative-path and
-content-hash manifest. The subprocess runs there without a shell, with closed
-stdin, an allow-listed environment, private HOME/temp/XDG directories, and a
-bounded timeout. Installed pytest plugins are disabled unless explicitly loaded
-with `-p`. Checker descendants are stopped before validation and cleanup.
-Project aliases in command paths are canonicalized at registration. Standalone
-absolute project paths and `--option=/project/path` arguments are relocated into
-the copy. The executable must be operator-owned outside the project; project
-executables are refused at registration. Embedded code and check scripts must
-use relative paths for verdict-bearing inputs; external dependencies require a trusted operator
-contract. Outputs and caches remain in the private run and are discarded.
+## Gate guarantees and threat model
 
-Only after validation succeeds does the registered runner publish a receipt.
-An owner-only per-data-root HMAC key authenticates its job, definition hash,
-copied revision, exit status, output digest, and execution identity. The public
-`execution_receipts.run_check` API produces diagnostic receipts without admission;
-its `validate_result` callback cannot mint an admitted PASS.
+DONE means that the newest eligible, authenticated receipt reports exit code
+zero from the operator's pinned check on the copied, hashed inputs, and that a
+fresh copy of the current declared inputs has the same revision. The receipt
+binds the job, command, pinned definition, input revision, exit status and output
+hashes. Changing declared files requires another check. Changing the check
+requires another registration. A newer registration supersedes the previous
+job for that profile and watcher. Missing, expired, failed, stale or
+unauthenticated evidence cannot produce DONE. By default, receipts must be
+produced after the watcher starts; accepting earlier evidence requires the
+operator's explicit registration setting.
 
-DONE requires the newest matching authenticated PASS and a fresh copy/hash of
-current declared artifacts with exactly the same revision. Changed artifacts
-require a rerun; the same job can run against a new artifact revision. Changed
-check definitions require a new registration. A newer registration supersedes
-older jobs for the profile/watcher; expiration, cross-profile, self-authored,
-stale, failed or unauthenticated receipts cannot finish a loop. By default a
-watcher accepts only receipts produced after it started; only the operator may
-enable pre-start evidence. Legacy registrations require re-registration.
+The check runs with the user's full rights. This gate does not prove that code
+executed by the check is honest. In the example above, the pinned tests import
+mutable files under `src/`. If an imported file calls `os._exit(0)`, it can end
+pytest successfully before assertions run. The gate can then report DONE on
+those exact bytes. A signed receipt proves what the check reported; it does
+not prove that the tests reached their assertions or that the code is correct.
 
-Private directories are 0700 and files are 0600. The data root and check tool
-installation must be controlled by the operator and inaccessible to the task
-writer. This is filesystem-copy isolation, not an OS sandbox: a same-UID shell
-agent with access to the store/key or arbitrary operator code is outside this
-boundary. No live-tree ctime or ancestor stamps are used. Hosts with secure
-no-follow directory handles can run checks regardless of filesystem timestamp
-semantics. Native Windows currently lacks the required Python primitives and
-is refused at registration with an explicit platform reason. The waiting MCP
-user receives that reason, rather than a bare `max-iterations`; other refusals
-appear in `receipt_reason` and the gate detail.
+Checks have network access. A check can take its verdict from a network response.
+Those responses, system services and installed tool dependencies are not part
+of the copied input manifest. The interpreter and tool installation must be
+trusted by the operator. A different same-user process editing SLM's store,
+admission key or installed gate code is outside this threat model. The private
+copy and file permissions do not prevent a process with the user's rights from
+opening a known absolute path elsewhere on the machine.
+
+Each check uses a fresh temporary directory outside the project and the SLM
+check store. It receives only the pinned files and declared artifacts, closed
+stdin, a restricted environment and private HOME, temp and XDG directories.
+It runs without a shell, in its own session and process group, with a bounded
+timeout. Command paths into the project are relocated into this copy. Check
+executables inside the project are refused. Scripts must use relative paths
+for their checked inputs; arbitrary embedded paths are not rewritten.
+
+For direct pytest commands and `python -m pytest`, the runner passes
+`-c <pinned config>` and `--rootdir <run directory>`. If no config was pinned,
+it generates an empty config, passes it with `-c`, and verifies its hash after
+the check. An explicit config argument must name a pinned definition file.
+`PYTEST_ADDOPTS` and `PYTEST_PLUGINS` are absent from the check environment.
+Plugin autoload is disabled; plugins explicitly named by the pinned command
+or pinned configuration can still load.
+
+Checks are serialized per data root with an exclusive lock held through
+validation and receipt publication. After a check exits or times out, the
+runner sends SIGKILL to its process group. It then compares the user's process
+table with the baseline captured at check start. It attempts to kill any new
+process still alive, including processes that escaped with `setsid` or were
+reparented to init or launchd. Observing such a process makes the receipt FAIL
+and the watcher HALT, even if termination succeeds. The reason identifies its
+name and PID. A process that resists termination can remain alive; the runner
+cannot promise that every descendant was stopped. An unrelated process of the
+same user that starts during the check can also cause this conservative HALT.
+An unreadable process table refuses PASS. The runner checks the private input
+and definition hashes after this sweep.
+
+Private directories are 0700 and key files are 0600. The per-data-root HMAC key
+lives in `loop-admission`, separate from the temporary copies and definition
+store. Moving it removes the old run-relative key path; it does not deny
+same-user access. Receipts store SHA-256 hashes of complete output and bounded
+excerpts with known key bytes and unbroken key-length material redacted. They
+do not retain raw stdout or stderr. The public `execution_receipts.run_check`
+writer produces diagnostic receipts without admission; its callback cannot
+mint an admitted PASS.
+
+When integrity matters, keep the check's test code outside the agent-writable
+workspace before registration, pin configuration and all fixtures, and review
+what code the check executes. Keeping tests separate protects their definition;
+it does not make imported agent-written code honest. For stronger assurance,
+decide the result in a trusted process that code under test cannot control, or
+use an operating-system isolation boundary suited to the task. Windows is
+refused because the required secure no-follow directory handles are unavailable.
+The watcher returns the actual receipt refusal or check failure as its reason,
+and history records the last gate detail.
 
 Receipt and registration rows are immutable and erased with their owning
 profile. The filesystem definition store belongs to the operator's data root;

@@ -9,7 +9,7 @@ A **peer** is any session that registers: an agent on this computer, or a web ap
 | Tool | What it does |
 |---|---|
 | `mesh_summary`, `mesh_status` | Overview and health of the mesh |
-| `mesh_peers` | Lists up to 100 peers of this profile (name, kind, status, a summary of up to 200 characters; never host, port or path) |
+| `mesh_peers` | Lists this profile's peers. On this computer the list is not capped and can include host, port and path. A connected web app sees a directory of at most 100 peers, each with a summary of at most 200 characters and no host, port or path |
 | `mesh_send` | Sends a message, up to 4,096 bytes; larger content should be referenced by path |
 | `mesh_inbox`, `mesh_wait` | Reads unread mail; `mesh_wait` blocks up to 20 seconds for new mail |
 | `mesh_state` | Shared key-value state |

@@ -44,6 +44,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `slm team status` and `slm team policy --require-login on|off`, run on the
   SLM computer, so a company workspace's owner can never be locked out.
 - A **What's new** card on the dashboard that knows what is already on.
+- **`slm outcome success|partial|failure <fact_id>...`** tells SLM whether the
+  memories a recall gave you helped. MCP, the REST API, the dashboard and this
+  command now share one outcome writer, so a report settles the same way from
+  any of them (docs/cli-reference.md).
+- **`slm db repair-entities`** previews, applies (after a backup, with an undo
+  record) and undoes the clean-up of entity links left by the older name-matching
+  rules.
+- **`slm doctor --refile-hidden`** lists memories that were moved out of sight
+  although their retention score says to keep them; `--yes` moves exactly those
+  back.
+- **The dashboard shows which apps are connected right now**: live MCP processes
+  by host with a count, a flag on apps still running older SLM code, and a
+  reconnect. Connect, doctor, repair and restart are buttons, and Connect writes
+  an absolute interpreter path.
 - **Agent skills and instructions teach 4.1.25.** A new `slm-media` skill
   (pictures, PDFs, folders, upload links, `slm media`, `slm sources`) ships in
   the Claude Code, Codex, Copilot, Antigravity and Hermes plugins, so each
@@ -73,6 +87,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   again. They were vetted under the older rule (personal data counted only
   with redaction on); the whole text is now checked every time. They stay
   fully searchable on your computer.
+- **Entity matching is exact.** A name matches exactly, then after
+  normalisation, then with one typo in one word. It never merges different
+  numbers or versions, never matches against aliases that were themselves fuzzy,
+  and a question word is looked up exactly unless it is everyday English.
+- **Recall stays fast while you write.** A save no longer forces the whole graph
+  to rebuild on the next recall: the cached graph follows writes incrementally,
+  deletes and erasures leave it before the walk, and full rebuilds run in the
+  background. On a 26k-fact store with a write every 2 seconds, p95 recall fell
+  from 4.3 s to 0.94 s and peak memory from up to 1.7 GB to about 260 MB.
+  Large stores also get new recall indexes (migrations M056 to M058), and the
+  keyword fallback no longer keeps an unread copy of every saved text.
+- **Saving is checked against what you wrote.** Every statement SLM extracts is
+  checked against its source before it is stored: no added names, numbers or
+  dates, no flipped negation, no names leaking from the prompt's example. The
+  original note is always kept. Quoted speech is never rewritten, each speaker's
+  turn is handled separately, and relative dates ("last Tuesday") resolve against
+  the memory's own date. Saving the same text twice adds no row and keeps the new
+  save's scope, project and event date. Long texts are chunked, a long paste says
+  it was truncated, and the best installed local model is recommended but never
+  switched silently.
+- **The learning loop learns from real outcomes.** One query id runs from recall
+  through to the reward, and each outcome settles exactly one recall, across
+  restarts (migration M055, additive). The candidate ranker is served during its
+  test and promoted or rejected by a sequential test; training sees real labels.
+  Consolidation's dry run writes nothing, never revives an invalidated fact and
+  does not count itself as use; the behaviour miner stays within one session and
+  project; "lossless" normalisation keeps code byte for byte. Health shows "Not
+  demonstrated" until an outcome has settled (`GET /api/learning/readiness`).
+- **Services and ports belong to one install.** `slm dashboard`, Health,
+  Settings and HTTP setup use the configured port, strict credential settings
+  survive auto-start, and a second install gets its own service name. Older
+  services are migrated only when they provably belong to this install.
+  `--sync` saves return after enrichment completes, the Python API shares the
+  daemon's embedder, failed session opens exit non-zero, and a queued embedding
+  upgrade says why it waits.
+- **Quantized retrieval is used when configured**, and the status says when a
+  tier is degraded. Damaged or legacy QJL sketches are repaired by
+  `slm quantize` instead of hiding the memory from search.
+- **Company mode checks a role on every change.** Every state-changing route asks
+  for a role, and the check runs before the request body is read, so refusals are
+  401 or 403, never 422 or 500. Restarting the daemon needs MANAGE.
 - `npm install` says plainly when the Python it found cannot work (an Intel
   build on a Mac, 32-bit on Windows) and how to install a supported one;
   `slm media enable` starts SuperLocalMemory if it is not running.
@@ -96,6 +151,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   obligation until it is deleted or re-read clean (never by age), an unreadable
   backup is an obligation too, and a restore replays targeted erasures (one
   memory, one person's mentions) as well as profile ones.
+- **Recall says "nothing found" instead of guessing.** The evidence floor again
+  compares the cosine it documents, on the channel's own scale, so a question
+  with no support in memory gets no answer. A chain of near-miss names can no
+  longer lead a question to an unrelated person or project.
+- **Entity names are real names.** Timestamps, hashes, paths, status words such
+  as PASS or LIVE, and sentence fragments are no longer saved as people or
+  projects. `slm db repair-entities` cleans up links left by the old rules.
+- **Frameworks and editors.** Google ADK, CrewAI and Semantic Kernel run through
+  an isolated engine bridge instead of failing to install next to SLM, and CrewAI
+  declares its real Python range (3.12 to 3.13). Microsoft Agent Framework keeps
+  message roles and content, and AutoGen returns the text with the caller's
+  metadata. Continue, OpenCode, Antigravity, VS Code and Gemini CLI setup write
+  each host's current schema, and HTTP verification checks the real `/health` and
+  lists tools. The Optimize SDK quickstarts import what exists.
 - **Smaller fixes.** A shared code graph is exported only as the person's own
   links; exports and evidence bundles are created owner-only. `slm doctor`
   counts memories whose vector is really in the index. `VectorStore.delete`

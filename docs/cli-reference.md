@@ -345,7 +345,8 @@ slm kinds set <fact_id> decision          # confirm one memory's kind
 slm kinds review --kind rule --limit 20   # suggestions awaiting confirmation
 slm kinds confirm <fact_id> <fact_id>=rule  # a bare id accepts the stored suggestion
 slm kinds backfill start                  # classify existing memories (undoable)
-slm kinds backfill status
+slm kinds backfill status                 # the run in progress, if any
+slm kinds backfill pause <run_id>         # also: resume, cancel, revert
 ```
 
 `slm kinds settings` takes `--enable` or `--disable`, `--backend
@@ -966,6 +967,7 @@ internet from the dashboard.
 
 ```bash
 slm remote tls init --name my-laptop.local --ip 192.168.1.20
+slm remote tls init --ip 192.168.1.20 --days 365 --force   # new server certificate, same CA
 slm remote enable --listen HOST:PORT
 slm remote keys add hermes-laptop --read-only --profile work
 slm remote keys list
@@ -978,7 +980,9 @@ slm remote disable
 ```
 
 A key is shown once when created. `--read-only` allows recall only. Enabling or
-disabling takes effect on restart.
+disabling takes effect on restart. `slm remote tls init --days N` sets the server
+certificate's lifetime (at most 397 days); `--force` issues a new server
+certificate with the existing certificate authority.
 
 ---
 
@@ -1141,9 +1145,10 @@ stopped, `--withhold FACT_ID` takes one fact out of answers (undo with
 Re-derive the graph copy of your memories from the store. `--check` only reports
 how far the copy has drifted.
 
-### `slm db reembed [--all-profiles] [--limit N] [--json]`
+### `slm db reembed [--missing-only] [--all-profiles] [--limit N] [--json]`
 
-Backfill embeddings for facts that never got one.
+Backfill embeddings for facts that never got one. `--missing-only` is the default
+and the only mode; the flag exists so scripts can say so.
 
 ### `slm db compact [--offline]`
 

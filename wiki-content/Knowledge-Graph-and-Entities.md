@@ -10,15 +10,15 @@ Every stored fact gets edges to related facts. There are four kinds of edge in n
 |---|---|
 | Entity | Two facts share an entity |
 | Temporal | Two facts fall within a one-week window, with exponential decay |
-| Semantic | Embedding cosine similarity is above 0.7 |
+| Semantic | Embedding cosine similarity is at least 0.7 |
 | Causal | Causal markers connect the facts |
 | Contradiction, Supersedes | A fact conflicts with or replaces another |
 
-Association edges and a PageRank-style importance score are computed during consolidation. Recall uses the graph in two ways: spreading activation is one of the five producers, and the entity graph boosts fused candidates afterwards (see [How Recall Works](How-Recall-Works)).
+Association edges are written when a fact is stored. Unused ones decay during consolidation. A PageRank-style importance score is computed later, on the maintenance scheduler, not during consolidation. Recall uses the graph in two ways: spreading activation is one of the five producers, and the entity graph boosts fused candidates afterwards (see [How Recall Works](How-Recall-Works)).
 
 In the dashboard, the **Knowledge Graph** pane draws the graph with a node budget (50 by default, adjustable from 20 to 2,000), an "Ask your memory" search box and Quick Insights. A community view runs Louvain community detection over the entities (`POST /api/v3/graph/run-communities`). From the terminal, `slm db regraph` rebuilds edges and the MCP `build_graph` tool does the same for the active profile; `build_graph` is available only with the `whole` profile.
 
-**Storage backends.** The canonical graph lives in SQLite. For large stores, the Scale Engine can serve graph queries from CozoDB and vector search from LanceDB. These are derived projections, prepared outside the live paths, verified against the canonical store and promoted atomically; they serve only after they match. Two Settings choices control this, `graph_backend` (`auto`, `sqlite` or `cozo`) and `vector_backend` (`auto`, `sqlite-vec` or `lancedb`), and `auto` auto-promotes at 100,000 edges. A graph is pruned to at most 100 edges per node by default. See [Architecture](Architecture) and the repository's `docs/scale-engine.md`.
+**Storage backends.** The canonical graph lives in SQLite. For large stores, the Scale Engine can serve graph queries from CozoDB and vector search from LanceDB. These are derived projections, prepared outside the live paths, verified against the canonical store and promoted atomically; they serve only after they match. Two Settings choices control which library answers queries: `graph_backend` (`auto`, `sqlite` or `cozo`) and `vector_backend` (`auto`, `sqlite-vec` or `lancedb`). `auto` uses CozoDB or LanceDB when that library is installed, and SQLite otherwise. A separate setting, on by default, promotes the scale engine once the graph has at least 100,000 edges. A graph is pruned to at most 100 edges per node by default. See [Architecture](Architecture) and the repository's `docs/scale-engine.md`.
 
 ## Knowledge clusters
 

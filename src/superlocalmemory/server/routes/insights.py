@@ -20,8 +20,7 @@ from fastapi.responses import JSONResponse
 
 from superlocalmemory.server.routes.helpers import DB_PATH, get_active_profile, get_read_connection
 from superlocalmemory.storage.database import visible_fact_clause_for_connection
-
-from superlocalmemory.storage.erasure_visibility import erasure_clause_for_connection
+from superlocalmemory.storage.erasure_visibility import erasure_endpoint_clause
 
 logger = logging.getLogger(__name__)
 
@@ -176,8 +175,8 @@ def _action_contradictions(
             "WHERE ge.profile_id = ? AND ge.edge_type = 'contradiction'"
             f"{visible_fact_clause_for_connection(conn, 'sf')}"
             f"{visible_fact_clause_for_connection(conn, 'tf')}"
-            f"{erasure_clause_for_connection(conn, 'ge', fact_column='source_id')}"
-            f"{erasure_clause_for_connection(conn, 'ge', fact_column='target_id')} "
+            f"{erasure_endpoint_clause(conn, 'ge', 'source_id', 'sf')}"
+            f"{erasure_endpoint_clause(conn, 'ge', 'target_id', 'tf')} "
             "ORDER BY ge.weight DESC, ge.created_at DESC LIMIT ?",
             (pid, limit),
         ).fetchall()

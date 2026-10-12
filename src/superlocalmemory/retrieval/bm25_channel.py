@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING
 from rank_bm25 import BM25Plus
 
 from superlocalmemory.retrieval.fact_cover import fact_table
-from superlocalmemory.retrieval.scope_policy import filter_authorized_results
+from superlocalmemory.retrieval.scope_policy import authorized_topk
 from superlocalmemory.storage.database import _scope_where
 from superlocalmemory.storage.fts_terms import version_match_phrases, version_terms
 
@@ -503,10 +503,10 @@ class BM25Channel:
         scored.sort(key=lambda x: (-x[1], x[0]))
         # Same rescale as the FTS5 path. This fallback applies a 1.5x exact
         # phrase bonus, so its raw ceiling is higher still.
-        return _to_unit_scale(filter_authorized_results(
-            self._db, scored, profile_id, include_global=include_global,
+        return _to_unit_scale(authorized_topk(
+            self._db, scored, profile_id, top_k, include_global=include_global,
             include_shared=include_shared,
-        )[:top_k])
+        ))
 
     def update_fact(self, fact_id: str, new_content: str, profile_id: str) -> None:
         """Replace a fact's representation in the live index and persist new tokens.

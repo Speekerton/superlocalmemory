@@ -22,11 +22,18 @@ def _trigger(event: str) -> str:
     timing, row = _EVENTS[event]
     new_row = ("INSERT INTO fact_search_changes(profile_id,fact_id,what) "
                "VALUES (NEW.profile_id,NEW.fact_id,'*');" if event == 'update' else '')
+    rows = (f"VALUES ({row}.profile_id,{row}.fact_id,'*'); " if event != 'delete' else
+            "SELECT OLD.profile_id,OLD.fact_id,'*' WHERE EXISTS ("
+            "SELECT 1 FROM atomic_facts af WHERE af.profile_id=OLD.profile_id "
+            "AND af.fact_id=OLD.fact_id); ")
+    # Removing a tombstone only restores visibility while its fact still exists.
+    # Deleted facts already have their own change event. Logging again after a
+    # profile sweep emptied the log would recreate that profile's erased rows.
     return (
         f'CREATE TRIGGER IF NOT EXISTS trg_erasure_visibility_{event} '
         f'AFTER {timing} ON projection_tombstones BEGIN '
         f"INSERT INTO fact_search_changes(profile_id,fact_id,what) "
-        f"VALUES ({row}.profile_id,{row}.fact_id,'*'); " + new_row +
+        f"{rows}{new_row}"
         f'DELETE FROM fact_search_changes WHERE seq <= '
         f'(SELECT MAX(seq) FROM fact_search_changes)-{RETAINED_CHANGES}; END'
     )
@@ -42,7 +49,7 @@ def apply(conn: sqlite3.Connection) -> None:
     if 'projection_tombstones' not in tables:
         return
     conn.execute(_INDEX_DDL)
-    if 'fact_search_changes' in tables:
+    if {'fact_search_changes', 'atomic_facts'} <= tables:
         for event in _EVENTS:
             conn.execute(_trigger(event))
 
@@ -52,7 +59,7 @@ def verify(conn: sqlite3.Connection) -> bool:
     if 'projection_tombstones' not in tables:
         return True
     needed = {_INDEX}
-    if 'fact_search_changes' in tables:
+    if {'fact_search_changes', 'atomic_facts'} <= tables:
         needed |= {f'trg_erasure_visibility_{e}' for e in _EVENTS}
     present = {r[0] for r in conn.execute('SELECT name FROM sqlite_master')}
     return needed <= present

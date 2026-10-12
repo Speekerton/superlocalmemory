@@ -51,7 +51,7 @@ class ChangeTrackedCache(Generic[P]):
     def available(self) -> bool:
         with self._lock:
             try:
-                rows = self._db.execute("PRAGMA schema_version")
+                rows = self._db.execute("SELECT schema_version FROM pragma_schema_version")
                 version = dict(rows[0]).get("schema_version") if rows else None
                 if version != getattr(self, "_erasure_schema_version", None):
                     self._parts.clear()

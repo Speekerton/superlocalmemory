@@ -33,10 +33,10 @@ from superlocalmemory.storage.embedding_codec import (
     encode_float_vector,
 )
 from superlocalmemory.storage.erasure_visibility import (
-    aggregate_erasure_clause,
+    aggregate_erasure_clause_for_db,
     erasure_clause,
     has_tombstones,
-    memory_erasure_clause,
+    memory_erasure_clause_for_db,
 )
 from superlocalmemory.storage.memory_kinds import KIND_COLUMNS
 from superlocalmemory.storage.models import (
@@ -1838,6 +1838,17 @@ class DatabaseManager:
             for r in rows
         ]
 
+    def is_memory_erasing(self, memory_id: str, profile_id: str) -> bool:
+        """Whether an erasure fence blocks this source, including a deleted parent."""
+        clause = memory_erasure_clause_for_db(self, "source")
+        if not clause:
+            return False
+        rows = self.execute(
+            "SELECT 1 FROM (SELECT ? AS memory_id, ? AS profile_id) AS source "
+            f"WHERE 1=1{clause}", (memory_id, profile_id),
+        )
+        return not rows
+
     def get_memory_content_batch(
         self, memory_ids: list[str], profile_id: str,
         include_global: bool = False, include_shared: bool = False,
@@ -1855,8 +1866,7 @@ class DatabaseManager:
         where, sparams = _scope_where(
             profile_id, include_global=include_global, include_shared=include_shared,
         )
-        with self.raw_connection() as conn:
-            erasure = memory_erasure_clause(conn)
+        erasure = memory_erasure_clause_for_db(self)
         rows = self.execute(
             f"SELECT memory_id, content FROM memories "
             f"WHERE memory_id IN ({ph}) AND {where}{erasure}",
@@ -2310,8 +2320,7 @@ class DatabaseManager:
 
     def get_all_scenes(self, profile_id: str) -> list[MemoryScene]:
         """All scenes for a profile, newest first."""
-        with self.raw_connection() as conn:
-            erasure = aggregate_erasure_clause(conn, "memory_scenes")
+        erasure = aggregate_erasure_clause_for_db(self, "memory_scenes")
         rows = self.execute(
             f"SELECT * FROM memory_scenes WHERE profile_id = ?{erasure} "
             "ORDER BY last_updated DESC",

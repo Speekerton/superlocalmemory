@@ -87,3 +87,27 @@ def test_retained_edge_cannot_return_erased_endpoint_id(dashboard, path):
     db.execute("DELETE FROM atomic_facts WHERE fact_id='erasuremarker'")
     during = client.get(path, headers=headers)
     assert during.status_code == 200 and 'erasuremarker' not in during.text, during.text
+
+
+@pytest.mark.parametrize('path', ['/api/v3/insights/contradictions', '/api/v3/associations'])
+def test_cross_profile_erased_endpoint_is_hidden_after_canonical_deletion(dashboard, path):
+    client, headers, db = dashboard
+    db.execute("INSERT INTO profiles(profile_id,name) VALUES ('other','other')")
+    db.execute("INSERT INTO memories(memory_id,profile_id,content) "
+               "VALUES ('foreign','other','synthetic foreign source')")
+    db.execute("INSERT INTO atomic_facts(fact_id,memory_id,profile_id,content,scope) "
+               "VALUES ('foreign','foreign','other','synthetic foreign fact','global')")
+    if path.endswith('contradictions'):
+        db.execute("INSERT INTO graph_edges(edge_id,profile_id,source_id,target_id,edge_type) "
+                   "VALUES ('edge','default','controlmarker','foreign','contradiction')")
+    else:
+        db.execute("INSERT INTO association_edges(edge_id,profile_id,source_fact_id,target_fact_id,"
+                   "association_type) VALUES ('edge','default','controlmarker','foreign',"
+                   "'user_defined')")
+    before = client.get(path, headers=headers)
+    assert before.status_code == 200 and 'foreign' in before.text, before.text
+    db.execute("INSERT INTO projection_tombstones(profile_id,fact_id,erasure_id,created_at) "
+               "VALUES ('other','foreign','synthetic-erasure',?)", (time.time(),))
+    db.execute("DELETE FROM atomic_facts WHERE fact_id='foreign'")
+    during = client.get(path, headers=headers)
+    assert during.status_code == 200 and 'foreign' not in during.text, during.text

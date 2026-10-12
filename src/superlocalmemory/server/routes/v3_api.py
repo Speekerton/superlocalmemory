@@ -30,8 +30,7 @@ if TYPE_CHECKING:
     from superlocalmemory.core.config import LLMConfig, SLMConfig
 
 from superlocalmemory.storage.database import visible_fact_clause_for_connection
-
-from superlocalmemory.storage.erasure_visibility import erasure_clause_for_connection
+from superlocalmemory.storage.erasure_visibility import erasure_endpoint_clause
 
 logger = logging.getLogger(__name__)
 
@@ -1929,8 +1928,8 @@ async def get_associations(
             "WHERE ae.profile_id = ?"
             f"{visible_fact_clause_for_connection(conn, 'sf')}"
             f"{visible_fact_clause_for_connection(conn, 'tf')}"
-            f"{erasure_clause_for_connection(conn, 'ae', fact_column='source_fact_id')}"
-            f"{erasure_clause_for_connection(conn, 'ae', fact_column='target_fact_id')} "
+            f"{erasure_endpoint_clause(conn, 'ae', 'source_fact_id', 'sf')}"
+            f"{erasure_endpoint_clause(conn, 'ae', 'target_fact_id', 'tf')} "
         )
         if type:
             sql += "AND ae.association_type = ? "

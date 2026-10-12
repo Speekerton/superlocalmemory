@@ -42,6 +42,10 @@ def memory_erasure_clause(conn: sqlite3.Connection, prefix: str = "memories") ->
     """
     if not has_tombstones(conn):
         return ""
+    return _memory_clause(prefix)
+
+
+def _memory_clause(prefix: str) -> str:
     return (
         " AND NOT EXISTS (SELECT 1 FROM projection_tombstones pt"
         f" WHERE pt.profile_id = {prefix}.profile_id AND pt.memory_id = {prefix}.memory_id)"
@@ -96,3 +100,30 @@ def erasure_clause_for_db(db) -> str:
     return erasure_clause() if any(
         dict(r).get("name") == "projection_tombstones" for r in rows
     ) else ""
+
+
+def erasure_endpoint_clause(conn: sqlite3.Connection, edge: str, column: str, fact: str) -> str:
+    """Use the canonical owner; a deleted endpoint still has its tombstone.
+
+    Fact IDs are globally unique. When the canonical row is gone, any surviving
+    tombstone for that ID fences the endpoint, including a cross-profile edge.
+    """
+    if not has_tombstones(conn):
+        return ""
+    return (
+        " AND NOT EXISTS (SELECT 1 FROM projection_tombstones pt"
+        f" WHERE pt.fact_id = {edge}.{column}"
+        f" AND ({fact}.profile_id IS NULL OR pt.profile_id = {fact}.profile_id))"
+    )
+
+
+def memory_erasure_clause_for_db(db, prefix: str = "memories") -> str:
+    """The source predicate through read-only SQL, without taking the writer lock."""
+    probe = getattr(type(db), "_has_projection_tombstones_table", None)
+    if callable(probe):
+        present = probe(db)
+    else:
+        rows = db.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                          "AND name='projection_tombstones'")
+        present = any(dict(r).get("name") == "projection_tombstones" for r in rows)
+    return _memory_clause(prefix) if present else ""

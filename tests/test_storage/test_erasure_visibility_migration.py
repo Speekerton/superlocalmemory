@@ -14,6 +14,9 @@ def conn():
                  'memory_id TEXT, created_at REAL, PRIMARY KEY(profile_id,fact_id))')
     conn.execute('CREATE TABLE fact_search_changes(seq INTEGER PRIMARY KEY AUTOINCREMENT,'
                  'profile_id TEXT,fact_id TEXT,what TEXT)')
+    conn.execute('CREATE TABLE atomic_facts(profile_id TEXT, fact_id TEXT)')
+    conn.executemany('INSERT INTO atomic_facts VALUES (?,?)', [('a','f'),('b','g')])
+    conn.commit()
     yield conn
     conn.close()
 
@@ -52,3 +55,14 @@ def test_schema_without_erasure_or_cache_tables_is_supported(conn):
     migration.apply(conn)
     assert migration.verify(conn)
     conn.execute("INSERT INTO projection_tombstones VALUES ('a','f','m')")
+
+
+def test_removing_a_deleted_facts_tombstone_does_not_recreate_erased_profile_log(conn):
+    migration.apply(conn)
+    conn.execute("INSERT INTO projection_tombstones VALUES ('a','f','m',1)")
+    conn.execute("DELETE FROM atomic_facts WHERE profile_id='a'")
+    conn.execute("DELETE FROM fact_search_changes WHERE profile_id='a'")
+    conn.execute("DELETE FROM projection_tombstones WHERE profile_id='a'")
+    rows = conn.execute(
+        "SELECT COUNT(*) FROM fact_search_changes WHERE profile_id='a'").fetchone()
+    assert rows[0] == 0

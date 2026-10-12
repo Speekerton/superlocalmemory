@@ -1347,7 +1347,9 @@ def get_memory_facts(request: Request, memory_id: str):
         original = mem_map.get(memory_id, "")
         facts = engine._db.get_facts_by_memory_id(memory_id, active_profile)
         if memory_id not in mem_map and not facts:
-            raise HTTPException(status_code=404, detail="Memory not found")
+            probe = getattr(type(engine._db), "is_memory_erasing", None)
+            if callable(probe) and probe(engine._db, memory_id, active_profile):
+                raise HTTPException(status_code=404, detail="Memory not found")
         fact_list = [
             {
                 "fact_id": f.fact_id,

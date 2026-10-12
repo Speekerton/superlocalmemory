@@ -792,6 +792,8 @@ for structured output.
 slm decay                   # Preview Ebbinghaus zone transitions
 slm decay --execute         # Apply them
 slm quantize --execute      # Apply embedding precision changes
+slm quantize --repair-sketches           # Preview QJL sketch repairs only
+slm quantize --repair-sketches --execute # Repair sketches without precision changes
 slm consolidate --cognitive # Include CCQ cognitive consolidation
 slm consolidate --dry-run
 slm soft-prompts            # List auto-learned soft prompts
@@ -799,6 +801,22 @@ slm soft-prompts            # List auto-learned soft prompts
 
 `decay`, `quantize`, `consolidate` and `soft-prompts` accept `--profile` and
 `--json`.
+
+`quantize --repair-sketches` repairs legacy or incompatible QJL sketches from
+retained original vectors. It preserves canonical vectors, base quantized bytes,
+bit widths and lifecycle state, and starts no embedding model. The default is a
+read-only preview; add `--execute` to apply repairs. Rows without usable original
+vectors are reported as needing re-embedding. Repeating the repair skips sketches
+that are already compatible.
+Repair uses the existing rotation matrix, including a legacy polar matrix when
+appropriate. If that matrix is missing or incompatible, restore it from backup
+before applying repairs.
+
+The full `quantize --execute` cycle also changes precision according to retention.
+Before applying, it prints preview counts for sketch repairs, precision downgrades,
+precision upgrades and forgotten-state transitions (whose vectors are kept).
+Counts can change if memories change concurrently. With `--json`, the preview is
+printed to stderr before execution and included as `data.plan` in the final JSON.
 
 ---
 

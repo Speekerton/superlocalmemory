@@ -5129,6 +5129,11 @@ def cmd_decay(args: Namespace) -> None:
 
 def cmd_quantize(args: Namespace) -> None:
     """Run EAP embedding quantization cycle."""
+    if getattr(args, "repair_sketches", False):
+        from superlocalmemory.cli.quantize_repair import cmd_repair_sketches
+
+        cmd_repair_sketches(args)
+        return
     from dataclasses import replace
 
     from superlocalmemory.core.admission import gate_cli_mutation
@@ -5166,6 +5171,14 @@ def cmd_quantize(args: Namespace) -> None:
         scheduler = EAPScheduler(
             engine._db, ebbinghaus, qstore, config.quantization,
         )
+        plan = scheduler.run_eap_cycle(pid, dry_run=True) if not dry_run else None
+        if plan is not None:
+            from superlocalmemory.cli.quantize_repair import print_plan
+
+            print_plan(plan, file=sys.stderr if use_json else None)
+            if plan.get("errors") or plan.get("repair_errors"):
+                raise RuntimeError(
+                    "Quantization preview failed; nothing was applied. Run slm doctor.")
         result = scheduler.run_eap_cycle(pid, dry_run=dry_run)
     except Exception as exc:
         if use_json:
@@ -5176,7 +5189,7 @@ def cmd_quantize(args: Namespace) -> None:
 
     if use_json:
         from superlocalmemory.cli.json_output import json_print
-        json_print("quantize", data={"dry_run": dry_run, **result},
+        json_print("quantize", data={"dry_run": dry_run, "plan": plan, **result},
                    next_actions=[
                        {"command": "slm quantize --execute --json", "description": "Apply changes"},
                        {"command": "slm status --json", "description": "Check status"},

@@ -313,3 +313,8 @@ def test_a_recall_with_a_question_vector_embeds_the_probes_once(monkeypatch) -> 
     monkeypatch.setattr(hb, "_LAST_LAZY_WARM", [0.0])
     eng._attach_evidence("no vector", [], {}, "default")
     assert calls == ["E"]  # no question vector: the embedder is not ready
+
+
+def test_at_most_twelve_words_are_looked_up_as_orphans() -> None:
+    words = [f"word{i}x" for i in range(30)]
+    assert len(ef.countable_terms(words)) == ef.MAX_COUNTABLE == 12

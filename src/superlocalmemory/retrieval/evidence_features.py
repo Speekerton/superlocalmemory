@@ -203,12 +203,16 @@ def _spaced_script(term: str) -> bool:
     return not any(lo <= ord(ch) <= hi for ch in term for lo, hi in _UNSPACED)
 
 
+#: Most subject words judged per question (each is one keyword-index lookup).
+MAX_COUNTABLE = 12
+
+
 def countable_terms(terms: Sequence[str]) -> list[str]:
     """The question terms judged for ``orphan_share``: terms of three or more
     characters, in a script written with spaces, that name a subject rather
     than frame the question."""
     return [t for t in terms if len(t) >= _RARE_MIN_LEN and t not in _FRAME_WORDS
-            and _spaced_script(t)]
+            and _spaced_script(t)][:MAX_COUNTABLE]
 
 
 def orphan_share(countable: Sequence[str], in_store: set[str]) -> float | None:

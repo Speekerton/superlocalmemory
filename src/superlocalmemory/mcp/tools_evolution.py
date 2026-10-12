@@ -92,7 +92,12 @@ def register_evolution_tools(server, get_engine: Callable) -> None:
                 evolution = _EvoCfg()
 
             db_path = str(state_path("memory.db"))
-            evolver = SkillEvolver(db_path, _Cfg())
+            from superlocalmemory.evolution.workspace_artifacts import workspace_activator
+
+            engine = get_engine()
+            profile_id = engine.profile_id if engine else "default"
+            activator = workspace_activator(state_path("memory.db").parent, profile_id)
+            evolver = SkillEvolver(db_path, _Cfg(), profile_id=profile_id, activator=activator)
 
             # Build candidate from manual trigger
             evidence = (reason,) if reason else ("Manual evolution trigger via MCP",)
@@ -105,9 +110,7 @@ def register_evolution_tools(server, get_engine: Callable) -> None:
                 invocation_count=0,
             )
 
-            # Process through the pipeline
-            engine = get_engine()
-            profile_id = engine.profile_id if engine else "default"
+            # Process through the pipeline using the same workspace as its artifacts.
 
             evolver._store.reset_cycle(profile_id)
             # audit-10 fix: go through evolve_candidate so the manual/MCP path

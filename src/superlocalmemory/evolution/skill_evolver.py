@@ -564,7 +564,8 @@ class SkillEvolver:
                 record_id, profile_id,
                 EvolutionStatus.APPROVED, EvolutionStatus.ACTIVE,
                 actor_id=actor_id,
-                metadata={"live_path": activation_result.get("live_path", "")},
+                metadata={"live_path": activation_result.get("live_path", ""),
+                          "installation_wide": bool(getattr(activator, "_installation_wide", True))},
             )
             self._audit.log(
                 operation="skill_activation",

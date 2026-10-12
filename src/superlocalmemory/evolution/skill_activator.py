@@ -62,7 +62,9 @@ class SkillActivator:
         live_root: Path | None = None,
         backup_root: Path | None = None,
         quarantine_root: Path | None = None,
+        installation_wide: bool = True,
     ) -> None:
+        self._installation_wide = installation_wide
         self._live_root = live_root or LIVE_SKILLS_ROOT
         self._backup_root = backup_root or BACKUP_ROOT
         self._quarantine_root = quarantine_root or QUARANTINE_ROOT

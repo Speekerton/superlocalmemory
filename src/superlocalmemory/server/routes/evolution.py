@@ -43,22 +43,12 @@ def _require_manage(request: Request, *, installation_wide: bool = True) -> None
 
 
 def _activator(installation_wide: bool, quarantine_dir_name: str = ""):
-    """Select the activation destination and the workspace's quarantined source."""
-    import hashlib
+    """Select the destination and verified source for this workspace."""
+    from superlocalmemory.evolution.workspace_artifacts import workspace_activator
 
-    from superlocalmemory.evolution.skill_activator import SkillActivator
-
-    key = hashlib.sha256(get_active_profile().encode("utf-8")).hexdigest()
-    root = MEMORY_DIR / "workspace_skills" / key
-    quarantine = root / "quarantine"
-    if quarantine_dir_name and not (quarantine / quarantine_dir_name / "SKILL.md").is_file():
-        # Older workspace candidates lived in the shared quarantine. Their
-        # record remains workspace-scoped; the activator validates containment.
-        quarantine = MEMORY_DIR / "quarantine" / "skills"
-    if installation_wide:
-        return SkillActivator(quarantine_root=quarantine)
-    return SkillActivator(live_root=root / "skills", backup_root=root / "backups",
-                          quarantine_root=quarantine)
+    return workspace_activator(MEMORY_DIR, get_active_profile(),
+                               installation_wide=installation_wide,
+                               quarantine_dir_name=quarantine_dir_name)
 
 
 def _candidate_source(store, record, profile_id: str):

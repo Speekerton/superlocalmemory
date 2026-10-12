@@ -1,6 +1,6 @@
 # Pictures and documents: requirements and limits
 
-Pictures and documents are off until you turn them on, in the dashboard (Settings, Images & documents) or with `slm media enable`. Turning them on downloads about 1.5 GB of models and tools into SLM's own folder. It does not change your existing memories or their embeddings: pictures and PDF pages are added next to them.
+Pictures and documents are off until you turn them on, in the dashboard (the Documents & Images pane) or with `slm media enable`. Turning them on downloads about 1.5 GB of models and tools into SLM's own folder. It does not change your existing memories or their embeddings: pictures and PDF pages are added next to them.
 
 The **Upgrade memory engine (preview)** card is a separate, optional step. It re-reads every memory with the model that also reads pictures, so text and pictures share one search space. See [Upgrading the memory engine](#upgrading-the-memory-engine-preview) below.
 

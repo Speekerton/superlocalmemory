@@ -88,6 +88,8 @@ response = engine.recall(
     include_unknown=False,
     answer_check=None,
     facets=None,
+    show_weak=False,
+    include_related=False,
 )
 ```
 
@@ -98,6 +100,14 @@ moving the active one. The time arguments behave as in
 `"no_reorder"`. The narrowing filters of the CLI and MCP surfaces (`project`, `saved_by`, `about`,
 `kind`, `tags`) reach the engine as one `facets` object
 (`superlocalmemory.retrieval.facets.Facets`).
+
+The Python API returns the engine's answer as it is: when no memory supports the question,
+`response.results` is empty and `response.abstention_note` is "That isn't in SuperLocalMemory.".
+`show_weak=True` keeps the weak matches (each `result.weak`), and `include_related=True` returns up
+to three close memories with `result.tier == "related"` when the question is real but not answered
+exactly. `response.support_tier` is `supported`, `related` or `none`, and `response.warming_up` is true
+while models are still loading. Depth and `max_tokens` are applied by the daemon, MCP and CLI
+surfaces on top of this response ([Recall](recall.md#layered-recall)).
 
 ## Retrieval Score Contract v2
 
@@ -124,7 +134,8 @@ assert response.calibration_id is None
 assert response.answer_confidence is None
 ```
 
-Do not transform retrieval scores into answer probability. See
+Every result also carries `support` (the answer-support probability), `weak` and `tier`. Do not
+transform retrieval scores into answer probability. See
 [Retrieval Score Contract v2](retrieval-score-contract.md) for abstention and
 calibration semantics.
 
@@ -132,7 +143,7 @@ calibration semantics.
 
 The current engine can run five candidate producers when their dependencies
 are healthy: dense semantic, BM25 lexical, temporal, Hopfield associative, and
-spreading activation. Entity-graph information can enhance scores after fusion
+spreading activation (plus a picture channel when pictures and documents are on). Entity-graph information can enhance scores after fusion
 but does not create an independent candidate. Optional reranking and adaptive
 learning can change ranking utility.
 

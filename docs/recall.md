@@ -166,7 +166,7 @@ slm trace "how do we roll back the API"
 
 | Field | Meaning |
 |---|---|
-| `tier` | `supported`, `related` or `none`: see [When memory cannot answer](#when-memory-cannot-answer) |
+| `tier` | `supported`, `related` or `none`: see [When memory cannot answer](#when-memory-cannot-answer). Empty when recall found no candidates to assess (the sentence in `abstention_note` still says what to tell the person) |
 | `support` | `status`, `best`, `threshold`, `version`, `weak_shown` and `tier` of the support decision; `null` when it did not run (context loading, for example) |
 | `abstention_note` | The plain sentence for the tier. Show it to the person; do not invent an answer when it says "That isn't in SuperLocalMemory." |
 | `warming_up`, `status_note` | True while SLM is still loading, with the sentence to show. Do not conclude the memory is empty |

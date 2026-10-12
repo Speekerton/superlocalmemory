@@ -204,7 +204,7 @@ closest matches anyway: the note is printed first, followed by the weak matches
 (in `--json` each carries `weak: true`). A search that found no candidates at
 all prints `Nothing in memory matched this question.` instead. Memories you
 pinned always show, and a recall you narrowed on purpose (a project, kind, tag,
-person or agent filter, or a time filter) keeps its results. See [Recall](recall.md#when-nothing-supports-the-question).
+person or agent filter, or a time filter) keeps its results. See [Recall](recall.md#when-memory-cannot-answer).
 
 When [Answer check](answer-check.md) has a verdict, output gets one extra line,
 for example `Answer check: none of these memories answers the question

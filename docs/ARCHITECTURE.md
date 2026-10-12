@@ -2,6 +2,12 @@
 
 A high-level overview of how SuperLocalMemory stores, organizes, and retrieves your memories.
 
+## The whole picture
+
+![SuperLocalMemory architecture: agents and apps reach one daemon through MCP, the CLI, the REST API and the optional Web access connector; recall runs channels, fusion and reranking, the answer-support gate, the answer check and layered output; saves are admission-checked; SQLite is canonical with LanceDB and CozoDB projections and a store for pictures and documents; Memory health, backfill and consolidation run in the background; roles, audit and erasure govern every call; SLM-Mesh connects agents and allowed web apps](assets/slm-architecture.png)
+
+The diagram is generated from `docs/assets/slm-architecture.mmd`. The sections below are the reference for each row.
+
 ## Local core and optional Web access
 
 ![Integrated SLM architecture: local memory capabilities, Laya/Jev answer checks and optional web connection](remote-access/assets/slm-integrated-architecture.svg)
@@ -94,6 +100,7 @@ then fusion, optional reranking, and graph-based score enhancement.
 | **Temporal** | Matches based on time references and event ordering | "What did we decide last Friday?" or "Changes since the sprint started" |
 | **Hopfield** | Associative retrieval over stored representations | Related decisions and linked technical context |
 | **Spreading activation** | Traverses linked graph neighborhoods | Multi-hop related evidence |
+| **Pictures** | Matches your words to saved pictures and PDF pages by what they show and the text read from them (only when pictures and documents are on) | "The slide with the quarterly numbers" |
 
 ### Fusion and Ranking
 
@@ -101,10 +108,37 @@ then fusion, optional reranking, and graph-based score enhancement.
 2. Reciprocal Rank Fusion combines the ranked lists.
 3. Optional rerankers refine the leading candidates when enabled.
 4. Graph-derived evidence can modify later scoring without becoming a sixth producer.
-5. The response returns the final ranked evidence and measured runtime fields.
+5. The **answer-support gate** scores each memory on several signals together and places the
+   recall in one of three tiers: supported, closest memories, or "That isn't in
+   SuperLocalMemory." It reads the original question, never a rewrite. See
+   [Recall](recall.md#when-memory-cannot-answer).
+6. The **answer check** (Laya on-device, or Jev online if you chose it) judges whether the top
+   results answer the question; its verdict is one input to the gate. It has its own time budget
+   inside the recall ceiling.
+7. **Layered output** returns each memory at depth 0 (ids and previews), 1 (full facts) or 2 (with
+   source, neighbours and the replacing correction), within a hard `max_tokens` cap; `expand`
+   drills into one result. While models are still loading, recall says it is warming up and shows
+   what it found instead of claiming the memory is empty.
+8. The response returns the final ranked evidence and measured runtime fields.
 
 No single producer is guaranteed to run in every mode. The runtime degrades to
 the indexes that are healthy and reports its result provenance.
+
+## Background work
+
+The daemon does the work that must not slow a save or a recall in the background, and it stands aside
+for the foreground. **Memory health** describes older memories while the computer is idle (it only
+adds, and anything that deletes or moves something waits for your Fix; see
+[Memory health](memory-health.md)). A backfill measures each memory's baseline for the
+answer-support gate. Consolidation and lifecycle maintenance run after the daemon has been idle for a
+while, and answer-check calibration runs only when you start it. The memory graph is built when the
+daemon starts, never on a recall's time.
+
+## Pictures and documents
+
+When turned on, pictures and PDF pages are stored in their own database (`media.db`) with the
+original files beside it, embedded by an on-device picture model and read by OCR. Text memory is
+unchanged. See [Pictures and documents](pictures-and-documents.md).
 
 ## Safe context injection
 
@@ -182,7 +216,7 @@ Nine Python packages implement each framework's native memory interface (LangGra
 SuperLocalMemory provides controls that may support a deployment's privacy and compliance program. It is not a legal certification. Operators must assess the configured system, use case, data flows, and surrounding services.
 
 - **Local core path.** Mode A can keep memory content in the configured local data root during core operations.
-- **Erasure commands.** `slm forget` and `slm delete` remove selected local records, and `slm gdpr erase` removes a whole profile. Backups, exports, caches, derived indexes, and provider logs require separate verification.
+- **Erasure commands.** `slm forget` and `slm delete` remove selected local records, and `slm gdpr erase` removes a whole profile, including the derived copies SLM controls (queued saves, caches, the vector index, picture mirrors) and reports what remains. Backups carry an erasure obligation that is replayed on restore; exports and provider logs require separate verification. See [Compliance](compliance.md#what-an-erasure-removes-and-what-it-says-it-did).
 - **Auditability.** Retrieval and lifecycle surfaces expose local records and diagnostics, subject to release-specific verification.
 - **Policy controls.** Provenance, retention, and access-policy features are available for operator configuration.
 

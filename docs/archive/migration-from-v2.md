@@ -16,7 +16,7 @@ rollback caveats below. There is no `slm migrate --dry-run`.
 > Every update that changes the store first takes a verified copy, so you can go
 > back to it with `slm db restore`, and `slm db prepare-downgrade` readies the
 > store for the previous release when that is safe. See [Restore points and
-> downgrades](restore-points.md). Otherwise, to revert an upgrade, restore a
+> downgrades](../restore-points.md). Otherwise, to revert an upgrade, restore a
 > **verified pre-upgrade complete backup of the whole data root**: `slm serve stop`
 > first so the WAL checkpoints, then copy all present `*.db` files with their
 > `-wal` and `-shm` sidecars and `lance/` if present.
@@ -166,7 +166,7 @@ guarantee a coherent cross-store set on the legacy per-file path
 The additive schema migrations cannot be rolled back with a migrate flag: there is no
 `slm db migrate --rollback`, and `slm migrate --rollback` is for the V2 migrator
 only. To revert, use a restore point (`slm db restore`, see [Restore points and
-downgrades](restore-points.md)) or restore a verified **pre-upgrade complete
+downgrades](../restore-points.md)) or restore a verified **pre-upgrade complete
 backup of the whole data root** (stop the daemon first — `slm serve stop` — and include
 WAL/SHM sidecars plus `lance/` if present). Copying a live `memory.db` alone
 while the daemon runs is unsafe and does not guarantee a coherent restore set.

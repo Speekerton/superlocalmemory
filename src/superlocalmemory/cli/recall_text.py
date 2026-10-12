@@ -57,10 +57,13 @@ def tag_line(result: dict) -> str:
 
 
 def result_line(position: int, item: dict) -> str:
-    """One recalled memory; a weak match (shown on request) says so."""
+    """One recalled memory; one that does not answer the question says which
+    kind it is: [related] (a close memory of a real question) or [weak]."""
     score = item.get("score") or 0  # a present-but-null score prints as 0
-    weak = " [weak]" if item.get("weak") else ""
-    return f"  {position}. [{score:.2f}]{weak} {item.get('content', '')}"
+    tier = item.get("tier") or ""
+    label = (" [related]" if tier == "related"
+             else " [weak]" if item.get("weak") or tier == "weak" else "")
+    return f"  {position}. [{score:.2f}]{label} {item.get('content', '')}"
 
 
 def empty_result_line(result: dict) -> str:

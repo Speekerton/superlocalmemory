@@ -122,6 +122,8 @@ class RecallCall:
     include_evidence: bool = False
     #: 4.1.25: the weak matches of a recall that abstains, labelled ``weak``.
     show_weak: bool = False
+    #: 4.1.25: up to three close memories of a real question, labelled related.
+    include_related: bool = False
     #: 4.1.25: the monotonic instant the daemon stops waiting for the engine;
     #: the answer check, which has its own budget, never runs past it.
     answer_deadline: float | None = None
@@ -182,6 +184,7 @@ def _engine_call(engine: Any, call: RecallCall) -> Any:
             **({"facets": call.facets} if call.facets is not None else {}),
             **({"answer_check": "no_reorder"} if call.no_reorder else {}),
             **({"show_weak": True} if call.show_weak else {}),
+            **({"include_related": True} if call.include_related else {}),
         )
 
 

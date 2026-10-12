@@ -68,7 +68,7 @@
   }
 
   // Normalize /api/search result → memory shape (fact_id→id, score→importance)
-  function _normSearch(r) { return {id:r.fact_id||r.memory_id||'',content:r.content||'',category:r.category||'semantic',project_name:r.project_name||'',importance:r.score||r.confidence||0,created_at:r.created_at||'',access_count:r.access_count||0}; }
+  function _normSearch(r) { var lbl = r.tier === 'related' ? '[related] ' : (r.weak ? '[weak] ' : ''); return {id:r.fact_id||r.memory_id||'',content:lbl+(r.content||''),category:r.category||'semantic',project_name:r.project_name||'',importance:r.score||r.confidence||0,created_at:r.created_at||'',access_count:r.access_count||0}; }
   // shared_with is stored as a JSON array string; show it comma-separated.
   function _sharedToStr(v) {
     if (!v) return '';
@@ -273,6 +273,10 @@
           'style="flex:1;padding:8px 12px;border:1px solid var(--border);' +
           'border-radius:var(--r-md);background:var(--card-2);color:var(--fg);' +
           'font-size:13.5px;outline:none">' +
+        '<label title="When nothing answers the search exactly, list the closest matches anyway" ' +
+          'style="display:flex;gap:4px;align-items:center;font-size:12.5px;color:var(--fg-2);' +
+          'white-space:nowrap"><input type="checkbox" data-od-act="showweak">' +
+          'Show closest matches</label>' +
         '<select data-od-act="window" title="Limit search to a time window" ' +
           'style="padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-md);' +
           'background:var(--card-2);color:var(--fg);font-size:13px;outline:none">' +
@@ -629,7 +633,8 @@
         headers: { 'Content-Type': 'application/json' },
         slmInvalidatesCache: false,
         slmRequiresWriteAuth: false,
-        body: JSON.stringify({ query: q, limit: 50, window: _st.window || '' })
+        body: JSON.stringify({ query: q, limit: 50, window: _st.window || '',
+                               show_weak: !!_st.showWeak })
       }).then(function (r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();
@@ -638,6 +643,13 @@
         var mems = (d.results || []).map(_normSearch);
         _st = Object.assign({}, _st, { memories: mems, total: mems.length });
         _renderTable(id, { memories: mems, total: mems.length, limit: mems.length, offset: 0 });
+        // 4.1.25: why nothing (or only close matches) came back, in plain words.
+        var note = d.abstention_note || '';
+        var nw = document.getElementById(id + '-tbl-wrap');
+        if (note && nw) {
+          nw.insertAdjacentHTML('afterbegin', '<div class="card-pad" style="color:var(--fg-2);' +
+            'font-size:13px;padding:10px 12px">' + _esc(note) + '</div>');
+        }
       }).catch(function (err) {
         if (_st.rootId !== id || _st.requestSeq !== requestSeq) return;
         var w = document.getElementById(id + '-tbl-wrap');
@@ -1296,6 +1308,11 @@
 
     // Search — input event
     container.addEventListener('change', function (e) {
+      if (e.target.dataset.odAct === 'showweak') {
+        _st = Object.assign({}, _st, { showWeak: !!e.target.checked });
+        var sq = (_st.searchQ || '').trim();
+        if (sq) _doSearch(id, sq);
+      }
       if (e.target.dataset.odAct === 'window') {
         _st = Object.assign({}, _st, { window: e.target.value || '' });
         var wq = (_st.searchQ || '').trim();

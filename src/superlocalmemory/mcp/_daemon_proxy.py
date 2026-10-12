@@ -100,6 +100,7 @@ class DaemonPoolProxy:
         budget_s: float | None = None,
         evidence: bool = False,
         show_weak: bool = False,
+        include_related: bool = False,
     ) -> dict[str, Any]:
         if self._unavailable:
             return self._unavailable_response()
@@ -166,6 +167,8 @@ class DaemonPoolProxy:
         # 4.1.25: the weak matches of a recall that abstains; sent only when asked.
         if show_weak:
             _params["show_weak"] = "true"
+        if include_related:
+            _params["include_related"] = "true"
         if known_as_of:
             _params["known_as_of"] = known_as_of
         if valid_at:

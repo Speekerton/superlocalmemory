@@ -2143,6 +2143,9 @@ def cmd_recall(args: Namespace) -> None:
             unknown_qs = "&include_unknown=true" if getattr(args, "include_unknown", False) else ""
             if getattr(args, "show_weak", False):
                 unknown_qs += "&show_weak=true"
+            # A person searching: close memories of a real question are shown,
+            # labelled related (agents opt in instead).
+            unknown_qs += "&include_related=true"
             facet_qs = "".join(
                 f"&{name}={quote(str(value).strip())}"
                 for name, value in (("project", getattr(args, "project", "")),

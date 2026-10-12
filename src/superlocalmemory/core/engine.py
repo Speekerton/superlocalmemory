@@ -1108,6 +1108,7 @@ class MemoryEngine:
         answer_check: str | None = None,
         facets: Any = None,
         show_weak: bool = False,
+        include_related: bool = False,
     ) -> RecallResponse:
         """Recall relevant facts for a query.
 
@@ -1195,6 +1196,7 @@ class MemoryEngine:
                 facets=facets,
                 query_id=answer_id,
                 show_weak=show_weak,
+                include_related=include_related,
             )
         except Exception:
             # Diagnostics are intentionally not recorded here.  A recall is a

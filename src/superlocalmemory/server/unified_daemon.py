@@ -5032,6 +5032,9 @@ def _register_daemon_routes(application: FastAPI) -> None:
         # 4.1.25: when nothing supports the question, return the weak matches
         # (each labelled ``weak``) instead of nothing.
         show_weak: bool = False,
+        # 4.1.25: up to three close memories of a real question (people's
+        # surfaces send it; agents opt in).
+        include_related: bool = False,
         # 4.1.18: "skip" for a recall that is not a question (context loading,
         # a per-prompt hook): never judged, nothing sent or billed.
         # "no_reorder": the answer check without the opt-in reorder (the loop
@@ -5219,7 +5222,7 @@ def _register_daemon_routes(application: FastAPI) -> None:
             skip_answer_check=_skip_check, no_reorder=_check_request == "no_reorder",
             full=full, include_source=include_source,
             include_marker=bool(session_id), include_evidence=bool(evidence),
-            show_weak=bool(show_weak),
+            show_weak=bool(show_weak), include_related=bool(include_related),
             budget_s=parse_budget_s(budget_s),
             caller_view=parse_view(caller_view),
         )

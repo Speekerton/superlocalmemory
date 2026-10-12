@@ -989,6 +989,10 @@ async def search_memories(request: Request, body: SearchRequest):
                 lambda: call_as_dashboard(
                     engine.recall, body.query, limit=_search_limit, fast=True,
                     window=_window or None,
+                    # 4.1.25: a person searching sees close memories of a real
+                    # question (labelled related); the toggle shows every weak one.
+                    include_related=True,
+                    **({"show_weak": True} if body.show_weak else {}),
                     # Name the surface. A recall with no name leaves no record
                     # an outcome can be matched to, and a search typed into the
                     # dashboard is one continuous thread of use, not a

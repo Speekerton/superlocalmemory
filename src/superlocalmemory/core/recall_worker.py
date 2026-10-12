@@ -68,6 +68,7 @@ def _handle_recall(
     valid_at: str | None = None,
     include_unknown: bool = False,
     show_weak: bool = False,
+    include_related: bool = False,
 ) -> dict:
     engine = _get_engine()
     # v3.6.15 multi-scope: None flags let engine.recall resolve the configured
@@ -82,6 +83,7 @@ def _handle_recall(
         valid_at=valid_at or None,
         include_unknown=include_unknown,
         **({"show_weak": True} if show_weak else {}),
+        **({"include_related": True} if include_related else {}),
     )
 
     # Batch-fetch original memory text for all results. Retrieval already
@@ -369,6 +371,7 @@ def _worker_main() -> None:
                     valid_at=req.get("valid_at"),
                     include_unknown=bool(req.get("include_unknown", False)),
                     show_weak=bool(req.get("show_weak", False)),
+                    include_related=bool(req.get("include_related", False)),
                 )
                 _respond(result)
             elif cmd == "store":

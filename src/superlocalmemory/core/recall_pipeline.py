@@ -1294,13 +1294,16 @@ def run_recall(
     facets: Any = None,
     query_id: str | None = None,
     show_weak: bool = False,
+    include_related: bool = False,
 ) -> RecallResponse:
     """Recall relevant facts for a query.
 
     4.1.25: when nothing in memory supports the question (the answer-support
     gate, ``core/support_stage``), recall returns no results and a plain
     ``abstention_note``; ``show_weak=True`` returns the weak matches instead,
-    each labelled ``weak``. Pinned memories and explicit filters keep their
+    each labelled ``weak``; ``include_related=True`` shows up to three close
+    memories of a real question, labelled ``related`` (people searching get
+    them; agents ask). Pinned memories and explicit filters keep their
     existing behaviour.
 
     ``query_id`` is this recall's one identity. The engine allocates it and
@@ -1584,6 +1587,7 @@ def run_recall(
         metadata=_metadata_reader(db)) if support_stage.enabled(config) else None
     finalize_score_contract(
         response, verdict=outcome.verdict, support=support, show_weak=show_weak,
+        include_related=include_related,
         keep_results=support_stage.explicit_filter(
             facets, window, as_of=as_of, known_as_of=known_as_of, valid_at=valid_at))
     response.answer_check_status = outcome.status

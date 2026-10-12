@@ -540,12 +540,17 @@ def register_core_tools(server, get_engine: Callable) -> None:
         tags_match: str = "all",
         project_strict: bool = False,
         show_weak: bool = False,
+        include_related: bool = False,
     ) -> dict:
         """Search memories through hybrid retrieval, RRF fusion, and reranking.
 
         When nothing in memory supports the question, recall returns NO results
         and ``abstention_note`` says so in plain words ("Nothing in memory
         supports this question."). Do not invent an answer then. Pass
+        ``include_related=true`` to see up to three close memories when the
+        question is real but not answered exactly ("I don't have this exactly
+        -- here are the closest memories."), each labelled ``tier: related``.
+        "That isn't in SuperLocalMemory." means stop: do not invent. Pass
         ``show_weak=true`` to see the closest weak matches anyway; each is
         labelled ``weak: true``.
 
@@ -742,6 +747,7 @@ def register_core_tools(server, get_engine: Callable) -> None:
                     **({"budget_s": _budget_s} if _budget_s is not None else {}),
                     # 4.1.25: only when asked, so every other call is unchanged.
                     **({"show_weak": True} if show_weak else {}),
+                    **({"include_related": True} if include_related else {}),
                 )
 
             result = await asyncio.to_thread(

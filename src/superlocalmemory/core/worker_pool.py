@@ -76,6 +76,7 @@ class WorkerPool:
         valid_at: str | None = None,
         include_unknown: bool = False,
         show_weak: bool = False,
+        include_related: bool = False,
     ) -> dict:
         """Run recall in worker subprocess. Returns result dict.
 
@@ -111,6 +112,8 @@ class WorkerPool:
             msg["include_unknown"] = True
         if show_weak:
             msg["show_weak"] = True
+        if include_related:
+            msg["include_related"] = True
         return self._send(msg)
 
     def store(self, content: str, metadata: dict | None = None) -> dict:

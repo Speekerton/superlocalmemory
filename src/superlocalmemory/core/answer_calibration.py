@@ -28,7 +28,8 @@ def write_calibration(root: Path, entry: dict, semantic: dict | None = None, *,
         if expected_stamp is not None and file_stamp(root) != expected_stamp:
             raise ValueError("Calibration file changed during measurement; newer settings kept")
         previous = (
-            json.loads(path.read_text()) if path.exists() else {"schema": SCHEMA, "entries": []}
+            json.loads(path.read_text(encoding="utf-8")) if path.exists()
+            else {"schema": SCHEMA, "entries": []}
         )
         entries = [
             e

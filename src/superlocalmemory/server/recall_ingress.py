@@ -18,12 +18,25 @@ def remaining_deadline(budget):
     return min(deadline, ingress - 0.01) if ingress is not None else deadline
 
 
+def fallback_deadline(public_deadline, floor_s):
+    """When the keyword fallback must answer by: the public deadline, or later
+    when that came sooner than the fallback's floor (a shortened budget), yet
+    never past the HTTP request's own clock."""
+    floor = asyncio.get_running_loop().time() + floor_s
+    ingress = _DEADLINE.get()
+    if ingress is not None:
+        floor = min(floor, ingress - 0.01)
+    return max(public_deadline, floor)
+
+
 async def serve(app, state, scope, receive, send):
     from starlette.responses import JSONResponse
 
-    from superlocalmemory.server.recall_core import recall_budget_s
+    from superlocalmemory.server.recall_core import RECALL_BUDGET_FLOOR_S, recall_budget_s
 
-    deadline = remaining_deadline(recall_budget_s())
+    # A budget shortened below the floor gives up on full recall sooner; the
+    # keyword fallback that answers then still needs the floor (recall_core).
+    deadline = remaining_deadline(max(recall_budget_s(), RECALL_BUDGET_FLOOR_S))
     token = _DEADLINE.set(deadline)
     messages = []
 

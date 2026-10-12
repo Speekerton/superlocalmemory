@@ -356,10 +356,12 @@ def _minimal_envelope(call, response, snapshot):
 
 async def _bounded_fallback(engine, call, app_state, deadline, snapshot, hold, runtime):
     from superlocalmemory.server.recall_deadline import submit, timed_out, unjudged, wait_until
+    from superlocalmemory.server.recall_ingress import fallback_deadline
 
     future = submit(asyncio.get_running_loop(), hold, runtime, app_state, engine,
                     _fallback, engine, call, app_state)
-    result = await wait_until(future, deadline)
+    # The fallback keeps its floor even after a budget shortened below it.
+    result = await wait_until(future, fallback_deadline(deadline, RECALL_BUDGET_FLOOR_S))
     return unjudged(result) if result is not None else timed_out(call, snapshot)
 
 

@@ -125,6 +125,9 @@ def test_executor_work_is_counted_and_transition_leased_until_it_finishes(monkey
 
     monkeypatch.setattr(profile_runtime, "get_profile_runtime", lambda state: runtime)
     monkeypatch.setattr(recall_core, "effective_budget_s", lambda call: 0.1)
+    # The fallback's own floor is cut short here too: the subject is the lease
+    # a still-running fallback keeps after the answer has gone.
+    monkeypatch.setattr(recall_core, "RECALL_BUDGET_FLOOR_S", 0.1)
     monkeypatch.setattr(recall_core, "_engine_call", lambda *a: None)
     monkeypatch.setattr(recall_core, "_fallback", slow)
     engine = object()
@@ -158,3 +161,52 @@ def test_paused_background_work_does_not_refuse_foreground_recall(monkeypatch):
             app_state=SimpleNamespace(engine=engine))
         assert result == {'worked': True}
     asyncio.run(run())
+
+
+def test_the_keyword_fallback_keeps_its_floor_after_a_short_budget(monkeypatch):
+    """A budget shortened below the fallback's floor (SLM_SEARCH_RECALL_TIMEOUT_S,
+    a relay) gives up on full recall at that budget, but the keyword fallback,
+    with its source check, still gets the floor to answer."""
+    import time
+
+    from superlocalmemory.server import profile_runtime
+
+    async def run():
+        monkeypatch.setattr(recall_core, "effective_budget_s", lambda call: 0.05)
+        monkeypatch.setattr(
+            profile_runtime, "get_profile_runtime",
+            lambda state: SimpleNamespace(
+                snapshot=SimpleNamespace(profile_id="default", generation=1)))
+
+        def slow_engine(*a):
+            time.sleep(0.3)
+            return object()
+
+        def fallback(*a):
+            time.sleep(0.1)  # longer than the budget, well inside the floor
+            return {"results": [{"content": "checked source"}],
+                    "degraded_reason": "recall_budget_exceeded"}
+
+        monkeypatch.setattr(recall_core, "_engine_call", slow_engine)
+        monkeypatch.setattr(recall_core, "_fallback", fallback)
+        call = recall_core.RecallCall("a question?", 3, "", "test", True)
+        started = time.monotonic()
+        result = await recall_core.run_recall(object(), call, app_state=SimpleNamespace())
+        assert result["results"] == [{"content": "checked source"}]
+        assert time.monotonic() - started < recall_core.RECALL_BUDGET_FLOOR_S
+
+    asyncio.run(run())
+
+
+def test_the_http_clock_leaves_the_fallback_its_floor(monkeypatch):
+    from superlocalmemory.server import recall_ingress
+
+    monkeypatch.setenv("SLM_SEARCH_RECALL_TIMEOUT_S", "0.01")
+    seen = []
+
+    async def app(scope, receive, send):
+        seen.append(recall_ingress._DEADLINE.get() - asyncio.get_running_loop().time())
+
+    asyncio.run(recall_ingress.serve(app, None, {"type": "http", "path": "/recall"},
+                                     None, None))
+    assert seen and seen[0] > recall_core.RECALL_BUDGET_FLOOR_S - 0.1

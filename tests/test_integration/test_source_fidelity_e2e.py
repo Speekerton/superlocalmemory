@@ -119,8 +119,8 @@ class _StubModels(BaseHTTPRequestHandler):
                                  for i, t in enumerate(texts)]})
             return
         messages = request.get("messages") or []
-        user = request.get("prompt") or " ".join(
-            str(m.get("content", "")) for m in messages if m.get("role") == "user")
+        system = " ".join(str(m.get("content", "")) for m in messages if m.get("role") == "system")
+        user = " ".join(str(m.get("content", "")) for m in messages if m.get("role") == "user")
         answer = "[]"
         if "Extract 1-5 atomic statements supported by the source" in system:
             if "Kestrel" in user:
@@ -265,9 +265,8 @@ class TestModeBModelExtraction:
         withheld = [f for f in facts if f["quarantined"]]
         assert any(f["content"] == KESTREL for f in live), "the user's own words stay live"
         assert all(_no_invented_2004_date(f) for f in live), live
-        assert not withheld, "new extraction rejects unsupported facts before storage"
-        assert not any("June 1st, 2004" in f["content"] for f in facts)
-        assert all(_no_invented_2004_date(f) for f in facts)
+        assert {f["content"] for f in withheld} >= {"The recall happened on June 1st, 2004"}
+        assert all(f["unresolved_reason"].startswith("source_fidelity:") for f in withheld)
         assert any("2004.6 ms" in f["content"] for f in live if f["content"] != KESTREL), (
             "a faithful model fact is kept"
         )
@@ -286,7 +285,9 @@ class TestModeBModelExtraction:
             assert by_text[text]["quarantined"] == 1, text
             assert by_text[text]["unresolved_reason"].startswith("source_fidelity:")
         assert by_text["The team uses GitHub Actions"]["quarantined"] == 0
-        assert by_text[POLICY]["quarantined"] == 0, "the verbatim memory stays live"
+        assert by_text[POLICY]["quarantined"] == 0, "the verbatim memory is never withheld"
+
+        items = []
         for query in ("publish approval release owner", "ship iOS Android build order",
                       "team Jenkins GitHub Actions"):
             items += mode_b_daemon.recall(query, profile_id="default").get("results", [])
@@ -297,7 +298,7 @@ class TestModeBModelExtraction:
             assert not any(str(e).startswith("source_fidelity")
                            for e in seen[text].get("evidence_chain", [])), seen[text]
 
-    def test_pre_storage_rejection_leaves_no_pending_review(self, mode_b_daemon) -> None:
+    def test_withheld_and_unverified_facts_are_offered_for_review(self, mode_b_daemon) -> None:
         listing = _fidelity_listing(mode_b_daemon)
         withheld_ids = {f["fact_id"] for f in listing["withheld"]["facts"]}
         stored = _rows(mode_b_daemon, "SELECT fact_id FROM atomic_facts WHERE quarantined = 1")

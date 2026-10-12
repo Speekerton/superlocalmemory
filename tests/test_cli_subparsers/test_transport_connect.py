@@ -66,8 +66,8 @@ def test_default_transport_is_stdio(fake_home: Path) -> None:
     data = json.loads(config_path.read_text(encoding="utf-8"))
     block = data[desc.server_key]["superlocalmemory"]
     assert block["type"] == "stdio", f"Default transport changed: got {block!r}"
-    assert block["command"] == "slm"
-    assert block["args"] == ["mcp"]
+    assert block["command"] == sys.executable
+    assert block["args"] == ["-m", "superlocalmemory.cli", "mcp"]
 
 
 # ---------------------------------------------------------------------------

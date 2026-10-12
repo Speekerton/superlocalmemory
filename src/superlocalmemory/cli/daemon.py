@@ -43,6 +43,7 @@ from superlocalmemory.infra.data_root import (
     state_path,
 )
 from superlocalmemory.infra.instance_lock import instance_lock_is_held
+from superlocalmemory.cli.deployment import configured_port
 from superlocalmemory.infra.process_identity import (
     compare_start_tokens,
     process_start_token_for,
@@ -50,10 +51,7 @@ from superlocalmemory.infra.process_identity import (
 
 logger = logging.getLogger(__name__)
 
-try:
-    _DEFAULT_PORT = int(os.environ.get("SLM_DAEMON_PORT", "") or 8765)
-except ValueError:
-    _DEFAULT_PORT = 8765
+_DEFAULT_PORT = configured_port()
 _LEGACY_PORT = 8767   # backward-compat redirect
 _DEFAULT_IDLE_TIMEOUT = 0  # v3.4.3: 24/7 default (was 1800)
 _PID_FILE = None  # test-only override; runtime resolution stays dynamic
@@ -429,11 +427,11 @@ def _get_port() -> int:
     if descriptor is not None:
         return descriptor.port
     if descriptor_path().exists():
-        return _DEFAULT_PORT
+        return configured_port()
     legacy = _verified_legacy_health()
     if legacy is not None:
         return int(legacy["_legacy_port"])
-    return _DEFAULT_PORT
+    return configured_port()
 
 
 def _health_is_owned(health: dict, *, port: int | None = None) -> bool:
@@ -867,7 +865,7 @@ def _start_daemon_subprocess(*, port: int | None = None) -> bool:
     # 4.1.14 audit: bind the port ensure_daemon probed — probing a custom
     # port and then spawning on the default opened the browser on a port
     # with no daemon (or refused a start the probe had cleared).
-    _target_port = port if port is not None else _DEFAULT_PORT
+    _target_port = port if port is not None else configured_port()
     if _has_tcp_listener(_target_port):
         logger.warning("daemon port %d is already owned; refusing a second start", _target_port)
         return False

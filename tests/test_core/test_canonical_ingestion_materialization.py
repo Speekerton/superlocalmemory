@@ -1360,7 +1360,7 @@ def test_public_python_store_routes_through_canonical_ingestion_and_preserves_co
         session_date="2026-07-14",
         speaker="Dana",
         role="assistant",
-        require_complete=False,
+        require_complete=True,
         # Per-request profile routing (spec §4): the public entry forwards
         # its kwarg; None resolves to the engine's active profile.
         profile_id=None,

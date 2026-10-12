@@ -216,6 +216,7 @@ from superlocalmemory.mcp.profiles import (  # noqa: E402 (after env setups abov
     _PROFILE_MESH,
     _PROFILE_DEFINITIONS,
     _PROFILE_ALIASES,
+    _MEDIA_TOOLS,
 )
 
 _profile = _os_reg.environ.get("SLM_MCP_PROFILE", "").strip().lower()
@@ -266,6 +267,7 @@ class _FilteredServer:
     def __init__(self, real_server: SLMFastMCP, allowed: frozenset[str]) -> None:
         self._server = real_server
         self._allowed = allowed
+        real_server.configure_tool_surface(allowed)
 
     def tool(self, *args, **kwargs):
         def decorator(func):
@@ -293,10 +295,12 @@ elif _profile:
     _target = (
         server
         if _profile_allowed is None
-        else _FilteredServer(server, _profile_allowed)
+        else _FilteredServer(server, _profile_allowed | (
+            _MEDIA_TOOLS if _PROFILE_ALIASES.get(_profile, _profile) in {"full", "power"}
+            else frozenset()))
     )
 else:
-    _target = _FilteredServer(server, _ESSENTIAL_TOOLS)                          # default (unchanged)
+    _target = _FilteredServer(server, _ESSENTIAL_TOOLS | _MEDIA_TOOLS)
 
 from superlocalmemory.mcp.tools_core import register_core_tools
 from superlocalmemory.mcp.tools_v28 import register_v28_tools

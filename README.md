@@ -65,7 +65,7 @@ $ slm recall "which port does staging postgres use"
 
 Real output from a fresh Mode A install, trimmed. Scores rank memories; they are not probabilities.
 
-## Why SuperLocalMemory: eleven superpowers
+## Why SuperLocalMemory: twelve superpowers
 
 **1. It knows when it doesn't know.** Every recall comes back in one of three tiers: a **supported** answer; the **closest memories**, labelled *"I don't have this exactly — here are the closest memories"*; or *"That isn't in SuperLocalMemory."* for nonsense. Just after a start it says it is still warming up and shows what it has found, so you never hear "empty" when the truth is "not ready yet". Your agent stops building on the wrong memory.
 
@@ -83,11 +83,13 @@ Real output from a fresh Mode A install, trimmed. Scores rank memories; they are
 
 **8. It never floods your context window.** Layered recall gives an agent a one-line glance, the facts, or the full surrounding context — under a hard token budget it sets. The agent digs deeper with `expand` only when it needs to, and cache and reversible compression stop you paying for the same output twice.
 
-**9. Many agents, one brain.** Every write records which agent made it, with trust scores against memory poisoning. Sessions share messages, locks and state through SLM-Mesh, and the web apps and bots you allow can message each other.
+**9. Many agents, one brain.** Every write records which agent made it, with trust scores against memory poisoning, so ten agents can share one memory without poisoning it.
 
-**10. It learns every day, and it can't quietly get worse.** Every reported outcome teaches it: ranking learns which memories actually helped, stable habits become soft prompts for new sessions, and agent skills are measured and revised. A new ranker is promoted only on a statistically valid win and rolled back automatically if it slips. Work runs as **bounded loops** that end only when an independent gate passes — never on an agent's word — and multi-step pipelines run as **bounded graphs** with [Bounded Loops](https://github.com/qualixar/bounded-loops), whose finished runs SLM keeps as read-only evidence.
+**10. Your agents talk to each other.** **SLM-Mesh** gives every agent session messages, waits, locks and shared state — on one machine or across several — so Claude Code can hand work to Codex, and two sessions never edit the same file at once. The web apps and bots you allow join too: ChatGPT, Claude on the web, Grok Bot and Muse can list each other, message a named bot and read their inbox, with every message labelled as data, never as instructions.
 
-**11. Science, not vibes.** Four arXiv papers back every layer: information-geometric retrieval, biologically inspired forgetting, Bayesian trust against memory poisoning, and governed memory with measured costs. The core math runs without a language model, and the published benchmarks state exactly how they were measured.
+**11. It learns every day, and it can't quietly get worse.** Every reported outcome teaches it: ranking learns which memories actually helped, stable habits become soft prompts for new sessions, and agent skills are measured and revised. A new ranker is promoted only on a statistically valid win and rolled back automatically if it slips. Work runs as **bounded loops** that end only when an independent gate passes — never on an agent's word — and multi-step pipelines run as **bounded graphs** with [Bounded Loops](https://github.com/qualixar/bounded-loops), whose finished runs SLM keeps as read-only evidence.
+
+**12. Science, not vibes.** Four arXiv papers back every layer: information-geometric retrieval, biologically inspired forgetting, Bayesian trust against memory poisoning, and governed memory with measured costs. The core math runs without a language model, and the published benchmarks state exactly how they were measured.
 
 SuperLocalMemory is part of Qualixar's AI Reliability Engineering work: agent memory that is observable, bounded and honest about what it doesn't know.
 
@@ -332,6 +334,8 @@ Issues and pull requests are welcome: [CONTRIBUTING.md](https://github.com/quali
 ### Built by Qualixar
 
 **SuperLocalMemory** is made by [Varun Pratap Bhardwaj](https://varunpratap.com) at [Qualixar](https://qualixar.com): AI Reliability Engineering — memory, contracts, tests and loops that make AI agents dependable enough to trust with real work.
+
+**Stronger together.** SuperLocalMemory remembers. **[Jev Decision Layer](https://github.com/qualixar/jev-decision-layer)** makes your agent's bounded choices typed and checked. **[Bounded Loops](https://github.com/qualixar/bounded-loops)** ends work only when an independent gate passes. Use them together and Qualixar gives your agents the whole AI Reliability Engineering environment: memory they can trust, decisions they can defend, and work that is provably done.
 
 If SLM keeps your agents from forgetting, **[star the repository](https://github.com/qualixar/superlocalmemory)**. It's how other developers find it.
 

@@ -7,7 +7,8 @@ from typing import Protocol
 import numpy as np
 
 NOMIC_ID = "nomic-ai/nomic-embed-text-v1.5"
-EG2_ID = "google/embeddinggemma-2"
+# A local copy (SLM's own media runtime weights) can stand in for the hub id.
+EG2_ID = os.environ.get("SLM_BENCH_EG2", "google/embeddinggemma-2")
 
 
 class Embedder(Protocol):

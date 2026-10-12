@@ -37,7 +37,15 @@ def _stdio_command(command: list[str]) -> bool:
             and len(command) >= 4
             and command[3] == "mcp"
         )
-    return len(command) >= 2 and Path(command[0]).name in {"slm", "slm.exe"} and command[1] == "mcp"
+    if len(command) >= 2 and Path(command[0]).name in {"slm", "slm.exe"} and command[1] == "mcp":
+        return True
+    # A console script started through its shebang reports the interpreter first.
+    return (
+        len(command) >= 3
+        and Path(command[0]).name.lower().startswith("python")
+        and Path(command[1]).name in {"slm", "slm.exe", "slm-script.py"}
+        and command[2] == "mcp"
+    )
 
 
 def _same_owner(process) -> bool:
@@ -50,9 +58,15 @@ def _root_matches(process, environment: dict, root: Path) -> bool:
     selected = next(
         (environment.get(key) for key in DATA_ROOT_ALIASES if environment.get(key)), None
     )
+    implicit = not selected
+    if implicit:
+        home = environment.get("HOME") or environment.get("USERPROFILE")
+        if not home or not os.path.isabs(home) or ".." in Path(home).parts:
+            return False
+        selected = str(Path(home) / ".superlocalmemory")
     if not selected or not os.path.isabs(selected) or ".." in Path(selected).parts:
-        # HOME may relocate through legacy config; a relative root may have
-        # been resolved before a cwd change. Neither establishes this namespace.
+        # A relative root may have been resolved before a cwd change; it does
+        # not establish this namespace.
         return False
 
     # Normalize without inspecting another installation's files. These are
@@ -63,7 +77,15 @@ def _root_matches(process, environment: dict, root: Path) -> bool:
             value = value[len("/private") :]
         return value
 
-    return normalize(selected) == normalize(root)
+    if normalize(selected) != normalize(root):
+        return False
+    if implicit:
+        # A default folder that carries a relocation hint proves nothing about
+        # where the process really writes. Only the matching folder is read.
+        from superlocalmemory.infra.data_root import _legacy_configured_root
+
+        return _legacy_configured_root(Path(selected)) is None
+    return True
 
 
 def _host(process, environment: dict) -> str:
@@ -129,7 +151,7 @@ def discover(root: Path, known_pids: set[int]) -> list[dict]:
             continue
         try:
             row = _row(process, root)
-        except (psutil.Error, OSError, ValueError, TypeError):
+        except Exception:  # noqa: BLE001 - one unreadable process must not hide the rest
             continue  # unprovable process metadata never establishes a connection
         if row is not None:
             rows.append(row)

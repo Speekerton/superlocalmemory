@@ -211,7 +211,8 @@ class MeshBroker(OwnerControlsMixin, WebPeersMixin):
     def register_peer(self, session_id: str, summary: str = "",
                       host: str = "", port: int = 0,
                       project_path: str = "", agent_type: str = "unknown",
-                      profile_id: str = "default") -> dict:
+                      profile_id: str = "default", app_name: str = "",
+                      display_name: str = "") -> dict:
         def _register(conn: sqlite3.Connection) -> dict:
             if broker_profiles.is_retired_ref(conn, session_id):
                 return {"ok": False, "error": "peer is retired"}
@@ -247,6 +248,7 @@ class MeshBroker(OwnerControlsMixin, WebPeersMixin):
             self._log_event(conn, "peer_registered", peer_id, {
                 "session_id": session_id, "project_path": project_path,
             }, profile_id=profile_id)
+            broker_profiles.register_identity(conn, peer_id, app_name, display_name)
             conn.commit()
 
             # SEC-4 + P0: mint & RETURN the per-peer HMAC key ONLY on first

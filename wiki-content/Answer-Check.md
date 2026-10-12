@@ -1,6 +1,6 @@
 # Answer Check
 
-Answer check lets your memory say "I don't have that" instead of guessing. Recall already ranks stored memories by relevance and returns the best matches. Answer check adds a second, separate step: it looks at the top few results and decides whether they actually answer the question, which is a different thing from whether they are related to it. A memory can be the closest match SLM has and still not answer what you asked. Recall still returns it, since nothing is ever hidden, but the response now says honestly whether the top result is likely an answer or just the nearest thing on file.
+Answer check lets your memory say "I don't have that" instead of guessing. Recall already ranks stored memories by relevance and returns the best matches. Answer check adds a second, separate judgment: it looks at the top few results and decides whether they actually answer the question, which is a different thing from whether they are related to it. A memory can be the closest match SLM has and still not answer what you asked. The check's verdict is reported on every recall it ran for, and it is one of the inputs to the support check that decides whether recall returns the results, returns only the closest labelled ones, or returns nothing with "That isn't in SuperLocalMemory." ([How Recall Works](How-Recall-Works)). The check alone hides nothing: with it off, recall still decides support from its other signals.
 
 That distinction is the core of AI Reliability Engineering: an agent that knows the difference between "found something related" and "found the answer" fails safely instead of confidently making things up. It runs after the evidence floor, which only asks whether a result earned any real evidence at all; see [How Recall Works](How-Recall-Works).
 
@@ -14,20 +14,22 @@ Open **Settings, Answer check**. Exactly one of these runs at a time.
 | **Online with Jev** (needs a key) | A hosted provider you choose and pay directly, TypeSafe or OpenRouter, with your own key | Your question and the top 3 memories for it. Off until you add a key and tick a consent box |
 | **Off** | Nowhere | Nothing |
 
-Until you choose, the check is in its starting state, called `auto`. Auto uses the on-device check only once an on-device install exists that passed its own check; until then it behaves exactly like Off. **Auto never turns the online option on by itself, and it never resolves to Jev**, so data leaves your computer only when you chose that. Once you pick one of the three, your choice sticks: picking Off means a later setup does not turn the check back on until you pick On this Mac. Switching SLM's mode (A, B or C) never turns Jev back on.
+Until you choose, the check is in its starting state, called `auto`. Auto uses the on-device check whenever a working install exists that passed its own check; with no install it behaves exactly like Off. On Apple Silicon SLM installs the on-device model for you (see Setting it up), so there auto is normally on from the first day. **Auto never turns the online option on by itself, and it never resolves to Jev**, so data leaves your computer only when you chose that. Once you pick one of the three, your choice sticks: picking Off means a later setup does not turn the check back on until you pick On this Mac. Switching SLM's mode (A, B or C) never turns Jev back on.
 
 ## What recall tells you
 
-When the check is on, a recall response carries extra fields, and the CLI and your assistant's session get one extra line when there is something to say.
+A recall response carries these fields, and the CLI and your assistant's session get one extra line when there is something to say. The first two come from the support check, the last three from the answer check.
 
 | Field | Meaning |
 |---|---|
-| `abstained` | `true` when the top results are judged not to answer the question, or when nothing confident was found at all |
-| `abstention_reason` | `judged_insufficient` when memories were found but none answer it; `evidence_floor` or `no_candidates` when nothing confident was found in the first place |
+| `tier` | `supported`, `related` or `none`: whether a memory supports the question, only close ones exist, or nothing is in memory |
+| `abstained` | `true` when no memory supports the question, or when nothing confident was found at all |
+| `abstention_note` | The plain sentence for a person to read, for example "That isn't in SuperLocalMemory." |
+| `abstention_reason` | `unsupported` or `judged_insufficient` when memories were found but none answer it; `evidence_floor` or `no_candidates` when nothing confident was found in the first place |
 | `answer_confidence` | How confident the check is that the top results answer the question, 0.0 to 1.0 |
 | `answer_check_status` | What happened on this recall: `judged`, `off`, `skipped`, `busy`, `warming` or `unavailable` |
 
-If none of the top results answer the question, the assistant sees a line telling it to say it does not have the answer, or to ask, and not to present these memories as the answer. The instructions SLM ships for Claude Code, Codex, Cursor, Copilot, Antigravity and Hermes all say the same thing. A [bounded loop](Bounded-Loops) waiting on a memory honours it too: a recall the check calls insufficient can never pass that loop's gate.
+If no memory supports the question, recall returns no results (or only the labelled closest ones, for a person), and the assistant sees a line telling it to say it does not have the answer, or to ask, and not to present these memories as the answer. The instructions SLM ships for Claude Code, Codex, Cursor, Copilot, Antigravity and Hermes all say the same thing. A [bounded loop](Bounded-Loops) waiting on a memory honours it too: a recall the check calls insufficient can never pass that loop's gate.
 
 A check can be skipped, and skipping costs only the verdict. It is skipped for a context load or a system recall, when there are no results, when too little of the recall's time budget is left, or when the online option would have had to read another profile's memory. The check only ever sees the handful of results recall was already about to return. It never runs its own search and never sees more than you do. A picture with no readable text is reported as not judged, because a text model would only be scoring its label.
 
@@ -47,7 +49,9 @@ The reorder switches itself off, and stays off until you tick it again, when you
 
 ## Setting it up
 
-Everything is configured in the dashboard. Open **Settings, Answer check**. For **On this Mac**, press **Set up** and SLM downloads and verifies the model in the background with a progress bar, until the status reads Ready. **Remove** stops the model and frees the disk, and **Advanced** lets you point at a Python install and model you already have. For **Online with Jev**, pick a provider, paste a key and save it (only the last four characters are ever shown back), press **Test** to send one real request, and tick the consent box, which spells out exactly what is sent. On Apple Silicon, the first-run setup wizard offers to install the on-device option and defaults to yes. An unattended setup (`slm setup --auto`, CI, or no terminal) never starts that download on its own unless you set `SLM_INSTALL_LAYA=1`.
+Everything is configured in the dashboard. Open **Settings, Answer check**. For **On this Mac**, press **Set up** and SLM downloads and verifies the model in the background with a progress bar, until the status reads Ready. **Remove** stops the model and frees the disk, and **Advanced** lets you point at a Python install and model you already have. For **Online with Jev**, pick a provider, paste a key and save it (only the last four characters are ever shown back), press **Test** to send one real request, and tick the consent box, which spells out exactly what is sent. **On Apple Silicon the on-device check is installed by default.** Interactive setup asks "Set it up now? [Y/n]" with yes as the default. An unattended setup (`slm setup --auto`, CI, or any run without a terminal) installs it without asking, and says how to opt out. After an upgrade, the first `slm` command offers it the same way: it asks in a terminal, and without a terminal it starts the install in the background and logs it to `runtimes/laya/install-after-upgrade.log` in your data folder. The offer goes to the error stream, so it never corrupts a command's output or a hook's JSON. The check does not depend on Mode A, B or C; it runs in whichever mode you use.
+
+To opt out, run `slm setup --no-laya` or set `SLM_SKIP_LAYA=1` (`true`, `yes` and `on` also count; the old `SLM_INSTALL_LAYA=0` still works). Answering no once is remembered, so you are not asked again. SLM never installs it on hardware other than Apple Silicon, over an install you already have, or when you have set the check to Off or to the online option. While the model is still downloading or warming up, recall behaves as if the check were off, and the support check works from its other signals.
 
 ## The Answer Check tab
 

@@ -12,7 +12,7 @@ This wiki is written to be read like a book, front to back or by chapter. It cov
 
 AI assistants forget everything between sessions, and the memory tools that fix this usually send your data to a service you do not control. SLM keeps the memory in a SQLite database on your own computer and puts a governed engine in front of it. Agents in Claude Code, Codex, Cursor and other tools talk to that engine through MCP, the CLI or HTTP, and a dashboard shows what it knows and why.
 
-Four ideas set it apart. **Memory is governed**: roles per workspace, default-deny access across profiles, an audit chain you can verify, erasure with a signed receipt, and trust that agents earn and lose. **Recall is honest**: five retrieval producers fuse into one ranking, results with no real evidence are dropped, and an optional answer check tells an agent when the results do not answer the question. **Memory behaves like memory**: facts fade, consolidate and connect over time instead of piling up. **It runs where you decide**: nothing leaves your computer unless you turn on a feature that sends it, and [Privacy and Data Flow](Privacy-and-Data-Flow) lists every one.
+Four ideas set it apart. **Memory is governed**: roles per workspace, default-deny access across profiles, an audit chain you can verify, erasure with a signed receipt, and trust that agents earn and lose. **Recall is honest**: five retrieval producers fuse into one ranking, results with no real evidence are dropped, and every recall says whether memory supports the question, holds only close matches, or does not have it ("That isn't in SuperLocalMemory."). An answer check that runs on your own Mac by default feeds that decision. **Memory behaves like memory**: facts fade, consolidate and connect over time instead of piling up. **It runs where you decide**: nothing leaves your computer unless you turn on a feature that sends it, and [Privacy and Data Flow](Privacy-and-Data-Flow) lists every one.
 
 ## Who it is for
 
@@ -48,7 +48,9 @@ Developers who use AI coding agents and want decisions, conventions and fixes to
 |---|---|
 | Governed storage | SQLite and sqlite-vec as the canonical store, one writer, a journal that replays accepted saves |
 | Multi-channel recall | Semantic, keyword, temporal, spreading activation and Hopfield, plus a picture channel, fused and floor-checked |
-| Answer check | An on-device model (Laya) or a hosted one (Jev) decides whether results answer the question |
+| Support tiers and answer check | Every recall is supported, related or none; an on-device model (Laya, installed by default on Apple Silicon) or a hosted one (Jev) judges whether results answer the question |
+| Layered recall | `depth` 0 to 2, `max_tokens` and `expand` let an agent look cheaply first and drill into one memory |
+| Memory health | Older memories are described automatically, repairs that move or delete wait for your Fix, and every run can be undone |
 | Living Brain | Decay, consolidation and quantization keep memory fast and relevant |
 | Knowledge graph | Entities, edges, clusters, summaries and an Entity Explorer |
 | Pictures and documents | Search screenshots, photos and PDFs by what they show |
@@ -57,7 +59,7 @@ Developers who use AI coding agents and want decisions, conventions and fixes to
 | Governance | Roles, trust, retention, GDPR export and erasure, hash-chained audit |
 | Optimize | Reversible compression and caching, with no proxy needed |
 | Bounded loops | Iteration that ends only when an independent gate passes |
-| 109 MCP tools in profiles | `core` 18, `code` 38, `full` 57, `power` 69, `mesh` 9, `whole` 109 |
+| 110 MCP tools in profiles | `core` 19, `code` 39, `full` 58, `power` 70, `mesh` 9, `whole` 110 |
 
 ## The research
 

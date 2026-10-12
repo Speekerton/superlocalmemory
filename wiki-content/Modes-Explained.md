@@ -1,10 +1,16 @@
 # Modes Explained
 
-SLM runs in one of three modes, and the mode answers one question: which language model, if any, may touch your memories. Mode A runs no language model at all. Mode B uses a model on your own machine. Mode C uses an endpoint you choose, which can be a cloud provider. In every mode the memory database stays on your computer, and you can change modes at any time without losing anything.
+SLM runs in one of three modes, and the mode answers one question: which language model, if any, may touch your memories. In Mode A, memories are saved and recalled without a language model. Mode B uses a model on your own machine. Mode C uses an endpoint you choose, which can be a cloud provider. In every mode the memory database stays on your computer, and you can change modes at any time without losing anything.
 
 ## What each mode runs
 
-The definitions live in one place, `core/modes.py`, so the dashboard, the CLI and the MCP tools all describe the modes with the same words.
+The definitions live in one place, `core/modes.py`, so the dashboard, the CLI and the MCP tools all describe the modes with the same words. The one-line descriptions the server sends, and the dashboard shows, are these:
+
+- **Mode A:** "Memories are saved and recalled without a language model — nothing leaves this device. Fastest and most private."
+- **Mode B:** "A model on this machine — Ollama by default, any local server works — and nothing leaves this device."
+- **Mode C:** "Your own endpoint, or a cloud provider, for the best recall quality. Your queries leave this device."
+
+When the optional online answer check is switched on, the MCP description of Mode A and Mode B says "nothing else leaves this device" instead, because the check sends the question and top memories to its provider. The wording about Mode A is deliberately about saving and recalling: the on-device answer check ([Answer Check](Answer-Check)) is a small separate model that runs after recall, on your own computer, and it does not change what Mode A means for your memories.
 
 | | Mode A: Local Guardian | Mode B: Smart Local | Mode C: Full Power |
 |---|---|---|---|
@@ -27,7 +33,7 @@ This is the table people usually want, so it is deliberately blunt.
 
 In Mode C the text that goes to the provider is the memory text in extraction prompts at save time, the query and top candidates during agentic recall refinement, and answer-generation prompts. Credentials in it are replaced first, but personal data is not.
 
-Any mode can still send data off the machine when you turn on an optional feature: a custom embedding endpoint, a remote reranker, the online [Answer Check](Answer-Check), [Web Access and Connected Apps](Web-Access-and-Connected-Apps), or encrypted [Cloud Backup](Cloud-Backup). SLM treats Mode A as "no model on any path", not as "no network feature can ever be enabled". The code leaves the EU AI Act status of all three modes as `None` on purpose, because that needs a deployment assessment. See [Privacy and Data Flow](Privacy-and-Data-Flow) for the full picture.
+Any mode can still send data off the machine when you turn on an optional feature: a custom embedding endpoint, a remote reranker, the online [Answer Check](Answer-Check), [Web Access and Connected Apps](Web-Access-and-Connected-Apps), or encrypted [Cloud Backup](Cloud-Backup). SLM treats Mode A as "no language model in the save and recall path", not as "no network feature can ever be enabled". The code leaves the EU AI Act status of all three modes as `None` on purpose, because that needs a deployment assessment. See [Privacy and Data Flow](Privacy-and-Data-Flow) for the full picture.
 
 ## Switching modes
 

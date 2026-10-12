@@ -1,6 +1,6 @@
 # Cloud Backup
 
-SLM keeps three different kinds of copy, and they answer different questions. Local backups are scheduled snapshots of your databases in `backups/`. Cloud backup pushes the latest local snapshot to GitHub or Google Drive, encrypted on your computer first. Restore points are the verified copies SLM takes before an update that changes the store, and they are the only copies SLM can put back for you. Restore points are CLI and API only: there is no dashboard control for them.
+SLM keeps four different kinds of copy, and they answer different questions. Scheduled local backups are plain snapshots of your databases in `backups/`. Recovery backups are verified sets of every store plus your settings, made on demand from the dashboard, and the dashboard can restore from them. Cloud backup pushes the latest scheduled snapshot to GitHub or Google Drive, encrypted on your computer first. Restore points are the verified copies SLM takes before an update that changes the store, and they are restored from the command line. The sections below take them in that order, and the one rule that holds for all of them is that SLM checks a copy before it relies on it.
 
 ## Local backups
 
@@ -11,13 +11,45 @@ A background job takes timestamped snapshots with SQLite's `sqlite3.backup()` AP
 | Interval | 168 hours (weekly) | Minimum 1 hour. The Settings pane offers Daily (24 h) or Weekly. |
 | Copies kept | 10 | Oldest are pruned. |
 
-You can take one on demand from Settings, group "Backup", with "Backup Now", or `POST /api/backup/create`. Settings is also where you switch auto-backup off.
+You can take a plain snapshot on demand with `POST /api/backup/create`. The **Backup Now** button in Settings, group "Backup", and **Back up now** on the Backup & Cloud page make a recovery backup instead (see below). Settings is also where you switch auto-backup off.
 
 Which files are copied is a fixed list called `MANAGED_DATABASES`: `memory.db`, `learning.db`, `audit_chain.db`, `code_graph.db`, `pending.db`, `audit.db` and `media.db`. Only the ones that exist on your machine are copied. Each is snapshotted on its own, one after another, so a set is not a single atomic point in time across stores. For a consistent whole-folder copy, run `slm serve stop` and copy the data folder while the daemon is stopped.
 
 Local copies of pictures and documents are included: `media.db` goes into `backups/` as `media-<timestamp>.db`, and one copy of every original picture and PDF is kept in `backups/media-originals/` (only new files are copied each time). They are never uploaded anywhere. Local backup files are plain SQLite and are not encrypted, so keep the data folder on an encrypted disk. Restoring a media copy puts back any original that is missing and never overwrites a file that is there.
 
-No command or dashboard button restores a scheduled backup in place. To use one, stop the daemon, copy the file back as its canonical name (for example `memory.db`) into a clean data folder, and run `slm restart`.
+A scheduled snapshot is a single database file with no checksum manifest, so SLM does not restore it for you. The dashboard can check that one opens (**Verify database** in the backup history, which says the file is readable and that older snapshots have no complete recovery manifest). To use one, stop the daemon, copy the file back as its canonical name (for example `memory.db`) into a clean data folder, and run `slm restart`. For a restore SLM can do and check for you, use a recovery backup.
+
+## Recovery backups and restoring from the dashboard
+
+A recovery backup is a verified set: every store that exists on your computer, copied under one fence so they agree with each other, the vector index folder, your settings files (`config.json`, the three mode files, `backup_config.json` and `adapters.json`), and a copy of your picture and document originals. Every file has a checksum in a manifest, and SLM reads the whole set back and checks it right after making it and again before any restore. Make one from the dashboard with **Back up now** on the Backup & Cloud page, or with the **Backup Now** button in Settings (`POST /api/backup/recovery/create`). SLM keeps the newest 10 by default, the same count you set for backups in Settings.
+
+What a recovery backup leaves out is stated in its own manifest: credentials, and downloaded models and runtime caches. Settings are saved without anything that looks like a secret (names ending in key, token, password and similar), and a web address loses any user name or password in it. The accounts, sessions and sign-in setting of company mode are never rolled back by a restore: whatever this installation has now is carried into the restored store, so a restore cannot bring back a removed user or switch sign-in off.
+
+**To restore.** In the backup history, choose **Verify / restore** on a recovery backup. SLM verifies it and shows what it contains, what it excludes, and the warning that the service will stop and restart and that changes made since the backup may be lost. You then type `RESTORE` to enable the **Restore this backup** button. The restore is refused if another one is already in progress, or if the disk does not have the room it needs. That room is about three copies of your stores and vector index, plus the pictures and documents mirror and settings, because a restore holds the safety point, a plain pre-restore file copy and the backup system's own snapshot at the same time. The message states the megabytes needed and free, and says nothing was changed.
+
+**What happens, in order.**
+
+1. SLM verifies the backup and checks free space again.
+2. The service stops and the restore waits for its process to exit.
+3. A **safety copy** is taken: a fresh recovery backup of the current state, so the state just before the restore can always be put back. It appears in the same list.
+4. A plain file copy of everything the restore may change is made. If the restore fails at any point after this, that copy is put back using only file copies, so a failure that repeats cannot make the rollback fail too.
+5. The stores are restored, anything you erased since the backup is erased again (a restore never brings back erased data), settings are merged (a restored setting that points at a different provider or endpoint blanks the current secrets so they are not sent to somewhere new; the data folder location and ports are never restored), and only pictures and documents that the restored catalogue still lists are copied back.
+6. The service starts again and the page reports the outcome. Reopen the Backup & Cloud page afterwards to see it.
+
+**What the outcome says.** The history page shows the last recovery as one of `queued`, `stopping`, `restoring`, `restarting`, `complete` or `failed`, with a message. "Recovery could not finish, so nothing was changed: the stores, settings and files are as they were before" means the restore failed and was undone. "The disk is full, so the restore could not start and nothing was changed" and "Recovery could not start, so nothing was changed. Retry when other activity has finished." mean it never began. If the restore process itself dies, the status turns into a failure that names the log, `logs/backup-recovery.log` in the data folder, and the safe next step.
+
+**Waiting versus recovering.** The two situations are told apart on purpose. While a restore is running, any attempt to start SLM says "A restore is replacing the memory store; start again when it finishes", and the hint is simply to wait; the restore starts the service itself. Only a restore that stopped part-way, or whose rollback also failed, says "The last restore stopped part-way and the stores may be mixed, so the service will not start on them", names the folder where the pre-restore copy is kept, and tells you to run:
+
+```bash
+slm backup restore-safety-copy     # put the safety copy back (service stopped)
+slm serve start
+```
+
+`slm backup restore-safety-copy` takes a fresh recovery backup of the current state first, then restores the safety copy as one unit, and tells you the id of the state it kept. Pass `--id` to restore a different recovery backup. If you have repaired the stores yourself, `slm backup clear-recovery-needed` lets the service start again, and it deletes the pre-restore copy; use it only after a repair, because the safe way back is the safety copy. Until one of these has run, nothing starts on the mixed stores: the marker is written before the restore's first write, so a crash, a kill or a power cut still leaves every start refused. `slm backup status` repeats the message. When SLM is asked to do something while this is the case, hooks and commands report that memory is unavailable and name the recovery command rather than suggesting a retry. A safety copy is also protected from retention while a restore runs and after one has failed, so the copy that can repair it is never the one pruned.
+
+**Export.** The dashboard's **Export** button downloads a recovery backup as one zip, `slm-recovery-<id>.zip`. It exports the newest kept backup, and only creates one if none exists yet, so exporting never pushes an older backup out of retention. The copy in the zip has accounts, sessions and the sign-in setting emptied out, and its manifest says so, because a downloaded file leaves your computer and a password hash in it would be something to crack offline.
+
+All of these need installation-wide management permission, not just management of the current workspace, because a restore replaces every workspace's data.
 
 ## Cloud backup
 
@@ -60,7 +92,7 @@ Restoring into a clean folder matters because a stale `-wal` or `-shm` file besi
 
 ## Restore points and downgrades
 
-Before any update that changes the memory store, SLM takes a verified copy with a manifest and checksum. Those are restore points, and copies from the last two updates are kept. Unlike a cloud backup, SLM can restore one for you.
+Before any update that changes the memory store, SLM takes a verified copy with a manifest and checksum. Those are restore points, and copies from the last two updates are kept. Like a recovery backup, and unlike a cloud backup, SLM can restore one for you, but only from the command line.
 
 ```bash
 slm db restore-points                       # id, time, reason, versions, size, memory count
@@ -78,6 +110,6 @@ The same actions exist over the local HTTP API under `/api/upgrade/` (`status`, 
 
 ## Export and erasure
 
-The dashboard's download button creates a single gzipped `memory.db` snapshot (`POST /api/backup/export`). It is not a whole-folder export. When you erase data with `slm gdpr erase`, SLM records the backup copies that may still contain it as "backup residue obligations", because it cannot reach into copies you hold elsewhere. See [Security, Company Mode and Teams](Security-Company-Mode-and-Teams).
+The dashboard's **Export** button downloads a recovery backup as a zip (see above). The older `POST /api/backup/export` route still builds one `.tar.gz` of the stores and the picture and document originals with a manifest of what is included and what is left out on purpose (`config.json` and identity secrets). Neither is a whole-folder copy. When you erase data with `slm gdpr erase`, SLM records the backup copies that may still contain it as "backup residue obligations", because it cannot reach into copies you hold elsewhere. See [Security, Company Mode and Teams](Security-Company-Mode-and-Teams).
 
-Code: `infra/backup.py` (`BackupManager`, `MANAGED_DATABASES`), `infra/backup_media.py`, `infra/cloud_backup.py`, `infra/cloud_backup_github.py`, `infra/cloud_backup_crypto.py`, `infra/backup_crypto.py`, `infra/backup_keys.py`, `cli/backup_cmd.py`, `storage/upgrade_restore.py`, `cli/upgrade_cmd.py`, `server/routes/backup.py`, `server/routes/backup_encryption.py`, `server/routes/upgrade_restore.py`.
+Code: `infra/backup.py` (`BackupManager`, `MANAGED_DATABASES`), `infra/backup_media.py`, `infra/cloud_backup.py`, `infra/cloud_backup_github.py`, `infra/cloud_backup_crypto.py`, `infra/backup_crypto.py`, `infra/backup_keys.py`, `cli/backup_cmd.py`, `storage/upgrade_restore.py`, `cli/upgrade_cmd.py`, `server/routes/backup.py`, `server/routes/backup_encryption.py`, `server/routes/upgrade_restore.py`, `server/routes/backup_recovery.py`, `server/backup_bundle.py`, `server/backup_restore_worker.py`, `server/backup_restore_txn.py`, `server/backup_rollback.py`, `server/recovery_marker.py`, `server/recovery_inventory.py`, `infra/backup_credentials.py`, `ui/js/od-backup-recovery.js`.

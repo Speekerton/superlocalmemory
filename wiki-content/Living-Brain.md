@@ -70,6 +70,12 @@ Adaptive ranking is off by default and is enabled with `SLM_RANKING`. When it ru
 
 The bandit is contextual Thompson sampling over a fixed catalogue of 40 arms. Signals come from your own recalls and from hooks in coding agents that report how a recalled memory was used. The kill switch is `SLM_BANDIT_DISABLED=1`.
 
+### Maintenance is per workspace
+
+Consolidation, decay, learning and session closing act on one workspace (profile) at a time. A request that names a workspace uses it, a request that names none uses the workspace the caller is signed in to or bound to, and only a caller with neither acts on the machine owner's workspace. The reply says which workspace was acted on. In a team setup that means an administrator of one workspace no longer runs consolidation, decay or a session close against another workspace by accident: the check is made against, and the work runs on, the caller's own workspace, and it needs write permission there. The MCP tools `consolidate_cognitive` and `run_maintenance` do not guess a workspace themselves; the daemon works it out from the caller. If the daemon refuses, the tool reports the refusal and does not quietly run the work on your machine as the owner.
+
+Two kinds of maintenance stay with the whole installation, because they change something shared. `run_maintenance` (`POST /maintenance/run`) needs both management permission on the workspace and installation-wide authority, since its vector-store compaction covers every workspace, while its decay, Langevin and behavioural-pattern steps run on the caller's workspace. Compaction (`slm db compact`) and integrity repair also need installation-wide authority. The computer's owner, or a signed-in administrator of every workspace, has it. A caller without it is told "Your role does not allow changing this setting: it applies to every workspace on this computer, so only the computer's owner or an administrator of every workspace can change it." In personal mode with no team accounts nothing changes for you: the machine operator keeps full access. See [Security, Company Mode and Teams](Security-Company-Mode-and-Teams).
+
 ### Commands and tools
 
 | Surface | What it offers |

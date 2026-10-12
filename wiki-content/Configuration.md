@@ -127,6 +127,8 @@ Every variable below was found by searching the source. The default is stated on
 | `SLM_REMOTE_RERANK_DEADLINE_S` | Time limit for one remote rerank call, retries included. | 1.0 | `retrieval/remote_reranker.py:99` |
 | `SLM_RERANKER_ENABLED` | Process-only override of `use_cross_encoder`; `0`, `false`, `no`, `off` disable. | the config value | `core/config.py:530` |
 | `SLM_RANKING` | Adaptive ranking: `v1`, `v2` or `v2-ensemble`. | off | `core/recall_pipeline.py:360` |
+| `SLM_RECALL_NO_SUPPORT_GATE` | `1`, `true` or `yes` turns the support check off and restores the older recall behaviour; the setting `retrieval.answer_support_gate` set to false does the same. | on | `retrieval/support_gate.py` (`switched_off`) |
+| `SLM_SKIP_LAYA` | `1`, `true`, `yes` or `on` stops setup and upgrades installing the on-device answer check; `slm setup --no-laya` does the same for one run. | off | `cli/laya_offer.py` (`opted_out`) |
 | `SLM_BANDIT_DISABLED` | `1` skips bandit re-ranking and its background loops. | off | `core/recall_pipeline.py:992` |
 | `SLM_TRUST_READ_GATE` | `1` enables the trust check on reads. | off | `trust/gate.py:42` |
 | `SLM_CACHE_BACKEND` | `tiered` or `sqlite` for the derived cache. | `tiered` | `cache/factory.py:36` |

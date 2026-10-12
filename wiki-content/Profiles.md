@@ -59,16 +59,16 @@ Two limits to know. Cognitive-consolidation summary blocks are always `personal`
 
 ## MCP tool profiles
 
-An MCP tool profile controls how many of SLM's 109 tools an AI client sees. The reason is practical: many editors cap the total number of tools across all servers at 50 to 100, and a maximal SLM registration crowds out everything else. The profile is chosen when the MCP server starts, with the environment variable `SLM_MCP_PROFILE` or `slm connect <ide> --profile <name>`, which writes it into the IDE's MCP block. It cannot be changed mid-session, and the dashboard's "MCP & Tools" pane shows the active profile but only gives instructions for changing it.
+An MCP tool profile controls how many of SLM's 110 tools an AI client sees. The reason is practical: many editors cap the total number of tools across all servers at 50 to 100, and a maximal SLM registration crowds out everything else. The profile is chosen when the MCP server starts, with the environment variable `SLM_MCP_PROFILE` or `slm connect <ide> --profile <name>`, which writes it into the IDE's MCP block. It cannot be changed mid-session, and the dashboard's "MCP & Tools" pane shows the active profile but only gives instructions for changing it.
 
 | Profile | Tools | What it is for |
 |---|---:|---|
-| `core` | 18 | The smallest useful surface: remember, recall, search, fetch, list_recent, update_memory, forget, the session tools, the five Optimize tools, correction review and listing, summaries and `switch_profile`. |
-| `code` | 38 | Core plus the portable Brain evidence tools, memory-kind tools, six code-graph tools, the three bounded-loop tools, `report_outcome` and `report_feedback`. |
-| `full` | 57 (62 with images on) | Everyday memory, Brain evidence, kinds, saved views, loops, skill evolution, Optimize, learning signals, and the nine mesh tools. |
-| `power` | 69 (74 with images on) | Full plus `get_version`, `get_mode`, `health`, `consistency_check`, `recall_trace`, lifecycle and retention tools, `compact_memories`, `get_behavioral_patterns`, `audit_trail`, `quantize`, `get_retention_stats`. |
+| `core` | 19 | The smallest useful surface: remember, recall, search, fetch, expand, list_recent, update_memory, forget, the session tools, the five Optimize tools, correction review and listing, summaries and `switch_profile`. |
+| `code` | 39 | Core plus the portable Brain evidence tools, memory-kind tools, six code-graph tools, the three bounded-loop tools, `report_outcome` and `report_feedback`. |
+| `full` | 58 (63 with images on) | Everyday memory, Brain evidence, kinds, saved views, loops, skill evolution, Optimize, learning signals, and the nine mesh tools. |
+| `power` | 70 (75 with images on) | Full plus `get_version`, `get_mode`, `health`, `consistency_check`, `recall_trace`, lifecycle and retention tools, `compact_memories`, `get_behavioral_patterns`, `audit_trail`, `quantize`, `get_retention_stats`. |
 | `mesh` | 9 | Only the nine `mesh_*` coordination tools. |
-| `whole` | 109 | The raw server with every tool. `SLM_MCP_ALL_TOOLS=1` does the same. |
+| `whole` | 110 | The raw server with every tool. `SLM_MCP_ALL_TOOLS=1` does the same. |
 
 The "with images on" counts add the five picture and document tools (`remember_media`, `get_media`, `remember_document`, `media_status`, `media_upload_link`) when [Pictures and Documents](Pictures-and-Documents) is enabled. The counts come from `mcp/profiles.py` and were recomputed by executing that file.
 

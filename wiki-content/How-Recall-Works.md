@@ -1,6 +1,6 @@
 # How Recall Works
 
-Recall answers one question: which stored memories are the best evidence for this query? It is built so that a bad match is dropped instead of dressed up, and so that an agent can tell "I found something related" from "I found the answer".
+Recall answers one question: which stored memories are the best evidence for this query? It is built so that a bad match is dropped instead of dressed up, and so that a person or an agent can tell three situations apart: "I found the answer", "I found something close but not the answer", and "that is not in memory".
 
 ## The path at a glance
 
@@ -24,15 +24,17 @@ flowchart TD
     E --> R["Cross-encoder rerank (optional)"]
     R --> K["Ranking mode<br/>off unless SLM_RANKING is set"]
     K --> A{"Answer check<br/>Laya, Jev or off"}
-    A -->|"answers the question"| OK["Results + scores + answer fields"]
-    A -->|"does not answer"| AB["Abstain: nearest results still returned,<br/>marked as not an answer"]
+    A --> G{"Does any memory<br/>support the question?"}
+    G -->|"yes"| OK["Supported: results + scores + answer fields"]
+    G -->|"no, but the question is real"| RL["Related: up to three closest memories,<br/>labelled, with a note"]
+    G -->|"no, or nonsense"| NO["None: nothing returned,<br/>That isn't in SuperLocalMemory."]
     classDef gate fill:#FFF4E0,stroke:#C27A00,color:#1F2340
-    class E,A gate
+    class E,A,G gate
 ```
 
 [Download as PNG](images/recall-flow.png)
 
-Code: `core/recall_pipeline.py` (`run_recall`), `retrieval/engine.py` (`RetrievalEngine.recall`), `retrieval/fusion.py`, `retrieval/media_channel.py`, `core/answer_check_stage.py`, `core/judge_selection.py`.
+Code: `core/recall_pipeline.py` (`run_recall`), `retrieval/support_gate.py`, `retrieval/support_tiers.py`, `core/score_contract.py`, `retrieval/engine.py` (`RetrievalEngine.recall`), `retrieval/fusion.py`, `retrieval/media_channel.py`, `core/answer_check_stage.py`, `core/judge_selection.py`.
 
 ## The producers
 
@@ -57,7 +59,7 @@ The ranked lists are combined with weighted reciprocal rank fusion (k = 15). Fus
 
 The **evidence floor** comes next, before the optional cross-encoder. A result stays only if it earned real evidence: a semantic cosine of at least 0.60 (a model with its own floor uses that instead, because similarity scores are not comparable between models), or a non-zero BM25, entity-graph or temporal score, or it is a pinned fact. A picture saved with no readable text (a wordless picture) is judged differently, because its other text channels only matched a saving label or a file name: it stays if its picture-channel score reaches the media floor (0.30 by default) or the words of your own note matched by BM25. Such a picture also keeps the position fusion gave it, because a text reranker would only be scoring its label, and the answer check reports it as not judged (`media_unjudged`). Spreading activation and Hopfield do not count as evidence on their own, because they find related material, not matching material. The floor runs before the result limit is applied, so a qualified candidate just below the cut cannot be pushed out by associative hits that the floor would then remove.
 
-If nothing survives, the recall succeeds with an empty list and `abstained: true`, reason `evidence_floor`. If candidate generation finds nothing at all, the reason is `no_candidates`. Neither case involves a judgment about the results; there were none to judge.
+If nothing survives, the recall succeeds with an empty list and `abstained: true`, reason `evidence_floor`. If candidate generation finds nothing at all, the reason is `no_candidates`, and the note reads "Nothing in memory matched this question." Neither case involves a judgment about the results; there were none to judge.
 
 The cross-encoder then reorders the qualified pool. It never blocks: with no model loaded, the fused order is returned and the model warms in the background.
 
@@ -67,7 +69,7 @@ Learned adaptive ranking is off. Unless you set `SLM_RANKING` to `v1`, `v2` or `
 
 ## The answer check
 
-After ranking, an optional answer check looks at the top three results and decides whether they actually answer the question. It adds fields; it never hides a result.
+After ranking, an answer check looks at the top three results and decides whether they actually answer the question. It adds fields and is one input to the support check below; on its own it never hides a result.
 
 | Choice | Where it runs | What leaves your computer |
 |---|---|---|
@@ -75,7 +77,27 @@ After ranking, an optional answer check looks at the top three results and decid
 | Online with Jev | A hosted provider you choose, with your own key and explicit consent | The question and the top memories |
 | Off | Nowhere | Nothing |
 
-The setting `auto` uses Laya only when it is installed and supported, and otherwise stays off. `auto` never resolves to Jev, so data leaves the machine only when someone chose that. For one recall, `answer_check_status` is `judged`, `off`, `skipped`, `busy`, `warming` or `unavailable`. A skipped or unavailable check costs only the verdict. The memories, their order and their scores are unchanged. See [Answer Check](Answer-Check).
+On Apple Silicon, Laya is installed by default, so for most people on a Mac the check runs unless they opted out ([Answer Check](Answer-Check)). The setting `auto` uses Laya whenever a working install exists, and otherwise stays off. `auto` never resolves to Jev, so data leaves the machine only when someone chose that. For one recall, `answer_check_status` is `judged`, `off`, `skipped`, `busy`, `warming` or `unavailable`. A skipped or unavailable check costs only the verdict. The memories, their order and their scores are unchanged. See [Answer Check](Answer-Check).
+
+## Does any memory support the question? Three tiers
+
+Finding results is not the same as having an answer. A memory made mostly of ids and hashes sits close to almost every question in the embedding space, so a nonsense question used to return something anyway. After the answer check, recall now makes one more decision, the **support check**, and every recall ends in exactly one of three tiers, reported in the `tier` field of the response and on each result.
+
+| Tier | When | What you get |
+|---|---|---|
+| `supported` | At least one memory carries real support for the question | The supported results, with their scores. Memories that fell short are labelled `weak` |
+| `related` | Nothing answers it, but the question reads as a real one and some memories have real evidence for it | Up to three of the closest memories, each labelled related, with the note "I don't have this exactly — here are the closest memories." |
+| `none` | The question reads as nonsense, or nothing is close | Nothing, and the note "That isn't in SuperLocalMemory." |
+
+The support check scores each memory on its own, because the evidence has to come from one memory: "v0.3.4 snazzle" finds the v0.3.4 note by its keyword and an unrelated stub by its cosine, and neither alone supports the whole question. The score combines several signals. They are how much closer the memory is to the question than a typical memory is (each memory's own baseline is stored, so ids-and-hashes memories do not get a free pass), how many of the question's words it carries, whether it carries every rare word in the question, the reranker's score, a named entity in common, and whether the question looks like gibberish: its words found in no memory at all, or a pattern that resembles the nonsense questions the check was tuned on. A question with no question word is treated more strictly, because only a memory carrying its words can answer it. Pinned memories are still returned when nothing else is. If a recall had to fall back to keyword search, a memory must carry every rare word of the question and at least half of its content words. Two switches turn all of this off and bring back the older behaviour: the environment variable `SLM_RECALL_NO_SUPPORT_GATE=1` and the setting `retrieval.answer_support_gate` set to false.
+
+**Who sees what.** People and agents get different defaults on purpose. The CLI, the dashboard search and the MCP `search` tool show the related memories, labelled, because a person can judge them. The MCP `recall` tool, which an agent calls, returns only supported results; for a related answer it comes back empty with "I don't have this exactly. Closer memories exist; ask with include_related to see them." and `include_related=true` returns them. Anything is shown with `--show-weak` (CLI) or `show_weak` (MCP and HTTP), which lists the closest weak matches under the note, each labelled `weak`. In the CLI a result line reads `[related]` or `[weak]` after its score. In the dashboard's Memories search, a **Show closest matches** box does the same, and an empty search now says why instead of "No results found." The text shown to the assistant at the start of a session is loading context, not a question, so this check is skipped there.
+
+**While SLM is warming up.** Right after a start, the embedding model, the reranker or the question probes may still be loading, and then there is nothing to measure. SLM does not say "That isn't in SuperLocalMemory." in that state, because nothing was measured to say it. It returns what keyword search found, up to five results, labelled related, with `warming_up: true` and the note "SuperLocalMemory is still warming up — results may be incomplete. Try again in a few minutes." The same applies when a recall ran without a vector search or without its reranker for any reason. An agent is told to pass that on and not to conclude the memory is absent.
+
+## Layers: depth, max_tokens and expand
+
+An agent rarely needs every memory in full. Recall can be asked for less, or for more around one memory. `depth` takes 0, 1 or 2. Depth 0 is a glance: ids, tier, score and a one-line preview, the cheapest look. Depth 1 is the full facts, which is what recall has always returned and is the default. Depth 2 adds context to each result: the memory it came from, up to three memories from the same session, up to three about the same entities, and the correction that replaced it, if there was one. `max_tokens` caps the whole list and is never exceeded: context is dropped first, then the last memory's text is shortened, then memories are left out, and the response's `layers` field says what was trimmed. When one result looks right, the MCP tool `expand` takes its `fact_id` or `memory_id` and returns the full memory with its depth-2 context, under the same profile and visibility checks as `fetch`. The CLI has `slm recall "question" --depth 2 --max-tokens 800`. Separately, every block of memory text that SLM injects into a session (session start, the context resource, `slm session-context` and the recall hooks) is held to a hard token budget for its mode, cut at a line and marked as cut.
 
 ## Scores rank, they do not predict
 

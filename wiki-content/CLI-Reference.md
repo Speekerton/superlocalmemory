@@ -1,6 +1,6 @@
 # CLI Reference
 
-The `slm` command has 71 top-level commands, plus `slm hook`, which hosts call from their hook configuration and which is not part of the normal command parser. This page groups them by task, with one short table per group. The installed help always wins over this page: `slm --help` lists every command, `slm <command> --help` lists its flags, and `slm help` prints a grouped overview with the topics `modes`, `config` and `self-heal`. Everything here was checked against the code and its `--help` output.
+The `slm` command has 74 top-level commands, plus `slm hook`, which hosts call from their hook configuration and which is not part of the normal command parser. This page groups them by task, with one short table per group. The installed help always wins over this page: `slm --help` lists every command, `slm <command> --help` lists its flags, and `slm help` prints a grouped overview with the topics `modes`, `config` and `self-heal`. Everything here was checked against the code and its `--help` output.
 
 ## How the CLI behaves
 
@@ -15,7 +15,7 @@ The data folder is `~/.superlocalmemory` unless `SLM_DATA_DIR`, `SL_MEMORY_PATH`
 | Command | What it does | Notable flags |
 |---|---|---|
 | `slm init` | One-command setup: runs the wizard if SLM is not configured, installs Claude Code hooks, connects detected IDEs and warms the embedding model | `--force` redo setup, `--auto` no terminal needed (Mode A plus hooks), `--gate` experimental PreToolUse gate |
-| `slm setup` | The interactive first-time wizard (ten steps, see [Installation](Installation#the-setup-wizard)) | `--auto` use defaults, for scripts and CI |
+| `slm setup` | The interactive first-time wizard (ten steps, see [Installation](Installation#the-setup-wizard)) | `--auto` use defaults, for scripts and CI; `--no-laya` do not install the on-device answer check (installed by default on Apple Silicon) |
 | `slm mode [a, b, c]` | Show or set the operating mode; run `slm restart` to apply a change ([Modes Explained](Modes-Explained)) | `--json` |
 | `slm provider [set] [PROVIDER]` | Show or set the language-model provider for Mode B and C. Providers: openai, anthropic, azure, ollama, openrouter, custom | `--endpoint URL`, `--key KEY`, `--model NAME`, `--mode b or c` (all for `custom`; `--mode` defaults to c) |
 | `slm models` | Installed Ollama models, recommendations and the hosted catalogue. Read-only | `--json` |
@@ -28,6 +28,8 @@ The data folder is `~/.superlocalmemory` unless `SLM_DATA_DIR`, `SL_MEMORY_PATH`
 | `slm help [TOPIC]` | Grouped overview of all commands. Topics: modes, config, self-heal | none |
 | `slm dashboard` | Open the web dashboard ([Dashboard Tour](Dashboard-Tour)) | `--port PORT` (default 8765) |
 
+`slm doctor` always checks that the daemon is available, including with `--quick`: it reads the daemon's descriptor and makes at most one health request with a 0.5-second limit, and never starts the daemon. A missing descriptor is a warning that points at `slm serve start`; a recorded process that is dead, or an unhealthy or invalid daemon, is a failure that points at `slm restart`. The daemon check is part of the `--json` output too. Doctor exits 0 when every check passed or only warned and 1 when any check failed, and it prints the whole report before it exits. With Memory health on, it adds a **Memory description** row and a **Memory repairs** row ([Health and Repair](Health-and-Repair)).
+
 `slm config set` accepts only these keys and refuses the rest with a `DISALLOWED_KEY` error that lists them: `evolution.enabled`, `evolution.backend`, `evolution.max_evolutions_per_cycle`, `evolution.mutation_model`, `evolution.verify_model`, `evolution.confirm_model`, `mesh_enabled`, `daemon_idle_timeout`, `entity_compilation_enabled`, `graph_backend`, `vector_backend`, `scope.default_scope`, `scope.recall_include_global` and `scope.recall_include_shared`. Everything else has its own command or lives in the dashboard Settings page ([Configuration](Configuration)).
 
 ## The daemon and the MCP server
@@ -39,6 +41,7 @@ The data folder is `~/.superlocalmemory` unless `SLM_DATA_DIR`, `SL_MEMORY_PATH`
 | `slm mcp` | Start the MCP server on stdio. IDE configurations run it as a subprocess; you rarely run it by hand ([MCP Tools](MCP-Tools)) | none |
 | `slm reap` | Find orphaned SLM processes. The default only lists them | `--force` kill orphans, `--all` kill every `slm mcp` process (after switching IDE), `--json` |
 | `slm rotate-token` | Rotate the install token. Run `slm restart` afterwards | none |
+| `slm token show` | Print the SuperLocalMemory key, readable only by you | none |
 
 ## Memory operations
 
@@ -50,6 +53,7 @@ The data folder is `~/.superlocalmemory` unless `SLM_DATA_DIR`, `SL_MEMORY_PATH`
 | `slm list` | Recent memories, newest first, with each one's kind and the id that `update` and `delete` take | `-n` or `--limit N` (default 20), `--kind`, `--tag` (repeatable), `--tags-match all or any`, `--json` |
 | `slm update FACT_ID CONTENT` | Replace the text of one memory. The corrected fact is re-indexed everywhere. A review-gated change returns a correction case id | `--json` |
 | `slm delete FACT_ID` | Delete one memory by exact id | `--yes` or `-y`, `--json` |
+| `slm outcome success, partial or failure FACT_ID...` | Tell SLM how using recalled memories went; it is the command-line twin of the `report_outcome` tool ([Active Memory](Active-Memory)) | `--query-id ID` (from `slm recall --json`), `--note TEXT`, `--agent NAME`, `--report-id KEY` (a retry with it records nothing new), `--json` |
 | `slm forget QUERY` | Delete every memory whose text contains the query (case-insensitive), after a confirmation | `--dry-run` preview only (with no query it previews everything), `--yes` or `-y`, `--json` |
 | `slm observe [CONTENT]` | Offer content for automatic capture; SLM decides whether it holds a decision, bug fix or preference worth storing. Reads a pipe or an argument | none |
 
@@ -68,10 +72,13 @@ The `recall` flags narrow a search; filters that match nothing are reported rath
 | `--tag LABEL` (repeatable), `--tags-match all or any` | Only memories with the tag or tags |
 | `--as-of T`, `--known-as-of T`, `--valid-at T`, `--include-unknown` | Point-in-time recall (ISO-8601); `--include-unknown` adds memories whose temporal provenance is unknown |
 | `--include-global`, `--no-global`, `--include-shared`, `--no-shared` | Include or exclude other profiles' global and shared memories ([Profiles](Profiles)) |
+| `--depth 0, 1 or 2` | How much of each memory to return: 0 a glance (ids and one-line previews), 1 the full memory (default), 2 with its source memory, same-session neighbours, memories about the same entities and the correction that replaced it |
+| `--max-tokens N` | Cap the returned results at about this many tokens; never exceeded |
+| `--show-weak` | When nothing supports the question, show the closest weak matches labelled `[weak]` instead of nothing |
 | `--fast` | Skip the internal agentic verification round |
 | `--json` | Structured output |
 
-With [Answer Check](Answer-Check) on, recall output carries one extra line saying whether the top results answer the question. Results themselves are unchanged.
+The CLI shows related memories, labelled `[related]`, when nothing answers the question exactly, and prints "That isn't in SuperLocalMemory." when nothing is close. While SLM is still warming up it prints "SuperLocalMemory is still warming up — results may be incomplete. Try again in a few minutes." instead of that. With [Answer Check](Answer-Check) running, recall output also carries one line saying whether the top results answer the question ([How Recall Works](How-Recall-Works)).
 
 ## Kinds, summaries, saved views and corrections
 
@@ -123,9 +130,12 @@ See [Memory Kinds](Memory-Kinds) for what the nine kinds mean and how suggestion
 | `slm migrate` | A one-shot migrator for data from a very old install; a current install does not need it. Not the same as `slm db migrate` | `--rollback` only while the migrator's own backup still exists |
 | `slm evidence export DEST, verify BUNDLE, import BUNDLE, rebuild` | Versioned, checksummed JSONL evidence bundles. `import` and `rebuild` are dry runs unless `--execute` | `export`: `--profile`; `import`: `--profile`, `--replace`, `--rollback-dir`, `--execute`; all: `--json` |
 | `slm backup status, recovery-key, decrypt FILE` | Cloud-backup encryption: state, the recovery key, and turning a downloaded backup into a plain `.db` file ([Cloud Backup](Cloud-Backup)) | `recovery-key --import` reads a key from stdin; `decrypt`: `-o OUT`, `--recovery-key-stdin`, `--force`; all: `--json` |
+| `slm backup restore-safety-copy` | Put back the safety copy that a failed dashboard restore kept. The service must be stopped | `--id POINT` restore a different recovery backup, `--json` |
+| `slm backup clear-recovery-needed` | Let the service start again after you repaired the stores yourself. Deletes the pre-restore copy the marker kept | `--json` |
 | `slm clear-cache` | Wipe regenerable caches. `memory.db` and `learning.db` are kept | none |
+| `slm enrich status, pause RUN, resume RUN, undo [RUN], fix REPAIR` | Memory health: the automatic description of older memories, the repairs that wait for your say-so (`entity-links`, `refile-hidden`, `repair-saves`) and undo ([Health and Repair](Health-and-Repair)) | `undo` and `fix`: `--yes` (needed without a terminal); `fix`: `--include-undone`; all: `--json` |
 
-Restore points are a command-line and API feature; the dashboard has no restore-point screen.
+Restore points are a command-line and API feature; the dashboard has no restore-point screen. The dashboard restores a different thing, a recovery backup, from Backup & Cloud ([Cloud Backup](Cloud-Backup)).
 
 ## Governance, GDPR and teams
 
@@ -184,9 +194,11 @@ Restore points are a command-line and API feature; the dashboard has no restore-
 | `slm session close` | Close a session and create its temporal summaries | `--session-id` (default: the most recent) |
 | `slm session-context [QUERY]` | Print relevant memories for hooks. Uses a fast SQLite path | `--max-age-days N` (default 30; 0 turns the age filter off), `--full`, `--json` |
 | `slm decay` | Ebbinghaus forgetting cycle. Previews by default | `--execute` apply, `--dry-run`, `--profile`, `--json` |
-| `slm quantize` | Embedding-precision cycle. Previews by default | `--execute`, `--dry-run`, `--profile`, `--json` |
+| `slm quantize` | Embedding-precision cycle. Previews by default | `--execute`, `--dry-run`, `--profile`, `--repair-sketches`, `--json` |
 | `slm consolidate` | The consolidation pipeline | `--cognitive` also run cognitive consolidation, `--dry-run`, `--profile`, `--json` |
 | `slm soft-prompts` | List the auto-learned patterns that become soft prompts | `--profile`, `--json` |
+
+`slm quantize` previews by default. `--repair-sketches` repairs only the compressed search sketches (the QJL ones) that `slm doctor` can recommend repairing: it rebuilds legacy or incompatible sketches from the original vectors that are still kept, and changes neither the stored vectors, nor the base compressed bytes, nor bit widths, nor lifecycle state. It starts no embedding model, a repeat skips sketches that are already compatible, and memories without a usable original vector are reported as needing to be embedded again. It reuses the existing rotation; if the rotation matrix is missing or incompatible, restore it from a backup before applying. The full `--execute` cycle also adjusts precision according to retention, and before it applies anything it prints counts for sketch repairs, downgrades, upgrades and memories moving to the forgotten state (the vectors are kept). The counts can change if writes happen meanwhile. Both forms accept `--profile` and `--json`; with `--json` the preview goes to the error stream and the final JSON carries it under `data.plan`.
 
 The cycles and what they do are explained in [Living Brain](Living-Brain).
 

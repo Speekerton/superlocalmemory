@@ -63,13 +63,13 @@ Check that SLM runs (`slm status`, `slm doctor`), that something is stored (`slm
 
 ### Recall returns irrelevant results.
 
-Make the question more specific, then use `slm trace` to see which channel brought the result. If you want the assistant told when nothing answers the question, turn on the [answer check](Answer-Check).
+Make the question more specific, then use `slm trace` to see which channel brought the result. Recall tells you when it has nothing: "I don't have this exactly" with the closest memories labelled, or "That isn't in SuperLocalMemory." ([How Recall Works](How-Recall-Works)).
 
 ## Answer check
 
 ### What is the answer check?
 
-A second decision after recall. Recall says which memories are related; the answer check says whether the top ones actually answer the question, so an assistant can say "I don't have that" instead of presenting a related memory as the answer. It never hides or removes results; it only adds fields and one line of guidance ([Answer Check](Answer-Check)).
+A second decision after recall. Recall says which memories are related; the answer check says whether the top ones actually answer the question, so an assistant can say "I don't have that" instead of presenting a related memory as the answer. It feeds the support check that decides whether recall returns results, only the closest labelled ones, or nothing with "That isn't in SuperLocalMemory." ([Answer Check](Answer-Check), [How Recall Works](How-Recall-Works)). On Apple Silicon it is installed by default and runs on your own Mac; opt out with `slm setup --no-laya` or `SLM_SKIP_LAYA=1`.
 
 ### Does it send my memories anywhere?
 

@@ -17,7 +17,9 @@ flowchart TD
     E --> R["Cross-encoder rerank (optional)"]
     R --> K["Ranking mode<br/>off unless SLM_RANKING is set"]
     K --> A{"Answer check<br/>Laya, Jev or off"}
-    A -->|"answers the question"| OK["Results + scores + answer fields"]
-    A -->|"does not answer"| AB["Abstain: nearest results still returned,<br/>marked as not an answer"]
+    A --> G{"Does any memory<br/>support the question?"}
+    G -->|"yes"| OK["Supported: results + scores + answer fields"]
+    G -->|"no, but the question is real"| RL["Related: up to three closest memories,<br/>labelled, with a note"]
+    G -->|"no, or nonsense"| NO["None: nothing returned,<br/>That isn't in SuperLocalMemory."]
     classDef gate fill:#FFF4E0,stroke:#C27A00,color:#1F2340
-    class E,A gate
+    class E,A,G gate

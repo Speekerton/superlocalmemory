@@ -28,13 +28,17 @@ Every canonical recall response declares the contract version and the state of t
   "answer_confidence": null,
   "abstained": false,
   "abstention_reason": null,
+  "abstention_note": "",
+  "tier": "supported",
+  "warming_up": false,
+  "status_note": "",
   "answer_check_status": "off",
   "reranker_status": "not_configured",
   "local_reranker_status": ""
 }
 ```
 
-By default nothing judges whether the results answer the question, so `calibration_status` is `uncalibrated`, `calibration_id` is `null` and `answer_confidence` is `null`. Do not derive an answer probability by doubling, thresholding, averaging or otherwise transforming retrieval scores. Measured on a real store, the ranking score was the same for right answers, wrong answers and questions with no answer in memory, which is why the contract refuses to read it as confidence (comment in `core/score_contract.py`).
+With no answer check running, nothing judges whether the results answer the question, so `calibration_status` is `uncalibrated`, `calibration_id` is `null` and `answer_confidence` is `null`. Do not derive an answer probability by doubling, thresholding, averaging or otherwise transforming retrieval scores. Measured on a real store, the ranking score was the same for right answers, wrong answers and questions with no answer in memory, which is why the contract refuses to read it as confidence (comment in `core/score_contract.py`).
 
 ### Answer check status
 
@@ -55,20 +59,36 @@ Alongside it, the response carries `answer_check_ran` (true only when the status
 
 `reranker_status` names whichever step produced the final order. The value `jev_listwise` means the online answer check's optional reorder replaced what the local reranker had produced, and `local_reranker_status` then keeps the local status for that recall; it is empty when nothing replaced it.
 
+### Support tier and notes
+
+Whether a memory supports the question is decided by the support check described in [How Recall Works](How-Recall-Works), and the response reports it in these fields. The example above shows the defaults for a recall that found support.
+
+| Field | Meaning |
+|---|---|
+| `tier` | `supported`, `related` or `none`. Also on each result: `supported`, `related` or `weak` |
+| `abstention_note` | A plain sentence for a person when there is something to say: "That isn't in SuperLocalMemory.", "Nothing in memory matched this question.", "I don't have this exactly — here are the closest memories.", or the longer note that closer memories exist and `include_related` shows them |
+| `warming_up` | `true` when the recall ran before the models and inputs were ready; then results are labelled related and are not a verdict that memory lacks the answer |
+| `status_note` | The warming-up sentence: "SuperLocalMemory is still warming up — results may be incomplete. Try again in a few minutes." |
+| `support` | The support check's verdict as an object: `status` (`supported` or `unsupported`), the `best` score among the results, the `threshold` it had to reach, the recipe `version`, `weak_shown` and `tier`. It is `null` when the check did not run |
+| `layers` | Present when `depth` is not 1 or `max_tokens` is set: the depth, the token cap, the tokens used, whether anything was trimmed and how many results were left out |
+
+The `support` numbers are a diagnostic of one recipe version, not a probability that an answer is correct, and `answer_confidence` stays `null` unless a calibrated verdict exists.
+
 ### Abstention
 
-When no result survives the evidence floor, `abstained` is `true` and `abstention_reason` is `evidence_floor`. When candidate generation returns nothing, the reason is `no_candidates`. Neither case involves judging results; there were none to judge. The code picks between the two by whether the response recorded a no-confident-match condition.
+When no result survives the evidence floor, or the support check finds no memory that supports the question, `abstained` is `true` and `abstention_reason` is `evidence_floor`. When candidate generation returns nothing, the reason is `no_candidates`. Neither case involves judging results; there were none to judge. The code picks between the two by whether the response recorded a no-confident-match condition.
 
 | `abstention_reason` | When |
 |---|---|
 | `evidence_floor` | Results were found but none cleared the evidence floor |
 | `no_candidates` | Candidate generation returned nothing |
-| `judged_insufficient` | The answer check ran, results were found and are still returned, and none were judged to answer the question |
+| `unsupported` | Results were found but the support check found none that supports the question; recall returns no results, or only labelled related ones |
+| `judged_insufficient` | The answer check ran and judged that none of the results answer the question |
 | `null` | Not abstaining |
 
 ## Answer check
 
-When the [Answer Check](Answer-Check) is turned on (off until an on-device install has passed its own check), a separate decision runs on the top results. It asks not "is this relevant" but "does this answer the question". Its verdict fills `calibration_status`, `calibration_id` and `answer_confidence` with real values instead of the uncalibrated defaults, and may set `abstention_reason` to `judged_insufficient`. `calibration_status` distinguishes a measured calibration from one that has not yet been measured for the current backend and settings, so treat an unmeasured verdict as a signal, not a guarantee. Results are never removed because of this verdict; it is reported next to them, and a caller that ignores it sees what it saw before.
+When the [Answer Check](Answer-Check) is running (on-device and installed by default on Apple Silicon, otherwise off), a separate decision runs on the top results. It asks not "is this relevant" but "does this answer the question". Its verdict fills `calibration_status`, `calibration_id` and `answer_confidence` with real values instead of the uncalibrated defaults, and may set `abstention_reason` to `judged_insufficient`. `calibration_status` distinguishes a measured calibration from one that has not yet been measured for the current backend and settings, so treat an unmeasured verdict as a signal, not a guarantee. The verdict alone removes nothing and is reported next to the results. It does feed the support check, which can leave a recall with no results or only labelled related ones.
 
 The daemon's `GET /recall` accepts an `answer_check` query parameter with three values: `full` (the default, the complete check with the optional reorder when that is on), `no_reorder` (the verdict only, never the reorder, which is what the bounded-loop gate asks for) and `skip` (no check, for a recall that is not a question, such as context loading or a health probe). Any other value is refused with HTTP 400.
 
@@ -80,4 +100,4 @@ The engine runs five candidate producers when their dependencies are healthy: de
 
 Calibrated confidence needs a frozen release candidate, held-out relevance labels, a declared corpus and query distribution, a calibration identity, and reported calibration and selective-risk metrics. Until that evidence exists, the honest contract stays uncalibrated with `answer_confidence: null`. Runtime fields are not benchmark accuracy; the published LoCoMo figures and their protocols are on [Research Foundations](Research-Foundations).
 
-Code: `core/score_contract.py` (`finalize_score_contract`), `server/recall_serializer.py`, `retrieval/answer_check_status.py`, `core/answer_check_stage.py`, `retrieval/answerability.py`, `mcp/_recall_metadata.py`; full developer contract in `docs/retrieval-score-contract.md`.
+Code: `core/score_contract.py` (`finalize_score_contract`), `server/recall_serializer.py`, `retrieval/answer_check_status.py`, `core/answer_check_stage.py`, `retrieval/answerability.py`, `mcp/_recall_metadata.py`, `retrieval/support_gate.py`, `retrieval/support_tiers.py`, `core/recall_layers.py`; full developer contract in `docs/retrieval-score-contract.md`.

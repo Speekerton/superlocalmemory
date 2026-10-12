@@ -1,6 +1,6 @@
 # MCP Tools
 
-SLM exposes 109 tools and 9 resources through the Model Context Protocol (MCP), but a client never sees all of them by default. A named tool profile (`core`, `code`, `full`, `power`, `mesh`, `whole`) picks a fixed subset when the MCP server starts, and an AI app on another computer or on the internet gets a smaller, default-deny subset again. This page lists every tool with its parameters, the profiles that include it and whether a remote caller may use it. The registered function signatures in `src/superlocalmemory/mcp/` are the source of truth, and the profile sets are computed from `mcp/profiles.py`.
+SLM exposes 110 tools and 9 resources through the Model Context Protocol (MCP), but a client never sees all of them by default. A named tool profile (`core`, `code`, `full`, `power`, `mesh`, `whole`) picks a fixed subset when the MCP server starts, and an AI app on another computer or on the internet gets a smaller, default-deny subset again. This page lists every tool with its parameters, the profiles that include it and whether a remote caller may use it. The registered function signatures in `src/superlocalmemory/mcp/` are the source of truth, and the profile sets are computed from `mcp/profiles.py`.
 
 ## Connecting
 
@@ -20,16 +20,16 @@ Every tool that reads or writes memory takes an optional `profile_id`. Empty mea
 
 ## Choosing which tools a client sees
 
-Three environment variables decide the surface, and the first one that applies wins: `SLM_MCP_ALL_TOOLS=1` exposes all 109, then `SLM_MCP_TOOLS=a,b,c` exposes exactly the names listed, then `SLM_MCP_PROFILE` picks a named profile, and with none of them set the default applies. The default is the same set as `full`. An unknown `SLM_MCP_PROFILE` value is an error, not a silent fallback. `slm connect IDE --profile NAME` writes the variable into an IDE's entry. The choice is fixed when the server starts. It has nothing to do with the memory profile that `switch_profile` changes.
+Three environment variables decide the surface, and the first one that applies wins: `SLM_MCP_ALL_TOOLS=1` exposes all 110, then `SLM_MCP_TOOLS=a,b,c` exposes exactly the names listed, then `SLM_MCP_PROFILE` picks a named profile, and with none of them set the default applies. The default is the same set as `full`. An unknown `SLM_MCP_PROFILE` value is an error, not a silent fallback. `slm connect IDE --profile NAME` writes the variable into an IDE's entry. The choice is fixed when the server starts. It has nothing to do with the memory profile that `switch_profile` changes.
 
 | `SLM_MCP_PROFILE` | Tools | What it holds |
 |---|---:|---|
-| `core` | 18 | remember, recall, search, fetch, list_recent, update_memory, forget, session_init, close_session, the five Optimize tools, review_correction, list_corrections, get_memory_summary, switch_profile |
-| `code` | 38 | `core`, plus the five Brain tools, the four memory-kind tools, six code-graph tools (build_code_graph, get_blast_radius, query_graph, semantic_search_code, get_review_context, detect_changes), the three bounded-loop tools, report_outcome and report_feedback |
-| `full` | 57 (62 with images on) | Everyday memory, sessions, learning, skills, Optimize, bounded loops, saved views, memory kinds, Brain tools and the nine mesh tools. This is also the default |
-| `power` | 69 (74 with images on) | `full`, plus get_version, get_mode, health, consistency_check, recall_trace, get_lifecycle_status, set_retention_policy, compact_memories, get_behavioral_patterns, audit_trail, quantize, get_retention_stats |
+| `core` | 19 | remember, recall, search, fetch, expand, list_recent, update_memory, forget, session_init, close_session, the five Optimize tools, review_correction, list_corrections, get_memory_summary, switch_profile |
+| `code` | 39 | `core`, plus the five Brain tools, the four memory-kind tools, six code-graph tools (build_code_graph, get_blast_radius, query_graph, semantic_search_code, get_review_context, detect_changes), the three bounded-loop tools, report_outcome and report_feedback |
+| `full` | 58 (63 with images on) | Everyday memory, sessions, learning, skills, Optimize, bounded loops, saved views, memory kinds, Brain tools and the nine mesh tools. This is also the default |
+| `power` | 70 (75 with images on) | `full`, plus get_version, get_mode, health, consistency_check, recall_trace, get_lifecycle_status, set_retention_policy, compact_memories, get_behavioral_patterns, audit_trail, quantize, get_retention_stats |
 | `mesh` | 9 | The nine `mesh_*` tools only |
-| `whole` | 109 | Every registered tool (the raw server) |
+| `whole` | 110 | Every registered tool (the raw server) |
 
 The five picture and document tools join `full` and `power` only while images and documents are turned on ([Pictures and Documents](Pictures-and-Documents)). That is read once when the server starts. The mesh tools join the default while mesh is enabled, which is the default (`SLM_MCP_MESH_TOOLS=1` forces them on). Old count-suffixed names such as `core14`, `code34`, `full50`, `power61`, `mesh8` and `whole94` still resolve to their current profile and log a deprecation warning.
 
@@ -46,9 +46,10 @@ In the tables, a parameter followed by `?` is optional. The Profiles column says
 | Tool | Parameters | What it does | Profiles | Remote |
 |---|---|---|---|---|
 | `remember` | `content`, `tags`?, `project`?, `importance`?, `session_id`?, `agent_id`?, `scope`?, `shared_with`?, `idempotency_key`?, `session_date`?, `profile_id`?, `kind`?, `replaces`? | Store a memory and return an operation receipt (`operation_id`, `fact_ids`, `materialization_state`). `scope` and `shared_with` set visibility, `kind` and `replaces` classify or supersede, `idempotency_key` makes a retry safe | core, code, full, power | write |
-| `recall` | `query`, `limit`?, `agent_id`?, `session_id`?, `fast`?, `include_global`?, `include_shared`?, `window`?, `as_of`?, `known_as_of`?, `valid_at`?, `include_unknown`?, `profile_id`?, `project`?, `saved_by`?, `about`?, `kind`?, `prefer_project`?, `tags`?, `tags_match`?, `project_strict`? | Multi-channel retrieval with the same filters as `slm recall` (project, kind, tags, time windows, scope). Returns Score Contract results plus the answer-check fields | core, code, full, power | read |
-| `search` | `query`, `limit`?, `kind`?, `profile_id`?, `tags`?, `tags_match`? | Full-text search over memories (FTS5, BM25 ranking), with kind and tag filters | core, code, full, power | read |
+| `recall` | `query`, `limit`?, `agent_id`?, `session_id`?, `fast`?, `include_global`?, `include_shared`?, `window`?, `as_of`?, `known_as_of`?, `valid_at`?, `include_unknown`?, `profile_id`?, `project`?, `saved_by`?, `about`?, `kind`?, `prefer_project`?, `tags`?, `tags_match`?, `project_strict`?, `show_weak`?, `include_related`?, `depth`?, `max_tokens`? | Multi-channel retrieval with the same filters as `slm recall` (project, kind, tags, time windows, scope). Returns Score Contract results plus a `tier` (`supported`, `related` or `none`), `abstention_note`, `warming_up` and the answer-check fields. When nothing supports the question it returns no results and says so; `include_related=true` adds up to three labelled close memories, `show_weak=true` shows every weak match, `depth` (0 glance, 1 full, 2 with context) and `max_tokens` shape and cap the reply. See [How Recall Works](How-Recall-Works) | core, code, full, power | read |
+| `search` | `query`, `limit`?, `kind`?, `profile_id`?, `tags`?, `tags_match`?, `depth`?, `max_tokens`? | Full-text search over memories (FTS5, BM25 ranking), with kind and tag filters. Each result carries a `tier`: `supported`, or `related` (at most three) when none is supported, with `abstention_note` saying so. `depth` and `max_tokens` work as in `recall` | core, code, full, power | read |
 | `fetch` | `fact_ids`, `profile_id`? | Full details for specific fact ids, comma-separated or as a list | core, code, full, power | read |
+| `expand` | `memory_id`, `depth`? (default 2), `max_tokens`?, `profile_id`? | Drill into one recall result: the full memory plus, at depth 2, its source memory, up to three memories from the same session, up to three about the same entities and the correction that replaced it. Takes a result's `fact_id` or `memory_id` and applies the same profile and visibility checks as `fetch`. `max_tokens` is never exceeded | core, code, full, power | host only |
 | `list_recent` | `limit`?, `kind`?, `profile_id`?, `tags`?, `tags_match`? | Most recent memories, newest first, with optional kind and tag filters | core, code, full, power | read |
 | `update_memory` | `fact_id`, `content`, `agent_id`?, `profile_id`? | Replace the text of one memory by exact fact id | core, code, full, power | write |
 | `delete_memory` | `fact_id`, `agent_id`?, `profile_id`? | Delete one memory by exact fact id | full, power | write |
@@ -216,7 +217,7 @@ In the tables, a parameter followed by `?` is optional. The Profiles column says
 | `resolve_operation` | `operation_id`, `action` | Resolve one operation: `action` retry, force_reconcile or cancel (administrator action) | whole only | host only |
 ## Resources
 
-Resources are read-only data a client can read passively. They are registered separately from the tools and are not counted in the 109.
+Resources are read-only data a client can read passively. They are registered separately from the tools and are not counted in the 110.
 
 | Resource | What it holds |
 |---|---|

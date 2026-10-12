@@ -4,7 +4,7 @@ Auto-memory is how your AI assistant uses SLM without you typing `slm remember` 
 
 ## Auto-recall
 
-When a session starts, the assistant calls `session_init` (a hook does it for hosts that run hooks; MCP clients without hooks make the call themselves). SLM recalls against the project, using a query built from the project folder unless the host gives one, and returns up to 10 memories. A memory is included only if its score reaches the relevance threshold, which is 0.3 by default, and it is no older than 30 days unless its score is 0.7 or higher. Pinned memories and standing rules for the project come along with the recalled ones. The same thing is available from a terminal as `slm session-context`, with `--max-age-days` to change the age window (0 turns the age filter off).
+When a session starts, the assistant calls `session_init` (a hook does it for hosts that run hooks; MCP clients without hooks make the call themselves). SLM recalls against the project, using a query built from the project folder unless the host gives one, and returns up to 10 memories. A memory is included only if its score reaches the relevance threshold, which is 0.3 by default, and it is no older than 30 days unless its score is 0.7 or higher. Pinned memories and standing rules for the project come along with the recalled ones. With the Claude Code or Codex hooks installed, a recall also runs before each prompt you send, so the assistant gets memories relevant to what you just asked, not only to the project. Short acknowledgements such as "ok" or "thanks" are skipped. The same context is available from a terminal as `slm session-context`, with `--max-age-days` to change the age window (0 turns the age filter off).
 
 The first thing to know is that this is recall for loading context, not for answering a question, so the [answer check](Answer-Check) is deliberately skipped. Nothing is judged, and with the online option on nothing is sent off the machine or billed for it. If an answer check did run on the recall, its verdict would be placed above the memories as one plain line and never in place of them.
 
@@ -34,13 +34,15 @@ The settings live in the `rules` section of `config.json` in your data folder. T
 |---|---|---|
 | `auto_recall.enabled` | on | Master switch for session context |
 | `auto_recall.on_session_start` | on | Load context when a session starts |
+| `auto_recall.on_every_prompt` | on | Recall before each prompt, through the prompt hooks (Claude Code's prompt hook and Codex's) |
 | `auto_recall.relevance_threshold` | 0.3 | Lowest score a memory needs to be included |
 | `auto_recall.max_memories_injected` | 10 | Most memories the auto-recall helper puts in a context block |
 | `auto_capture.enabled` | on | Master switch for `observe` |
+| `auto_capture.capture_session_summary` | on | Save a short summary when a session ends, through the stop hook |
 | `auto_capture.capture_decisions`, `capture_bugs`, `capture_preferences` | on | One switch per category |
 | `auto_capture.min_confidence` | 0.5 | Lowest confidence needed to store |
 
-Two keys exist in the file but nothing reads them today: `auto_recall.on_every_prompt` and `auto_capture.capture_session_summary`. Setting them changes nothing. With either master switch off, `slm remember` and `slm recall` still work. The hooks that run these steps in Claude Code and Codex are installed with `slm hooks install` (add `--agent codex` for Codex) and removed with `slm hooks remove`; `slm hooks status` shows the state. Nothing is installed without your say-so. Which hook does what is listed in [Plugins, Skills and Hooks](Plugins-Skills-and-Hooks).
+Each of the two master switches also turns off its hooks: with `auto_recall.enabled` off the per-prompt recall does nothing, and with `auto_capture.enabled` off no session summary is saved. Older releases wrote `on_every_prompt: false` with every Settings change although nothing read it; that stored value is dropped once on the first read after the upgrade, so per-prompt recall keeps running unless you set it to false again. With either master switch off, `slm remember` and `slm recall` still work. The hooks that run these steps in Claude Code and Codex are installed with `slm hooks install` (add `--agent codex` for Codex) and removed with `slm hooks remove`; `slm hooks status` shows the state. Nothing is installed without your say-so. Which hook does what is listed in [Plugins, Skills and Hooks](Plugins-Skills-and-Hooks).
 
 ## What stays on your computer
 

@@ -70,4 +70,4 @@ No telemetry or analytics client was found in the code when this page was writte
 
 ## Erasure, exports and the GDPR controls
 
-Erasure covers more than the main database: it scrubs derived caches and tracks backup copies as an obligation. See [Governance](Governance#compliance) for the export, erase and verify commands.
+Erasure covers more than the main database: it removes or withholds the summaries, persona, scene titles, core blocks, soft prompts and entity text that quote an erased memory, scrubs derived caches and tracks backup copies as an obligation. A restore never brings erased data back ([Cloud Backup](Cloud-Backup)). See [Governance](Governance#compliance) for the export, erase and verify commands.

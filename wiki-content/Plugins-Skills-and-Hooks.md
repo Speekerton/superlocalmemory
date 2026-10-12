@@ -20,7 +20,7 @@ What each one contains, counted from the folders:
 | Host | Skills | Agents | Slash commands | Hooks | MCP tool set it asks for |
 |---|---|---|---|---|---|
 | Claude Code | 16 | 4 | `/slm-loop` | 10 hook commands on 5 events | none set, so the default |
-| Cursor-format | 6 | none | none | none | `core`, 18 tools |
+| Cursor-format | 6 | none | none | none | `core`, 19 tools |
 | Codex | 16 (14 through `slm codex install`) | 4 | `/slm-loop` | 5 commands on 4 events in the plugin; 4 through `slm codex install` | none set, so the default |
 | GitHub Copilot | 16 prompt files | 4 | none separate | 6 commands on 4 events | none set, so the default |
 | Hermes | 16 (7 over a remote connection) | 4 child roles | `/slm`, 73 aliases and 4 agent commands | 10 plugin events, no shell hooks | whatever `superlocalmemory` server Hermes is configured with |
@@ -55,7 +55,7 @@ A skill is a short document the agent loads when a request matches its descripti
 | `slm-session` | Call `session_init` once at the start of a session and `close_session` when work is done | yes |
 | `slm-scope` | Keep memory personal by default; share across profiles only when asked | yes |
 | `slm-bot-memory` | Several bots on one computer: attribution is not access control, and what must never be saved | yes |
-| `slm-getting-started-bot` | First session on a bot host with no hooks or dashboard: which 18 tools exist and the first calls | yes |
+| `slm-getting-started-bot` | First session on a bot host with no hooks or dashboard: which tools of the `core` profile exist (the skill's text still counts 18, from before `expand`) and the first calls | yes |
 | `slm-status` | Health and optimization counters with `slm status`, `slm doctor` and `slm_optimize_stats` | no |
 | `slm-profile` | Memory profiles versus MCP tool sets, and `SLM_MCP_PROFILE` ([Profiles](Profiles)) | no |
 | `slm-governance` | Roles, company mode, retention, audit trail, GDPR export and erasure; never bypass governance ([Governance](Governance)) | no |

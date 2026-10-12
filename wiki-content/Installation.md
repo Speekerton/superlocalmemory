@@ -11,7 +11,7 @@ SLM installs as a single `slm` command, either through npm (which gives it a pri
 | Memory | The wizard recommends 4 GB or more; images and documents need 16 GB | |
 | Disk | About 500 MB for the embedding model and 130 MB for the reranker, both downloaded once | |
 
-Optional downloads are asked about separately: a compression model (about 560 MB), the on-device answer check (about 1.1 GB, Apple Silicon only) and images and documents (about 1.5 GB, see [Pictures and Documents](Pictures-and-Documents)).
+On Apple Silicon, setup also installs the on-device answer check (about 1.1 GB) by default, in unattended runs too; opt out with `slm setup --no-laya` or `SLM_SKIP_LAYA=1`. Other optional downloads are asked about separately: a compression model (about 560 MB) and images and documents (about 1.5 GB, see [Pictures and Documents](Pictures-and-Documents)).
 
 ## What is supported
 
@@ -91,7 +91,7 @@ slm status      # mode, profile, data folder, database size
 | 1. System check | Nothing; reports Python version, platform, RAM, the data folder and whether sentence-transformers is installed | |
 | 2. Operating mode | Mode A, B or C ([Modes Explained](Modes-Explained)), then whether other profiles' shared and global memories appear in your recall | Mode A, or B if Ollama is detected; shared recall off |
 | 3. Code knowledge graph | Whether to build structural maps of your repositories | On |
-| 4. Models | Downloads the embedding model and the reranker; asks before the optional compression model; on Apple Silicon asks about the on-device answer check | Compression model skipped |
+| 4. Models | Downloads the embedding model and the reranker; asks before the optional compression model; on Apple Silicon installs the on-device answer check, asking `[Y/n]` when interactive and installing without asking when unattended | Compression model skipped; answer check installed (Apple Silicon) |
 | 5. Daemon | Always on, or shut down after 30 minutes, 1 hour or 2 hours idle | Always on |
 | 6. Mesh | Agent-to-agent messaging ([Multi-Agent Memory](Multi-Agent-Memory)) | On |
 | 7. Ingestion adapters | gmail, calendar, transcript | All off |

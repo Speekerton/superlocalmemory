@@ -51,3 +51,21 @@ def test_hosted_kind_classifier_never_receives_memory_text():
     result = classifier.suggest([AtomicFact(content='Zephyr uses PostgreSQL.')], caller_kind=None)
     assert result[0].source.value == 'rules'
     request.assert_not_called()
+
+
+def test_local_model_cannot_bypass_correction_or_strong_rule_cues():
+    from superlocalmemory.encoding.local_description_kinds import LocalDescriptionKinds
+    llm = SimpleNamespace(provider='ollama', _ollama_host='http://localhost:11434', model='local')
+    classifier = LocalDescriptionKinds(delegate=None, llm_supplier=lambda: llm,
+                                       request=Mock(return_value={'kind': 'correction'}))
+    result = classifier.suggest([AtomicFact(content='Always use PostgreSQL.')], caller_kind=None)
+    assert result[0].kind.value == 'rule'
+    assert result[0].source.value == 'rules'
+
+
+def test_explicit_project_role_retains_sentence_initial_common_name():
+    from superlocalmemory.encoding.entity_mentions import extract_mentions
+    from superlocalmemory.encoding.entity_validity import valid_names
+    text = 'Atlas is our project. PASS is a status.'
+    assert 'Atlas' in extract_mentions(text)
+    assert valid_names(['Atlas', 'PASS'], text) == ['Atlas']

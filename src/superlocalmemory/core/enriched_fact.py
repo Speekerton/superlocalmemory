@@ -51,7 +51,12 @@ def enrich(fact, record, profile_id, *, embedder, entity_resolver, temporal_pars
     embedding, mean, variance = embedding_fields(fact, embedder)
     # A model's or an older extractor's names pass the validity rules against
     # the fact's own text first (encoding/entity_validity).
-    entities = valid_names(list(fact.entities or []), fact.content)
+    from superlocalmemory.encoding.entity_mentions import extract_mentions
+
+    entities = valid_names(
+        list(dict.fromkeys([*(fact.entities or []), *extract_mentions(fact.content)])),
+        fact.content,
+    )
     canonical = (
         entity_resolver.resolve(entities, profile_id)
         if (entity_resolver and entities)
@@ -65,7 +70,7 @@ def enrich(fact, record, profile_id, *, embedder, entity_resolver, temporal_pars
         profile_id=profile_id,
         entities=entities,
         canonical_entities=list(canonical.values()),
-        observation_date=fact.observation_date or record.session_date,
+        observation_date=fact.observation_date or record.session_date or record.created_at,
         referenced_date=fact.referenced_date or temporal.get("referenced_date"),
         interval_start=fact.interval_start or temporal.get("interval_start"),
         interval_end=fact.interval_end or temporal.get("interval_end"),

@@ -210,12 +210,14 @@ class KindClassifier:
 
     def __init__(self, *, config: KindConfigLike, mode: Mode,
                  judge_supplier: Callable[[], Any | None], llm_available: bool,
-                 recipe: KindRecipe = KINDS_V1) -> None:
+                 recipe: KindRecipe = KINDS_V1,
+                 llm_supplier: Callable[[], Any | None] | None = None) -> None:
         self._config = config
         self._mode = mode
         self._judge_supplier = judge_supplier
         self._llm_available = llm_available
         self._recipe = recipe
+        self._llm_supplier = llm_supplier
 
     def suggest(self, facts: Sequence[AtomicFact], *,
                 caller_kind: MemoryKind | None) -> list[KindAssignment | None]:
@@ -239,7 +241,17 @@ class KindClassifier:
         rules = [_rules_for(f) for f in facts]
         out: list[KindAssignment | None] = list(rules)
         if backend is KindBackend.LLM:
-            return [_decided(llm_hint(f), r, f) or r for f, r in zip(facts, rules)]
+            hints = [_decided(llm_hint(f), r, f) or r for f, r in zip(facts, rules)]
+            if self._llm_supplier is None:
+                return hints
+            from types import SimpleNamespace
+
+            from superlocalmemory.encoding.local_description_kinds import LocalDescriptionKinds
+
+            return LocalDescriptionKinds(
+                delegate=SimpleNamespace(suggest=lambda *a, **kw: hints),
+                llm_supplier=self._llm_supplier,
+            ).suggest(facts, caller_kind=None)
         if backend in _MODEL_SOURCE and facts:
             asked = self._ask(backend, judge, facts[:MAX_MODEL_FACTS], rules)
             if asked:

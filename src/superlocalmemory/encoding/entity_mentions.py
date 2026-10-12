@@ -209,6 +209,11 @@ def extract_mentions(text: str, *, question: bool = False) -> list[str]:
     for m in _RUN.finditer(text):
         words = [w for w in m.group(1).split(" ") if w not in labels]
         _split_run(words, out, opens_sentence(text, m.start()))
+    from superlocalmemory.encoding.entity_validity import capitalised_mid_sentence
+
+    for m in re.finditer(r"\b[A-Z][a-z]+\b", text):
+        if capitalised_mid_sentence(m.group(), text):
+            out.add(m.group(), True)
     _lower_mentions(text, out)
     for m in _QUOTED.finditer(text):
         quoted = m.group(1).strip()

@@ -175,9 +175,10 @@ def _code_graph_2(state, support):
         print("    • Embedding model   ~500 MB  — required for semantic recall")
         print("    • Reranker model    ~130 MB  — result quality")
         print("    • Compression model ~560 MB  — optional (you'll be asked)")
-        if support._laya_summary_line_applies(interactive=state.interactive):
+        if support._laya_summary_line_applies(interactive=state.interactive,
+                                              no_laya=state.no_laya):
             print("    • Answer-check model ~1.1 GB — optional, Apple Silicon only")
-            print("      (you'll be asked)")
+            print("      (installed by default; --no-laya opts out)")
 
 
 def _embedding_models_1(state, support):
@@ -237,7 +238,7 @@ def _compression_1(state, support):
             print("  ✓ Skipped — downloads automatically when you enable compression.")
     else:
         print("  ✓ Skipped (non-interactive) — downloads on first use.")
-    support._run_laya_step(state.config, interactive=state.interactive)
+    support._run_laya_step(state.config, interactive=state.interactive, no_laya=state.no_laya)
     print()
     print("─── Step 5/10: Daemon Configuration ───")
     print()
@@ -505,8 +506,8 @@ def _completion_3(state, support):
     print()
 
 
-def run(auto: bool, support: ModuleType) -> None:
-    state = SimpleNamespace(auto=auto)
+def run(auto: bool, support: ModuleType, *, no_laya: bool = False) -> None:
+    state = SimpleNamespace(auto=auto, no_laya=no_laya)
     try:
         _system_check_1(state, support)
         _system_check_2(state, support)

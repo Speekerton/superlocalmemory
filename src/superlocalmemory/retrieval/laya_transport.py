@@ -55,11 +55,9 @@ class LineReader:
             if len(self._buffer) > MAX_LINE_BYTES:
                 raise ValueError("worker reply too long")
             remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                return None
             with selectors.DefaultSelector() as selector:
                 selector.register(self._fd, selectors.EVENT_READ)
-                if not selector.select(timeout=remaining):
+                if not selector.select(timeout=max(0.0, remaining)):
                     return None
             chunk = os.read(self._fd, 65536)
             if not chunk:

@@ -15,9 +15,11 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from superlocalmemory.core import judge_selection
+
 # Re-exported: stop an engine's answer check, and "what would run" (starts nothing).
 from superlocalmemory.core.judge_selection import (  # noqa: F401
-    release_sufficiency_judge, resolve_judge_mode,
+    release_sufficiency_judge,
+    resolve_judge_mode,
 )
 
 if TYPE_CHECKING:
@@ -167,9 +169,9 @@ def _try_service_embedder(cls: type, emb_cfg: Any) -> Any | None:
         emb = cls(emb_cfg)
         if emb.is_available:
             return emb
-        logger.warning("EmbeddingService not available. BM25-only mode. Run 'slm doctor' to diagnose.")
+        logger.warning("EmbeddingService unavailable. BM25-only mode. Run 'slm doctor'.")
     except Exception as exc:
-        logger.warning("Embeddings unavailable (%s). BM25-only mode. Run 'slm doctor' to diagnose.", exc)
+        logger.warning("Embeddings unavailable (%s). BM25-only mode. Run 'slm doctor'.", exc)
     return None
 
 
@@ -186,14 +188,17 @@ def init_embedder(config: SLMConfig) -> Any | None:
     EmbeddingService uses subprocess isolation, so the main process stays
     at ~60MB and never imports torch. The routing is in core/text_provider.py.
     """
+    from superlocalmemory.core.embedding_recipe import build_with_recipe
     from superlocalmemory.core.embeddings import EmbeddingService
     from superlocalmemory.core.text_provider import route_embedder
+    from superlocalmemory.retrieval.embedding_calibration import apply_to
+    apply_to(config)
 
-    return route_embedder(
-        config,
+    return build_with_recipe(config, lambda target: route_embedder(
+        target,
         try_ollama=_try_ollama_embedder,
         try_service=lambda emb_cfg: _try_service_embedder(EmbeddingService, emb_cfg),
-    )
+    ))
 
 
 # ---------------------------------------------------------------------------
@@ -207,15 +212,15 @@ def init_encoding(
     llm: Any,
 ) -> dict[str, Any]:
     """Create all encoding components. Returns dict of components."""
-    from superlocalmemory.encoding.fact_extractor import FactExtractor
-    from superlocalmemory.encoding.entity_resolver import EntityResolver
-    from superlocalmemory.encoding.temporal_parser import TemporalParser
-    from superlocalmemory.encoding.type_router import TypeRouter
-    from superlocalmemory.encoding.graph_builder import GraphBuilder
     from superlocalmemory.encoding.consolidator import MemoryConsolidator
+    from superlocalmemory.encoding.entity_resolver import EntityResolver
+    from superlocalmemory.encoding.entropy_gate import EntropyGate
+    from superlocalmemory.encoding.fact_extractor import FactExtractor
+    from superlocalmemory.encoding.graph_builder import GraphBuilder
     from superlocalmemory.encoding.observation_builder import ObservationBuilder
     from superlocalmemory.encoding.scene_builder import SceneBuilder
-    from superlocalmemory.encoding.entropy_gate import EntropyGate
+    from superlocalmemory.encoding.temporal_parser import TemporalParser
+    from superlocalmemory.encoding.type_router import TypeRouter
     from superlocalmemory.retrieval.ann_index import ANNIndex
 
     ann_index = ANNIndex(dimension=config.embedding.dimension)
@@ -289,7 +294,8 @@ def _init_vector_store(config: SLMConfig) -> Any | None:
     """Create VectorStore if sqlite-vec is available. Returns None on failure."""
     try:
         from superlocalmemory.retrieval.vector_store import (
-            VectorStore, VectorStoreConfig,
+            VectorStore,
+            VectorStoreConfig,
         )
         vec_config = VectorStoreConfig(
             dimension=config.embedding.dimension,
@@ -550,6 +556,7 @@ def _init_quantization_aware_search(
         from superlocalmemory.math.polar_quant import PolarQuantEncoder
         from superlocalmemory.math.qjl import QJLEncoder
         from superlocalmemory.retrieval.canonical_vector_index import candidate_vector_source
+
         from superlocalmemory.retrieval.quantization_aware_search import QuantizationAwareSearch
         from superlocalmemory.storage.quantized_store import QuantizedEmbeddingStore
 
@@ -588,8 +595,11 @@ def attach_sufficiency_judge(retrieval_engine: Any, retrieval_config: Any) -> st
     """Switch the engine's answer check now; returns "laya", "jev" or "off".
     The old judge comes off the engine and stops before the new one is built;
     the builder is looked up through this module, so the conftest guard holds."""
-    return judge_selection.swap_sufficiency_judge(
+    from superlocalmemory.core.answer_check_reload import remember_settings
+    result = judge_selection.swap_sufficiency_judge(
         retrieval_engine, lambda: init_sufficiency_judge(retrieval_config))
+    remember_settings(retrieval_engine, retrieval_config)
+    return result
 
 
 def init_retrieval(
@@ -603,16 +613,17 @@ def init_retrieval(
     """Create the RetrievalEngine — six candidate producers (semantic, BM25,
     entity_graph, temporal, spreading_activation, hopfield) fused via RRF.
     Returns the engine."""
-    from superlocalmemory.retrieval.engine import RetrievalEngine
-    from superlocalmemory.retrieval.semantic_channel import SemanticChannel
     from superlocalmemory.retrieval.bm25_channel import BM25Channel
-    from superlocalmemory.retrieval.entity_channel import EntityGraphChannel
-    from superlocalmemory.retrieval.temporal_channel import TemporalChannel
-    from superlocalmemory.retrieval.profile_channel import ProfileChannel
     from superlocalmemory.retrieval.bridge_discovery import BridgeDiscovery
+    from superlocalmemory.retrieval.engine import RetrievalEngine
+    from superlocalmemory.retrieval.entity_channel import EntityGraphChannel
+    from superlocalmemory.retrieval.profile_channel import ProfileChannel
+    from superlocalmemory.retrieval.semantic_channel import SemanticChannel
+    from superlocalmemory.retrieval.temporal_channel import TemporalChannel
 
     qas = _init_quantization_aware_search(vector_store, db, config)  # V3.3.19 TurboQuant
-    from superlocalmemory.retrieval import canonical_vector_index as cvi, kind_scope
+    from superlocalmemory.retrieval import canonical_vector_index as cvi
+    from superlocalmemory.retrieval import kind_scope
     vectors = cvi.candidate_vector_source(db, vector_store, config.embedding.dimension)
 
     channels: dict = {
@@ -642,6 +653,8 @@ def init_retrieval(
     if config.retrieval.reranker_enabled():
         reranker = init_reranker(config.retrieval)
 
+    from superlocalmemory.retrieval.embedding_calibration import apply_to
+    apply_to(config, embedder)  # also covers a warm preset handed over by staged activation
     profile_ch = ProfileChannel(db)
     bridge = BridgeDiscovery(db)
 
@@ -659,6 +672,8 @@ def init_retrieval(
         # RetrievalEngine reaching for a config section it was never given.
         display_min_confidence=config.memory_kinds.display_min_confidence,
     )
+    from superlocalmemory.core.answer_check_reload import remember_settings
+    remember_settings(engine, config.retrieval, config.base_dir)
     judge_selection.register_engine(engine)  # so a switch reaches this engine too
     kind_scope.attach(engine, db, vectors, config.embedding.dimension)  # kind recall
     # V3.3.13: Ensure reranker warmup is in progress.

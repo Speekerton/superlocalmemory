@@ -40,10 +40,11 @@ def _no_live_judge(monkeypatch):
     monkeypatch.setattr(judge_selection, "_live", None)
 
 
-#: Simulated retrieval times against the production 3.0 s ceiling. A check is
-#: skipped once retrieval has used more than 2.7 s, so SLOW is well past that
-#: and FAST leaves 2.7 s of headroom for real overhead on a loaded machine.
-SLOW_S = 2.8
+#: Simulated retrieval times. Since 4.1.25 the check has its own budget and is
+#: skipped only once retrieval has used more than ``ANSWER_CHECK_HARD_CEILING_S``
+#: (or the caller's own deadline has passed), so SLOW is past that ceiling and
+#: FAST leaves all of it as headroom for real overhead on a loaded machine.
+SLOW_S = 15.5
 FAST_S = 0.0
 
 
@@ -140,16 +141,36 @@ def _join_finishers(timeout: float = 5.0) -> None:
 
 # -- budget arithmetic at 3.0 s -----------------------------------------------------
 
-class TestTheBudgetIsThreeSeconds:
+class TestTheCheckHasItsOwnBudget:
+    """4.1.25: a slow retrieval no longer skips the check. Seen on a real store:
+    retrieval used 7.4 s and the check was skipped, so a question with no answer
+    in memory came back unjudged."""
+
     def test_the_ceiling_is_the_owners(self) -> None:
         assert acs.RECALL_CEILING_S == 3.0
+        assert acs.ANSWER_CHECK_OWN_BUDGET_S == 1.5
 
-    def test_the_check_is_asked_until_2_70_s_and_not_after(self) -> None:
+    def test_a_fast_recall_keeps_the_ceiling_deadline(self) -> None:
         start = 100.0
-        assert acs.judge_deadline(start, now=start + 2.69) == pytest.approx(start + 2.95)
-        assert acs.judge_deadline(start, now=start + 2.71) is None
-        # Vacuity: the old 2.0 s ceiling would already skip at 1.8 s.
-        assert acs.judge_deadline(start, now=start + 1.8) is not None
+        assert acs.judge_deadline(start, now=start + 0.5) == pytest.approx(start + 2.95)
+
+    def test_a_slow_recall_still_gets_the_checks_own_budget(self) -> None:
+        start = 100.0
+        assert acs.judge_deadline(start, now=start + 2.71) == pytest.approx(start + 4.21)
+        assert acs.judge_deadline(start, now=start + 7.4) == pytest.approx(start + 8.9)
+
+    def test_past_the_hard_ceiling_the_check_is_skipped(self) -> None:
+        start = 100.0
+        hard = acs.ANSWER_CHECK_HARD_CEILING_S
+        assert acs.judge_deadline(start, now=start + hard - 0.01) is not None
+        assert acs.judge_deadline(start, now=start + hard + 0.01) is None
+
+    def test_a_callers_deadline_is_never_overrun(self) -> None:
+        start = 100.0
+        with acs.caller_deadline(start + 3.0):
+            assert acs.judge_deadline(start, now=start + 1.0) == pytest.approx(start + 2.95)
+            assert acs.judge_deadline(start, now=start + 2.9) is None
+        assert acs.judge_deadline(start, now=start + 2.9) == pytest.approx(start + 4.4)
 
 
 # -- a skip never looks like an answer ---------------------------------------------
@@ -157,7 +178,7 @@ class TestTheBudgetIsThreeSeconds:
 class TestASkipSaysSoAndWhy:
     def test_budget_skip_is_on_the_envelope(self, mode_a_config, monkeypatch) -> None:
         judge = _JitteryLaya()
-        judge.ready = False  # nothing finished later: this test is about the skip
+        judge.ready = True  # a cold check now reports warming; exercise a warm budget skip
         out = _run(judge, mode_a_config, monkeypatch, delay=SLOW_S)
         meta = recall_response_metadata(out)
         assert meta["answer_check_status"] == "skipped"
@@ -214,8 +235,8 @@ def _statuses(judge, config, monkeypatch, delays):
 
 
 class TestTheSameQuestionGetsTheSameVerdict:
-    #: Retrieval jitter straddling the budget, as on a loaded machine.
-    DELAYS = [2.80, 0.05, 2.82, 0.0, 2.85, 0.02, 2.81, 0.03, 2.84, 0.01]
+    #: Retrieval jitter straddling the hard ceiling, as on a badly loaded machine.
+    DELAYS = [15.50, 0.05, 15.52, 0.0, 15.55, 0.02, 15.51, 0.03, 15.54, 0.01]
 
     def test_after_the_first_run_every_run_is_judged_alike(
             self, mode_a_config, monkeypatch) -> None:

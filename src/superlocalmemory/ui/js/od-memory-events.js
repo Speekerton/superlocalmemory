@@ -103,6 +103,12 @@
 
     // Search — input event
     container.addEventListener('change', function (e) {
+      if (e.target.dataset.odAct === 'showweak') {
+        // 4.1.25: list the closest matches when nothing answers exactly.
+        ctx.state = Object.assign({}, ctx.state, { showWeak: !!e.target.checked });
+        var sq = (ctx.state.searchQ || '').trim();
+        if (sq) _doSearch(id, sq);
+      }
       if (e.target.dataset.odAct === 'window') {
         ctx.state = Object.assign({}, ctx.state, { window: e.target.value || '' });
         var wq = (ctx.state.searchQ || '').trim();

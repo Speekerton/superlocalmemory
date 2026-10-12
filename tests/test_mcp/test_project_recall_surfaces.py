@@ -316,7 +316,7 @@ def test_context_recall_reads_a_running_daemon(monkeypatch) -> None:
         path) or {"results": [{"content": "an acme memory", "score": 0.7}]})
     rows = context_commands._get_recall_fn()("acme topics", 3, "default", project="acme")
     assert rows == [{"text": "an acme memory", "score": 0.7}]
-    assert "project=acme" in paths[0] and "answer_check=skip" in paths[0]
+    assert "project=acme" in paths[0] and "answer_check=context" in paths[0]
 
 
 # -- Stop hook -----------------------------------------------------------------

@@ -5092,6 +5092,9 @@ def _register_daemon_routes(application: FastAPI) -> None:
         fast: bool | None = None,
         full: bool = False,
         include_source: bool = False,
+        # 4.1.25: each result's evidence features plus ``query_evidence``
+        # (recall trace asks for them; ordinary recalls leave them out).
+        evidence: bool = False,
         include_global: bool | None = None,
         include_shared: bool | None = None,
         window: str = "",
@@ -5099,6 +5102,16 @@ def _register_daemon_routes(application: FastAPI) -> None:
         known_as_of: str = "",
         valid_at: str = "",
         include_unknown: bool = False,
+        # 4.1.25: when nothing supports the question, return the weak matches
+        # (each labelled ``weak``) instead of nothing.
+        show_weak: bool = False,
+        # 4.1.25: up to three close memories of a real question (people's
+        # surfaces send it; agents opt in).
+        include_related: bool = False,
+        # 4.1.25 layered recall: 0 glance, 1 recall (default), 2 context;
+        # max_tokens caps the results and is never exceeded. A bad value is a 400.
+        depth: str = "",
+        max_tokens: str = "",
         # 4.1.18: "skip" for a recall that is not a question (context loading,
         # a per-prompt hook): never judged, nothing sent or billed.
         # "no_reorder": the answer check without the opt-in reorder (the loop
@@ -5141,8 +5154,9 @@ def _register_daemon_routes(application: FastAPI) -> None:
     ):
         _update_activity()
         search_query = q or query  # Accept both ?q= and ?query= for compatibility
-        from superlocalmemory.core.answer_check_scope import wants_skip
+        from superlocalmemory.core.answer_check_scope import wants_context, wants_skip
         _skip_check = wants_skip(answer_check)
+        _context_load = wants_context(answer_check)
         _check_request = (answer_check or "").strip().lower()
         if not _skip_check and _check_request not in ("", "full", "no_reorder"):
             from starlette.responses import JSONResponse
@@ -5151,6 +5165,13 @@ def _register_daemon_routes(application: FastAPI) -> None:
                  "message": "answer_check must be one of: skip, no_reorder, full"},
                 status_code=400,
             )
+        from superlocalmemory.core.recall_layers import parse_depth, parse_max_tokens
+        try:
+            _depth, _max_tokens = parse_depth(depth), parse_max_tokens(max_tokens)
+        except ValueError as exc:
+            from starlette.responses import JSONResponse
+            return JSONResponse({"error": "invalid_layers", "message": str(exc)},
+                                status_code=400)
         from superlocalmemory.core.kind_query import InvalidKind, resolve_kind
         try:
             _kind = resolve_kind(kind)
@@ -5287,7 +5308,9 @@ def _register_daemon_routes(application: FastAPI) -> None:
             ).get("facets"),
             skip_answer_check=_skip_check, no_reorder=_check_request == "no_reorder",
             full=full, include_source=include_source,
-            include_marker=bool(session_id),
+            include_marker=bool(session_id), include_evidence=bool(evidence),
+            show_weak=bool(show_weak), include_related=bool(include_related),
+            context_load=_context_load, depth=_depth, max_tokens=_max_tokens,
             budget_s=parse_budget_s(budget_s),
             caller_view=parse_view(caller_view),
         )

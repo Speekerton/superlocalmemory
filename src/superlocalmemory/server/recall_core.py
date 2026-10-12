@@ -24,9 +24,11 @@ event loop does not cross ``run_in_executor``.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import math
 import os
+import time
 from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Any
@@ -41,18 +43,14 @@ RECALL_SEMAPHORE = asyncio.Semaphore(3)
 
 
 def recall_budget_s() -> float:
-    """Generous latency budget for a recall before the keyword fallback (v3.8.3).
+    """The public three-second ceiling; an environment override may only shorten it."""
+    from superlocalmemory.retrieval.answer_check_status import RECALL_CEILING_S
 
-    SLM's value is quality recall under heavy multi-agent load, so semantic
-    recall is given ample time; the keyword fallback is a LAST-RESORT safety
-    net for a genuine hang (e.g. a wedged embedder), not a speed cutoff. Tune
-    with SLM_SEARCH_RECALL_TIMEOUT_S (shared with the dashboard search route).
-    """
     try:
-        v = float(os.environ.get("SLM_SEARCH_RECALL_TIMEOUT_S", ""))
-        return v if v > 0 else 25.0
+        value = float(os.environ.get("SLM_SEARCH_RECALL_TIMEOUT_S", ""))
+        return min(value, RECALL_CEILING_S) if value > 0 else RECALL_CEILING_S
     except (TypeError, ValueError):
-        return 25.0
+        return RECALL_CEILING_S
 
 
 #: A call budget is never allowed below this: the keyword fallback still has to run.
@@ -118,6 +116,23 @@ class RecallCall:
     budget_s: float | None = None
     #: How a remote caller came in (see ``retrieval/remote_view``); ``""`` is a local caller.
     caller_view: str = ""
+    trace: bool = False
+    #: 4.1.25: add each result's evidence features and the question's own
+    #: (``query_evidence``) to the envelope. Recall trace sets it.
+    include_evidence: bool = False
+    #: 4.1.25: the weak matches of a recall that abstains, labelled ``weak``.
+    show_weak: bool = False
+    #: 4.1.25: up to three close memories of a real question, labelled related.
+    include_related: bool = False
+    #: 4.1.25: a context load, not a question: no answer-support gate.
+    context_load: bool = False
+    #: 4.1.25 layered recall (``core.recall_layers``): 0 glance, 1 recall,
+    #: 2 context; ``max_tokens`` caps the results and is never exceeded.
+    depth: int = 1
+    max_tokens: int | None = None
+    #: 4.1.25: the monotonic instant the daemon stops waiting for the engine;
+    #: the answer check, which has its own budget, never runs past it.
+    answer_deadline: float | None = None
 
 
 def effective_budget_s(call: RecallCall) -> float:
@@ -134,57 +149,81 @@ def effective_budget_s(call: RecallCall) -> float:
 
 
 def _visibility_for(engine: Any, call: RecallCall) -> Any:
-    """What this caller may not see, for the thread that runs the recall (nothing for a local caller)."""
+    """The caller's visibility context; local callers use the engine's scope."""
     if not call.caller_view:
         return nullcontext()
     from superlocalmemory.retrieval import remote_view, visibility
 
-    ctx = remote_view.context_for(call.caller_view, engine._db, call.profile_id or engine.profile_id)
+    ctx = remote_view.context_for(
+        call.caller_view, engine._db, call.profile_id or engine.profile_id
+    )
     return visibility.use(ctx) if ctx is not None else nullcontext()
 
 
 def _engine_call(engine: Any, call: RecallCall) -> Any:
     """``engine.recall`` with the call's arguments, on the executor thread."""
     from superlocalmemory.core import answer_check_history as history
-    from superlocalmemory.core.answer_check_scope import skip_answer_check
+    from superlocalmemory.core.answer_check_scope import context_load, skip_answer_check
+    from superlocalmemory.retrieval.answer_check_status import caller_deadline
 
-    with skip_answer_check() if call.skip_answer_check else nullcontext(), \
-            history.origin(call.origin) if call.origin else nullcontext(), \
-            _visibility_for(engine, call):
+    with (
+        skip_answer_check() if call.skip_answer_check else nullcontext(),
+        context_load() if call.context_load else nullcontext(),
+        history.origin(call.origin) if call.origin else nullcontext(),
+        _visibility_for(engine, call),
+        caller_deadline(call.answer_deadline),
+    ):
         return engine.recall(
-            call.query, limit=call.limit, session_id=call.session_id,
-            agent_id=call.agent_id, fast=call.fast,
+            call.query,
+            limit=call.limit,
+            session_id=call.session_id,
+            agent_id=call.agent_id,
+            fast=call.fast,
             profile_id=call.profile_id or None,
-            include_global=call.include_global, include_shared=call.include_shared,
-            window=call.window or None, as_of=call.as_of or None,
-            known_as_of=call.known_as_of or None, valid_at=call.valid_at or None,
+            include_global=call.include_global,
+            include_shared=call.include_shared,
+            window=call.window or None,
+            as_of=call.as_of or None,
+            known_as_of=call.known_as_of or None,
+            valid_at=call.valid_at or None,
             include_unknown=call.include_unknown,
             # Only when given: an engine stand-in need not know these.
             **({"facets": call.facets} if call.facets is not None else {}),
             **({"answer_check": "no_reorder"} if call.no_reorder else {}),
+            **({"show_weak": True} if call.show_weak else {}),
+            **({"include_related": True} if call.include_related else {}),
         )
 
 
 def _envelope(engine: Any, call: RecallCall, response: Any, snapshot: Any) -> dict:
+    if call.trace:
+        from superlocalmemory.server.routes.recall_trace import envelope
+        return envelope(engine, call, response)
     from superlocalmemory.server.recall_serializer import (
         recall_response_metadata,
         serialize_recall_response,
     )
 
-    memory_ids = list({r.fact.memory_id for r in response.results[:call.limit]
-                       if r.fact.memory_id})
+    memory_ids = list(
+        {r.fact.memory_id for r in response.results[: call.limit] if r.fact.memory_id}
+    )
     memory_map = (
         engine._db.get_memory_content_batch(
-            memory_ids, call.profile_id or engine.profile_id,
-            include_global=True, include_shared=True,
-        ) if memory_ids else {}
+            memory_ids,
+            call.profile_id or engine.profile_id,
+            include_global=True,
+            include_shared=True,
+        )
+        if memory_ids
+        else {}
     )
     retrieval = getattr(engine._config, "retrieval", None)
-    from superlocalmemory.retrieval.media_channel import memory_sources
     from superlocalmemory.core.kind_query import engine_display_min_confidence
+    from superlocalmemory.retrieval.media_channel import memory_sources
 
     results, no_confident_match = serialize_recall_response(
-        response, limit=call.limit,
+        response,
+        limit=call.limit,
         memory_map={k: sanitize_json_text(v) for k, v in memory_map.items()},
         source_map=memory_sources(engine._db, memory_ids),
         per_fact_max=getattr(retrieval, "recall_per_fact_max_chars", 2400),
@@ -192,12 +231,15 @@ def _envelope(engine: Any, call: RecallCall, response: Any, snapshot: Any) -> di
         # Markers only on session-bearing recalls: a marker can only buy a
         # learning signal when a pending outcome exists to settle.
         include_marker=call.include_marker,
-        full=call.full, include_source=call.include_source,
+        full=call.full,
+        include_source=call.include_source,
+        include_evidence=call.include_evidence,
         # One kind threshold for the filter and the labels on every surface.
         display_min_confidence=engine_display_min_confidence(engine),
     )
     for item in results:
         item["content"] = sanitize_json_text(item.get("content", ""))
+    results, layers = _layers(engine, call, results)
     return {
         "ok": True,
         # The profile that actually served this recall: the routed profile when
@@ -209,66 +251,146 @@ def _envelope(engine: Any, call: RecallCall, response: Any, snapshot: Any) -> di
         "query_type": response.query_type,
         "result_count": len(results),
         "retrieval_time_ms": round(response.retrieval_time_ms, 1),
-        "channel_weights": {k: round(v, 3)
-                            for k, v in (response.channel_weights or {}).items()},
+        "channel_weights": {k: round(v, 3) for k, v in (response.channel_weights or {}).items()},
         "total_candidates": getattr(response, "total_candidates", 0),
         "results": results,
         "count": len(results),
         "no_confident_match": no_confident_match,
+        **({"layers": layers} if layers else {}),
         **recall_response_metadata(response),
+        **({"query_evidence": dict(getattr(response, "query_evidence", {}) or {})}
+           if call.include_evidence else {}),
     }
 
 
+def _layers(engine: Any, call: RecallCall, results: list[dict]) -> tuple[list[dict], dict]:
+    """The results at the call's depth within its budget (``core.recall_layers``);
+    depth 2 context goes through the fetch gate and the caller's visibility."""
+    if call.depth == 1 and call.max_tokens is None:
+        return results, {}
+    from superlocalmemory.core import recall_layers
+
+    pid = call.profile_id or engine.profile_id
+    with _visibility_for(engine, call):
+        return recall_layers.shape(
+            results, call.depth, call.max_tokens,
+            context_of=lambda item: recall_layers.context_for(
+                engine._db, pid, str(item.get("fact_id", ""))))
+
+
 async def run_recall(engine: Any, call: RecallCall, *, app_state: Any) -> dict:
-    """Run one recall and return its response body. Raises on an engine failure.
-
-    The caller has already authorised the request and checked the profile.
-    """
-    from superlocalmemory.core.recall_gate import RecallHold
+    """One deadline covers queue admission, worker execution and response assembly."""
     from superlocalmemory.server.profile_runtime import get_profile_runtime
-    from superlocalmemory.server.recall_fallback import recall_keyword_fallback
+    from superlocalmemory.server.recall_admission import foreground_admission
+    from superlocalmemory.server.recall_deadline import timed_out
 
-    # Marks a recall in flight so background work pauses. The mark is held
-    # until the engine work this recall started has ended, on every path.
-    hold = RecallHold()
-    acquired = False
+    budget = effective_budget_s(call)
+    from superlocalmemory.server.recall_ingress import remaining_deadline
+    public_deadline = remaining_deadline(budget)
+    worker_deadline = public_deadline - min(0.20, budget * 0.25)
+    runtime = get_profile_runtime(app_state)
+    snapshot = runtime.snapshot
+    async with foreground_admission(runtime, worker_deadline) as admitted:
+        if not admitted:
+            return timed_out(call, snapshot)
+        snapshot = runtime.snapshot
+        return await _run_admitted(
+            engine, call, app_state, runtime, snapshot, public_deadline, worker_deadline)
+
+
+async def _run_admitted(engine, call, app_state, runtime, snapshot,
+                        public_deadline, worker_deadline):
+    from superlocalmemory.core.recall_gate import RecallHold
+    from superlocalmemory.server.recall_deadline import submit, wait_until
+
+    loop = asyncio.get_running_loop()
+    hold, acquired = RecallHold(), False
     try:
-        # Deep recalls are gated; fast recalls keep their bounded channels and
-        # skip remote agentic verification, so they do not need the semaphore.
         if not call.fast:
-            await RECALL_SEMAPHORE.acquire()
-            acquired = True
-        # v3.8.3: bound the recall so callers never hang on a wedged embedder.
-        # Poll the executor future (which cannot be cancelled) without blocking
-        # the loop; only past the generous budget is the keyword answer served.
-        loop = asyncio.get_running_loop()
-        future = loop.run_in_executor(None, hold.run, _engine_call, engine, call)
-        budget = effective_budget_s(call)
-        deadline = loop.time() + budget
-        while not future.done() and loop.time() < deadline:
-            await asyncio.sleep(0.05)
-        snapshot = get_profile_runtime(app_state).snapshot
-        if not future.done():
-            future.add_done_callback(lambda f: (f.cancelled() or f.exception()))
-            logger.warning("recall: semantic recall exceeded %.0fs budget for %r — "
-                           "serving keyword fallback", budget, call.query[:80])
-            # The fallback honours the same facets the primary path was given.
-            with _visibility_for(engine, call):
-                return recall_keyword_fallback(
-                    engine, call.query, call.limit, profile_id=call.profile_id or None,
-                    profile=call.profile_id or snapshot.profile_id,
-                    profile_generation=snapshot.generation, facets=call.facets,
-                )
-        # Reads memory text and serialises: on the executor, never the loop, which
-        # every other request (and the next recall's answer) is waiting on.
-        return await loop.run_in_executor(None, hold.run, _envelope, engine, call,
-                                          future.result(), snapshot)
+            try:
+                await asyncio.wait_for(RECALL_SEMAPHORE.acquire(),
+                                       max(0, worker_deadline - loop.time()))
+                acquired = True
+            except asyncio.TimeoutError:
+                return await _bounded_fallback(
+                    engine, call, app_state, public_deadline, snapshot, hold, runtime)
+        # The engine thread reads monotonic time; the loop's clock may differ.
+        call = dataclasses.replace(call, answer_deadline=time.monotonic() + max(
+            0.0, worker_deadline - loop.time()))
+        future = submit(loop, hold, runtime, app_state, engine, _engine_call, engine, call)
+        response = await wait_until(future, worker_deadline)
+        if response is None:
+            logger.warning("Recall deadline reached; trying unjudged keyword fallback")
+            return await _bounded_fallback(
+                    engine, call, app_state, public_deadline, snapshot, hold, runtime)
+        minimal = _minimal_envelope(call, response, snapshot)
+        envelope = submit(loop, hold, runtime, app_state, engine, _envelope,
+                          engine, call, response, snapshot)
+        assembled = await wait_until(envelope, public_deadline)
+        from superlocalmemory.server.recall_deadline import unjudged
+        return assembled if assembled is not None else unjudged(minimal)
     finally:
         if acquired:
             RECALL_SEMAPHORE.release()
         hold.leave()
 
 
-__all__ = ["RECALL_BUDGET_FLOOR_S", "RECALL_SEMAPHORE", "RecallCall",
-           "effective_budget_s", "parse_budget_s", "recall_budget_s", "run_recall",
-           "sanitize_json_text"]
+def _minimal_envelope(call, response, snapshot):
+    """Keep already-retrieved facts without any source hydration/database access."""
+    results = [
+        {"id": result.fact.memory_id or result.fact.fact_id,
+         "fact_id": result.fact.fact_id, "memory_id": result.fact.memory_id,
+         "content": sanitize_json_text(result.fact.content[:2400]), "score": result.score}
+        for result in (getattr(response, "results", ()) or ())[:call.limit]
+    ]
+    return {
+        "ok": True, "query": call.query,
+        "profile": call.profile_id or getattr(snapshot, "profile_id", ""),
+        "profile_generation": getattr(snapshot, "generation", 0),
+        "results": results, "count": len(results), "result_count": len(results),
+        "channel_status": dict(getattr(response, "channel_status", {}) or {}),
+        "retrieval_mode": "partial_context",
+        "degraded_reason": "recall_assembly_budget_exceeded",
+    }
+
+
+async def _bounded_fallback(engine, call, app_state, deadline, snapshot, hold, runtime):
+    from superlocalmemory.server.recall_deadline import submit, timed_out, unjudged, wait_until
+    from superlocalmemory.server.recall_ingress import fallback_deadline
+
+    future = submit(asyncio.get_running_loop(), hold, runtime, app_state, engine,
+                    _fallback, engine, call, app_state)
+    # The fallback keeps its floor even after a budget shortened below it.
+    result = await wait_until(future, fallback_deadline(deadline, RECALL_BUDGET_FLOOR_S))
+    return unjudged(result) if result is not None else timed_out(call, snapshot)
+
+
+def _fallback(engine: Any, call: RecallCall, app_state: Any) -> dict:
+    from superlocalmemory.server.profile_runtime import get_profile_runtime
+    from superlocalmemory.server.recall_fallback import recall_keyword_fallback
+
+    snapshot = get_profile_runtime(app_state).snapshot
+    with _visibility_for(engine, call):
+        return recall_keyword_fallback(
+            engine,
+            call.query,
+            call.limit,
+            profile_id=call.profile_id or None,
+            profile=call.profile_id or snapshot.profile_id,
+            profile_generation=snapshot.generation,
+            facets=call.facets,
+            show_weak=call.show_weak,
+            include_related=call.include_related,
+        )
+
+
+__all__ = [
+    "RECALL_BUDGET_FLOOR_S",
+    "RECALL_SEMAPHORE",
+    "RecallCall",
+    "effective_budget_s",
+    "parse_budget_s",
+    "recall_budget_s",
+    "run_recall",
+    "sanitize_json_text",
+]

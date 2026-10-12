@@ -107,6 +107,15 @@ def _status_text(data: dict) -> str:
 
 def _switch(args: Namespace) -> None:
     body: dict[str, Any] = {"model_name": args.model}
+    if getattr(args, "task_prefixes", False):
+        from superlocalmemory.core.embedding_recipe import task_model
+
+        try:
+            body.update(
+                model_name=task_model(args.model), provider="sentence-transformers", dimension=768
+            )
+        except ValueError as exc:
+            _fail(args, "switch", str(exc))
     if args.dimension:
         body["dimension"] = args.dimension
     if args.provider:
@@ -122,8 +131,7 @@ def _switch(args: Namespace) -> None:
     job = data["job"]
     if not getattr(args, "json", False) and not args.no_wait:
         job = _wait_for_start(job)
-    _out(args, "switch", {**data, "job": job},
-         f"{data.get('detail', '')}\n{describe(job)}")
+    _out(args, "switch", {**data, "job": job}, f"{data.get('detail', '')}\n{describe(job)}")
     if job.get("state") == "failed":
         sys.exit(1)
 
@@ -192,7 +200,8 @@ def _upgrade(args: Namespace) -> None:
     if not getattr(args, "json", False):
         print(_plan_text(plan))
     if not _confirm_upgrade(args):
-        hint = "" if _is_tty() and not getattr(args, "json", False) else "Run again with --yes to start it."
+        hint = ("" if _is_tty() and not getattr(args, "json", False)
+                else "Run again with --yes to start it.")
         if getattr(args, "json", False):
             _out(args, "upgrade", {"plan": plan, "started": False}, "")
         else:
@@ -225,10 +234,23 @@ def _simple(command: str, path: str, timeout: float = 60.0):
     return handler
 
 
-_HANDLERS = {"switch": _switch, "upgrade": _upgrade, "status": _status,
-             "rollback": _simple("rollback", "/rollback", timeout=_ROLLBACK_TIMEOUT_S),
-             "cancel": _simple("cancel", "/cancel"),
-             "forget-previous": _simple("forget-previous", "/forget-previous")}
+def _calibrate(args: Namespace) -> None:
+    from superlocalmemory.cli.calibration_cmd import run
+
+    run(args)
+
+
+_HANDLERS = {
+    "calibrate": _calibrate,
+    "calibration-status": _calibrate,
+    "calibration-cancel": _calibrate,
+    "switch": _switch,
+    "upgrade": _upgrade,
+    "status": _status,
+    "rollback": _simple("rollback", "/rollback", timeout=_ROLLBACK_TIMEOUT_S),
+    "cancel": _simple("cancel", "/cancel"),
+    "forget-previous": _simple("forget-previous", "/forget-previous"),
+}
 
 
 def cmd_embedder(args: Namespace) -> None:
@@ -271,21 +293,45 @@ def register_embedder_parser(sub: Any) -> None:
     esub = p.add_subparsers(dest="embedder_command", title="embedder subcommands")
     s = esub.add_parser("switch", help="re-index every memory with another model")
     s.add_argument("model", help="model name, e.g. nomic-ai/nomic-embed-text-v1.5")
+    s.add_argument(
+        "--task-prefixes",
+        action="store_true",
+        help="Nomic retrieval-v2: task prompts with preserved identifiers (staged swap)",
+    )
     s.add_argument("--dimension", type=int, default=0, help="the model's vector size")
-    s.add_argument("--provider", default="",
-                   help="sentence-transformers | ollama | openai | slm-media (default: current)")
+    s.add_argument(
+        "--provider",
+        default="",
+        help="sentence-transformers | ollama | openai | slm-media (default: current)",
+    )
     s.add_argument("--endpoint", default="", help="OpenAI-compatible endpoint URL")
     s.add_argument("--no-wait", action="store_true", help="return as soon as it is queued")
     _json_flag(s)
-    u = esub.add_parser("upgrade", help="move your memories to the newer memory engine (rolls back)")
+    u = esub.add_parser(
+        "upgrade", help="move your memories to the newer memory engine (rolls back)"
+    )
     u.add_argument("--yes", "-y", action="store_true", help="do not ask")
     u.add_argument("--no-wait", action="store_true", help="return as soon as it is queued")
     _json_flag(u)
-    for name, text in (("status", "progress of the current or last switch"),
-                       ("rollback", "go back to the previous model (re-indexes)"),
-                       ("cancel", "stop a running switch; the current model stays"),
-                       ("forget-previous", "free the previous model's vectors")):
+    c = esub.add_parser("calibrate", help="measure answer-check and embedding floors on this store")
+    c.add_argument("--model", default="llama3.2:latest", choices=("llama3.2:latest", "gemma3:4b"))
+    c.add_argument("--samples", type=int, default=32)
+    _json_flag(c)
+    _json_flag(esub.add_parser("calibration-status", help="local calibration progress"))
+    _json_flag(esub.add_parser("calibration-cancel", help="cancel calibration; keep settings"))
+    for name, text in (
+        ("status", "progress of the current or last switch"),
+        ("rollback", "go back to the previous model (re-indexes)"),
+        ("cancel", "stop a running switch; the current model stays"),
+        ("forget-previous", "free the previous model's vectors"),
+    ):
         _json_flag(esub.add_parser(name, help=text))
 
 
-__all__ = ["cmd_embedder", "describe", "register_embedder_parser", "status_line", "text_provider_note"]
+__all__ = [
+    "cmd_embedder",
+    "describe",
+    "register_embedder_parser",
+    "status_line",
+    "text_provider_note",
+]

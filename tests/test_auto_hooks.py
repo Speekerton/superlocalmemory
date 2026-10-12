@@ -80,7 +80,8 @@ def test_capture_respects_category_toggle():
 def test_rules_default():
     rules = RulesEngine()
     assert rules.should_recall("session_start") is True
-    assert rules.should_recall("every_prompt") is False
+    # 4.1.25: wired to the per-prompt hooks, which have always run by default.
+    assert rules.should_recall("every_prompt") is True
 
 
 def test_rules_should_capture():
@@ -96,8 +97,8 @@ def test_rules_disabled():
 
 def test_rules_update():
     rules = RulesEngine()
-    rules.update_rule("auto_recall", "on_every_prompt", True)
-    assert rules.should_recall("every_prompt") is True
+    rules.update_rule("auto_recall", "on_every_prompt", False)
+    assert rules.should_recall("every_prompt") is False
 
 
 def test_rules_save_and_load(tmp_path):

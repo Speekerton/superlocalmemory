@@ -67,16 +67,18 @@ class AutoRecall:
             logger.warning("Soft-prompt bridge (AutoRecall→AutoInvoker) failed: %s", exc)
             return ""
 
-    def _recall(self, query: str, limit: int):
+    def _recall(self, query: str, limit: int, *, context: bool = False):
         # S-M2: everything AutoRecall does is loading context — session start,
         # ``slm://context``, ``slm session-context --full``. Nobody asked a
         # question, so the answer check is skipped: nothing is judged, and
         # with the online check on nothing is sent off the machine or billed.
         # In-process recalls read the marker; across HTTP the daemon proxy
         # sends it as ``answer_check=skip``.
-        from superlocalmemory.core.answer_check_scope import skip_answer_check
+        from superlocalmemory.core.answer_check_scope import context_load, skip_answer_check
 
-        with skip_answer_check():
+        # 4.1.25: a session's context is a load, not a question -- no
+        # answer-support gate either; a query from a tool is still gated.
+        with context_load() if context else skip_answer_check():
             if self._recall_fn is not None:
                 return self._recall_fn(query, limit=limit)
             if self._engine is not None:
@@ -104,7 +106,7 @@ class AutoRecall:
         # --- 2. Memory recall ---
         try:
             search_query = query or f"project context {project_path}"
-            response = self._recall(search_query, self._max_memories)
+            response = self._recall(search_query, self._max_memories, context=True)
         except Exception as exc:
             logger.warning("Auto-recall failed: %s", exc)
             # Still return soft prompt if present

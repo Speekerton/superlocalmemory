@@ -313,3 +313,37 @@ describe('Automatic — the never-chosen state (audit 4.1.20 L11)', function () 
     assert.equal(p.root.querySelector('.ac-auto-state'), null);
   });
 });
+
+it('successful local calibration starts polling and renders progress', async () => {
+  const initial = status({ mode: 'laya', active: 'laya', laya: { state: 'ready' },
+                          execution: { state: 'ready', detail: 'Ready' } });
+  const p = await mount(initial, {
+    '/api/v3/answer-check/calibration': () => ({ status: 202,
+      body: { state: 'running', done: 0, total: 48, detail: 'Building local labels' } }),
+  });
+  let polls = 0;
+  p.w.setInterval = () => { polls += 1; return 42; };
+  await click(p, p.ac('calibrate'));
+  assert.equal(polls, 1);
+  assert.match(p.root.textContent, /Calibration running: 0\/48/);
+  assert.equal(p.ac('calibrate').disabled, true);
+});
+
+it('an installed but warming judge never displays a Ready headline', async () => {
+  const p = await mount(status({ mode: 'laya', active: 'laya', laya: { state: 'ready' },
+    execution: { state: 'warming', detail: 'The on-device model is warming' } }));
+  assert.match(p.text('.ac-laya-state'), /warming/);
+});
+
+it('running local calibration offers a working per-run cancel action', async () => {
+  const p = await mount(status({ mode: 'laya', active: 'laya', laya: { state: 'ready' },
+    execution: { state: 'ready' }, calibration: { state: 'running', done: 12, total: 48 } }), {
+    '/api/v3/answer-check/calibration/cancel': () => ({ status: 202,
+      body: { state: 'cancelling', done: 12, total: 48, detail: 'Cancelling calibration' } }),
+  });
+  assert.ok(p.ac('calibration-cancel'));
+  assert.equal(p.ac('calibration-cancel').disabled, false);
+  await click(p, p.ac('calibration-cancel'));
+  assert.deepEqual(p.sent.map(s => s.url), ['/api/v3/answer-check/calibration/cancel']);
+  assert.match(p.root.textContent, /Calibration cancelling/);
+});

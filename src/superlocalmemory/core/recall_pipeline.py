@@ -1170,6 +1170,9 @@ def _completeness_of(response: RecallResponse) -> dict:
         "project_scope": getattr(response, "project_scope", None),
         # 4.1.22: a tag filter's note/reason must survive a rebuild too.
         "tag_scope": getattr(response, "tag_scope", None),
+        # 4.1.25: the question's evidence features describe the question, not
+        # the result list, so a rebuild keeps them.
+        "query_evidence": dict(getattr(response, "query_evidence", {}) or {}),
     }
 
 
@@ -1253,6 +1256,15 @@ def _engine_learning_db(config: Any) -> Path | None:
         return None
 
 
+def _metadata_reader(db: Any) -> Any:
+    """Tags/project per result for the support gate's optional bonus, when the
+    store can be read (a stand-in database cannot)."""
+    if not callable(getattr(db, "execute", None)):
+        return None
+    from superlocalmemory.core.support_stage import metadata_reader
+    return metadata_reader(db)
+
+
 def run_recall(
     query: str,
     profile_id: str,
@@ -1281,8 +1293,18 @@ def run_recall(
     answer_check: str | None = None,
     facets: Any = None,
     query_id: str | None = None,
+    show_weak: bool = False,
+    include_related: bool = False,
 ) -> RecallResponse:
     """Recall relevant facts for a query.
+
+    4.1.25: when nothing in memory supports the question (the answer-support
+    gate, ``core/support_stage``), recall returns no results and a plain
+    ``abstention_note``; ``show_weak=True`` returns the weak matches instead,
+    each labelled ``weak``; ``include_related=True`` shows up to three close
+    memories of a real question, labelled ``related`` (people searching get
+    them; agents ask). Pinned memories and explicit filters keep their
+    existing behaviour.
 
     ``query_id`` is this recall's one identity. The engine allocates it and
     returns it on the response; the bandit play, the shadow assignment and
@@ -1342,6 +1364,11 @@ def run_recall(
     # Only agentic verification may call a language model during recall; the
     # entity channel resolves names read-only (EntityResolver.lookup).
     extra_disabled = None
+    # 4.1.25: extra terms for the keyword channel only (retrieval/query_rewrite);
+    # passed only when the rewrite added something, so a stand-in engine that
+    # predates the parameter is never asked for it.
+    from superlocalmemory.retrieval.query_rewrite import rewrite as _rewrite
+    _lexical = _rewrite(query, mode=m, db=db, profile_id=profile_id, llm=llm, config=config)
     response = retrieval_engine.recall(
         query, profile_id, m, limit,
         extra_disabled_channels=extra_disabled,
@@ -1354,6 +1381,7 @@ def run_recall(
         include_unknown=include_unknown,
         # Only when asked: a retrieval stand-in need not know about facets.
         **({"facets": facets} if facets is not None and not facets.empty else {}),
+        **({"lexical_query": _lexical.lexical_query} if _lexical.added else {}),
     )
     _mark("retrieval(chan+rerank)")
 
@@ -1553,7 +1581,19 @@ def run_recall(
     _resettle_shown_after_bias(
         play_sink, profile_id, response.results, _shown_before_judge,
     )
-    finalize_score_contract(response, verdict=outcome.verdict)
+    from superlocalmemory.core import support_stage
+    from superlocalmemory.core.answer_check_scope import in_context_load
+    # A context load is not a question: it gets its memories, under the
+    # surface's token cap, instead of an abstention.
+    gated = support_stage.enabled(config) and not in_context_load()
+    support = support_stage.assess(
+        retrieval_engine, query, response, outcome.verdict, profile_id,
+        metadata=_metadata_reader(db)) if gated else None
+    finalize_score_contract(
+        response, verdict=outcome.verdict, support=support, show_weak=show_weak,
+        include_related=include_related,
+        keep_results=support_stage.explicit_filter(
+            facets, window, as_of=as_of, known_as_of=known_as_of, valid_at=valid_at))
     response.answer_check_status = outcome.status
     response.answer_check_detail = outcome.detail
 

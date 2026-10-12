@@ -1,4 +1,4 @@
-# MCP Tools (109 whole)
+# MCP Tools (110 whole)
 
 SuperLocalMemory exposes profile-selected tools and resources through the Model
 Context Protocol (MCP). The installed profile registry (`src/superlocalmemory/mcp/profiles.py` and `src/superlocalmemory/mcp/server.py`) is the source of truth
@@ -130,7 +130,7 @@ boundary.
 
 > **Hard constraint:** Surfaces B and C cache results you explicitly route through SLM — not the Claude conversation turn. Full-turn caching requires Surface A (proxy).
 
-## MCP Profiles (whole is 109)
+## MCP Profiles (whole is 110)
 
 A profile is a named, fixed subset of tools exposed to the connecting client.
 Set the active profile via the `SLM_MCP_PROFILE` environment variable (or `SLM_MCP_ALL_TOOLS`/`SLM_MCP_TOOLS` overrides — see `src/superlocalmemory/mcp/server.py` precedence: `ALL > TOOLS > PROFILE > default`). `whole` exposes the raw server with all registered tools; `switch_profile` tool switches the active workspace profile (separate concept).
@@ -144,7 +144,7 @@ Set the active profile via the `SLM_MCP_PROFILE` environment variable (or `SLM_M
 | `mesh` | **9** | SLM-Mesh coordination only |
 | `whole` | **109** | All registered tools (raw server) — verified by `tests/test_mcp/test_mcp_exposure_contract.py` `whole == 109` |
 
-> **Why 109:** 4.1.19 adds memory-kind management tools (`set_memory_kind`, `memory_kinds_status`, `review_memory_kinds`, `confirm_memory_kinds`) to `code`, `full`, and `power`; 4.1.21 adds saved views (`run_view`, `manage_view`) to `full` and `power`; 4.1.25 adds the image tools `remember_media` and `get_media` and the document tools `remember_document` and `media_status` to `whole`, plus the one-time upload link `media_upload_link` for web apps and the bounded mesh wait `mesh_wait`. Apps on this computer can use the image and document tools; a remote app can use them only when its connection was approved with the `slm:media` permission and its key has opted in to media; saving an image or document remotely also needs `slm:write` and a write key. Earlier `whole81`/`whole84`/`whole91`/`whole92`/`whole94` aliases still resolve to `whole`; `109` names the current registered surface.
+> **Why 110:** 4.1.19 adds memory-kind management tools (`set_memory_kind`, `memory_kinds_status`, `review_memory_kinds`, `confirm_memory_kinds`) to `code`, `full`, and `power`; 4.1.21 adds saved views (`run_view`, `manage_view`) to `full` and `power`; 4.1.25 adds the image tools `remember_media` and `get_media` and the document tools `remember_document` and `media_status` to `whole`, plus the one-time upload link `media_upload_link` for web apps and the bounded mesh wait `mesh_wait`, and the layered-recall tool `expand`. Apps on this computer can use the image and document tools; a remote app can use them only when its connection was approved with the `slm:media` permission and its key has opted in to media; saving an image or document remotely also needs `slm:write` and a write key. Earlier `whole81`/`whole84`/`whole91`/`whole92`/`whole94` aliases still resolve to `whole`; `110` names the current registered surface.
 
 Legacy count-suffixed aliases (`core14`/`core16`, `code20`/`code21`/`code24`/`code28`/`code29`/`code31`/`code34`, `full38`/`full39`/`full42`/`full46`/`full47`/`full49`/`full50`, `power50`/`power51`/`power54`/`power58`/`power59`/`power61`, `mesh8`, and `whole81`/`whole84`/`whole91`/`whole92`/`whole94`) resolve to their canonical name for backward compatibility and emit a migration warning.
 

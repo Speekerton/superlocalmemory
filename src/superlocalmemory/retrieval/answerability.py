@@ -29,6 +29,13 @@ asked now or reused from an identical earlier check), or, for ``unjudged``:
 ``disabled``, ``warming``, ``unavailable``, ``busy``, ``budget_exhausted``,
 ``no_results``, ``not_a_question``, ``other_profile``.
 
+4.1.25: when the answer-support gate (``retrieval/support_gate.py``) found
+nothing in memory that supports the question, recall returns no results and
+says ``unsupported`` / ``no_support``: that empty set was judged, not merely
+unfound. And because the gate, not the check alone, decides ``abstained``, the
+check's own verdict travels as ``answer_check_insufficient`` and is what makes
+a checked answer ``supported`` or ``unsupported`` here.
+
 An empty result set is ``unjudged`` / ``no_results``: nothing was found to
 check, which is not evidence that no answer exists (a channel may have been
 down -- see ``channel_status``). ``abstained`` keeps its old meaning for old
@@ -61,11 +68,12 @@ REASON_NO_RESULTS = "no_results"
 REASON_NOT_A_QUESTION = "not_a_question"
 REASON_OTHER_PROFILE = "other_profile"
 REASON_MEDIA_UNJUDGED = "media_unjudged"
+REASON_NO_SUPPORT = "no_support"
 
 REASONS = frozenset({
     REASON_JUDGED_FRESH, REASON_JUDGED_FROM_MEMO, REASON_DISABLED, REASON_WARMING,
     REASON_UNAVAILABLE, REASON_BUSY, REASON_BUDGET_EXHAUSTED, REASON_NO_RESULTS,
-    REASON_NOT_A_QUESTION, REASON_OTHER_PROFILE, REASON_MEDIA_UNJUDGED,
+    REASON_NOT_A_QUESTION, REASON_OTHER_PROFILE, REASON_MEDIA_UNJUDGED, REASON_NO_SUPPORT,
 })
 
 _UNJUDGED_BY_STATUS = {
@@ -84,7 +92,7 @@ _UNJUDGED_BY_SKIP = {
 
 
 def answerability(status: object, detail: object, *, abstained: object,
-                  result_count: int) -> tuple[str, str]:
+                  result_count: int, unsupported: bool = False) -> tuple[str, str]:
     """``(answerability, reason)`` for one recall. Never raises.
 
     A ``judged`` status counts only with results to judge; anything not
@@ -92,7 +100,7 @@ def answerability(status: object, detail: object, *, abstained: object,
     make an answer ``supported``.
     """
     if result_count <= 0:
-        return UNJUDGED, REASON_NO_RESULTS
+        return (UNSUPPORTED, REASON_NO_SUPPORT) if unsupported else (UNJUDGED, REASON_NO_RESULTS)
     if status == acs.STATUS_JUDGED:
         reason = REASON_JUDGED_FROM_MEMO if detail == acs.DETAIL_REUSED else REASON_JUDGED_FRESH
         return (UNSUPPORTED if abstained is True else SUPPORTED), reason
@@ -108,10 +116,12 @@ def of_response(response: Any) -> tuple[str, str]:
         calibrated = getattr(response, "calibration_status", None) not in (
             None, "", "uncalibrated")
         status = acs.STATUS_JUDGED if calibrated else acs.STATUS_SKIPPED
+    own = getattr(response, "answer_check_insufficient", None)
     return answerability(
         status, getattr(response, "answer_check_detail", acs.DETAIL_NONE),
-        abstained=bool(getattr(response, "abstained", False)),
+        abstained=bool(getattr(response, "abstained", False)) if own is None else own,
         result_count=len(getattr(response, "results", None) or ()),
+        unsupported=getattr(response, "support_status", "") == "unsupported",
     )
 
 
@@ -133,9 +143,13 @@ def of_envelope(envelope: Mapping[str, Any]) -> tuple[str, str]:
         # is calibrated only when a verdict was applied, so that is the tell.
         calibrated = envelope.get("calibration_status") not in (None, "", "uncalibrated")
         status = acs.STATUS_JUDGED if calibrated else acs.STATUS_SKIPPED
+    own = envelope.get("answer_check_insufficient")
+    support = envelope.get("support")
     return answerability(
         status, envelope.get("answer_check_reason", acs.DETAIL_NONE),
-        abstained=envelope.get("abstained") is True, result_count=count,
+        abstained=(envelope.get("abstained") is True) if own is None else own is True,
+        result_count=count,
+        unsupported=isinstance(support, Mapping) and support.get("status") == "unsupported",
     )
 
 
@@ -147,6 +161,6 @@ def is_supported(value: Any) -> bool:
 
 
 __all__ = [
-    "ANSWERABILITY", "REASONS", "SUPPORTED", "UNJUDGED", "UNSUPPORTED",
+    "ANSWERABILITY", "REASONS", "REASON_NO_SUPPORT", "SUPPORTED", "UNJUDGED", "UNSUPPORTED",
     "answerability", "is_supported", "of_envelope", "of_response",
 ]

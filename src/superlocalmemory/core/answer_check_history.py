@@ -74,7 +74,8 @@ _ORIGINS = frozenset({"", ORIGIN_DASHBOARD}) | VIEW_ORIGINS
 _ORIGIN: ContextVar[str] = ContextVar("slm_answer_check_origin", default="")
 
 _BACKENDS = frozenset({"", "laya", "jev"})
-_REASONS = frozenset({None, "judged_insufficient", "evidence_floor", "no_candidates"})
+_REASONS = frozenset({None, "judged_insufficient", "evidence_floor", "no_candidates",
+                      "unsupported"})
 _EVENT_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 _QUERY_TYPE_RE = re.compile(r"^[a-z_-]{0,32}$")
 _CALIBRATION_RE = re.compile(r"^[A-Za-z0-9._:@/+-]{0,96}$")

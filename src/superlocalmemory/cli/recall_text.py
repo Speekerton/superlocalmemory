@@ -13,7 +13,7 @@ by a search that did not look everywhere. These lines say what was skipped.
 from __future__ import annotations
 
 __all__ = ["empty_result_line", "incomplete_line", "project_line", "remember_receipt_text",
-           "tag_line"]
+           "status_line", "tag_line"]
 
 
 def incomplete_line(result: dict) -> str:
@@ -56,13 +56,49 @@ def tag_line(result: dict) -> str:
     return ""
 
 
+def result_line(position: int, item: dict) -> str:
+    """One recalled memory; one that does not answer the question says which
+    kind it is: [related] (a close memory of a real question) or [weak]."""
+    score = item.get("score") or 0  # a present-but-null score prints as 0
+    tier = item.get("tier") or ""
+    label = (" [related]" if tier == "related"
+             else " [weak]" if item.get("weak") or tier == "weak" else "")
+    return f"  {position}. [{score:.2f}]{label} {item.get('content', '')}"
+
+
+def context_lines(item: dict) -> list[str]:
+    """Depth 2: the memory's surroundings, one indented line each."""
+    ctx = item.get("context") or {}
+    out = []
+    if ctx.get("source"):
+        out.append(f"       source: {' '.join(str(ctx['source']).split())[:200]}")
+    for label, key in (("same session", "same_session"), ("same entities", "same_entities")):
+        for row in ctx.get(key) or ():
+            out.append(f"       {label}: {row.get('content', '')}")
+    if ctx.get("superseded_by"):
+        out.append(f"       replaced by: {ctx['superseded_by'].get('content', '')}")
+    return out
+
+
+def status_line(result: dict) -> str:
+    """The warming-up note, when the recall ran before SLM was ready and no
+    other line printed says so already."""
+    note = str(result.get("status_note") or "") if result.get("warming_up") else ""
+    return "" if note == str(result.get("abstention_note") or "") else note
+
+
 def empty_result_line(result: dict) -> str:
-    """What to print when no memory came back."""
+    """What to print when no memory came back. While warming up that is the
+    warming note, never "That isn't in SuperLocalMemory."."""
+    if result.get("warming_up") and result.get("status_note"):
+        return str(result["status_note"])
     status = result.get("source_fidelity_status")
     if status in {"degraded", "unavailable"}:
         return f"Source fidelity {status}: no verified results available."
     if incomplete_line(result):
         return "Nothing found yet."
+    if result.get("abstention_note"):
+        return str(result["abstention_note"])
     if result.get("no_confident_match"):
         return "No confident match."
     return "No matching memories found."

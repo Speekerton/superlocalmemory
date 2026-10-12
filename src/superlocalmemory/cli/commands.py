@@ -1551,7 +1551,7 @@ def cmd_setup(args: Namespace) -> None:
     """Run the interactive setup wizard."""
     from superlocalmemory.cli.setup_wizard import run_wizard
 
-    run_wizard(auto=getattr(args, "auto", False))
+    run_wizard(auto=getattr(args, "auto", False), no_laya=getattr(args, "no_laya", False))
     sys.exit(0)  # Force clean exit (background threads from imports may linger)
 
 
@@ -2152,6 +2152,17 @@ def cmd_recall(args: Namespace) -> None:
             known_as_of_qs = _strict_time_qs("known_as_of", "known_as_of")
             valid_at_qs = _strict_time_qs("valid_at", "valid_at")
             unknown_qs = "&include_unknown=true" if getattr(args, "include_unknown", False) else ""
+            if getattr(args, "show_weak", False):
+                unknown_qs += "&show_weak=true"
+            # A person searching: close memories of a real question are shown,
+            # labelled related (agents opt in instead).
+            unknown_qs += "&include_related=true"
+            _depth = getattr(args, "depth", 1)
+            if isinstance(_depth, int) and _depth != 1:
+                unknown_qs += f"&depth={_depth}"
+            _max_tokens = getattr(args, "max_tokens", 0)
+            if isinstance(_max_tokens, int) and _max_tokens > 0:
+                unknown_qs += f"&max_tokens={_max_tokens}"
             facet_qs = "".join(
                 f"&{name}={quote(str(value).strip())}"
                 for name, value in (("project", getattr(args, "project", "")),
@@ -2179,10 +2190,13 @@ def cmd_recall(args: Namespace) -> None:
                     ])
                     return
                 from superlocalmemory.cli.recall_text import (
+                    context_lines,
                     empty_result_line,
                     fidelity_line,
                     incomplete_line,
                     project_line,
+                    result_line,
+                    status_line,
                     tag_line,
                 )
                 incomplete = incomplete_line(result)
@@ -2199,9 +2213,14 @@ def cmd_recall(args: Namespace) -> None:
                 elapsed_ms = result.get('retrieval_time_ms') or 0
                 # Timing is diagnostics; stdout carries only the results.
                 logger.debug("recall completed via daemon (%.0fms)", elapsed_ms)
+                if result.get("abstention_note"):  # weak matches shown on request
+                    print(result["abstention_note"])
+                if status_line(result):
+                    print(status_line(result))
                 for i, r in enumerate(result["results"], 1):
-                    score = r.get('score') or 0
-                    print(f"  {i}. [{score:.2f}] {r['content']}")
+                    print(result_line(i, r))
+                    for line in context_lines(r):
+                        print(line)
                 for note in filter(None, (incomplete, project_line(result), fidelity_line(result),
                                           _answer_check_line(result))):
                     print(f"\n{note}")

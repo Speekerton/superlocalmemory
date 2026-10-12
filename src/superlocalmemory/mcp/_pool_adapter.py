@@ -39,6 +39,8 @@ class PoolRecallItem:
     relevance_score: float = 0.0
     ranking_score: float | None = None
     memory_confidence: float = 0.0
+    match_confidence: float | None = None
+    confidence_basis: str = "unmeasured"
     rank_position: int = 0
     trust_score: float = 0.0
     channel_scores: dict[str, float] = field(default_factory=dict)
@@ -154,9 +156,9 @@ def pool_recall(query: str, limit: int = 10, **kwargs: Any) -> PoolRecallRespons
                 memory_id=item.get("memory_id", ""),
                 created_at=item.get("created_at", "") or "",
             ),
-            score=float(item.get("score", 0.0)),
+            score=float(item.get("score") or 0.0),
             confidence=float(item.get("confidence", 0.0)),
-            relevance_score=float(item.get("relevance_score", item.get("score", 0.0))),
+            relevance_score=float(item.get("relevance_score", item.get("score")) or 0.0),
             ranking_score=(
                 float(item["ranking_score"])
                 if item.get("ranking_score") is not None else None
@@ -164,6 +166,8 @@ def pool_recall(query: str, limit: int = 10, **kwargs: Any) -> PoolRecallRespons
             memory_confidence=float(
                 item.get("memory_confidence", item.get("confidence", 0.0))
             ),
+            match_confidence=item.get("match_confidence"),
+            confidence_basis=item.get("confidence_basis", "unmeasured"),
             rank_position=int(item.get("rank_position", 0)),
             trust_score=float(item.get("trust_score", 0.0)),
             channel_scores=item.get("channel_scores", {}) or {},

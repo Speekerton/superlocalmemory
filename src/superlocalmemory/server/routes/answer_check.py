@@ -53,6 +53,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool
 from superlocalmemory.core import judge_keys, judge_selection, laya_runtime
 from superlocalmemory.retrieval import jev_judge, sufficiency
 from superlocalmemory.server.routes import answer_check_support as support
+from superlocalmemory.server.routes.answer_calibration import register as _register_calibration
 
 logger = logging.getLogger(__name__)
 
@@ -578,3 +579,7 @@ def post_jev_rerank(request: Request, body: JevRerankRequest):
         raise
     except Exception:
         return _internal_error()
+
+# Reuse the same credential + MANAGE boundary for store calibration.
+
+_register_calibration(router, _gate)

@@ -39,12 +39,12 @@ def _daemon_recall(q: str, limit: int, _profile: str, *, project: str = "") -> l
     is recall's project filter (#150). The active profile serves it, as before.
     """
     from superlocalmemory.cli.daemon import _get_port, is_daemon_running
-    from superlocalmemory.core.answer_check_scope import skip_answer_check
+    from superlocalmemory.core.answer_check_scope import context_load
     from superlocalmemory.mcp._daemon_proxy import DaemonPoolProxy
 
     if not is_daemon_running():
         return []
-    with skip_answer_check():
+    with context_load():
         raw = DaemonPoolProxy(port=_get_port()).recall(
             q, limit=limit, project=project or "", answer_check=False)
     if not isinstance(raw, dict) or raw.get("ok") is False:

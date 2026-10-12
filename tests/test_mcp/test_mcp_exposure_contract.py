@@ -141,15 +141,15 @@ def _register_every_tool(target) -> None:
         # mirror the full profile, so it moves with it.
         # 4.1.21: +run_view, +manage_view (saved views, issue #113).
         # Media handlers stay registered for actionable refusals while hidden.
-        ("essential", "", 62),
+        ("essential", "", 63),
         # v4.0.8: get_memory_summary added to CORE — the summary layer's MCP
         # surface (issue #113). Counts bumped deliberately, which is what
         # this contract exists to force.
-        ("named-core", "core", 18),
+        ("named-core", "core", 19),
         # v4.1.12: +settle_session_outcomes and
         # +observe_bounded_loop_execution_learning. Both are whole-profile
         # tools; smaller profiles retain their explicit allowlists.
-        ("whole", "whole", 109),
+        ("whole", "whole", 110),
     ),
 )
 def test_registration_exposure_is_exact_and_duplicate_free(
@@ -187,7 +187,7 @@ def test_registration_exposure_is_exact_and_duplicate_free(
 
     listed_names = {tool.name for tool in asyncio.run(mod.server.list_tools())}
     assert listed_names == set(strict.tools) - mod._MEDIA_TOOLS
-    assert len(listed_names) == {"essential": 57, "named-core": 18, "whole": 104}[exposure]
+    assert len(listed_names) == {"essential": 58, "named-core": 19, "whole": 105}[exposure]
 
 
 @pytest.mark.asyncio
@@ -283,14 +283,14 @@ async def test_attribution_reports_current_product_identity(
 def test_imported_server_exposes_product_name_and_whole_count(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Imported MCP server keeps product identity and whole surface at 109."""
+    """Imported MCP server keeps product identity and whole surface at 110."""
     mod = _fresh_server(monkeypatch, "whole")
     # Public SLMFastMCP/MCPServer attribute — do not assert private internals.
     assert mod.server.name == "SuperLocalMemory V4"
     strict = _StrictToolServer()
     _register_every_tool(strict)
-    assert len(strict.tools) == 109
+    assert len(strict.tools) == 110
     actual_names = [tool.name for tool in mod.server._tool_manager.list_tools()]
-    assert len(actual_names) == 109
+    assert len(actual_names) == 110
     assert len(actual_names) == len(set(actual_names))
     assert set(actual_names) == set(strict.tools)

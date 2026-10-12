@@ -219,25 +219,18 @@ def _download_compressor(model_name: str) -> bool:
 # ---------------------------------------------------------------------------
 # Laya — the local answer check (4.1.18)
 # ---------------------------------------------------------------------------
-#: Unattended setup installs the answer-check model only when this is "1".
-_INSTALL_LAYA_ENV = "SLM_INSTALL_LAYA"
-def _laya_opted_in() -> bool:
-    return os.environ.get(_INSTALL_LAYA_ENV) == "1"
-def _laya_summary_line_applies(*, interactive: bool = True) -> bool:
+
+def _laya_summary_line_applies(*, interactive: bool = True, no_laya: bool = False) -> bool:
     """True when the up-front download summary should mention Laya.
     Never raises and never imports anything heavier than the platform check
     it wraps — a broken optional import here must not break Step 3's summary.
-    Unattended setup only announces it when it was asked to install it.
+    Since 4.1.25 unattended setup installs it too, unless opted out.
     """
-    if os.environ.get("SLM_SKIP_LAYA") == "1":
-        return False
-    if not interactive and not _laya_opted_in():
-        return False
-    try:
-        from superlocalmemory.retrieval.sufficiency import laya_supported
-        return laya_supported()
-    except Exception:
-        return False
+    from superlocalmemory.cli import laya_offer
+
+    return not laya_offer.opted_out(no_laya) and laya_offer.supported()
+
+
 def _run_mode_b_server_step(config: Any, *, interactive: bool) -> None:
     """Step 2b: pick Mode B's local model server, then save (#112).
     Offers Ollama (the default — unchanged behavior) or another local
@@ -284,21 +277,29 @@ def _run_mode_b_server_step(config: Any, *, interactive: bool) -> None:
         installed=_ollama_installed_models(), ram_gb=_get_ram_gb(),
     )
     config.save(mode_change=True)
-def _run_laya_step(config: Any, *, interactive: bool) -> None:
-    """Step 4d: offer to install the local answer check (Laya).
+
+
+def _run_laya_step(config: Any, *, interactive: bool, no_laya: bool = False) -> None:
+    """Step 4d: install the local answer check (Laya) — on by default (4.1.25).
+
+    Interactive setup asks [Y/n]; unattended setup installs it unless opted
+    out (``laya_offer.opted_out``). Never on hardware it cannot run on.
     Fails open on purpose: any problem here is one plain line, and setup
     keeps going. The same install is always offered again later in the
     dashboard (Settings -> Answer check), so nothing here is a last chance.
     """
+    from superlocalmemory.cli import laya_offer
+
     print()
     print("─── Step 4d/10: Answer check (Laya) ───")
     print()
-    if os.environ.get("SLM_SKIP_LAYA") == "1":
-        print("  ✓ Skipped (SLM_SKIP_LAYA=1) — set it up later in the dashboard.")
+
+    if laya_offer.opted_out(no_laya):
+        print(f"  ✓ Skipped ({laya_offer.SKIP_ENV} or --no-laya) — "
+              "set it up later in the dashboard.")
         return
     try:
-        from superlocalmemory.retrieval.sufficiency import laya_supported
-        if not laya_supported():
+        if not laya_offer.supported():
             print("  The local answer check needs Apple Silicon. On this machine, set up")
             print("  the hosted option instead: Settings → Answer check, in the dashboard.")
             return
@@ -308,16 +309,14 @@ def _run_laya_step(config: Any, *, interactive: bool) -> None:
         if interactive:
             choice = _prompt("  Set it up now? [Y/n] (default: Y): ", "y").lower()
             if choice not in ("", "y", "yes"):
+                laya_offer.remember_decline()
                 print("  ✓ Skipped — set it up later in the dashboard: Settings → Answer check.")
                 return
-        elif not _laya_opted_in():
-            # M-13: an unattended run (--auto, CI, an agent, no terminal) never
-            # starts a ~1.1 GB download and a new environment on its own.
-            print("  ✓ Skipped (non-interactive) — set it up later in the dashboard:")
-            print(f"    Settings → Answer check, or re-run with {_INSTALL_LAYA_ENV}=1.")
-            return
+            laya_offer.forget_decline()
         else:
-            print(f"  Setting it up automatically ({_INSTALL_LAYA_ENV}=1).")
+            print("  Setting it up (the default where it can run).")
+            print(f"  {laya_offer.OPT_OUT_HINT}")
+
         from superlocalmemory.core.laya_runtime import install
         def _on_progress(fraction: float, step: str) -> None:
             print(f"    [{fraction * 100:5.1f}%] {step}")
@@ -472,10 +471,13 @@ def _mark_complete() -> None:
 # ---------------------------------------------------------------------------
 # Main wizard
 # ---------------------------------------------------------------------------
-def run_wizard(auto: bool = False) -> None:
-    """Run the supported wizard phases with this module's replaceable helpers."""
+def run_wizard(auto: bool = False, no_laya: bool = False) -> None:
+    """Run the supported wizard phases with this module's replaceable helpers.
+
+    ``no_laya``: never install the answer check (``slm setup --no-laya``).
+    """
     from superlocalmemory.cli.setup_wizard_flow import run
-    run(auto, sys.modules[__name__])
+    run(auto, sys.modules[__name__], no_laya=no_laya)
 
 # ---------------------------------------------------------------------------
 # First-use auto-trigger

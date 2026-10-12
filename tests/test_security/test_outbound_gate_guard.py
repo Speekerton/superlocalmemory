@@ -88,6 +88,8 @@ REVIEWED: dict[tuple[str, str, str], tuple[int, str]] = {
         (1, "SDK: prompt arrives only from _dispatch_llm, hosted-redacted first"),
     (_S + "evolution/skill_evolver.py", "_ollama_running", "urllib.request.urlopen"):
         (1, "PROBE: GET /api/tags on 127.0.0.1, no body"),
+    (_S + "evolution/skill_evolver.py", "_ollama_models", "urllib.request.urlopen"):
+        (1, "PROBE: GET /api/tags on 127.0.0.1, no body; reads model names only"),
     (_S + "hooks/portable_kit.py", "_check_daemon_health", "urllib.request.urlopen"):
         (1, "PROBE: GET /api/v3/health on 127.0.0.1, no body"),
     (_S + "infra/cloud_backup.py", "_get_drive_service", "googleapiclient.discovery.build"):

@@ -81,6 +81,16 @@ def test_no_profile_or_scope_like_argument_is_filed_as_neutral(registry) -> None
     assert not {a for a in binding.NEUTRAL_ARGUMENTS if looks_scoped.search(a)}
 
 
+def test_outcome_report_key_is_retained_inside_the_bound_profile():
+    arguments = {"memory_ids": "fact-a", "outcome": "success", "report_id": "retry-a"}
+    result = binding.bind_arguments("report_outcome", arguments, key_name="test", bound="work")
+    assert result["report_id"] == "retry-a"
+    assert result["profile_id"] == "work"
+    with pytest.raises(binding.BindingRefusal):
+        binding.bind_arguments("report_outcome", {**arguments, "profile_id": "other"},
+                               key_name="test", bound="work")
+
+
 def test_every_remote_tool_that_takes_scope_is_pinned_to_personal(registry) -> None:
     takes_scope = {t for t, args in registry.items()
                    if t in policy.WRITE_TOOLS | policy.MEDIA_TOOLS and "scope" in args}

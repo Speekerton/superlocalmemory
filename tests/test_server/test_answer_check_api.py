@@ -605,6 +605,7 @@ def daemon_client(engine_with_mock_deps):
 @pytest.mark.parametrize(
     "method,path,body",
     (
+        ("POST", "/api/v3/answer-check/calibration/cancel", None),
         ("POST", "/api/v3/answer-check/mode", {"mode": "off"}),
         ("POST", "/api/v3/answer-check/laya/setup", None),
         ("POST", "/api/v3/answer-check/laya/adopt", {"python": "/usr/bin/python3"}),

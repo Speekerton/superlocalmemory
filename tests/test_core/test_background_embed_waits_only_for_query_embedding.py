@@ -134,7 +134,8 @@ def test_a_recalls_query_embedding_marks_it():
         def embed(self, text):
             return [0.1, 0.2]
 
-    qe = QueryEmbedder(lambda: _Embedder())
+    provider = _Embedder()
+    qe = QueryEmbedder(lambda: provider)
     with _recall_in_flight() as step:
         assert recall_gate.recalls_needing_embedder() == 1
         out: list = []

@@ -18,7 +18,6 @@ from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
@@ -458,6 +457,8 @@ class RetrievalResult:
     relevance_score: float | None = None
     ranking_score: float | None = None
     memory_confidence: float | None = None
+    match_confidence: float | None = None
+    confidence_basis: str = "unmeasured"
     rank_position: int = 0
     evidence_chain: list[str] = field(default_factory=list)
     trust_score: float = 0.5
@@ -468,6 +469,20 @@ class RetrievalResult:
     # The cross-encoder's score for this result, when it ran: what later
     # layers may reorder only within a bound (retrieval/reranker_lead.py).
     rerank_score: float | None = None
+    # 4.1.25: what each signal says about this result
+    # (``retrieval.evidence_features``): raw cosine, hub baseline and the
+    # hub-corrected cosine, the cross-encoder's raw score, raw BM25, keyword
+    # coverage and entity hit. Measurement only: nothing ranks or abstains on
+    # it yet. In-process and in recall trace; the recall envelope is unchanged.
+    evidence: dict = field(default_factory=dict)
+    # 4.1.25: the answer-support gate's probability that this memory answers
+    # the question (``retrieval.support_gate``), and whether it is below the
+    # gate's threshold. None / False when the gate did not run.
+    support: float | None = None
+    weak: bool = False
+    #: "supported", "weak" or "related" (``retrieval.support_tiers``); "" when
+    #: the gate did not run.
+    tier: str = ""
 
 
 @dataclass
@@ -552,6 +567,10 @@ class RecallResponse:
     # response did not come from the retrieval engine. In-process, like
     # ``answer_check_trace``: the MCP/HTTP recall envelope is unchanged.
     stage_ms: dict[str, float] = field(default_factory=dict)
+    # 4.1.25: question-level evidence (``retrieval.evidence_features.
+    # query_evidence``): the nonsense-phrase check and the content-term count.
+    # In-process and in recall trace, like ``stage_ms``. Additive.
+    query_evidence: dict = field(default_factory=dict)
     # 4.1.21 (#150): what a recall's project did - ``{"filter": {...}}`` when
     # ``project`` was given (``applied`` False, with a plain ``note``, when it
     # fell back to unfiltered results), ``{"prefer": {...}}`` when
@@ -568,3 +587,23 @@ class RecallResponse:
     # checked / degraded / not_checked. Degraded recalls retain only source
     # projections independently verified against the immutable memory table.
     source_fidelity_status: str = "not_checked"
+    # 4.1.25: the answer-support gate (``retrieval.support_gate``) -
+    # "supported" / "unsupported", or "" when it did not run; its best
+    # probability, threshold and recipe version; whether weak matches were
+    # shown on request (``show_weak``). ``abstention_note`` is the sentence a
+    # person reads when recall abstains. ``answer_check_insufficient`` keeps
+    # the answer check's own verdict (None when it gave none), since the gate,
+    # not the check alone, decides ``abstained``. Additive.
+    support_status: str = ""
+    #: "supported" / "related" / "none" (``retrieval.support_tiers``).
+    support_tier: str = ""
+    #: 4.1.25: recall ran before its models and inputs were ready; results are
+    #: keyword finds, and ``status_note`` says so in plain words.
+    warming_up: bool = False
+    status_note: str = ""
+    support_best: float | None = None
+    support_threshold: float | None = None
+    support_version: str = ""
+    weak_shown: bool = False
+    abstention_note: str = ""
+    answer_check_insufficient: bool | None = None

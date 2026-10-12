@@ -31,14 +31,24 @@ _NOT_ANSWERED = (
 _ANSWERED = "Answer check: likely answered (confidence {confidence:.2f})."
 #: 4.1.22: the verdict an explicit rule settled. The model's own number is kept
 #: and shown as what it is, never as the confidence of the answer.
-RULE_ANSWERED = ("Answer check: answered by a rule stated in your memories "
-                 "(the model's own confidence was {confidence:.2f}).")
+RULE_ANSWERED = (
+    "Answer check: answered by a rule stated in your memories "
+    "(the model's own confidence was {confidence:.2f})."
+)
 
 
 def answered_line(result_get: Any, confidence: float) -> str:
     """The line for a checked, supported answer: by a rule, or by the model."""
-    template = RULE_ANSWERED if settled_by_rule(result_get("calibration_id", None)) \
-        else _ANSWERED
+    identity = result_get("calibration_id", None)
+    if isinstance(identity, str) and identity.endswith(
+        ("+explicit-approver-v1", "+requested-slot-v1",
+         "+explicit-approver-v2", "+requested-slot-v2")
+    ):
+        return (
+            "Answer check: answer stated explicitly in your memories "
+            f"(the model's own confidence was {confidence:.2f})."
+        )
+    template = RULE_ANSWERED if settled_by_rule(result_get("calibration_id", None)) else _ANSWERED
     return template.format(confidence=confidence)
 
 

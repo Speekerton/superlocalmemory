@@ -167,7 +167,10 @@ def test_the_boost_is_bounded(store) -> None:
     weak_seen = []
     for query in _BOUND_QUERIES:
         plain = {r.fact.content: r.ranking_score for r in _recall(store, query).results}
-        after = _contents(_recall(store, query, prefer_project=PROJECT_PATH))
+        # Twice the depth: the boost may lift a project memory from just past
+        # the top ten into it (the answer-support floor admits more real
+        # candidates), which pushes the tenth out; the order is what's measured.
+        after = _contents(_recall(store, query, limit=20, prefer_project=PROJECT_PATH))
         weak = [c for c in _PROJECT if c in plain
                 and any(plain[c] < 0.8 * plain[t] for t in plain if not _is_project(t))]
         weak_seen.extend(weak)
@@ -198,7 +201,10 @@ def test_measured_ranking_before_and_after(store) -> None:
     lifted_seen, held_seen = [], []
     for query in _BOUND_QUERIES:
         plain = _recall(store, query).results
-        after = _contents(_recall(store, query, prefer_project=PROJECT_PATH))
+        # Twice the depth: the boost may lift a project memory from just past
+        # the top ten into it (the answer-support floor admits more real
+        # candidates), which pushes the tenth out; the order is what's measured.
+        after = _contents(_recall(store, query, limit=20, prefer_project=PROJECT_PATH))
         for i, r in enumerate(plain):
             if not _is_project(r.fact.content):
                 continue

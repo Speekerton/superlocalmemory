@@ -72,7 +72,9 @@
   function _normSearch(r) {
     return {
       id: r.fact_id || r.memory_id || '', memory_id: r.memory_id || '',
-      content: r.content || '', category: r.category || r.fact_type || 'semantic',
+      // 4.1.25: a memory that does not answer the search exactly says so.
+      content: (r.tier === 'related' ? '[related] ' : (r.weak ? '[weak] ' : '')) +
+        (r.content || ''), category: r.category || r.fact_type || 'semantic',
       memory_kind: r.memory_kind || '', memory_kind_label: r.memory_kind_label || '',
       memory_kind_state: r.memory_kind_state || '',
       project_name: r.project_name || '', scope: r.scope || '',
@@ -262,6 +264,10 @@
           'style="flex:1;padding:8px 12px;border:1px solid var(--border);' +
           'border-radius:var(--r-md);background:var(--card-2);color:var(--fg);' +
           'font-size:13.5px;outline:none">' +
+        '<label title="When nothing answers the search exactly, list the closest matches anyway" ' +
+          'style="display:flex;gap:4px;align-items:center;font-size:12.5px;color:var(--fg-2);' +
+          'white-space:nowrap"><input type="checkbox" data-od-act="showweak">' +
+          'Show closest matches</label>' +
         '<select data-od-act="window" title="Limit search to a time window" ' +
           'style="padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-md);' +
           'background:var(--card-2);color:var(--fg);font-size:13px;outline:none">' +
@@ -621,7 +627,8 @@
         headers: { 'Content-Type': 'application/json' },
         slmInvalidatesCache: false,
         slmRequiresWriteAuth: false,
-        body: JSON.stringify({ query: q, limit: 50, window: _st.window || '' })
+        body: JSON.stringify({ query: q, limit: 50, window: _st.window || '',
+                               show_weak: !!_st.showWeak })
       }).then(function (r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();
@@ -630,6 +637,16 @@
         var mems = (d.results || []).map(_normSearch);
         _st = Object.assign({}, _st, { memories: mems, total: mems.length });
         _renderTable(id, { memories: mems, total: mems.length, limit: mems.length, offset: 0 });
+        // 4.1.25: why nothing (or only close matches) came back, in plain words.
+        // An empty result says the reason instead of "No results found.".
+        var note = d.status_note || d.abstention_note || '';
+        var nw = document.getElementById(id + '-tbl-wrap');
+        if (note && nw) {
+          var noteHtml = '<div class="card-pad" style="color:var(--fg-2);' +
+            'font-size:13px;padding:10px 12px">' + _esc(note) + '</div>';
+          if (!mems.length) nw.innerHTML = noteHtml;
+          else nw.insertAdjacentHTML('afterbegin', noteHtml);
+        }
       }).catch(function (err) {
         if (_st.rootId !== id || _st.requestSeq !== requestSeq) return;
         var w = document.getElementById(id + '-tbl-wrap');

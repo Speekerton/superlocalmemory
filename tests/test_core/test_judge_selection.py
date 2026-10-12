@@ -201,6 +201,21 @@ class TestAutoNeverChoosesTheHostedCheck:
         assert judge_selection.backend_of(engine_wiring.init_sufficiency_judge(cfg)) == "laya"
         assert world.events == ["laya.init"]
 
+    @pytest.mark.parametrize("mode", ["A", "B"])
+    def test_the_shipped_default_is_laya_in_mode_a_and_mode_b(
+            self, world, tmp_path, mode) -> None:
+        """4.1.25: the on-device check is on by default wherever the hardware
+        runs it, whatever the mode; nothing about the mode turns it off."""
+        from superlocalmemory.core.config import SLMConfig
+        from superlocalmemory.storage.models import Mode
+
+        retrieval = SLMConfig.for_mode(getattr(Mode, mode), base_dir=tmp_path).retrieval
+        assert retrieval.sufficiency_judge == "auto"
+        assert judge_selection.backend_of(engine_wiring.init_sufficiency_judge(retrieval)) \
+            == "laya"
+        world.supported = False  # not Apple Silicon: off, in either mode
+        assert engine_wiring.init_sufficiency_judge(retrieval) is None
+
     def test_attach_on_auto_never_starts_jev(self, world) -> None:
         world.supported = False
         engine = _engine()

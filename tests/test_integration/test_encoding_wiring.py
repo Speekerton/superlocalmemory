@@ -324,6 +324,7 @@ class TestGraphBuilderWiring:
         assert set.intersection(*entities), "Fixture must share a resolved entity"
         assert len(rows) >= 1, "Shared entity (Robert) should produce entity edges"
 
+
     def test_semantic_or_any_edges_exist(self, engine: MemoryEngine) -> None:
         engine.store("Charlie is a musician who plays guitar.",
                       session_id="s1")

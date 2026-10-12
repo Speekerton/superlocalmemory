@@ -1013,6 +1013,11 @@ def build_engine_ingestion_command(
             embeddings_complete = (
                 int(dict(embedding_count[0])["count"]) == len(fact_ids)
             )
+            # Each new fact's hub baseline, now, so recall can read it from the
+            # first query (retrieval/hub_baseline.py). Fail-open and outside
+            # the derivation state: the background pass covers anything missed.
+            from superlocalmemory.retrieval.hub_baseline import compute_for_facts
+            compute_for_facts(engine._db, engine._embedder, list(fact_ids))
 
         derivation_state = {
             "pipeline_started": True,

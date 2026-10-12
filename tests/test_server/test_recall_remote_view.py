@@ -94,8 +94,8 @@ def test_the_keyword_fallback_hides_what_the_context_hides(
     engine = engine_with_mock_deps
     rows = [
         {"fact_id": "f-pic", "memory_id": "m-pic", "profile_id": "default",
-         "content": "picture text"},
-        {"fact_id": "f-txt", "memory_id": "m-txt", "profile_id": "default", "content": "plain"},
+         "content": "q picture text"},
+        {"fact_id": "f-txt", "memory_id": "m-txt", "profile_id": "default", "content": "q plain"},
     ]
     candidates = [RetrievalResult(fact=AtomicFact(**row)) for row in rows]
     with recall_sources(tmp_path, candidates, db=engine._db) as db:

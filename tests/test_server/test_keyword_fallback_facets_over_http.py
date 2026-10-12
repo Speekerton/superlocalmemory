@@ -42,7 +42,9 @@ def test_keyword_fallback_honours_kind_and_project_over_http(
         raise RuntimeError("never reached in time")
 
     monkeypatch.setattr(engine, "recall", slow_recall)
-    monkeypatch.setenv("SLM_SEARCH_RECALL_TIMEOUT_S", "0.2")
+    # Ingress includes admission and assembly. Leave room to exercise the
+    # facet assertions while the one-second primary recall still times out.
+    monkeypatch.setenv("SLM_SEARCH_RECALL_TIMEOUT_S", "0.5")
     with _client(engine) as client:
         r = client.get("/recall", params={"q": "deploy", "kind": "decision", "project": "zeus"})
 

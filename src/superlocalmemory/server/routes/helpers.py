@@ -579,6 +579,10 @@ class SearchRequest(BaseModel):
     # empty means "no filter"; an unknown value is refused (422) before any
     # retrieval, never silently ignored.
     kind: str = ""
+    # 4.1.25: the "show closest matches" toggle -- every weak match of a recall
+    # that abstains, labelled. Off by default; close memories of a real
+    # question (tier related) are shown either way, since a person is looking.
+    show_weak: bool = False
 
 
 class ProfileSwitch(BaseModel):

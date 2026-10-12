@@ -129,7 +129,7 @@ def test_vcache_index_then_lookup_hit(config_enabled, tmp_db, req_factory):
     # Pre-warm the per-item MLE model with positive outcomes at the
     # expected query similarity. This moves t_hat down and τ̂ below 1.0,
     # so should_explore returns False and the hit is served.
-    surrogate_id = f"sem:{hashlib.sha256(f'{tenant}:{query_text}'.encode()).hexdigest()[:32]}"
+    surrogate_id = tier._derive_entry_id(tenant, query_text)
     for sim in [0.97, 0.98, 0.99, 0.96, 0.95]:
         tier.learn(surrogate_id, similarity=sim, was_correct=True)
     result = tier.lookup(req, tenant, embed=embed)
@@ -147,6 +147,7 @@ def test_vcache_near_miss_capital_france_vs_germany(config_enabled, tmp_db, req_
     """
     from superlocalmemory.optimize.storage.db import CacheDB
     tenant = "t1"
+    tier = VCacheSemantic(db=tmp_db, config=config_enabled)
     # Index: "capital of France"
     fr_text = "What is the capital of France?"
     fr_embed = _unit_vec(fr_text)
@@ -167,16 +168,16 @@ def test_vcache_near_miss_capital_france_vs_germany(config_enabled, tmp_db, req_
     cur.execute(
         "INSERT OR REPLACE INTO llmcache_semantic_vectors (entry_id, tenant_id, vector_blob, vector_dim, model_name) "
         "VALUES (?, ?, ?, ?, ?)",
-        (fr_surrogate, tenant, fr_embed.tobytes(), _EMBED_DIM, "test"),
+        (fr_surrogate, tenant, fr_embed.tobytes(), _EMBED_DIM, tier._space_id),
     )
     conn.commit()
     conn.close()
 
-    tier = VCacheSemantic(db=tmp_db, config=config_enabled)
     # Query: "capital of Germany" (different embedding)
     de_text = "What is the capital of Germany?"
     de_req = req_factory([{"role": "user", "content": de_text}])
     result = tier.lookup(de_req, tenant, embed=_unit_vec(de_text))
+    assert len(tier._index[tenant]) == 1
     # Near-miss — may return due to small similarity, but should not return "Paris"
     # We assert it does NOT return the cached "Paris" response
     if result is not None:
@@ -278,6 +279,10 @@ def test_vcache_centroid_defense_blocks_outlier(config_enabled, tmp_db, req_fact
     from superlocalmemory.optimize.storage.db import CacheDB
     import sqlite3 as _sq
     tenant = "t1"
+    from dataclasses import replace
+    cfg = replace(config_enabled, semantic_centroid_defense=True,
+                  semantic_centroid_distance_floor=0.15)
+    tier = VCacheSemantic(db=tmp_db, config=cfg)
     # Build a cluster of 10 vectors all along axis 0
     for i in range(10):
         v = np.zeros(_EMBED_DIM, dtype=np.float32)
@@ -297,17 +302,13 @@ def test_vcache_centroid_defense_blocks_outlier(config_enabled, tmp_db, req_fact
         cur.execute(
             "INSERT OR REPLACE INTO llmcache_semantic_vectors (entry_id, tenant_id, vector_blob, vector_dim, model_name) "
             "VALUES (?, ?, ?, ?, ?)",
-            (surrogate, tenant, v.tobytes(), _EMBED_DIM, "test"),
+            (surrogate, tenant, v.tobytes(), _EMBED_DIM, tier._space_id),
         )
         conn.commit()
         conn.close()
-    # Enable centroid defense for this test
-    from dataclasses import replace
-    cfg = replace(config_enabled, semantic_centroid_defense=True,
-                  semantic_centroid_distance_floor=0.15)
-    tier = VCacheSemantic(db=tmp_db, config=cfg)
     # Warm centroid
     tier._lazy_warm_tenant(tenant)
+    assert tier._centroid_store.count(tenant) == 10
     # Outlier query — orthogonal to the cluster
     outlier = np.zeros(_EMBED_DIM, dtype=np.float32)
     outlier[1] = 1.0

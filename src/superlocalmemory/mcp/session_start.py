@@ -19,14 +19,14 @@ from superlocalmemory.mcp import tools_active as shared
 
 
 async def _recall(query, project_path, named, pid, max_results, max_age_days):
-    from superlocalmemory.core.answer_check_scope import skip_answer_check
+    from superlocalmemory.core.answer_check_scope import context_load
     from superlocalmemory.mcp._pool_adapter import pool_recall
 
     kwargs = {"prefer_project": project_path.strip()} if project_path.strip() else {}
     if named:
         kwargs["profile_id"] = named
     try:
-        with skip_answer_check():
+        with context_load():
             response = await asyncio.to_thread(
                 pool_recall, query, limit=max_results, fast=None, **kwargs
             )

@@ -350,8 +350,8 @@ class TestTheHealthReportPromisesOnlyWhatHappens:
         import argparse
         from unittest.mock import patch
 
-        from superlocalmemory.cli.commands import cmd_doctor
         from superlocalmemory.core.memory_health import MemoryHealth
+        from tests.helpers.doctor import run_doctor_report
 
         captured: list[dict] = []
         health = MemoryHealth(live_facts=10, findable_by_meaning=10,
@@ -362,7 +362,7 @@ class TestTheHealthReportPromisesOnlyWhatHappens:
         ), patch(
             "superlocalmemory.core.memory_health.measure", return_value=health,
         ):
-            cmd_doctor(argparse.Namespace(json=True, quick=True))
+            run_doctor_report(argparse.Namespace(json=True, quick=True))
 
         check = next(
             c for c in captured[-1]["checks"] if c["name"] == "Memory answer-ability"

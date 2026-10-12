@@ -119,7 +119,38 @@ def public_view(job: dict | None, *, now: float | None = None) -> dict | None:
             if job["state"] == "queued" else None),
         "started_at": started, "finished_at": job.get("finished_at"),
         "activated_at": job.get("activated_at"), "stats": stats,
+        **_recovery_commands(job),
     }
+
+
+def _recovery_commands(job: dict) -> dict[str, str]:
+    if job["state"] != "failed":
+        return {}
+    import shlex
+    from urllib.parse import urlsplit
+
+    target = json.loads(job["to_config"])
+    if job["kind"] == "rollback":
+        retry = "slm embedder rollback"
+    else:
+        parts = ["slm", "embedder", "switch", target["model_name"], "--dimension",
+                 str(target["dimension"])]
+        if target.get("provider"):
+            parts += ["--provider", target["provider"]]
+        endpoint = target.get("api_endpoint") or ""
+        if endpoint:
+            try:
+                url = urlsplit(endpoint)
+                private = bool(url.username or url.password or url.query or url.fragment)
+            except ValueError:
+                private = True
+            if private:
+                return {"retry_note": "Re-run the original switch command with its endpoint "
+                        "supplied privately; endpoint credentials are not shown here.",
+                        "forget_command": "slm embedder cancel"}
+            parts += ["--endpoint", endpoint]
+        retry = shlex.join(parts)
+    return {"retry_command": retry, "forget_command": "slm embedder cancel"}
 
 
 __all__ = ["JobConflict", "active_job", "create_job", "get_job", "latest_job",

@@ -131,3 +131,25 @@ def test_active_recipe_is_versioned_complete_and_deterministic() -> None:
 def test_recipe_rejects_unknown_features() -> None:
     with pytest.raises(ValueError):
         replace(RECIPE, weights={**RECIPE.weights, "mystery": 1.0})
+
+
+def test_lexical_support_is_the_gate_when_only_words_are_left() -> None:
+    """The keyword fallback (a recall past its budget) has no vectors and no
+    cross-encoder; a memory counts only when it carries every rare term of the
+    question and at least half its content words."""
+    note = "Hub v0.3.4 fixed the resultType bug when a tool returned no content."
+    assert sg.lexical_support("v0.3.4", note)
+    assert sg.lexical_support("What did hub v0.3.4 fix?", note)
+    assert not sg.lexical_support("v0.3.4 snazzle", note)
+    assert not sg.lexical_support("purple elephants juggling quantum content", note)
+    assert not sg.lexical_support("", note)
+
+
+def test_the_keyword_fallback_drops_what_the_words_do_not_support() -> None:
+    from superlocalmemory.server import recall_fallback
+
+    rows = [{"fact_id": "a", "content": "Hub v0.3.4 fixed the resultType bug.", "confidence": 1},
+            {"fact_id": "b", "content": "v0.3.4 build passed", "confidence": 1}]
+    kept = recall_fallback.supported_rows("What did hub v0.3.4 fix?", rows)
+    assert [r["fact_id"] for r in kept] == ["a"]
+    assert recall_fallback.supported_rows("v0.3.4 snazzle", rows) == []

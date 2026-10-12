@@ -36,6 +36,8 @@ REASON_UNSUPPORTED = "unsupported"
 REASON_NO_RESULTS = "no_results"
 #: What a person reads when recall abstains.
 ABSTAIN_NOTE = "Nothing in memory supports this question."
+#: The keyword fallback's bar (``lexical_support``): share of content words.
+LEXICAL_MIN_COVERAGE = 0.5
 
 
 @dataclass(frozen=True)
@@ -131,5 +133,21 @@ def assess(results: Sequence[Any], query_evidence: Mapping[str, Any], *,
                       imputed=tuple(gaps))
 
 
-__all__ = ["ABSTAIN_NOTE", "Assessment", "REASON_NO_RESULTS", "REASON_UNSUPPORTED",
-           "assess", "features", "imputed", "logit", "probability"]
+def lexical_support(query: str, content: str) -> bool:
+    """The gate when only words are left (a recall past its budget falls back
+    to keyword search, with no vectors and no cross-encoder): the memory must
+    carry every rare term of the question and ``LEXICAL_MIN_COVERAGE`` of its
+    content words, so "v0.3.4 snazzle" cannot answer with the v0.3.4 note."""
+    from superlocalmemory.retrieval import evidence_features as ef
+
+    terms = ef.query_terms(query or "")
+    if not terms:
+        return False
+    rare = ef.rare_terms(terms, ef.model_vocabulary())
+    return (ef.rare_miss(rare, content) == 0.0
+            and ef.keyword_coverage(terms, content) >= LEXICAL_MIN_COVERAGE)
+
+
+__all__ = ["ABSTAIN_NOTE", "Assessment", "LEXICAL_MIN_COVERAGE", "REASON_NO_RESULTS",
+           "REASON_UNSUPPORTED", "assess", "features", "imputed", "lexical_support", "logit",
+           "probability"]

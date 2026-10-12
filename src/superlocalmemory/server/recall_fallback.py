@@ -116,6 +116,15 @@ def _fetch_candidates(db, pid: str, query: str, pool_limit: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def supported_rows(query: str, rows: list[dict]) -> list[dict]:
+    """4.1.25: the rows the question's words support (``support_gate.
+    lexical_support``). The fallback matches ANY word, so without this a
+    question of one stored token plus gibberish answered on a slow recall."""
+    from superlocalmemory.retrieval.support_gate import lexical_support
+
+    return [r for r in rows if lexical_support(query, str(r.get("content") or ""))]
+
+
 def _apply_facets(engine, db, pid, candidates, facets
                   ) -> tuple[list[dict], str | None, dict | None, dict | None]:
     """Narrow like full recall does (``retrieval.project_scope.narrow``). A
@@ -176,9 +185,11 @@ def recall_keyword_fallback(
         if not visibility.is_empty():  # a remote caller: never what it may not see
             hidden = visibility.hidden_among(db, pid, [d.get("fact_id") for d in candidates])
             candidates = [d for d in candidates if d.get("fact_id") not in hidden]
-        if has_facets:
+        if has_facets:  # an explicit filter keeps its behaviour
             candidates, facet_filter_error, project_scope, tag_scope = _apply_facets(
                 engine, db, pid, candidates, facets)
+        else:
+            candidates = supported_rows(query, candidates)
         for pos, d in enumerate(candidates[:limit], start=1):
             results.append({
                 "fact_id": d.get("fact_id"),

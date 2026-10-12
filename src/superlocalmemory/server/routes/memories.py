@@ -1098,6 +1098,9 @@ async def search_memories(request: Request, body: SearchRequest):
             ORDER BY {sql[2]}, confidence DESC LIMIT ?
         """, (active_profile, *sql[1], *kind_params, *sql[3], body.limit)).fetchall()
         conn.close()
+        if not apply_kind_filter:  # 4.1.25: only what the question's words support
+            from superlocalmemory.server.recall_fallback import supported_rows
+            rows = supported_rows(body.query, rows)
 
         if has_kind_columns:
             from superlocalmemory.core.kind_query import engine_display_min_confidence

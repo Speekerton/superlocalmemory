@@ -44,7 +44,9 @@ def test_a_natural_question_finds_the_saved_sentence(engine_with_mock_deps) -> N
 def test_rows_with_more_of_the_question_rank_first(engine_with_mock_deps) -> None:
     from superlocalmemory.server.unified_daemon import _recall_keyword_fallback
 
-    partial = _save(engine_with_mock_deps, "Halcyon has a new logo")
+    # 4.1.25: a row must carry the question's rare terms and half its words to
+    # be served at all (support_gate.lexical_support); this one has two of three.
+    partial = _save(engine_with_mock_deps, "Halcyon migration has a new logo")
     full = _save(engine_with_mock_deps, "Halcyon migration window opens Friday")
 
     out = _recall_keyword_fallback(

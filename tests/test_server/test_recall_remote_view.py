@@ -87,7 +87,9 @@ def test_the_keyword_fallback_hides_what_the_context_hides(tmp_path) -> None:
     db.add("m-pic", "f-pic", {"type": "media", "media_id": "a" * 32})
     db.add("m-txt", "f-txt")
     engine = SimpleNamespace(_db=db, profile_id="default", _config=SimpleNamespace())
-    rows = [{"fact_id": "f-pic", "content": "picture text"}, {"fact_id": "f-txt", "content": "plain"}]
+    # Both rows carry the question's word (the fallback serves only those).
+    rows = [{"fact_id": "f-pic", "content": "q picture text"},
+            {"fact_id": "f-txt", "content": "q plain"}]
     with patch.object(recall_fallback, "_fetch_candidates", lambda *a: list(rows)):
         with visibility.use(visibility.VisibilityContext(hide_media=True)):
             out = recall_fallback.recall_keyword_fallback(engine, "q", 10)

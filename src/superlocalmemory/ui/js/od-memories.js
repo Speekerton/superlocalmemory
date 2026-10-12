@@ -644,11 +644,14 @@
         _st = Object.assign({}, _st, { memories: mems, total: mems.length });
         _renderTable(id, { memories: mems, total: mems.length, limit: mems.length, offset: 0 });
         // 4.1.25: why nothing (or only close matches) came back, in plain words.
-        var note = d.abstention_note || '';
+        // An empty result says the reason instead of "No results found.".
+        var note = d.status_note || d.abstention_note || '';
         var nw = document.getElementById(id + '-tbl-wrap');
         if (note && nw) {
-          nw.insertAdjacentHTML('afterbegin', '<div class="card-pad" style="color:var(--fg-2);' +
-            'font-size:13px;padding:10px 12px">' + _esc(note) + '</div>');
+          var noteHtml = '<div class="card-pad" style="color:var(--fg-2);' +
+            'font-size:13px;padding:10px 12px">' + _esc(note) + '</div>';
+          if (!mems.length) nw.innerHTML = noteHtml;
+          else nw.insertAdjacentHTML('afterbegin', noteHtml);
         }
       }).catch(function (err) {
         if (_st.rootId !== id || _st.requestSeq !== requestSeq) return;

@@ -30,7 +30,11 @@ from superlocalmemory.compliance import audit as audit_mod
 from superlocalmemory.storage.write_lock import get_write_lock
 from tests.test_server.test_rbac_company_mode_credential import app_and_engine  # noqa: F401
 
-LIMIT_S = 1.0
+# On an idle machine every request here answers in about 0.4s (the two CPU-burning threads
+# share the interpreter lock). The bound is loose enough for a busy CI box and well below the
+# 9-13s the same requests took when they queued behind work on the event loop.
+LIMIT_S = 6.0
+PROBE_LIMIT_S = 1.0
 PANE = (
     "/api/integrity/summary",
     "/api/compliance/audit?limit=100",
@@ -157,7 +161,7 @@ def test_a_slow_request_does_not_stop_the_daemon_answering_others(live_daemon):
     probe: dict = {}
     for _ in range(5):
         _timed_get(live_daemon["base"], "/api/version", live_daemon["headers"], probe)
-        assert probe["/api/version"][0] < LIMIT_S, (
+        assert probe["/api/version"][0] < PROBE_LIMIT_S, (
             f"/api/version waited {probe['/api/version'][0]:.2f}s behind another request")
         time.sleep(0.1)
     slow.join(60)

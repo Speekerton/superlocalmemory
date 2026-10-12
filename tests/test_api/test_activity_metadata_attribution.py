@@ -1,6 +1,5 @@
 """Recent activity keeps connection attribution while supporting legacy tables."""
 
-import asyncio
 import json
 import sqlite3
 
@@ -26,7 +25,7 @@ def test_recent_activity_preserves_connection_and_claimed_attribution(tmp_path, 
     monkeypatch.setattr(agents, "DB_PATH", db)
     monkeypatch.setattr(helpers, "get_active_profile", lambda: "default")
 
-    result = asyncio.run(agents.get_agent_memory_activity(request=None, limit=20))
+    result = agents.get_agent_memory_activity(request=None, limit=20)
 
     assert result["total_memories"] == 4
     assert [row["agent_id"] for row in result["recent"]] == [

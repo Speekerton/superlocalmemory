@@ -181,3 +181,10 @@ def test_daemon_warmup_embeds_the_probes(monkeypatch) -> None:
     engine = SimpleNamespace(_embedder="E", profile_id="default")
     assert recall_warmup.warm_hub_probes(engine) is True
     assert seen == ["E"]
+
+
+def test_cosine_falls_back_to_the_semantic_channel_when_no_vector_is_loaded() -> None:
+    fact = SimpleNamespace(content="x", embedding=None, canonical_entities=[], entities=[])
+    out = ef.build(query="q", terms=["q"], query_vector=[1.0, 0.0], fact=fact,
+                   channel_scores={"semantic": 0.9})
+    assert out["cosine"] == pytest.approx(0.8)

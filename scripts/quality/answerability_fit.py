@@ -10,7 +10,8 @@ evidence floor off) and:
   1. splits the questions once, deterministically, per set and category
      (``TRAIN_SHARE`` to training, the rest held out; sha256 of the question id);
   2. fits the per-memory logistic model on the training questions only, with
-     every weight's sign fixed in advance (``SIGNS``) -- multiple-instance
+     every weight's sign fixed in advance (``SIGNS``, floors in
+     ``MIN_WEIGHTS``) -- multiple-instance
      style: a real question contributes its best expected memory, a nonsense or
      no-answer question its top-scoring candidates, re-chosen each round;
   3. chooses the threshold on the held-out questions: the widest-margin point
@@ -46,6 +47,15 @@ SLICES = ("legacy", "described")
 #: +1: can only raise support; -1: can only lower it.
 SIGNS = {"hub_corrected": 1, "keyword_coverage": 1, "cross_encoder": 1, "log_bm25": 1,
          "entity_hit": 1, "oov_phrase": -1, "rare_miss": -1, "nonsense_similarity": -1}
+#: Lower bounds on a weight (raw feature scale). Keyword coverage must be able
+#: to carry an exact-keyword question when the cross-encoder is cold, the hub
+#: baselines are missing and the probes are not embedded. Unbounded, the fit
+#: set it to 0 (on this store the cross-encoder and the rare-term miss carry
+#: the same signal). Chosen on the TRAINING split only: with every one of
+#: those inputs imputed, training real questions kept rose 32 -> 41 -> 53 ->
+#: 57 of 65 for floors 0, 1, 2, 3 and stayed at 57 for 4; 3 is the smallest
+#: floor on that plateau.
+MIN_WEIGHTS = {"keyword_coverage": 3.0}
 L2 = 0.001
 ROUNDS = 8
 NEGATIVES_PER_QUESTION = 3
@@ -136,7 +146,9 @@ def _bounded_logistic(X: np.ndarray, y: np.ndarray, w: np.ndarray, names) -> tup
         grad = np.append(Z.T @ g / len(y) + 2 * L2 * coef, g.sum() / len(y))
         return value, grad
 
-    bounds = [((0, None) if SIGNS[n] > 0 else (None, 0)) for n in names] + [(None, None)]
+    # Bounds live in the standardised space: a raw-scale floor times the sd.
+    bounds = [((MIN_WEIGHTS.get(n, 0.0) * s, None) if SIGNS[n] > 0 else (None, 0))
+              for n, s in zip(names, sd)] + [(None, None)]
     res = minimize(loss, np.zeros(Z.shape[1] + 1), jac=True, method="L-BFGS-B",
                    bounds=bounds)
     coef = res.x[:-1] / sd

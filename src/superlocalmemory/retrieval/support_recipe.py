@@ -87,18 +87,20 @@ class SupportRecipe:
 #: corpus d21fd3d53039f6e6 (answerability-corpus-v2), profile A, split
 #: answer-support-split-v1: 127 training questions, 78 held out. The threshold
 #: is the widest-margin point between the highest held-out nonsense question
-#: (logit -0.358) and the lowest held-out real question recall answers
-#: today (logit 0.868). The fit gave keyword coverage, BM25 and entity
-#: hits zero weight: on this store the rare-term miss carries the keyword signal
-#: ("v0.3.4 snazzle" misses half its rare terms; bare "v0.3.4" misses none).
+#: (logit -1.306) and the lowest held-out real question recall answers
+#: today (logit 2.004). Keyword coverage sits at its floor (3.0, see
+#: the fit script's MIN_WEIGHTS: it carries exact-keyword questions when the
+#: cross-encoder is cold); BM25 and entity hits came out at zero, the rare-term
+#: miss carrying their signal ("v0.3.4 snazzle" misses half its rare terms,
+#: bare "v0.3.4" none).
 ANSWER_SUPPORT_V1 = SupportRecipe(
     version="answer-support-v1",
-    weights={"hub_corrected": 16.5177, "keyword_coverage": 0.0,
-             "cross_encoder": 0.1777, "log_bm25": 0.0, "entity_hit": 0.0,
-             "oov_phrase": -1.1877, "rare_miss": -4.7411,
-             "nonsense_similarity": -33.8339},
-    intercept=11.2083,
-    threshold=0.5633,  # logit 0.2548
+    weights={"hub_corrected": 16.547, "keyword_coverage": 3.0,
+             "cross_encoder": 0.0893, "log_bm25": 0.0, "entity_hit": 0.0,
+             "oov_phrase": -1.434, "rare_miss": -4.3724,
+             "nonsense_similarity": -31.3056},
+    intercept=9.0324,
+    threshold=0.5864,  # logit 0.3491
     ce_clip=(-12.0, 10.0),
     ce_missing=-6.38,
     hub_missing_baseline=0.59,
@@ -107,7 +109,8 @@ ANSWER_SUPPORT_V1 = SupportRecipe(
     metadata_bonus=0.5,     # prior: tags and projects are optional evidence
     fitted_on="answerability-corpus-v2/d21fd3d53039f6e6/answer-support-split-v1",
     held_out={
-        "all": "real kept 39/39, nonsense abstain 24/24, no-answer abstain 5/12",
+        "all": "real kept 39/39, nonsense abstain 24/24, "
+               "no-answer abstain 5/12",
         "legacy": "real kept 15/15, nonsense abstain 24/24",
         "described": "real kept 24/24, nonsense abstain 24/24",
     },

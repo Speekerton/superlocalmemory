@@ -197,6 +197,8 @@ def build(
     """Every evidence feature for one result, as plain JSON-safe values."""
     cs = channel_scores or {}
     cos = cosine(query_vector, getattr(fact, "embedding", None))
+    if cos is None and isinstance(cs.get("semantic"), (int, float)):
+        cos = 2.0 * float(cs["semantic"]) - 1.0  # the channel's (cosine + 1) / 2
     entities = [*(getattr(fact, "canonical_entities", None) or ()),
                 *(getattr(fact, "entities", None) or ())]
     raw_bm25 = bm25_raw(cs.get("bm25")) if "bm25" in cs else 0.0

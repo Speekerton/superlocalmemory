@@ -51,9 +51,10 @@ class Assessment:
     #: Inputs that were imputed for at least one memory (a cold model, a store
     #: still filling in its baselines): the verdict is weaker, and says so.
     imputed: tuple[str, ...] = ()
-    #: Still warming up: no question vector or probe profile, or no memory with
-    #: a hub-corrected cosine. Recall then shows what keyword search found,
-    #: labelled, and never says "That isn't in SuperLocalMemory."
+    #: An input the recipe needs is missing for the whole recall: no question
+    #: vector or probe profile, no memory with a hub-corrected cosine, or (Latin
+    #: script) no cross-encoder score. Recall then shows what retrieval found,
+    #: labelled related, and never says "That isn't in SuperLocalMemory."
     degraded: bool = False
 
 
@@ -135,6 +136,15 @@ def probability(evidence: Mapping[str, Any], query_evidence: Mapping[str, Any],
     return 1.0 / (1.0 + math.exp(-max(-60.0, min(60.0, z))))
 
 
+def _no_cross_encoder(measured: Sequence[Mapping[str, Any]],
+                      query_evidence: Mapping[str, Any]) -> bool:
+    """A Latin-script question none of whose memories has a cross-encoder
+    score: the reranker did not run (loading, failed or not set up). Other
+    scripts never use it, so its absence there is no gap."""
+    return (bool(measured) and bool(query_evidence.get("latin_script", True))
+            and not any(_num(e.get("ce_raw")) is not None for e in measured))
+
+
 def assess(results: Sequence[Any], query_evidence: Mapping[str, Any], *,
            verdict: Any = None, recipe: sr.SupportRecipe = sr.ACTIVE) -> Assessment:
     """The gate's verdict over recall's results (``evidence`` on each)."""
@@ -148,7 +158,8 @@ def assess(results: Sequence[Any], query_evidence: Mapping[str, Any], *,
     reason = None if supported else (REASON_UNSUPPORTED if probs else REASON_NO_RESULTS)
     measured = [r.evidence for r in results if getattr(r, "evidence", None)]
     degraded = (_num(qe.get("nonsense_similarity")) is None
-                or not any(_num(e.get("hub_corrected")) is not None for e in measured))
+                or not any(_num(e.get("hub_corrected")) is not None for e in measured)
+                or _no_cross_encoder(measured, qe))
     return Assessment(supported=supported, best=best, threshold=recipe.threshold,
                       probabilities=probs, version=recipe.version, reason=reason,
                       imputed=tuple(gaps), degraded=degraded)

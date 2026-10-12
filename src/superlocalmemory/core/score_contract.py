@@ -187,14 +187,18 @@ def _apply_support(response: RecallResponse, support: Any, verdict: Any, *,
 
 
 def _keep_while_warming(response: RecallResponse, results: list, show_weak: bool) -> None:
-    """Still warming up: what retrieval found is shown to every caller, labelled
-    related, under the warming-up note -- never "That isn't in SuperLocalMemory."
-    A real answer must not be lost because a model was still loading."""
+    """An input is missing: what retrieval found is shown to every caller,
+    labelled related -- never "That isn't in SuperLocalMemory." A real answer
+    must not be lost because a model was loading or is not there. Under the
+    warming-up note while something is still loading; otherwise (a reranker
+    that is not set up) under the related note."""
     from superlocalmemory.retrieval import support_tiers as st
 
+    warming = st.warming_from(response) or st.reranker_loading(response)
     response.support_tier = st.RELATED if results else st.NONE
-    response.warming_up, response.status_note = True, st.WARMING_NOTE
-    response.abstention_note = st.WARMING_NOTE
+    if warming:
+        response.warming_up, response.status_note = True, st.WARMING_NOTE
+    response.abstention_note = st.WARMING_NOTE if warming else st.RELATED_NOTE
     kept = results if show_weak else results[:st.WARMING_MAX]
     for r in kept:
         r.tier = st.RELATED

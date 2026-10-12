@@ -164,5 +164,36 @@ def test_assess_marks_a_recall_without_measurements_as_degraded() -> None:
     qe = {"latin_script": True, "nonsense_similarity": None}
     a = sg.assess([_r("a", NO_VECTOR)], qe)
     assert a.degraded
-    warm = sg.assess([_r("a", {**CLOSE, "cosine": 0.6})], {**qe, "nonsense_similarity": 0.3})
+    warm = sg.assess([_r("a", {**CLOSE, "cosine": 0.6, "ce_raw": 1.0})],
+                     {**qe, "nonsense_similarity": 0.3})
     assert not warm.degraded
+
+
+WARM_NO_CE = {"hub_corrected": 0.02, "cosine": 0.5, "subject_coverage": 0.0, "rare_miss": 1.0}
+
+
+def test_assess_marks_a_latin_recall_without_any_cross_encoder_score_as_degraded() -> None:
+    qe = {"latin_script": True, "nonsense_similarity": 0.3}
+    assert sg.assess([_r("a", WARM_NO_CE), _r("b", WARM_NO_CE)], qe).degraded
+    scored = sg.assess([_r("a", {**WARM_NO_CE, "ce_raw": -3.0}), _r("b", WARM_NO_CE)], qe)
+    assert not scored.degraded
+    # Non-Latin questions never use the cross-encoder: its absence is not a gap.
+    assert not sg.assess([_r("a", WARM_NO_CE)], {**qe, "latin_script": False}).degraded
+
+
+def test_without_a_cross_encoder_finds_are_kept_labelled_and_not_called_warming() -> None:
+    rs = [_r(str(i), WARM_NO_CE) for i in range(7)]
+    response = _response({"nonsense_similarity": 0.3, "latin_script": True}, *rs)
+    response.reranker_status = "not_configured"
+    r = finalize_score_contract(response, support=_support_cold(*[0.1] * 7))
+    assert len(r.results) == st.WARMING_MAX and all(x.tier == st.RELATED for x in r.results)
+    assert not r.warming_up and r.status_note == ""
+    assert r.abstention_note == st.RELATED_NOTE
+
+
+def test_a_cross_encoder_still_loading_is_warming_up() -> None:
+    response = _response({"nonsense_similarity": 0.3, "latin_script": True},
+                         _r("a", WARM_NO_CE))
+    response.reranker_status = "fallback_not_ready"
+    r = finalize_score_contract(response, support=_support_cold(0.1))
+    assert r.warming_up and r.abstention_note == st.WARMING_NOTE

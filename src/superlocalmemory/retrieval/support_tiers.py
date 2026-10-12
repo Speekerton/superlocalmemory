@@ -108,6 +108,16 @@ def warming_from(response: Any) -> bool:
     return bool(qe) and "nonsense_similarity" in qe and qe["nonsense_similarity"] is None
 
 
+#: Reranker states that pass: it exists but was not ready, or its call failed.
+_RERANKER_LOADING = frozenset({"fallback_not_ready", "error", "timeout"})
+
+
+def reranker_loading(response: Any) -> bool:
+    """The cross-encoder exists but gave no scores this time (still loading,
+    or a worker restart): a state that passes, unlike one never set up."""
+    return getattr(response, "reranker_status", "") in _RERANKER_LOADING
+
+
 def preview(text: str, limit: int = PREVIEW_CHARS) -> str:
     text = " ".join((text or "").split())
     return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
@@ -116,4 +126,4 @@ def preview(text: str, limit: int = PREVIEW_CHARS) -> str:
 __all__ = ["NONE", "NONE_NOTE", "PREVIEW_CHARS", "RELATED", "RELATED_HIDDEN_NOTE",
            "RELATED_MAX", "RELATED_NOTE", "SUPPORTED", "WARMING_MAX", "WARMING_NOTE", "WEAK",
            "preview", "question_is_nonsense", "real_evidence", "related_indexes",
-           "symbol_only", "warming_from"]
+           "reranker_loading", "symbol_only", "warming_from"]

@@ -6256,6 +6256,8 @@ def _register_daemon_routes(application: FastAPI) -> None:
                     "fact_type": getattr(f.fact_type, 'value', str(f.fact_type)),
                     "created_at": (f.created_at or "")[:19],
                     "fact_id": f.fact_id,
+                    # A stored stub: listed, never a recall answer (WP-19).
+                    "stub": bool(getattr(f, "non_answer", False)),
                     **kind_item(f),
                 }
                 for f in facts

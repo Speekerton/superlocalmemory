@@ -835,6 +835,7 @@ def register_core_tools(server, get_engine: Callable) -> None:
                     "fact_type": f.fact_type.value,
                     "confidence": round(f.confidence, 3),
                     "date": f.observation_date,
+                    "stub": bool(getattr(f, "non_answer", False)),
                     **kind_fields(f, display_min_confidence=_display_min_confidence),
                 })
             result = {"success": True, "results": items, "count": len(items)}

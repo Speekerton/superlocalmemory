@@ -3,7 +3,85 @@
 `slm recall` (alias `slm search`) and the MCP `recall` tool search every
 memory in the active profile across several channels — semantic, keyword
 (BM25), temporal, associative (Hopfield) and spreading activation — fuse the
-results, and rerank them.
+results, and rerank them. Then recall decides whether anything it found
+actually supports the question, and tells you plainly when nothing does.
+
+## When memory cannot answer
+
+Every memory that recall finds gets one support score from several signals read
+together: how far its meaning stands out from what it would match anyway (its
+"hub baseline"), the share of your question's words it contains, how the
+cross-encoder rates it, whether it carries the rare terms you used, and whether
+the question reads as nonsense (words no stored memory contains, or a profile
+close to meaningless sentences). The evidence has to come from one memory.
+Recall answers when at least one memory clears the threshold, and otherwise
+puts the result in one of three tiers:
+
+| Tier | When | What you get |
+|---|---|---|
+| `supported` | At least one memory is strong enough evidence | The results, as always. A memory below the threshold in the same list is labelled `weak` |
+| `related` | Nothing supports it, but the question is a real one and a few memories have real evidence for it | Up to three memories, each labelled `related` and shown as a short preview, under "I don't have this exactly — here are the closest memories." `slm recall` and the dashboard show them by default; over MCP and REST an agent gets them only when it asks with `include_related` |
+| `none` | The question reads as nonsense, or nothing is close | No results and the sentence "That isn't in SuperLocalMemory." Pinned memories are still returned |
+
+Without `include_related`, an agent whose question has close memories is told
+"I don't have this exactly. Closer memories exist; ask with include_related to
+see them." and gets no results. `--show-weak` (`show_weak` over MCP and REST)
+returns the closest weak matches instead of nothing, each labelled, with the
+same sentence on top. The dashboard's search shows the plain reason instead of
+an empty list.
+
+The score is a fitted weighted sum, not a measured probability, and it has
+limits. On the development harness it was fitted on (hand-written and generated
+questions against a fictional store), the held-out half kept every question that
+recall answers (77 of 77) and made nonsense return nothing (152 of 156), but it
+caught few questions that sound on-topic and have no answer in memory (7 of 50).
+That second case is what the [answer check](answer-check.md) is for. A keyword-only
+recall (the model not loaded) is not written off: it serves only the memories that
+cover the words you asked with. A question is rewritten into base forms and known
+aliases for the keyword search only; the support decision and the cross-encoder
+always read your original words. Set `SLM_RECALL_NO_SUPPORT_GATE=1` to turn the
+decision off. The code is in `retrieval/support_gate.py`, `retrieval/support_tiers.py`
+and `core/score_contract.py`.
+
+## Warming up
+
+For a few minutes after SLM starts, the embedding model, the reranker, the
+question probes or the memory graph may still be loading. A recall in that
+window cannot judge anything fairly, so it does not claim the memory is empty.
+It shows what retrieval found (the top five by keyword), labelled `related`,
+under "SuperLocalMemory is still warming up — results may be incomplete. Try
+again in a few minutes.", and with nothing found it prints that note instead of
+"That isn't in SuperLocalMemory." Over MCP and REST the response carries
+`warming_up: true` and the same text in `status_note`; an agent should tell the
+person and retry shortly. If the daemon is not running at all, recall says the
+service is needed rather than that it is warming up.
+
+## Layered recall
+
+How much of each memory a recall returns is your choice, within a budget:
+
+| `depth` (`--depth`) | Returns |
+|---|---|
+| `0` glance | `fact_id`, `memory_id`, the tier, rank, score and a one-line preview (160 characters). The cheapest; hooks use it |
+| `1` recall (default) | The full facts, as recall has always returned them |
+| `2` context | Depth 1, plus for each result its source memory, up to three neighbours from the same session, up to three facts about the same entities, and the correction that replaced it, when one did |
+
+`max_tokens` (`--max-tokens N`) caps the whole result list by estimated tokens of
+its JSON form and is never exceeded. When it bites, context is dropped first,
+then the last memory's text is shortened, then memories are left out, and the
+response's `layers` block says what happened (`depth`, `trimmed`, `tokens`,
+`left_out`). Depth 2 reads only existing tables, and everything it adds passes
+the same checks as `fetch` (profile scope, quarantine, what the caller may see).
+An invalid depth is refused (`INVALID_LAYERS` over MCP).
+
+```bash
+slm recall "how do we roll back the API" --depth 0                 # ids and previews
+slm recall "how do we roll back the API" --depth 2 --max-tokens 1500
+```
+
+Over MCP, start at depth 0 or 1 and drill into one result with the `expand` tool:
+`expand(memory_id, depth=2, max_tokens=0)` takes a result's `fact_id` or
+`memory_id` and returns the full fact and, at depth 2, its surroundings.
 
 ## Narrowing a recall
 
@@ -88,8 +166,14 @@ slm trace "how do we roll back the API"
 
 | Field | Meaning |
 |---|---|
+| `tier` | `supported`, `related` or `none`: see [When memory cannot answer](#when-memory-cannot-answer) |
+| `support` | `status`, `best`, `threshold`, `version`, `weak_shown` and `tier` of the support decision; `null` when it did not run (context loading, for example) |
+| `abstention_note` | The plain sentence for the tier. Show it to the person; do not invent an answer when it says "That isn't in SuperLocalMemory." |
+| `warming_up`, `status_note` | True while SLM is still loading, with the sentence to show. Do not conclude the memory is empty |
 | `no_confident_match` | Nothing scored high enough to trust |
-| `abstained`, `abstention_reason` | The answer check judged that the results do not answer the question. Results are still returned |
+| `abstained`, `abstention_reason` | No memory supports the question. The reason is `unsupported` (the support decision), `judged_insufficient` (the answer check), `evidence_floor` or `no_candidates` |
+| each result's `support`, `weak`, `tier` | That memory's support score, whether it is below the threshold, and its tier label |
+| `layers` | With `depth` or `max_tokens`: what was returned and whether it was trimmed |
 | `incomplete_channels` | Channels that could not run, for example while the embedding model is still loading. The human output says "Incomplete search" |
 | `answer_check_status`, `answer_check_ran` | Whether the answer check ran, and why not when it did not |
 | `channel_status` | Per-channel state for this recall: for example `warming` while the embedding model loads, or `no_embedding` |

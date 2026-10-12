@@ -60,10 +60,35 @@ scores are unaffected either way.
 whatever the local reranker had produced. `local_reranker_status` keeps that
 local status for the recall, empty when nothing replaced it.
 
-When no result survives the evidence floor, `abstained` is `true` and
-`abstention_reason` is `evidence_floor`. When candidate generation returns
-nothing, the reason is `no_candidates`. Neither case involves a judgment about
-the results — there simply were none to judge.
+Every recall also reports the answer-support decision and a tier (illustrative values):
+
+```json
+{
+  "tier": "supported",
+  "support": {"status": "supported", "best": 0.91, "threshold": 0.3003,
+              "version": "answer-support-v2", "weak_shown": false, "tier": "supported"},
+  "abstention_note": "",
+  "warming_up": false,
+  "status_note": ""
+}
+```
+
+`support.status` is `supported` when at least one memory's support probability
+reaches `threshold`, and `unsupported` otherwise; `version` names the fitted
+recipe. Each result carries its own `support` probability, a `weak` flag (below
+the threshold) and a `tier` label. The probability is the output of a fitted
+logistic over the recipe's inputs, so it ranks memories by how well they answer
+the question; it is not a calibrated chance of being right. See
+[Recall](recall.md#when-memory-cannot-answer) for the three tiers (`supported`,
+`related`, `none`) and the sentence each carries in `abstention_note`.
+
+When the question is unsupported, `abstained` is `true` and `abstention_reason`
+is `unsupported`. When no result survives the evidence floor the reason is
+`evidence_floor`, and when candidate generation returns nothing it is
+`no_candidates`. While SLM is still loading models or inputs, `warming_up` is
+`true`, `status_note` carries the sentence to show, and the results retrieval
+found are returned labelled `related` rather than withheld: a decision made
+without its inputs is never reported as "not in memory".
 
 ### Answer check
 
@@ -74,13 +99,13 @@ relevant" but "does this answer the question." That decision populates
 `calibration_status`, `calibration_id`, and `answer_confidence` with real
 values instead of the uncalibrated defaults above, and can set
 `abstention_reason` to a third value, `judged_insufficient`: results were
-found and are returned as before, but none of them were judged to answer the
-question. `calibration_status` additionally distinguishes a measured
+found, but none of them were judged to answer the question. `calibration_status` additionally distinguishes a measured
 calibration from one that is not yet calibrated for its current backend and
 settings — treat an unmeasured verdict as a confidence signal, not a
-guarantee. Results are never removed because of this verdict; it is reported
-alongside them, not used to filter them. See [Answer Check](answer-check.md)
-for the full contract and setup.
+guarantee. The verdict is one input to the answer-support decision above: it
+lowers the support of the memories it judges insufficient, and the decision,
+not the verdict alone, determines whether results are returned. See
+[Answer Check](answer-check.md) for the full contract and setup.
 
 ### The `answer_check` request parameter
 

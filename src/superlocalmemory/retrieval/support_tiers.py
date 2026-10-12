@@ -29,6 +29,12 @@ NONE = "none"
 WEAK = "weak"
 
 NONE_NOTE = "That isn't in SuperLocalMemory."
+#: While models, probes or baselines are still loading. "That isn't in
+#: SuperLocalMemory." is never said then: nothing was measured to say it.
+WARMING_NOTE = ("SuperLocalMemory is still warming up — results may be incomplete. "
+                "Try again in a few minutes.")
+#: Most keyword finds shown while warming up (the top five, as recall shows).
+WARMING_MAX = 5
 RELATED_NOTE = "I don't have this exactly — here are the closest memories."
 RELATED_HIDDEN_NOTE = ("I don't have this exactly. Closer memories exist; "
                        "ask with include_related to see them.")
@@ -82,11 +88,32 @@ def related_indexes(results: Sequence[Any], probabilities: Sequence[float],
     return close[:RELATED_MAX]
 
 
+def symbol_only(query: str) -> bool:
+    """No letter and no digit at all (emoji, punctuation): nonsense, measured."""
+    return bool(query.strip()) and not any(ch.isalnum() for ch in query)
+
+
+def warming_from(response: Any) -> bool:
+    """Signs a recall ran before the models and inputs were ready, read from a
+    response that may have no results to assess: the embedding channels were
+    still warming or dropped, or the question has no probe profile."""
+    from superlocalmemory.retrieval import channel_status as chstat
+
+    if getattr(response, "incomplete_channels", ()):
+        return True
+    status = (getattr(response, "channel_status", None) or {}).get("semantic")
+    if status in (chstat.WARMING, chstat.NO_EMBEDDING):
+        return True
+    qe = getattr(response, "query_evidence", None) or {}
+    return bool(qe) and "nonsense_similarity" in qe and qe["nonsense_similarity"] is None
+
+
 def preview(text: str, limit: int = PREVIEW_CHARS) -> str:
     text = " ".join((text or "").split())
     return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
 
 
 __all__ = ["NONE", "NONE_NOTE", "PREVIEW_CHARS", "RELATED", "RELATED_HIDDEN_NOTE",
-           "RELATED_MAX", "RELATED_NOTE", "SUPPORTED", "WEAK", "preview",
-           "question_is_nonsense", "real_evidence", "related_indexes"]
+           "RELATED_MAX", "RELATED_NOTE", "SUPPORTED", "WARMING_MAX", "WARMING_NOTE", "WEAK",
+           "preview", "question_is_nonsense", "real_evidence", "related_indexes",
+           "symbol_only", "warming_from"]

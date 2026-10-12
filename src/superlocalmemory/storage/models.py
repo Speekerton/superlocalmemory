@@ -590,6 +590,10 @@ class RecallResponse:
     support_status: str = ""
     #: "supported" / "related" / "none" (``retrieval.support_tiers``).
     support_tier: str = ""
+    #: 4.1.25: recall ran before its models and inputs were ready; results are
+    #: keyword finds, and ``status_note`` says so in plain words.
+    warming_up: bool = False
+    status_note: str = ""
     support_best: float | None = None
     support_threshold: float | None = None
     support_version: str = ""

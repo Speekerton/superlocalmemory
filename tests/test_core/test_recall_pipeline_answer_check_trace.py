@@ -39,7 +39,8 @@ _ENVELOPE_4_1_22 = _ENVELOPE_4_1_21 | {
 #: 4.1.25: the answer-support gate's verdict, its plain reason, and the
 #: answer check's own verdict (the gate decides ``abstained``).
 _ENVELOPE_4_1_25 = _ENVELOPE_4_1_22 | {
-    "support", "abstention_note", "answer_check_insufficient", "tier",
+    "support", "abstention_note", "answer_check_insufficient", "tier", "warming_up",
+    "status_note",
 }
 
 

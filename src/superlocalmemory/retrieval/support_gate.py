@@ -51,6 +51,10 @@ class Assessment:
     #: Inputs that were imputed for at least one memory (a cold model, a store
     #: still filling in its baselines): the verdict is weaker, and says so.
     imputed: tuple[str, ...] = ()
+    #: Still warming up: no question vector or probe profile, or no memory with
+    #: a hub-corrected cosine. Recall then shows what keyword search found,
+    #: labelled, and never says "That isn't in SuperLocalMemory."
+    degraded: bool = False
 
 
 def _num(value: Any) -> float | None:
@@ -142,9 +146,12 @@ def assess(results: Sequence[Any], query_evidence: Mapping[str, Any], *,
     gaps = sorted({name for r in results if getattr(r, "evidence", None)
                    for name in imputed(r.evidence, qe)})
     reason = None if supported else (REASON_UNSUPPORTED if probs else REASON_NO_RESULTS)
+    measured = [r.evidence for r in results if getattr(r, "evidence", None)]
+    degraded = (_num(qe.get("nonsense_similarity")) is None
+                or not any(_num(e.get("hub_corrected")) is not None for e in measured))
     return Assessment(supported=supported, best=best, threshold=recipe.threshold,
                       probabilities=probs, version=recipe.version, reason=reason,
-                      imputed=tuple(gaps))
+                      imputed=tuple(gaps), degraded=degraded)
 
 
 _TRUTHY = frozenset({"1", "true", "yes", "on"})

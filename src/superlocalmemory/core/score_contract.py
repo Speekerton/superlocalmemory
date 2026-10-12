@@ -117,9 +117,13 @@ def finalize_score_contract(
     if response.abstained:
         response.abstention_reason = _abstention_reason(response, verdict, support)
         if not response.abstention_note and not response.results:
-            from superlocalmemory.retrieval.support_gate import ABSTAIN_NOTE
-            response.abstention_note = (NO_MATCH_NOTE if response.abstention_reason
-                                        == "no_candidates" else ABSTAIN_NOTE)
+            from superlocalmemory.retrieval import support_tiers as st
+            if st.warming_from(response):
+                response.warming_up, response.status_note = True, st.WARMING_NOTE
+                response.abstention_note = st.WARMING_NOTE
+            else:
+                response.abstention_note = (NO_MATCH_NOTE if response.abstention_reason
+                                            == "no_candidates" else st.NONE_NOTE)
     else:
         response.abstention_reason = None
     return response
@@ -156,7 +160,14 @@ def _apply_support(response: RecallResponse, support: Any, verdict: Any, *,
     if support.supported:
         response.support_tier = st.SUPPORTED
         return
-    related = st.related_indexes(results, support.probabilities, response.query_evidence or {})
+    if st.symbol_only(response.query or ""):
+        related: list[int] = []
+    elif getattr(support, "degraded", False):
+        _keep_while_warming(response, results, show_weak)
+        return
+    else:
+        related = st.related_indexes(results, support.probabilities,
+                                     response.query_evidence or {})
     response.support_tier = st.RELATED if related else st.NONE
     note = st.RELATED_NOTE if related and include_related else (
         st.RELATED_HIDDEN_NOTE if related else st.NONE_NOTE)
@@ -173,6 +184,23 @@ def _apply_support(response: RecallResponse, support: Any, verdict: Any, *,
     else:
         response.results = [r for r in results if getattr(r.fact, "pinned", False)]
     response.no_confident_match = response.no_confident_match or not response.results
+
+
+def _keep_while_warming(response: RecallResponse, results: list, show_weak: bool) -> None:
+    """Still warming up: what retrieval found is shown to every caller, labelled
+    related, under the warming-up note -- never "That isn't in SuperLocalMemory."
+    A real answer must not be lost because a model was still loading."""
+    from superlocalmemory.retrieval import support_tiers as st
+
+    response.support_tier = st.RELATED if results else st.NONE
+    response.warming_up, response.status_note = True, st.WARMING_NOTE
+    response.abstention_note = st.WARMING_NOTE
+    kept = results if show_weak else results[:st.WARMING_MAX]
+    for r in kept:
+        r.tier = st.RELATED
+    response.weak_shown = bool(show_weak and results)
+    response.results = kept
+    response.no_confident_match = response.no_confident_match or not kept
 
 
 __all__ = ["finalize_score_contract"]

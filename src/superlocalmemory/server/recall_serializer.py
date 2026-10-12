@@ -362,6 +362,8 @@ def _score_metadata(response):
         "abstention_note": getattr(response, "abstention_note", "") or "",
         "support": _support_metadata(response),
         "tier": getattr(response, "support_tier", "") or "",
+        "warming_up": bool(getattr(response, "warming_up", False)),
+        "status_note": getattr(response, "status_note", "") or "",
         "temporal_frame": temporal_frame(timestamps),
         "thematic_context": getattr(response, "community_context", None),
     }

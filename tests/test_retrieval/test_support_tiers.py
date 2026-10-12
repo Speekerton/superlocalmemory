@@ -108,3 +108,61 @@ def test_the_envelope_carries_the_tier_and_short_previews_for_related() -> None:
     assert items[0]["tier"] == st.RELATED
     assert len(items[0]["content"]) <= st.PREVIEW_CHARS + 1
     assert SimpleNamespace  # keep the import used for future fakes
+
+
+COLD_Q = {"oov_phrase": False, "orphan_terms": 0.67, "nonsense_similarity": None}
+NO_VECTOR = {"hub_corrected": None, "cosine": None, "subject_coverage": 0.5, "rare_miss": 0.0}
+
+
+def _support_cold(*probs, threshold=0.5):
+    base = _support(*probs, threshold=threshold)
+    from dataclasses import replace
+    return replace(base, degraded=True)
+
+
+def test_while_warming_up_keyword_finds_show_as_related_to_every_caller() -> None:
+    rs = [_r(str(i), NO_VECTOR) for i in range(7)]
+    r = finalize_score_contract(_response(COLD_Q, *rs), support=_support_cold(*[0.1] * 7))
+    assert r.warming_up and r.status_note == st.WARMING_NOTE
+    assert r.support_tier == st.RELATED and len(r.results) == st.WARMING_MAX
+    assert all(x.tier == st.RELATED for x in r.results)
+    assert r.abstention_note == st.WARMING_NOTE
+    assert "isn't in SuperLocalMemory" not in r.abstention_note
+
+
+def test_while_warming_up_an_empty_recall_says_warming_never_not_in_memory() -> None:
+    empty = RecallResponse(query="q", query_evidence={"nonsense_similarity": None},
+                           channel_status={"semantic": "warming"})
+    r = finalize_score_contract(empty)
+    assert r.warming_up and r.abstention_note == st.WARMING_NOTE
+    warm_empty = finalize_score_contract(RecallResponse(
+        query="q", no_confident_match=True,
+        query_evidence={"nonsense_similarity": 0.3}))
+    assert not warm_empty.warming_up and warm_empty.abstention_note == st.NONE_NOTE
+
+
+def test_symbols_and_emoji_alone_are_nonsense_even_while_warming() -> None:
+    assert st.symbol_only("\U0001F600\U0001F680 !!")
+    assert not st.symbol_only("v0.3.4")
+    rs = [_r("a", NO_VECTOR)]
+    r = finalize_score_contract(RecallResponse(query="\U0001F600\U0001F680", results=rs,
+                                               query_evidence={}),
+                                support=_support_cold(0.1))
+    assert r.results == [] and r.support_tier == st.NONE
+    assert r.abstention_note == st.NONE_NOTE
+
+
+def test_the_envelope_says_warming_up() -> None:
+    from superlocalmemory.server.recall_serializer import recall_response_metadata
+
+    r = finalize_score_contract(_response(COLD_Q, _r("a", NO_VECTOR)), support=_support_cold(0.1))
+    meta = recall_response_metadata(r)
+    assert meta["warming_up"] is True and meta["status_note"] == st.WARMING_NOTE
+
+
+def test_assess_marks_a_recall_without_measurements_as_degraded() -> None:
+    qe = {"latin_script": True, "nonsense_similarity": None}
+    a = sg.assess([_r("a", NO_VECTOR)], qe)
+    assert a.degraded
+    warm = sg.assess([_r("a", {**CLOSE, "cosine": 0.6})], {**qe, "nonsense_similarity": 0.3})
+    assert not warm.degraded

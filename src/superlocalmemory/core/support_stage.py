@@ -78,7 +78,12 @@ def assess(retrieval_engine: Any, query: str, response: Any, verdict: Any,
         _forgive_missing_words(response, results)
     if metadata is not None:
         mark_metadata(results, query, metadata)
-    return support_gate.assess(results, response.query_evidence or {}, verdict=verdict)
+    # The local cross-encoder's own status (the online check may have replaced
+    # the order afterwards: then it is kept in local_reranker_status).
+    status = (getattr(response, "local_reranker_status", "")
+              or getattr(response, "reranker_status", None))
+    return support_gate.assess(results, response.query_evidence or {}, verdict=verdict,
+                               reranker_status=status)
 
 
 def _small_store(db: Any, profile_id: str) -> bool:

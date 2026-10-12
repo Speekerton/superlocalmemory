@@ -124,7 +124,8 @@ def test_while_warming_up_keyword_finds_show_as_related_to_every_caller() -> Non
     rs = [_r(str(i), NO_VECTOR) for i in range(7)]
     r = finalize_score_contract(_response(COLD_Q, *rs), support=_support_cold(*[0.1] * 7))
     assert r.warming_up and r.status_note == st.WARMING_NOTE
-    assert r.support_tier == st.RELATED and len(r.results) == st.WARMING_MAX
+    # The recall's own limit: a find at rank six is not dropped while warming.
+    assert r.support_tier == st.RELATED and len(r.results) == 7
     assert all(x.tier == st.RELATED for x in r.results)
     assert r.abstention_note == st.WARMING_NOTE
     assert "isn't in SuperLocalMemory" not in r.abstention_note
@@ -186,7 +187,7 @@ def test_without_a_cross_encoder_finds_are_kept_labelled_and_not_called_warming(
     response = _response({"nonsense_similarity": 0.3, "latin_script": True}, *rs)
     response.reranker_status = "not_configured"
     r = finalize_score_contract(response, support=_support_cold(*[0.1] * 7))
-    assert len(r.results) == st.WARMING_MAX and all(x.tier == st.RELATED for x in r.results)
+    assert len(r.results) == 7 and all(x.tier == st.RELATED for x in r.results)
     assert not r.warming_up and r.status_note == ""
     assert r.abstention_note == st.RELATED_NOTE
 
@@ -197,3 +198,34 @@ def test_a_cross_encoder_still_loading_is_warming_up() -> None:
     response.reranker_status = "fallback_not_ready"
     r = finalize_score_contract(response, support=_support_cold(0.1))
     assert r.warming_up and r.abstention_note == st.WARMING_NOTE
+
+
+def test_cross_encoder_absence_is_read_from_the_reranker_status_when_known() -> None:
+    qe = {"latin_script": True, "nonsense_similarity": 0.3}
+    scored = [_r("a", {**WARM_NO_CE, "ce_raw": 2.0})]
+    unscored = [_r("a", WARM_NO_CE)]
+    # The reranker did not run: degraded, even if a stale score is present.
+    assert sg.assess(scored, qe, reranker_status="not_configured").degraded
+    assert sg.assess(scored, qe, reranker_status="fallback_not_ready").degraded
+    # It ran: a result outside its window carries no score, which is no gap.
+    assert not sg.assess(unscored, qe, reranker_status="applied").degraded
+    # Unknown status (a stand-in engine): fall back to the scores.
+    assert sg.assess(unscored, qe).degraded and not sg.assess(scored, qe).degraded
+
+
+def test_the_support_stage_passes_the_reranker_status_through() -> None:
+    from superlocalmemory.core import support_stage
+
+    class _Engine:
+        _db = None
+
+        def _attach_evidence(self, *a):
+            return {}
+
+    response = _response({"latin_script": True, "nonsense_similarity": 0.3},
+                         _r("a", WARM_NO_CE))
+    response.reranker_status = "applied"
+    assert not support_stage.assess(_Engine(), "q", response, None, "default").degraded
+    response.reranker_status = "not_configured"
+    response.results = [_r("a", {**WARM_NO_CE, "ce_raw": 2.0})]
+    assert support_stage.assess(_Engine(), "q", response, None, "default").degraded

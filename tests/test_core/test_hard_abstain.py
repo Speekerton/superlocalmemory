@@ -24,7 +24,8 @@ def _result(fid: str, *, pinned: bool = False) -> RetrievalResult:
 
 
 def _response(*fids: str, pinned: tuple[str, ...] = ()) -> RecallResponse:
-    return RecallResponse(query="q", results=[_result(f, pinned=f in pinned) for f in fids])
+    return RecallResponse(query="q", reranker_status="applied",
+                          results=[_result(f, pinned=f in pinned) for f in fids])
 
 
 def _support(*probs: float, threshold: float = 0.5) -> sg.Assessment:

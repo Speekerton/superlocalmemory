@@ -199,12 +199,13 @@ def _keep_while_warming(response: RecallResponse, results: list, show_weak: bool
     if warming:
         response.warming_up, response.status_note = True, st.WARMING_NOTE
     response.abstention_note = st.WARMING_NOTE if warming else st.RELATED_NOTE
-    kept = results if show_weak else results[:st.WARMING_MAX]
-    for r in kept:
+    # Everything the recall found, at its own limit: cutting to a shorter list
+    # here would drop a real answer ranked just past the cut.
+    for r in results:
         r.tier = st.RELATED
     response.weak_shown = bool(show_weak and results)
-    response.results = kept
-    response.no_confident_match = response.no_confident_match or not kept
+    response.results = results
+    response.no_confident_match = response.no_confident_match or not results
 
 
 __all__ = ["finalize_score_contract"]

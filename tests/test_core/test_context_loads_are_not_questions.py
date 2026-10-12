@@ -19,7 +19,7 @@ WEAK = {"hub_corrected": -0.2, "rare_miss": 1.0, "ce_raw": -11.0, "cosine": 0.4,
 
 
 def _response():
-    out = RecallResponse(query="recent decisions", results=[
+    out = RecallResponse(query="recent decisions", reranker_status="applied", results=[
         RetrievalResult(fact=AtomicFact(fact_id=f, memory_id=f"m-{f}", content=f"note {f}"),
                         score=0.7) for f in ("a", "b")])
     for r in out.results:

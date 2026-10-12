@@ -58,6 +58,10 @@ class Assessment:
     degraded: bool = False
 
 
+#: The reranker status that means the cross-encoder scored this recall.
+RERANKER_RAN = "applied"
+
+
 def _num(value: Any) -> float | None:
     if isinstance(value, bool):
         return 1.0 if value else 0.0
@@ -137,16 +141,23 @@ def probability(evidence: Mapping[str, Any], query_evidence: Mapping[str, Any],
 
 
 def _no_cross_encoder(measured: Sequence[Mapping[str, Any]],
-                      query_evidence: Mapping[str, Any]) -> bool:
-    """A Latin-script question none of whose memories has a cross-encoder
-    score: the reranker did not run (loading, failed or not set up). Other
-    scripts never use it, so its absence there is no gap."""
-    return (bool(measured) and bool(query_evidence.get("latin_script", True))
-            and not any(_num(e.get("ce_raw")) is not None for e in measured))
+                      query_evidence: Mapping[str, Any],
+                      reranker_status: str | None = None) -> bool:
+    """A Latin-script question the cross-encoder did not score: the reranker
+    did not run (loading, failed or not set up). Read from the reranker's own
+    status when the caller knows it -- a result outside its window carries no
+    score and that is no gap -- else from the scores. Other scripts never use
+    it, so its absence there is no gap."""
+    if not measured or not query_evidence.get("latin_script", True):
+        return False
+    if reranker_status:
+        return reranker_status != RERANKER_RAN
+    return not any(_num(e.get("ce_raw")) is not None for e in measured)
 
 
 def assess(results: Sequence[Any], query_evidence: Mapping[str, Any], *,
-           verdict: Any = None, recipe: sr.SupportRecipe = sr.ACTIVE) -> Assessment:
+           verdict: Any = None, recipe: sr.SupportRecipe = sr.ACTIVE,
+           reranker_status: str | None = None) -> Assessment:
     """The gate's verdict over recall's results (``evidence`` on each)."""
     qe = query_evidence or {}
     probs = tuple(round(probability(getattr(r, "evidence", None) or {}, qe, recipe,
@@ -159,7 +170,7 @@ def assess(results: Sequence[Any], query_evidence: Mapping[str, Any], *,
     measured = [r.evidence for r in results if getattr(r, "evidence", None)]
     degraded = (_num(qe.get("nonsense_similarity")) is None
                 or not any(_num(e.get("hub_corrected")) is not None for e in measured)
-                or _no_cross_encoder(measured, qe))
+                or _no_cross_encoder(measured, qe, reranker_status))
     return Assessment(supported=supported, best=best, threshold=recipe.threshold,
                       probabilities=probs, version=recipe.version, reason=reason,
                       imputed=tuple(gaps), degraded=degraded)

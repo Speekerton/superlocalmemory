@@ -33,8 +33,6 @@ NONE_NOTE = "That isn't in SuperLocalMemory."
 #: SuperLocalMemory." is never said then: nothing was measured to say it.
 WARMING_NOTE = ("SuperLocalMemory is still warming up — results may be incomplete. "
                 "Try again in a few minutes.")
-#: Most keyword finds shown while warming up (the top five, as recall shows).
-WARMING_MAX = 5
 RELATED_NOTE = "I don't have this exactly — here are the closest memories."
 RELATED_HIDDEN_NOTE = ("I don't have this exactly. Closer memories exist; "
                        "ask with include_related to see them.")
@@ -124,6 +122,6 @@ def preview(text: str, limit: int = PREVIEW_CHARS) -> str:
 
 
 __all__ = ["NONE", "NONE_NOTE", "PREVIEW_CHARS", "RELATED", "RELATED_HIDDEN_NOTE",
-           "RELATED_MAX", "RELATED_NOTE", "SUPPORTED", "WARMING_MAX", "WARMING_NOTE", "WEAK",
+           "RELATED_MAX", "RELATED_NOTE", "SUPPORTED", "WARMING_NOTE", "WEAK",
            "preview", "question_is_nonsense", "real_evidence", "related_indexes",
            "reranker_loading", "symbol_only", "warming_from"]

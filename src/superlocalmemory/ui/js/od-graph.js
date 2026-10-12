@@ -28,17 +28,17 @@
 
   /* ---- 16-colour categorical palette (Tableau-inspired, accessible) ---- */
   var CAT_PALETTE = [
-    '#4E79A7', '#F28E2B', '#E15759', '#76B7B2', '#59A14F',
+    '#4E79A7', '#F28E2B', '#E15759', '#B8A6FF', '#8F76FF',
     '#EDC948', '#B07AA1', '#FF9DA7', '#9C755F', '#BAB0AC',
-    '#52B2BF', '#D4A5A5', '#7EB0D5', '#FD7F6F', '#B2E061', '#FFBE7D'
+    '#FF6FAA', '#D4A5A5', '#7EB0D5', '#FD7F6F', '#D9C7FF', '#FFBE7D'
   ];
   /* fixed colours per entity type -- consistent across renders */
   var ETYPE_COLORS = {
     person:   '#4E79A7',
     org:      '#F28E2B',
-    concept:  '#59A14F',
+    concept:  '#8F76FF',
     event:    '#E15759',
-    location: '#76B7B2',
+    location: '#B8A6FF',
     tool:     '#EDC948',
     project:  '#B07AA1',
     skill:    '#FF9DA7'

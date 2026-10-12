@@ -27,9 +27,9 @@ if (typeof isInitialLoad === 'undefined') var isInitialLoad = true;
 // ============================================================================
 
 const SIGMA_CLUSTER_COLORS = [
-    '#667eea', '#764ba2', '#43e97b', '#38f9d7',
-    '#4facfe', '#00f2fe', '#f093fb', '#f5576c',
-    '#fa709a', '#fee140', '#30cfd0', '#330867'
+    '#667eea', '#764ba2', '#9B82FF', '#FF6FAA',
+    '#4facfe', '#C4B5FD', '#f093fb', '#f5576c',
+    '#fa709a', '#fee140', '#B8A6FF', '#330867'
 ];
 
 function getSigmaClusterColor(communityId) {
@@ -40,7 +40,7 @@ function getSigmaClusterColor(communityId) {
 // Color by fact_type when communities are not available
 var CATEGORY_COLORS = {
     'semantic':  '#667eea',  // Indigo — knowledge facts
-    'episodic':  '#43e97b',  // Green — session events
+    'episodic':  '#9B82FF',  // Green — session events
     'opinion':   '#f093fb',  // Pink — decisions & opinions
     'temporal':  '#4facfe',  // Blue — time-referenced facts
 };
@@ -163,7 +163,7 @@ function getEdgeColor(type) {
         'entity': '#cccccc',
         'temporal': '#4facfe',
         'semantic': '#667eea',
-        'causal': '#43e97b',
+        'causal': '#9B82FF',
         'contradiction': '#f5576c',
         'supersedes': '#f093fb',
     };

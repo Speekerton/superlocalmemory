@@ -144,7 +144,7 @@ function renderClusters(clusters) {
         return;
     }
 
-    var colors = ['#667eea', '#f093fb', '#4facfe', '#43e97b', '#fa709a', '#30cfd0', '#764ba2', '#f5576c'];
+    var colors = ['#667eea', '#f093fb', '#4facfe', '#9B82FF', '#fa709a', '#B8A6FF', '#764ba2', '#f5576c'];
     container.textContent = '';
 
     clusters.forEach(function(cluster, idx) {

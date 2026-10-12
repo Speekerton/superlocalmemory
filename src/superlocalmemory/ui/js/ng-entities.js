@@ -277,7 +277,7 @@
 
   function getTypeColor(type) {
     var colors = {
-      person: '#3b82f6', concept: '#10b981', organization: '#f59e0b',
+      person: '#3b82f6', concept: '#FF4F9C', organization: '#f59e0b',
       location: '#ef4444', skill: '#8b5cf6', event: '#ec4899'
     };
     return colors[type] || '#7C6AEF';

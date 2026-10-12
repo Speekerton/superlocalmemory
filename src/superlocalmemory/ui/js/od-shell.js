@@ -153,7 +153,22 @@
   ================================================================ */
   var THEME_KEY = 'slm-theme';
 
-  function applyTheme(t) {
+  // Follow the system colour scheme until the user picks a theme with the
+  // toggle; only that explicit choice is written to localStorage.
+  function storedTheme() {
+    try {
+      var v = localStorage.getItem(THEME_KEY);
+      return (v === 'light' || v === 'dark') ? v : null;
+    } catch (e) { return null; }
+  }
+  function systemTheme() {
+    try {
+      return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    } catch (e) { return 'dark'; }
+  }
+  function currentTheme() { return storedTheme() || systemTheme(); }
+
+  function applyTheme(t, persist) {
     document.documentElement.setAttribute('data-theme', t);
     document.documentElement.setAttribute('data-bs-theme', t);
     if (t === 'dark') {
@@ -161,7 +176,7 @@
     } else {
       document.body.classList.remove('ng-dark');
     }
-    try { localStorage.setItem(THEME_KEY, t); } catch (e) {}
+    if (persist) { try { localStorage.setItem(THEME_KEY, t); } catch (e) {} }
 
     // Update all [data-theme-icon] placeholders (sun in dark, moon in light)
     document.querySelectorAll('[data-theme-icon]').forEach(function (el) {
@@ -172,8 +187,8 @@
     ['graph-container', 'memory-timeline-chart'].forEach(function (id) {
       var el = document.getElementById(id);
       if (!el) return;
-      el.style.setProperty('background', t === 'dark' ? '#0f1012' : '#ffffff', 'important');
-      el.style.setProperty('background-color', t === 'dark' ? '#0f1012' : '#ffffff', 'important');
+      el.style.setProperty('background', t === 'dark' ? '#0B0A12' : '#ffffff', 'important');
+      el.style.setProperty('background-color', t === 'dark' ? '#0B0A12' : '#ffffff', 'important');
       el.style.setProperty('border-color', t === 'dark' ? 'rgba(255,255,255,0.06)' : '#e5e7eb', 'important');
     });
   }
@@ -181,8 +196,7 @@
   // Apply theme immediately (before DOMContentLoaded) to prevent FOUC.
   // Both data-theme (OD CSS) and data-bs-theme (Bootstrap) must be set here.
   (function initThemeEarly() {
-    var t = 'dark';
-    try { t = localStorage.getItem(THEME_KEY) || 'dark'; } catch (e) {}
+    var t = currentTheme();
     document.documentElement.setAttribute('data-theme', t);
     document.documentElement.setAttribute('data-bs-theme', t);
   }());
@@ -190,7 +204,7 @@
   // Public API — override the core.js definition (which only sets data-bs-theme)
   window.toggleDarkMode = function () {
     var cur = document.documentElement.getAttribute('data-theme') || 'dark';
-    applyTheme(cur === 'dark' ? 'light' : 'dark');
+    applyTheme(cur === 'dark' ? 'light' : 'dark', true);
   };
   window.slmToggleTheme = window.toggleDarkMode;
 
@@ -724,9 +738,12 @@
     }
 
     // 4. Apply current theme (fills icons, syncs classes)
-    var t = 'dark';
-    try { t = localStorage.getItem(THEME_KEY) || 'dark'; } catch (e) {}
-    applyTheme(t);
+    applyTheme(currentTheme(), false);
+    try {
+      var mq = window.matchMedia('(prefers-color-scheme: light)');
+      var onSys = function () { if (!storedTheme()) applyTheme(systemTheme(), false); };
+      if (mq.addEventListener) mq.addEventListener('change', onSys);
+    } catch (e) {}
 
     // 5. Wire theme toggle buttons via addEventListener (NOT onclick — CSP safe)
     document.querySelectorAll('[data-theme-icon]').forEach(function (btn) {

@@ -476,6 +476,9 @@ class RetrievalResult:
     # gate's threshold. None / False when the gate did not run.
     support: float | None = None
     weak: bool = False
+    #: "supported", "weak" or "related" (``retrieval.support_tiers``); "" when
+    #: the gate did not run.
+    tier: str = ""
 
 
 @dataclass
@@ -585,6 +588,8 @@ class RecallResponse:
     # the answer check's own verdict (None when it gave none), since the gate,
     # not the check alone, decides ``abstained``. Additive.
     support_status: str = ""
+    #: "supported" / "related" / "none" (``retrieval.support_tiers``).
+    support_tier: str = ""
     support_best: float | None = None
     support_threshold: float | None = None
     support_version: str = ""

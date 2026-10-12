@@ -319,10 +319,15 @@ def serialize_recall_response(
         if include_evidence:
             entry["evidence"] = dict(getattr(r, "evidence", None) or {})
         if getattr(r, "support", None) is not None:
-            # 4.1.25: the answer-support gate's probability, and whether this
-            # memory is below its threshold (shown only on request, or pinned).
+            # 4.1.25: the answer-support gate's probability, whether this memory
+            # is below its threshold, and its tier label. A related memory is a
+            # short preview: it does not answer the question.
             entry["support"] = r.support
             entry["weak"] = bool(getattr(r, "weak", False))
+            entry["tier"] = getattr(r, "tier", "") or ""
+            if entry["tier"] == "related":
+                from superlocalmemory.retrieval.support_tiers import preview
+                entry["content"] = preview(entry["content"])
         raw.append(entry)
 
     # F-3 source discipline, then F-2 budget — order matters (discipline first
@@ -356,6 +361,7 @@ def _score_metadata(response):
         "abstention_reason": getattr(response, "abstention_reason", None),
         "abstention_note": getattr(response, "abstention_note", "") or "",
         "support": _support_metadata(response),
+        "tier": getattr(response, "support_tier", "") or "",
         "temporal_frame": temporal_frame(timestamps),
         "thematic_context": getattr(response, "community_context", None),
     }
@@ -369,7 +375,8 @@ def _support_metadata(response) -> dict | None:
     return {"status": status, "best": getattr(response, "support_best", None),
             "threshold": getattr(response, "support_threshold", None),
             "version": getattr(response, "support_version", "") or "",
-            "weak_shown": bool(getattr(response, "weak_shown", False))}
+            "weak_shown": bool(getattr(response, "weak_shown", False)),
+            "tier": getattr(response, "support_tier", "") or ""}
 
 
 def _retrieval_metadata(response):

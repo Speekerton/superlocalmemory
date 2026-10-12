@@ -34,8 +34,8 @@ from superlocalmemory.retrieval import support_recipe as sr
 
 REASON_UNSUPPORTED = "unsupported"
 REASON_NO_RESULTS = "no_results"
-#: What a person reads when recall abstains.
-ABSTAIN_NOTE = "Nothing in memory supports this question."
+#: What a person reads when recall abstains (``support_tiers.NONE_NOTE``).
+ABSTAIN_NOTE = "That isn't in SuperLocalMemory."
 #: The keyword fallback's bar (``lexical_support``): share of content words.
 LEXICAL_MIN_COVERAGE = 0.5
 

@@ -115,7 +115,7 @@ def test_the_envelope_carries_the_reason_and_each_result_its_support() -> None:
     meta = recall_response_metadata(r)
     assert meta["abstention_note"].startswith(sg.ABSTAIN_NOTE)
     assert meta["support"] == {"status": "unsupported", "best": 0.2, "threshold": 0.5,
-                               "version": "test", "weak_shown": True}
+                               "version": "test", "weak_shown": True, "tier": "none"}
     items, _ = serialize_recall_response(r, limit=5)
     assert items[0]["weak"] is True and items[0]["support"] == 0.2
     empty = finalize_score_contract(_response("a"), support=_support(0.2))

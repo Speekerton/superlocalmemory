@@ -37,6 +37,7 @@ def _bounded(value: object, default: float = 0.0) -> float:
 def finalize_score_contract(
     response: RecallResponse, verdict: SufficiencyVerdict | None = None, *,
     support: Any = None, show_weak: bool = False, keep_results: bool = False,
+    include_related: bool = False,
 ) -> RecallResponse:
     """Finalize aliases, rank positions, and response abstention metadata.
 
@@ -44,7 +45,9 @@ def finalize_score_contract(
     whether recall answers (4.1.25). When nothing clears its threshold recall
     abstains and returns NOTHING with a plain reason -- except pinned memories,
     which always show; ``keep_results`` (the caller named an explicit filter)
-    keeps today's results; ``show_weak`` keeps them labelled as weak. The
+    keeps today's results; ``show_weak`` keeps them labelled as weak;
+    ``include_related`` shows up to three close memories of a real question
+    (``retrieval.support_tiers``: supported / related / none). The
     answer check's verdict is one of the gate's inputs; its own word is kept
     in ``answer_check_insufficient``.
 
@@ -72,7 +75,7 @@ def finalize_score_contract(
     judged = verdict is not None and bool(response.results)
     if support is not None:
         _apply_support(response, support, verdict, show_weak=show_weak,
-                       keep_results=keep_results)
+                       keep_results=keep_results, include_related=include_related)
     for position, result in enumerate(response.results or (), start=1):
         relevance = _bounded(
             result.relevance_score
@@ -134,13 +137,16 @@ def _abstention_reason(response: RecallResponse, verdict: Any, support: Any) -> 
 
 
 def _apply_support(response: RecallResponse, support: Any, verdict: Any, *,
-                   show_weak: bool, keep_results: bool) -> None:
-    """Label each result with its support; drop them all when none supports."""
-    from superlocalmemory.retrieval.support_gate import ABSTAIN_NOTE
+                   show_weak: bool, keep_results: bool, include_related: bool) -> None:
+    """Label each result with its support and tier; when none supports the
+    question, keep what the tier and the caller allow."""
+    from superlocalmemory.retrieval import support_tiers as st
 
-    for result, p in zip(response.results or (), support.probabilities):
+    results = list(response.results or ())
+    for result, p in zip(results, support.probabilities):
         result.support = p
         result.weak = p < support.threshold
+        result.tier = st.WEAK if result.weak else st.SUPPORTED
     if verdict is not None:
         response.answer_check_insufficient = bool(getattr(verdict, "insufficient", False))
     response.support_status = "supported" if support.supported else "unsupported"
@@ -148,14 +154,24 @@ def _apply_support(response: RecallResponse, support: Any, verdict: Any, *,
     response.support_threshold = support.threshold
     response.support_version = support.version
     if support.supported:
+        response.support_tier = st.SUPPORTED
         return
-    response.abstention_note = ABSTAIN_NOTE
-    if show_weak and response.results:
+    related = st.related_indexes(results, support.probabilities, response.query_evidence or {})
+    response.support_tier = st.RELATED if related else st.NONE
+    note = st.RELATED_NOTE if related and include_related else (
+        st.RELATED_HIDDEN_NOTE if related else st.NONE_NOTE)
+    response.abstention_note = note
+    if show_weak and results:
         response.weak_shown = True
-        response.abstention_note = ABSTAIN_NOTE + WEAK_NOTE
-    elif not keep_results:
-        response.results = [r for r in response.results or ()
-                            if getattr(r.fact, "pinned", False)]
+        response.abstention_note = note + WEAK_NOTE
+    elif keep_results:
+        pass
+    elif related and include_related:
+        for i in related:
+            results[i].tier = st.RELATED
+        response.results = [results[i] for i in related]
+    else:
+        response.results = [r for r in results if getattr(r.fact, "pinned", False)]
     response.no_confident_match = response.no_confident_match or not response.results
 
 

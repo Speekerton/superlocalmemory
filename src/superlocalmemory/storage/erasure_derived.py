@@ -78,7 +78,9 @@ def fact_content(execute: Execute, profile_id: str, fact_id: str) -> str | None:
     return _content(rows[0]) if rows else None
 
 
-def theme_quotes(theme: str, fact_ids: Sequence[str], fact_id: str, erased_text: str | None) -> bool:
+def theme_quotes(
+    theme: str, fact_ids: Sequence[str], fact_id: str, erased_text: str | None,
+) -> bool:
     """Whether the scene theme is (or contains) the removed fact's words.
 
     The anchor is the first member, so removing it always counts, even when its

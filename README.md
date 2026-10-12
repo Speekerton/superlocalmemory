@@ -222,7 +222,7 @@ Engineering controls that support a compliance program, not a certification.
 
 | Capability | What you get | Docs |
 |---|---|---|
-| **Three modes** | **A:** no language model at all. **B:** a model on this machine (Ollama, with Google Gemma 3 and Gemma 4 in the model picker, or any local OpenAI-compatible server). **C:** your own endpoint or a cloud provider | [Configuration](https://github.com/qualixar/superlocalmemory/blob/main/docs/configuration.md) |
+| **Three modes** | **A:** no language model at all. **B:** a model on this machine (Ollama, where Google Gemma 3 4B is the default and Gemma 4 is in the model picker, or any local OpenAI-compatible server). **C:** your own endpoint or a cloud provider | [Configuration](https://github.com/qualixar/superlocalmemory/blob/main/docs/configuration.md) |
 | **Dashboard** | Search, knowledge graph, Entity Explorer, answer check, Memory health, documents and images, connected apps, bot messages, governance: `slm dashboard` | [Dashboard](https://github.com/qualixar/superlocalmemory/blob/main/docs/DASHBOARD-COVERAGE.md) |
 | **Scale engine** | SQLite + sqlite-vec are canonical; optional LanceDB and CozoDB copies serve only once they match SQLite | [Scale engine](https://github.com/qualixar/superlocalmemory/blob/main/docs/scale-engine.md) |
 | **Durable writes** | Every save moves raw → queryable → complete with a receipt; failures keep the evidence and retry; text saves under load are queued, never refused | [Architecture](https://github.com/qualixar/superlocalmemory/blob/main/docs/ARCHITECTURE.md) |

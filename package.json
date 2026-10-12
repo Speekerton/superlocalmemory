@@ -22,7 +22,19 @@
     "governed-memory",
     "context-engineering",
     "ai-agents",
-    "qualixar"
+    "qualixar",
+    "gemma",
+    "embeddinggemma",
+    "google-gemma",
+    "ollama",
+    "local-llm",
+    "multimodal-embeddings",
+    "jev",
+    "answer-verification",
+    "hallucination-prevention",
+    "ai-reliability-engineering",
+    "agent-to-agent",
+    "claude-memory"
   ],
   "author": {
     "name": "Varun Pratap Bhardwaj",

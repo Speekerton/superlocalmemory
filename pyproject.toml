@@ -13,6 +13,8 @@ keywords = [
     "ai-memory", "agent-memory", "mcp-server", "mcp", "claude-code", "codex",
     "cursor", "chatgpt", "rag", "knowledge-graph", "local-first", "privacy-first",
     "gdpr", "eu-ai-act", "information-geometry", "multimodal-memory",
+    "gemma", "embeddinggemma", "ollama", "local-llm", "jev", "answer-verification",
+    "hallucination-prevention", "ai-reliability-engineering", "agent-to-agent",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",

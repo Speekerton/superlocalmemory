@@ -24,6 +24,13 @@ from superlocalmemory.retrieval import support_gate
 logger = logging.getLogger(__name__)
 
 _WORD = re.compile(r"\w+(?:[._:/-]\w+)*", re.UNICODE)
+#: Below this many facts in the profile, a word no memory contains says little
+#: (most words are in no memory yet), so the orphan-word and rare-term
+#: penalties are off; the evidence floor still keeps nonsense out of a small
+#: store, and "postgres version" must answer on one.
+SMALL_STORE_FACTS = 200
+_SIZE_CACHE: dict = {}
+_SIZE_TTL_S = 60.0
 
 
 def enabled(config: Any) -> bool:
@@ -67,9 +74,39 @@ def assess(retrieval_engine: Any, query: str, response: Any, verdict: Any,
         if hasattr(retrieval_engine, "_attach_evidence"):
             logger.warning("Answer support not measured: no evidence for any result")
         return None
+    if _small_store(getattr(retrieval_engine, "_db", None), profile_id):
+        _forgive_missing_words(response, results)
     if metadata is not None:
         mark_metadata(results, query, metadata)
     return support_gate.assess(results, response.query_evidence or {}, verdict=verdict)
+
+
+def _small_store(db: Any, profile_id: str) -> bool:
+    """Fewer than ``SMALL_STORE_FACTS`` facts in the profile (read once a minute)."""
+    import time
+
+    if db is None or not callable(getattr(db, "execute", None)):
+        return False
+    key, now = (id(db), profile_id), time.monotonic()
+    cached = _SIZE_CACHE.get(key)
+    if cached is None or now - cached[1] > _SIZE_TTL_S:
+        try:
+            rows = db.execute("SELECT COUNT(*) AS n FROM atomic_facts WHERE profile_id = ?",
+                              (profile_id,))
+            count = int(dict(rows[0])["n"]) if rows else 0
+        except Exception:  # unreadable: treat as large (the measured default)
+            count = SMALL_STORE_FACTS
+        cached = (count, now)
+        _SIZE_CACHE[key] = cached
+    return cached[0] < SMALL_STORE_FACTS
+
+
+def _forgive_missing_words(response: Any, results: Sequence[Any]) -> None:
+    response.query_evidence = {**(response.query_evidence or {}), "orphan_terms": None,
+                               "small_store": True}
+    for r in results:
+        if isinstance(getattr(r, "evidence", None), dict):
+            r.evidence["rare_miss"] = 0.0
 
 
 def mark_metadata(results: Sequence[Any], query: str,

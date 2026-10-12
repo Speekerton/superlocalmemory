@@ -100,3 +100,23 @@ def test_prefer_project_is_not_an_explicit_filter() -> None:
 
     assert not support_stage.explicit_filter(Facets.of(prefer_project="core"), None)
     assert support_stage.explicit_filter(Facets.of(project="core"), None)
+
+
+def test_a_small_store_does_not_penalise_orphan_or_rare_words(monkeypatch) -> None:
+    monkeypatch.setattr(support_stage, "_SIZE_CACHE", {})
+    rows = {"n": 40}
+    db = SimpleNamespace(execute=lambda sql, params=(): [{"n": rows["n"]}])
+    engine = SimpleNamespace(_db=db, _attach_evidence=None)
+    response = RecallResponse(query="postgres version",
+                              results=[_result("a", {"rare_miss": 1.0, "hub_corrected": 0.1})])
+    response.query_evidence = {"orphan_terms": 0.5, "nonsense_similarity": 0.3}
+    support_stage.assess(engine, "postgres version", response, None, "default")
+    assert response.query_evidence["orphan_terms"] is None
+    assert response.query_evidence["small_store"] is True
+    assert response.results[0].evidence["rare_miss"] == 0.0
+    monkeypatch.setattr(support_stage, "_SIZE_CACHE", {})
+    rows["n"] = 5000
+    big = RecallResponse(query="q", results=[_result("a", {"rare_miss": 1.0})])
+    big.query_evidence = {"orphan_terms": 0.5}
+    support_stage.assess(engine, "q", big, None, "default")
+    assert big.query_evidence["orphan_terms"] == 0.5 and big.results[0].evidence["rare_miss"] == 1.0

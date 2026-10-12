@@ -244,8 +244,14 @@ class RetrievalEngine:
         valid_at: str | None = None,
         include_unknown: bool = False,
         facets: Any = None,
+        lexical_query: str | None = None,
     ) -> RecallResponse:
         """Full retrieval pipeline: strategy -> channels -> RRF -> rerank.
+
+        ``lexical_query`` (4.1.25, ``retrieval/query_rewrite``): what the
+        keyword channel searches for, when a rewrite added terms. Every other
+        stage -- the vector channels, the cross-encoder, the evidence features
+        -- reads ``query``.
 
         Multi-scope: ``include_global`` / ``include_shared`` control which
         scopes participate in retrieval. Both default to False so direct
@@ -345,6 +351,7 @@ class RetrievalEngine:
             dropped_channels=dropped_channels,
             channel_status=channel_status,
             stage_ms=stage_ms,
+            lexical_query=lexical_query,
         )
         stage_ms["channels"] = round((time.monotonic() - _t_channels) * 1000.0, 1)
         if getattr(facets, "kind", None) and getattr(self, "_kind_membership", None):
@@ -1163,6 +1170,7 @@ class RetrievalEngine:
         dropped_channels: set[str] | None = None,
         channel_status: dict[str, str] | None = None,
         stage_ms: dict[str, float] | None = None,
+        lexical_query: str | None = None,
     ) -> dict[str, list[tuple[str, float]]]:
         """Run active retrieval channels.
 
@@ -1295,7 +1303,7 @@ class RetrievalEngine:
                     self._bm25.search,
                     include_global=include_global, include_shared=include_shared,
                 ),
-                query, profile_id, self._config.bm25_top_k,
+                lexical_query or query, profile_id, self._config.bm25_top_k,
             )
         if self._temporal is not None and "temporal" not in disabled:
             futures["temporal"] = executor.submit(

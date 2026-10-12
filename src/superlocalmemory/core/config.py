@@ -472,6 +472,14 @@ class RetrievalConfig:
     # plain reason (``show_weak`` shows the weak matches). Env kill-switch:
     # SLM_RECALL_NO_SUPPORT_GATE=1 disables it without a release.
     answer_support_gate: bool = True
+    # 4.1.25: query rewriting for the keyword channel only (retrieval/
+    # query_rewrite.py): base forms and entity aliases in every mode; in Mode B
+    # optionally a few keywords from the LOCAL model, bounded by the timeout and
+    # failing open. The gate and the cross-encoder always read the original
+    # question, so a rewrite can never make nonsense answer.
+    query_rewrite: bool = True
+    query_rewrite_llm: bool = False
+    query_rewrite_timeout_s: float = 0.8
     media_min_score: float = 0.30   # Picture similarity that counts as evidence
 
     # v3.6.6: Recall output budget — protect consuming agents from 585KB responses.

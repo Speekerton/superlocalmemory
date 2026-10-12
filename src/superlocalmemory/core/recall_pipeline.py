@@ -1361,6 +1361,11 @@ def run_recall(
     # Only agentic verification may call a language model during recall; the
     # entity channel resolves names read-only (EntityResolver.lookup).
     extra_disabled = None
+    # 4.1.25: extra terms for the keyword channel only (retrieval/query_rewrite);
+    # passed only when the rewrite added something, so a stand-in engine that
+    # predates the parameter is never asked for it.
+    from superlocalmemory.retrieval.query_rewrite import rewrite as _rewrite
+    _lexical = _rewrite(query, mode=m, db=db, profile_id=profile_id, llm=llm, config=config)
     response = retrieval_engine.recall(
         query, profile_id, m, limit,
         extra_disabled_channels=extra_disabled,
@@ -1373,6 +1378,7 @@ def run_recall(
         include_unknown=include_unknown,
         # Only when asked: a retrieval stand-in need not know about facets.
         **({"facets": facets} if facets is not None and not facets.empty else {}),
+        **({"lexical_query": _lexical.lexical_query} if _lexical.added else {}),
     )
     _mark("retrieval(chan+rerank)")
 

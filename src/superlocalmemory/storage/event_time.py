@@ -18,7 +18,15 @@ def mirror(db, fact_id: str, profile_id: str, start: str | None) -> None:
     """Keep M013's fact column in step with the canonical temporal record."""
     if start is None:
         return
-    columns = {r['name'] for r in db.execute('PRAGMA table_info(atomic_facts)')}
-    if 'valid_from' in columns:
+    present = getattr(db, '_fact_valid_from_column', False)
+    if not present:
+        present = any(r['name'] == 'valid_from'
+                      for r in db.execute('PRAGMA table_info(atomic_facts)'))
+        if present:  # cached once seen; re-probed while absent (a later migration)
+            try:
+                db._fact_valid_from_column = True
+            except AttributeError:
+                pass
+    if present:
         db.execute('UPDATE atomic_facts SET valid_from=? WHERE fact_id=? AND profile_id=?',
                    (start, fact_id, profile_id))

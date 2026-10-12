@@ -1033,7 +1033,7 @@ class DatabaseManager:
                     canonical = self.get_fact(canonical_id, fact.profile_id)
                     self.store_temporal_validity(
                         canonical_id, fact.profile_id,
-                        valid_from=_event_start(canonical or fact),
+                        valid_from=_event_start(canonical or fact), fill_only=True,
                     )
                 # Re-storing known content is the natural moment to notice a
                 # projection that was never written — an upgraded store whose
@@ -1081,7 +1081,7 @@ class DatabaseManager:
             # anchor. Absence deliberately represents pre-4.0.2
             # ``legacy_unknown``; never backfill it from ``created_at``.
             self.store_temporal_validity(fact.fact_id, fact.profile_id,
-                                         valid_from=_event_start(fact))
+                                         valid_from=_event_start(fact), fill_only=True)
             # Which facts name an entity is answered from an index; every
             # write path lands here, so this keeps it complete
             # (storage/entity_index.py).
@@ -1220,7 +1220,7 @@ class DatabaseManager:
             tuple(params),
         )
         self.store_temporal_validity(fact.fact_id, fact.profile_id,
-                                         valid_from=_event_start(fact))
+                                         valid_from=_event_start(fact), fill_only=True)
         from superlocalmemory.storage.entity_index import record_fact_entities
 
         record_fact_entities(
@@ -2635,12 +2635,18 @@ class DatabaseManager:
         self, fact_id: str, profile_id: str,
         valid_from: str | None = None,
         valid_until: str | None = None,
+        *,
+        fill_only: bool = False,
     ) -> None:
         """Create or enrich the temporal record for a fact.
 
         The 4.0.2 fact writer creates the record immediately to anchor
         transaction time. A later temporal extraction may add event-time bounds;
         it must not be discarded merely because the anchor already exists.
+
+        ``fill_only`` is the fact writer's default event-time start (WP-19 A1):
+        it fills an empty ``valid_from`` and never replaces one a correction,
+        a replacement or an extraction already set.
         """
         from datetime import UTC
         from datetime import datetime as _dt
@@ -2651,7 +2657,18 @@ class DatabaseManager:
             "VALUES (?, ?, ?, ?, ?)",
             (fact_id, profile_id, valid_from, valid_until, system_created_at),
         )
-        if valid_from is not None or valid_until is not None:
+        if fill_only and valid_from is not None:
+            self.execute(
+                "UPDATE fact_temporal_validity SET valid_from = ? "
+                "WHERE fact_id = ? AND profile_id = ? AND valid_from IS NULL",
+                (valid_from, fact_id, profile_id),
+            )
+            current = self.execute(
+                "SELECT valid_from FROM fact_temporal_validity WHERE fact_id = ? AND profile_id = ?",
+                (fact_id, profile_id),
+            )
+            valid_from = current[0]["valid_from"] if current else valid_from
+        elif valid_from is not None or valid_until is not None:
             self.execute(
                 "UPDATE fact_temporal_validity "
                 "SET valid_from = COALESCE(?, valid_from), "

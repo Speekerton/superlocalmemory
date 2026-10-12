@@ -150,7 +150,6 @@ CREATE INDEX IF NOT EXISTS idx_memories_created
 
 _SQL_ATOMIC_FACTS: Final[str] = """
 CREATE TABLE IF NOT EXISTS atomic_facts (
-    non_answer INTEGER DEFAULT 0,
     fact_id            TEXT PRIMARY KEY,
     memory_id          TEXT NOT NULL,
     profile_id         TEXT NOT NULL DEFAULT 'default',
@@ -201,6 +200,9 @@ CREATE TABLE IF NOT EXISTS atomic_facts (
     -- DatabaseManager.get_facts_by_ids, which every channel's candidates are
     -- re-authorised through and which the engine hydrates from.
     quarantined        INTEGER NOT NULL DEFAULT 0,
+    -- Stored but never an answer (operational stubs such as "session ended");
+    -- listed only on request. Same enforcement point as quarantined (M059).
+    non_answer         INTEGER DEFAULT 0,
     -- Memory kind (M052 on upgraded stores). NULL = untyped; no CHECK by design.
     memory_kind            TEXT,
     memory_kind_source     TEXT,
@@ -991,6 +993,9 @@ _ADDITIVE_COLUMNS: Final[tuple[tuple[str, str, str], ...]] = (
     # The column has to exist before its own index either way, so it belongs
     # here, where a store gets it at start regardless of migration state.
     ("atomic_facts", "pinned", "INTEGER NOT NULL DEFAULT 0"),
+    # WP-19: keeping operational stubs out of answers must not wait for the
+    # deferred M059 pass, and the visibility indexes cover it from the start.
+    ("atomic_facts", "non_answer", "INTEGER DEFAULT 0"),
 )
 
 

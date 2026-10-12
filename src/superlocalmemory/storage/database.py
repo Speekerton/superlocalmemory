@@ -329,6 +329,8 @@ def _compose_visible_clause(
     *,
     has_archive: bool,
     has_quarantine: bool,
+    has_non_answer: bool = False,
+    include_non_answer: bool = False,
     include_quarantined: bool = False,
 ) -> str:
     """Build the AND-clause from what the store actually has.
@@ -343,6 +345,8 @@ def _compose_visible_clause(
         clause += f" AND COALESCE({table}archive_status, 'live') != 'archived'"
     if not include_quarantined and has_quarantine:
         clause += f" AND COALESCE({table}quarantined, 0) = 0"
+    if has_non_answer and not include_non_answer and not include_quarantined:
+        clause += f" AND COALESCE({table}non_answer, 0) = 0"
     return clause
 
 
@@ -381,6 +385,7 @@ def visible_fact_clause_for_connection(
     prefix: str = "",
     *,
     include_quarantined: bool = False,
+    include_non_answer: bool = False,
 ) -> str:
     """``visible_fact_clause`` for a caller that hand-rolls its SQL.
 
@@ -436,6 +441,8 @@ def visible_fact_clause_for_connection(
         prefix,
         has_archive=_has("archive_status"),
         has_quarantine=_has("quarantined"),
+        has_non_answer=_has("non_answer"),
+        include_non_answer=include_non_answer,
         include_quarantined=include_quarantined,
     )
 
@@ -1386,6 +1393,7 @@ class DatabaseManager:
 
     def visible_fact_clause(
         self, prefix: str = "", *, include_quarantined: bool = False,
+        include_non_answer: bool = False,
     ) -> str:
         """AND-clause excluding rows no caller should be shown as a memory.
 
@@ -1414,8 +1422,12 @@ class DatabaseManager:
         ``include_quarantined=True`` is for repair, erasure and export — paths
         that must reach a withheld row to act on it.
         """
+        from superlocalmemory.encoding.non_answer import has_marker
+
         return _compose_visible_clause(
             prefix,
+            has_non_answer=has_marker(self),
+            include_non_answer=include_non_answer,
             has_archive=self._has_archive_status(),
             has_quarantine=self._has_quarantine_column(),
             include_quarantined=include_quarantined,
@@ -1424,6 +1436,7 @@ class DatabaseManager:
     def get_all_facts(
         self, profile_id: str, limit: int | None = None,
         *,
+        include_non_answer: bool = False,
         include_global: bool = False,
         include_shared: bool = False,
     ) -> list[AtomicFact]:
@@ -1446,7 +1459,7 @@ class DatabaseManager:
         # Soft-deleted and withheld rows are not memories a caller may see.
         rows = self.execute(
             f"SELECT * FROM atomic_facts WHERE {where}"
-            f"{self.visible_fact_clause()} "
+            f"{self.visible_fact_clause(include_non_answer=include_non_answer)} "
             "ORDER BY created_at DESC LIMIT ?",
             (*params, int(limit)),
         )
@@ -2650,6 +2663,12 @@ class DatabaseManager:
         from superlocalmemory.storage.event_time import mirror
 
         mirror(self, fact_id, profile_id, valid_from)
+        from superlocalmemory.encoding.non_answer import mark
+
+        rows = self.execute('SELECT content FROM atomic_facts WHERE fact_id=? AND profile_id=?',
+                            (fact_id, profile_id))
+        if rows:
+            mark(self, fact_id, profile_id, rows[0]['content'])
 
     def get_temporal_validity(self, fact_id: str, profile_id: str | None = None) -> dict | None:
         """Get temporal validity record for a fact (C4: optionally tenant-scoped)."""

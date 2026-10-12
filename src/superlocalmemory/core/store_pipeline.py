@@ -945,15 +945,14 @@ def run_store(
             except Exception as exc:
                 logger.debug("Sheaf check skipped: %s", exc)
 
+        # Event-time start is mandatory even without a contradiction validator.
+        db.store_temporal_validity(
+            fact_id=fact.fact_id, profile_id=profile_id,
+            valid_from=fact.referenced_date or fact.observation_date or fact.created_at,
+        )
         # Phase 4: Temporal validation and contradiction detection
         if temporal_validator:
             try:
-                db.store_temporal_validity(
-                    fact_id=fact.fact_id,
-                    profile_id=profile_id,
-                    valid_from=fact.referenced_date or fact.observation_date or fact.created_at,
-                    valid_until=None,
-                )
                 invalidations = temporal_validator.validate_and_invalidate(
                     new_fact=fact,
                     profile_id=profile_id,

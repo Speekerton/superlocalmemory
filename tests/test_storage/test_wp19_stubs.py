@@ -29,7 +29,6 @@ def test_stubs_are_saved_and_only_explicitly_listed(tmp_path, text):
 
 
 def test_short_meaningful_facts_remain_answer_material(tmp_path):
-    from superlocalmemory.storage.migrations.M059_memory_description import apply
     from superlocalmemory.encoding.non_answer import is_stub
     assert not is_stub('I prefer tea.')
     assert not is_stub('Zephyr uses PostgreSQL.')

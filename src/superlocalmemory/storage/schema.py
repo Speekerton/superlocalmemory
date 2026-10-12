@@ -150,6 +150,7 @@ CREATE INDEX IF NOT EXISTS idx_memories_created
 
 _SQL_ATOMIC_FACTS: Final[str] = """
 CREATE TABLE IF NOT EXISTS atomic_facts (
+    non_answer INTEGER DEFAULT 0,
     fact_id            TEXT PRIMARY KEY,
     memory_id          TEXT NOT NULL,
     profile_id         TEXT NOT NULL DEFAULT 'default',

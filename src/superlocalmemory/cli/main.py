@@ -1171,6 +1171,8 @@ def main() -> None:
     # 4.1.19: memory kinds (status, settings, undoable classification runs).
     from superlocalmemory.cli.kinds_cmd import register_kinds_parser
     register_kinds_parser(sub)
+    from superlocalmemory.cli.enrich_cmd import register_enrich_parser
+    register_enrich_parser(sub)
     # 4.1.25: the workspace login policy from the terminal (the owner's way back in).
     from superlocalmemory.cli.team_cmd import register_team_parser
     register_team_parser(sub)

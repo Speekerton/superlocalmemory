@@ -3,7 +3,6 @@
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 

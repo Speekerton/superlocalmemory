@@ -96,7 +96,9 @@ def content_passes_admission(content: str) -> bool:
     from superlocalmemory.core.injection import is_low_quality
     from superlocalmemory.encoding.entropy_gate import EntropyGate
 
-    return not is_low_quality(content) and EntropyGate().should_pass(content)
+    from superlocalmemory.encoding.non_answer import is_stub
+
+    return is_stub(content) or (not is_low_quality(content) and EntropyGate().should_pass(content))
 
 
 def _prebuilt_fact_payload(fact: AtomicFact) -> dict:
@@ -234,8 +236,7 @@ def build_immediate_admission_handler(
             fact.scope = request.scope
             fact.shared_with = list(request.shared_with) or None
             fact.session_id = request.session_id or fact.session_id
-            if request.session_date:
-                fact.observation_date = request.session_date
+            fact.observation_date = fact.observation_date or observation_date
         else:
             from superlocalmemory.core.queryable_fact import queryable_fact
 
@@ -292,6 +293,21 @@ def build_immediate_admission_handler(
         if gate.truncated:
             from superlocalmemory.core.source_excerpt import attach_source_pointer
             fact = attach_source_pointer(fact, content, max_verbatim_chars)
+        from superlocalmemory.core.description_metadata import parent_labels
+
+        parent_rows = db.execute('SELECT * FROM memories WHERE memory_id=? AND profile_id=?',
+                                 (fact.memory_id, request.profile_id))
+        if parent_rows:
+            import json
+            parent = dict(parent_rows[0])
+            labels = parent_labels(db, parent)
+            existing_metadata = json.loads(parent['metadata_json'] or '{}')
+            additions = {key: value for key, value in labels.items()
+                         if not existing_metadata.get(key)}
+            if additions:
+                db.execute('UPDATE memories SET metadata_json=? WHERE memory_id=? AND profile_id=?',
+                           (json.dumps({**existing_metadata, **additions}),
+                            fact.memory_id, request.profile_id))
         return [store_fact_keeping_kind(db, fact, metadata=metadata, request=request)]
 
     return write_queryable

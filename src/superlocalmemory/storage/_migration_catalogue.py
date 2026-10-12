@@ -180,6 +180,7 @@ from superlocalmemory.storage.migrations import (
 )
 from superlocalmemory.storage.migrations import (
     M058_recall_fact_cover as _M058,
+    M059_memory_description as _M059,
 )
 
 # Order matters: M003 creates the log table. The runner handles M003's own
@@ -387,4 +388,5 @@ DEFERRED_MIGRATIONS: list[Migration] = [
     Migration(name=_M056.NAME, db_target="memory", ddl=_M056.DDL),
     Migration(name=_M057.NAME, db_target="memory", ddl=_M057.DDL),
     Migration(name=_M058.NAME, db_target="memory", ddl=_M058.DDL),
+    Migration(name=_M059.NAME, db_target="memory", ddl=_M059.DDL),
 ]

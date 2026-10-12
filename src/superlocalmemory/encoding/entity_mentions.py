@@ -7,7 +7,7 @@
 One extractor for every place that needs one: the rule-based fact extractor,
 the first searchable fact of a save, the verbatim fact, the fast store path,
 and the question side of the entity channel. Before 4.1.25 each had its own
-copy of ``\\b[A-Z][a-z]+...\\b`` and ``\\b[A-Z]{2,}\\b``, which never matched
+copy of ``\b[A-Z][a-z]+...\b`` and ``\b[A-Z]{2,}\b``, which never matched
 inside "SuperLocalMemory" or "AgentAssert", split "Wi-Fi" into "Wi" and "Fi",
 and kept "The", "Our", "My", "Dr" and "Decision" as names.
 
@@ -85,10 +85,10 @@ _VOWELS = frozenset("aeiouy")
 _NAME_WORD = (r"(?:[A-Z][a-z0-9]*(?:[A-Z][a-z0-9]*)*|[a-z]+[A-Z][A-Za-z0-9]*)"
               r"(?:-[A-Za-z0-9]+)*")
 _VERSION = r"v?\d+(?:\.\d+)+|\d+"
-_RUN = re.compile(rf"(?<![\w./~\\-])({_NAME_WORD}(?:[ ](?:{_NAME_WORD}|{_VERSION}))*)"
-                  r"(?![\w/\\-]|\.\w)")
-_LOWER_TECH = re.compile(r"(?<![\w.:/~\\-])([a-z][a-z0-9]*(?:[_:.][a-z0-9]+|\d[a-z0-9.]*)+"
-                         r"|[a-z]{4,})(?![\w/\\-])")
+_RUN = re.compile(rf"(?<![\w./~\-])({_NAME_WORD}(?:[ ](?:{_NAME_WORD}|{_VERSION}))*)"
+                  r"(?![\w/\-]|\.\w)")
+_LOWER_TECH = re.compile(r"(?<![\w.:/~\-])([a-z][a-z0-9]*(?:[_:.][a-z0-9]+|\d[a-z0-9.]*)+"
+                         r"|[a-z]{4,})(?![\w/\-])")
 _LETTER_AFTER = re.compile(r"\b([a-z]{3,}) ([A-Z])(?![\w-])")
 _SYSTEM_PHRASE = re.compile(r"(?<![\w-])([a-z]{3,}) (" + "|".join(sorted(_SYSTEM_NOUNS)) + r")\b")
 _QUOTED = re.compile(r"\"([^\"]{2,60})\"")
@@ -209,11 +209,10 @@ def extract_mentions(text: str, *, question: bool = False) -> list[str]:
     for m in _RUN.finditer(text):
         words = [w for w in m.group(1).split(" ") if w not in labels]
         _split_run(words, out, opens_sentence(text, m.start()))
-    from superlocalmemory.encoding.entity_validity import capitalised_mid_sentence
-
-    for m in re.finditer(r"\b[A-Z][a-z]+\b", text):
-        if capitalised_mid_sentence(m.group(), text):
-            out.add(m.group(), True)
+    role = (r"\b([A-Z][a-z]+)\s+(?:is|was)\s+(?:(?:our|my|the|a|an)\s+)?"
+            r"(?:project|tool|application|service|colleague|teammate|client|company)\b")
+    for m in re.finditer(role, text):
+        out.add(m.group(1), True)
     _lower_mentions(text, out)
     for m in _QUOTED.finditer(text):
         quoted = m.group(1).strip()

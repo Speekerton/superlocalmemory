@@ -3460,6 +3460,16 @@ async def lifespan(application: FastAPI):
         except Exception as exc:  # pragma: no cover — optional feature
             logger.warning("folder source service not started: %s", type(exc).__name__)
 
+        # Default-on, idle metadata improvements and safe repair batches.
+        try:
+            from superlocalmemory.server.memory_health_service import start_memory_health
+            start_memory_health(
+                application, _SERVICES,
+                idle=lambda: time.monotonic() - _last_activity >= 30.0,
+            )
+        except Exception as exc:
+            logger.warning("Memory health service not started (%s)", type(exc).__name__)
+
         # Boot sweep for wedged enrichment leases (#131): a killed daemon
         # leaves rows stuck in enriching; the materializer loop reclaims
         # them only once it cycles, and its reap used to sit behind the
@@ -4574,6 +4584,8 @@ def _register_dashboard_routes(application: FastAPI) -> None:
     from superlocalmemory.server.routes.ws import manager as ws_manager
     from superlocalmemory.server.routes.ws import router as ws_router
 
+    from superlocalmemory.server.routes.memory_health import router as memory_health_router
+    application.include_router(memory_health_router)
     application.include_router(memories_router)
     application.include_router(stats_router)
     application.include_router(profiles_router)

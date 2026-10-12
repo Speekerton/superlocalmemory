@@ -200,6 +200,7 @@ from superlocalmemory.storage.migrations import (
 )
 from superlocalmemory.storage.migrations import (
     M058_recall_fact_cover as _M058,
+    M059_memory_description as _M059,
 )
 
 # Emit under the runner's logger name so operational log filters that key on
@@ -267,6 +268,7 @@ _MODULES = {
     _M056.NAME: _M056,
     _M057.NAME: _M057,
     _M058.NAME: _M058,
+    _M059.NAME: _M059,
 }
 
 # Exact historical DDL fingerprints whose resulting schema is intentionally

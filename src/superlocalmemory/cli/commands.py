@@ -682,6 +682,7 @@ def dispatch(args: Namespace) -> None:
         # V3.3 commands
         "decay": cmd_decay,
         "quantize": cmd_quantize,
+        "enrich": __import__("superlocalmemory.cli.enrich_cmd", fromlist=["cmd_enrich"]).cmd_enrich,
         "consolidate": cmd_consolidate,
         "soft-prompts": cmd_soft_prompts,
         "reap": cmd_reap,
@@ -3886,6 +3887,19 @@ def cmd_doctor(args: Namespace) -> None:
             "unavailable": list(_h.unavailable),
             "summary": describe(_h),
         }
+        from superlocalmemory.core.metadata_health import from_path as _metadata_report
+        _metadata = _metadata_report(_HealthCfg.load().db_path)
+        memory_health_data["metadata"] = _metadata
+        _cov = _metadata.get("coverage", {})
+        _run = _metadata.get("enrichment", {})
+        _check("Memory description", "WARN" if _run.get("last_error") else "PASS",
+               f"Tags {_cov.get('tags', 0)}/{_cov.get('memories', 0)}; "
+               f"kind confirmed {_cov.get('kind_confirmed', 0)}, "
+               f"model {_cov.get('kind_model', 0)}, guessed {_cov.get('kind_guessed', 0)}; "
+               f"dates {_cov.get('observation_dates', 0)}/{_cov.get('facts', 0)}, "
+               f"event dates {_cov.get('event_dates', 0)}, valid from {_cov.get('valid_from', 0)}; "
+               f"entities {_cov.get('entities', 0)}; improvements {_run.get('status', 'unavailable')}",
+               fix="slm enrich status" if _run.get("last_error") else "")
         _detail = " ".join(describe(_h))
         if _h.healthy:
             _check("Memory answer-ability", "PASS", _detail)

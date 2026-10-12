@@ -93,20 +93,20 @@ named differently (for example `superlocalmemory-personal` and
 
 | Profile | Tools | What it is |
 |---------|-------|------------|
-| `core` | 18 tools — remember, recall, search, fetch, list_recent, update_memory, forget, session, optimize, corrections, summaries, switch_profile | Smallest set; the Grok Bot / Cursor plugin uses it |
-| `code` | 38 tools — core + portable Brain evidence, report_outcome/report_feedback, 6 code-graph tools, memory kinds, bounded loops | For coding agents that need the graph; no mesh, no `get_status` |
-| `full` | 57 tools — everyday memory, delete_memory, get_status, observe, saved views, learning tools, skills, optimize, kinds, loops, mesh | Same set as the no-profile default |
-| `power` | 69 tools — full + audit_trail, retention, compaction, consistency_check, behavioral and diagnostic tools | Governance and admin work |
+| `core` | 19 tools — remember, recall, search, fetch, expand, list_recent, update_memory, forget, session, optimize, corrections, summaries, switch_profile | Smallest set; the Grok Bot / Cursor plugin uses it |
+| `code` | 39 tools — core + portable Brain evidence, report_outcome/report_feedback, 6 code-graph tools, memory kinds, bounded loops | For coding agents that need the graph; no mesh, no `get_status` |
+| `full` | 58 tools — everyday memory, delete_memory, get_status, observe, saved views, learning tools, skills, optimize, kinds, loops, mesh | Same set as the no-profile default |
+| `power` | 70 tools — full + audit_trail, retention, compaction, consistency_check, behavioral and diagnostic tools | Governance and admin work |
 | `mesh` | 9 tools — mesh coordination only | Lightweight cross-session signalling |
 
-A host that sets no profile gets the 57-tool `full` set (this is what the Claude
+A host that sets no profile gets the 58-tool `full` set (this is what the Claude
 Code and Codex plugins do; the Antigravity plugin sets `power`). While pictures
 and documents are on (`slm media status`), `full` lists 62 tools and `power` 74:
 the five picture tools `remember_media`, `get_media`, `remember_document`,
 `media_status` and `media_upload_link` are added to both, and never to `core`,
 `code` or `mesh` (see `slm-media`). The server reads this when it starts. Two
 more environment variables widen or narrow it: `SLM_MCP_ALL_TOOLS=1` registers
-every tool (109), and `SLM_MCP_TOOLS=remember,recall,...` registers exactly the names
+every tool (110), and `SLM_MCP_TOOLS=remember,recall,...` registers exactly the names
 listed. `SLM_MCP_PROFILE=whole` is also every tool. The code-graph tools beyond
 the six in `code` (such as `update_code_graph`, `list_graph_stats`) and tools
 such as `core_memory` and `settle_session_outcomes` exist only with

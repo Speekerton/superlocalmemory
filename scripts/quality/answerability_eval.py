@@ -142,11 +142,14 @@ def _backfill(engine) -> dict:
         from superlocalmemory.retrieval.hub_baseline import Backfill
     except ImportError:
         return {"available": False}
-    from superlocalmemory.retrieval.hub_baseline import warm_probes
-
     t0 = time.monotonic()
     written = Backfill(engine._db, engine._embedder).run_until_done()
-    return {"available": True, "written": written, "probes": warm_probes(engine._embedder),
+    try:  # a build from before the probes were warmed at boot measures without
+        from superlocalmemory.retrieval.hub_baseline import warm_probes
+        probes = warm_probes(engine._embedder)
+    except ImportError:
+        probes = None
+    return {"available": True, "written": written, "probes": probes,
             "seconds": round(time.monotonic() - t0, 2)}
 
 
@@ -307,9 +310,20 @@ def _round(value, digits: int = 4):
 
 # -- measurement ---------------------------------------------------------------------
 
-def _questions() -> list[tuple[str, dict]]:
+#: Question files per suite: (fixture name, kind). "hand" is the hand-written
+#: sets; "dev" adds the generated development half; "fresh" is the frozen
+#: final test half (scripts/quality/answerability_questions.py), never fitted.
+_HAND = (("nonsense", "nonsense"), ("real", "real"), ("unanswerable", "unanswerable"))
+_DEV = tuple((f"generated/dev_{k}", k) for k in ("nonsense", "real", "unanswerable"))
+_FRESH = tuple((f"generated/fresh_{k}", k) for k in ("nonsense", "real", "unanswerable"))
+SUITES = {"hand": _HAND, "dev": _HAND + _DEV, "fresh": _FRESH, "frozen": _HAND + _FRESH,
+          "all": _HAND + _DEV + _FRESH}
+
+
+def _questions(suite: str = "hand") -> list[tuple[str, dict]]:
+    """``(kind, question)`` pairs; each question carries its ``source`` file."""
     corpus = _load_corpus_module()
-    return [(name, q) for name in ("nonsense", "real", "unanswerable")
+    return [(kind, {**q, "source": name.rsplit("/", 1)[-1]}) for name, kind in SUITES[suite]
             for q in corpus.load_questions(name)]
 
 
@@ -321,7 +335,7 @@ def _hit_rank(keys: list[str], expected: list[str]) -> int | None:
 
 
 def measure_profile(profile: str, store_root: Path, work: Path, *,
-                    warm_timeout_s: float = 300.0, log=print) -> dict:
+                    warm_timeout_s: float = 300.0, log=print, suite: str = "hand") -> dict:
     keymap = json.loads((store_root / "keymap.json").read_text(encoding="utf-8"))["keys"]
     data = work / f"data-{profile}"
     if data.exists():
@@ -338,13 +352,15 @@ def measure_profile(profile: str, store_root: Path, work: Path, *,
         warm["hub_baseline_backfill"] = _backfill(engine)
         log(f"profile {profile}: warm {warm}")
         os.environ.pop("SLM_RECALL_NO_FLOOR", None)
-        for set_name, q in _questions():
+        os.environ.pop("SLM_RECALL_NO_SUPPORT_GATE", None)
+        for set_name, q in _questions(suite):
             t0 = time.monotonic()
             response = engine.recall(q["question"], limit=RECALL_LIMIT, fast=True)
             latencies.append((time.monotonic() - t0) * 1000.0)
             keys = [memory_to_key.get(r.fact.memory_id or "", "?") for r in response.results]
             rows.append({
                 "qid": q["qid"], "set": set_name, "category": q["category"],
+                "source": q["source"],
                 "expected": q["expected"], "result_count": len(response.results),
                 "abstained": len(response.results) == 0,
                 "no_confident_match": bool(response.no_confident_match),
@@ -355,10 +371,13 @@ def measure_profile(profile: str, store_root: Path, work: Path, *,
                 "incomplete_channels": list(response.incomplete_channels or ()),
                 "query_evidence": getattr(response, "query_evidence", None),
             })
-        # Features: same questions, floor off, so every question has candidates.
+        # Features: same questions, floor and answer-support gate off, so every
+        # question has candidates (the gate would otherwise remove exactly the
+        # ones a refit needs to see).
         os.environ["SLM_RECALL_NO_FLOOR"] = "1"
+        os.environ["SLM_RECALL_NO_SUPPORT_GATE"] = "1"
         by_qid = {row["qid"]: row for row in rows}
-        for _set_name, q in _questions():
+        for _set_name, q in _questions(suite):
             response = engine.recall(q["question"], limit=RECALL_LIMIT, fast=True)
             feats = []
             for r in response.results:
@@ -378,6 +397,7 @@ def measure_profile(profile: str, store_root: Path, work: Path, *,
                 row["expected_features"] = hits[0] if hits else None
     finally:
         os.environ.pop("SLM_RECALL_NO_FLOOR", None)
+        os.environ.pop("SLM_RECALL_NO_SUPPORT_GATE", None)
         engine.close()
     return {"profile": profile, "warm": warm, **summarise(rows, latencies), "rows": rows}
 
@@ -404,6 +424,7 @@ def summarise(rows: list[dict], latencies: list[float]) -> dict:
         "latency_ms": {"p50": round(nearest_rank_ms(latencies, 50), 1),
                        "p95": round(nearest_rank_ms(latencies, 95), 1)} if latencies else {},
         "by_category": by_category,
+        "by_source": _by_source(rows),
         "separation": separation([r for r in rows if "question_features" in r]),
         "slices": {name: _slice_block(rows, name) for name in SLICES},
         "failures": {
@@ -411,6 +432,19 @@ def summarise(rows: list[dict], latencies: list[float]) -> dict:
             "real_missed": [r["qid"] for r in real if not _hit(r)],
         },
     }
+
+
+def _by_source(rows: list[dict]) -> dict:
+    """The gate per question file: abstained (nonsense, no-answer) or top-5 (real)."""
+    out: dict[str, dict] = {}
+    for r in rows:
+        block = out.setdefault(r.get("source", r["set"]), {"n": 0, "ok": 0, "misses": []})
+        ok = r["abstained"] if r["expected"] == "abstain" else _hit(r)
+        block["n"] += 1
+        block["ok"] += int(ok)
+        if not ok:
+            block["misses"].append(r["qid"])
+    return out
 
 
 def _slice_block(rows: list[dict], name: str) -> dict:
@@ -462,17 +496,18 @@ def gate_failures(report: dict) -> list[str]:
 
 
 def run(work: Path, profiles: list[str], cache: Path | None = None, *,
-        warm_timeout_s: float = 300.0, log=print) -> dict:
+        warm_timeout_s: float = 300.0, log=print, suite: str = "hand") -> dict:
     _bootstrap()
     work.mkdir(parents=True, exist_ok=True)
     _refuse_own_store(work)
     corpus = _load_corpus_module()
     store_root = build_store(cache or (work / "cache"), log=log)
     report = {"corpus_version": corpus.CORPUS_VERSION, "corpus_digest": corpus.digest(),
-              "top_k": TOP_K, "profiles": []}
+              "top_k": TOP_K, "suite": suite, "profiles": []}
     for profile in profiles:
         report["profiles"].append(measure_profile(profile, store_root, work,
-                                                  warm_timeout_s=warm_timeout_s, log=log))
+                                                  warm_timeout_s=warm_timeout_s, log=log,
+                                                  suite=suite))
     report["gate_failures"] = gate_failures(report)
     return report
 
@@ -482,6 +517,9 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--work", required=True, help="scratch folder (stores are copied here)")
     p.add_argument("--cache", help="where the built store is kept (default: WORK/cache)")
     p.add_argument("--profiles", default="a,b")
+    p.add_argument("--suite", default="hand", choices=sorted(SUITES),
+                   help="question sets: hand-written, + generated dev half, the frozen "
+                        "fresh half, or all")
     p.add_argument("--warm-timeout", type=float, default=300.0)
     p.add_argument("--out", help="full report (JSON)")
     p.add_argument("--rows", help="per-question rows (JSON Lines)")
@@ -498,7 +536,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         report = run(Path(args.work), profiles, Path(args.cache) if args.cache else None,
-                     warm_timeout_s=args.warm_timeout, log=lambda m: print(m, file=sys.stderr))
+                     warm_timeout_s=args.warm_timeout, log=lambda m: print(m, file=sys.stderr),
+                     suite=args.suite)
     except Refused as exc:
         print(f"answerability-eval: {exc}", file=sys.stderr)
         return 3

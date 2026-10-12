@@ -85,6 +85,7 @@ EXIF_ALLOWED = frozenset({
     "Software", "ExposureTime", "FNumber", "ISOSpeedRatings", "FocalLength", "Flash", "WhiteBalance",
     "ColorSpace", "XResolution", "YResolution", "ResolutionUnit", "PixelXDimension", "PixelYDimension",
     "ImageWidth", "ImageLength",
+    "SlmCaption",  # the worker's measured caption; metadata only, never searchable words
 })
 _GPS_TAG_ID = "34853"
 

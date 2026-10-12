@@ -332,8 +332,11 @@ def _near_duplicate(store: Any, profile_id: str, phash: str | None) -> str | Non
 
 # -- saving --------------------------------------------------------------------
 
-def _segments(content: str, ocr_text: str,
-              summary: str = "") -> tuple[tuple[str, ContentOrigin], ...]:
+def _segments(content: str, ocr_text: str) -> tuple[tuple[str, ContentOrigin], ...]:
+    """The searchable words of a picture memory: the person's note, the text read, or the label.
+
+    The worker's generated caption is never part of them; it is kept in the picture's own record.
+    """
     parts: list[tuple[str, ContentOrigin]] = []
     if content.strip():
         parts.append((content, ContentOrigin.USER_TEXT))
@@ -343,9 +346,16 @@ def _segments(content: str, ocr_text: str,
     if not ocr_text.strip():
         # The label also keeps a one-word note long enough to be saved as a fact.
         parts.append((("\n\n" if parts else "") + NO_TEXT, ContentOrigin.DERIVED_TEXT))
-        if summary.strip():
-            parts.append(("\n" + summary[:MAX_OCR_CHARS], ContentOrigin.DERIVED_TEXT))
     return tuple(parts)
+
+
+def _record_fields(info: dict[str, Any]) -> dict[str, Any]:
+    """Camera fields plus the generated caption, which lives in the picture's record only."""
+    fields = dict(info.get("exif") or {})
+    caption = str(info.get("visual_summary") or "").strip()
+    if caption:
+        fields["SlmCaption"] = caption[:MAX_OCR_CHARS]
+    return fields
 
 
 def _captured_at(exif: dict[str, Any]) -> str | None:
@@ -394,7 +404,7 @@ def _store_it(job: _Job, data: bytes, src_sha: str, args: dict[str, Any]) -> Med
     relpath = _place(job, info, profile_id)
     media_id = uuid.uuid4().hex
     request = SaveRequest(
-        segments=_segments(args["content"], ocr.text, str(info.get("visual_summary") or "")),
+        segments=_segments(args["content"], ocr.text),
         profile_id=profile_id, source_type="media",
         trusted_actor_id=args["actor_id"], tags=args["tags"], session_date=args["session_date"],
         trusted_metadata={"_slm_source": {"type": "media", "media_id": media_id, "origin": "tool",
@@ -417,7 +427,7 @@ def _store_it(job: _Job, data: bytes, src_sha: str, args: dict[str, Any]) -> Med
         media_id=media_id, profile_id=profile_id, kind="image", source_sha256=src_sha,
         stored_sha256=info["stored_sha"], phash=info.get("phash"), mime=info["mime"],
         bytes=info["stored_size"], width=info.get("width"), height=info.get("height"),
-        original_relpath=relpath, exif_json=info.get("exif") or {}, captured_at=_captured_at(info.get("exif") or {}),
+        original_relpath=relpath, exif_json=_record_fields(info), captured_at=_captured_at(info.get("exif") or {}),
         anchor_memory_id=saved.memory_id,
         origin="folder" if args.get("folder") else "tool", thumb_webp=info["thumb"],
         remote_ok=int(ocr.engine != "none" and ocr.scanned and ocr.secrets == 0 and ocr.pii == 0))

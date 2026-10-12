@@ -52,14 +52,19 @@ def space_needed(root: Path) -> int:
     safety point, the pre-write copy, the coordinator's own snapshot). The
     safety point also copies the picture and document originals mirror
     (PR 251 S3), and both the safety point and the pre-write copy hold the
-    settings files. A fixed allowance covers manifests and small growth.
+    settings files. Before that copy, the point's own sync writes every media
+    original missing from the mirror into it (PR 251 round 6, S3), so those
+    are counted twice: once for the sync, once for the point's copy of the
+    mirror. A fixed allowance covers manifests and small growth.
     """
+    from superlocalmemory.infra import backup_media
     from superlocalmemory.infra.backup import MANAGED_DATABASES
 
     root = Path(root)
     stores = sum(_tree_bytes(root / (s + x)) for s in MANAGED_DATABASES for x in _SIDECARS)
     settings = sum(_tree_bytes(root / name) for name in _settings_names())
-    originals = _tree_bytes(root / "backups" / "media-originals")
+    originals = (_tree_bytes(root / "backups" / backup_media.MIRROR_DIR)
+                 + 2 * backup_media.pending_bytes(root, root / "backups"))
     return (_COPIES_AT_ONCE * (stores + _tree_bytes(root / "lance"))
             + originals + 2 * settings + _OVERHEAD_BYTES)
 

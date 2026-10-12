@@ -116,17 +116,37 @@ def _prune(mirror_files: dict[str, Path], present: dict[str, Path], listed: set[
     return removed
 
 
+def _present(slm_dir: Path) -> dict[str, Path]:
+    """The originals a sync would mirror: none without a library (``media.db``)."""
+    return _originals(slm_dir / "media") if (slm_dir / "media.db").exists() else {}
+
+
+def _needs_copy(src: Path, dest: Path) -> bool:
+    return not (dest.is_file() and dest.stat().st_size == src.stat().st_size)
+
+
+def pending_bytes(slm_dir: Path, backup_dir: Path) -> int:
+    """Bytes ``sync_originals`` would copy now: originals missing from the mirror or of another size.
+
+    Read-only; the free-space check of a restore uses it to count what the safety point's own
+    sync writes before the point copies the whole mirror.
+    """
+    mirror = Path(backup_dir) / MIRROR_DIR
+    return sum(src.stat().st_size for rel, src in _present(Path(slm_dir)).items()
+               if _needs_copy(src, mirror / rel))
+
+
 def sync_originals(slm_dir: Path, backup_dir: Path) -> MirrorReport:
     """Bring the mirror up to date; copies only what is new. Skips entirely with no library or no files."""
     slm_dir, backup_dir = Path(slm_dir), Path(backup_dir)
-    present = _originals(slm_dir / "media") if (slm_dir / "media.db").exists() else {}
+    present = _present(slm_dir)
     mirror = backup_dir / MIRROR_DIR
     if not present and not mirror.is_dir():
         return MirrorReport()
     copied = 0
     for rel, src in present.items():
         dest = mirror / rel
-        if dest.is_file() and dest.stat().st_size == src.stat().st_size:
+        if not _needs_copy(src, dest):
             continue
         _copy_private(src, dest)
         copied += 1

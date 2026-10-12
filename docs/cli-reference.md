@@ -493,7 +493,9 @@ Repairs that only add (search sketches rebuilt from the stored vector) run on
 their own. Repairs that delete or move something (entity links: duplicate
 aliases and junk entities; hidden memories that are still in use) never run on
 their own: they are shown as a suggestion here, in `slm doctor` and as a Fix
-button in Memory health. An undone run is never re-applied automatically.
+button in Memory health. An undone run is never re-applied automatically, and
+the items it touched stay out of suggestions and Fix until you ask for them with
+`--include-undone`.
 
 ```bash
 slm enrich status              # progress, suggestions, and the id of every run that changed something
@@ -502,6 +504,7 @@ slm enrich resume <run>
 slm enrich undo                # undo the most recent run that changed something (asks first)
 slm enrich undo <run> --yes    # a specific run, without asking (scripts need --yes)
 slm enrich fix entity-links    # apply a suggested repair (asks first; undoable)
+slm enrich fix entity-links --include-undone   # also apply items from a run you undid
 ```
 
 `slm doctor` reports metadata coverage (tags, kind confirmed vs guessed, dates,

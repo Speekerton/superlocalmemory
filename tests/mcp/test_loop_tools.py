@@ -140,7 +140,8 @@ def test_halts_on_max_iterations_when_gate_never_passes(fake_tools):
     )
     assert out["ok"] is True
     assert out["status"] == "HALT"
-    assert out["reason"] == "max-iterations"
+    assert out["reason"] == "operator-registered job_id required"
+    assert out["bound_reason"] == "max-iterations"
     assert out["laps"] == 3
     assert out["passed"] is False
     assert out["run_id"].startswith("watch-nothing-")
@@ -191,7 +192,8 @@ def test_token_budget_bounds_the_loop(fake_tools):
     )
     assert out["ok"] is True
     assert out["status"] == "HALT"
-    assert out["reason"] == "max-iterations"
+    assert out["reason"] == "operator-registered job_id required"
+    assert out["bound_reason"] == "max-iterations"
 
 
 def test_run_validates_inputs(fake_tools):

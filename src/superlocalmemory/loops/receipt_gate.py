@@ -31,8 +31,9 @@ def _admitted(contract, running_agent):
 def _valid(receipt, minimum, job):
     evidence = json.loads(receipt['evidence'])
     return (
-        receipt['verdict'] == 'PASS' and type(receipt['exit_code']) is int
-        and receipt['exit_code'] == 0
+        type(receipt['exit_code']) is int
+        and ((receipt['verdict'] == 'PASS' and receipt['exit_code'] == 0)
+             or (receipt['verdict'] == 'FAIL' and receipt['exit_code'] != 0))
         and minimum <= _time(receipt['produced_at']) <= datetime.now(UTC)
         and hashlib.sha256(receipt['evidence'].encode()).hexdigest() == receipt['evidence_digest']
         and isinstance(evidence, dict) and evidence.get('exit_code') == receipt['exit_code']
@@ -59,13 +60,10 @@ def _receipt_status(db, job, contract, running_agent, watcher_name, started_at):
         return False, 'no execution receipt'
     receipt = dict(rows[0])
     if not _valid(receipt, minimum, job):
+        return False, 'latest receipt stale or unauthenticated'
+    if receipt['verdict'] == 'FAIL':
         evidence = json.loads(receipt['evidence'])
-        if (receipt['verdict'] == 'FAIL' and verify_admission(job, receipt)
-                and minimum <= _time(receipt['produced_at']) <= datetime.now(UTC)
-                and hashlib.sha256(receipt['evidence'].encode()).hexdigest()
-                == receipt['evidence_digest'] and evidence.get('stop_reason')):
-            return False, evidence['stop_reason']
-        return False, 'latest receipt failed, stale or unauthenticated'
+        return False, evidence.get('stop_reason') or f"check FAILED (exit {receipt['exit_code']})"
     proof = json.loads(receipt['evidence'])['admission']
     if not matches(dict(job, revision_digest=proof['revision_digest'])):
         return False, 'declared artifact revision changed; rerun the registered check'

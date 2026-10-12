@@ -18,6 +18,7 @@ from superlocalmemory.loops import (
     run_bounded_loop,
 )
 from superlocalmemory.loops.receipt_gate import receipt_status
+from superlocalmemory.loops.stop_reasons import last_gate_reason
 from superlocalmemory.mcp import tools_loops as shared
 from superlocalmemory.mcp.agent_context import get_current_agent_id
 from superlocalmemory.retrieval.answer_check_status import REQUEST_NO_REORDER
@@ -176,8 +177,12 @@ async def _watch(name, engine, pool, watcher, bounds, poll):
     laps = await asyncio.to_thread(ledger.laps, outcome.run_id)
     result = _outcome(outcome, laps)
     result["receipt_reason"] = getattr(watcher, "receipt_reason", "no receipt examined")
-    if not result["passed"] and "unsupported on this platform" in result["receipt_reason"]:
-        result["reason"] = result["receipt_reason"]
+    result["bound_reason"] = outcome.reason
+    if result['status'] == 'HALT':
+        reason = result['receipt_reason']
+        if reason in ('authenticated PASS for current copied revision', 'no receipt examined'):
+            reason = last_gate_reason(laps)
+        result['reason'] = reason or result['reason']
     return result
 
 

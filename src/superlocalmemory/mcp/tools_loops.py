@@ -44,6 +44,7 @@ from superlocalmemory.core.operation_request import OperationKind
 from superlocalmemory.loops import (
     engine_backed_ledger,
 )
+from superlocalmemory.loops.stop_reasons import last_gate_reason
 from superlocalmemory.retrieval.answer_check_status import REQUEST_NO_REORDER
 
 logger = logging.getLogger("slm.mcp.tools_loops")
@@ -185,6 +186,7 @@ def register_loop_tools(
                             "run_id": rid,
                             "laps": len(laps),
                             "final": last.decision if last else "unknown",
+                            "reason": last_gate_reason(laps),
                             "ts": last.ts if last else "",
                         }
                     )

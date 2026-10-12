@@ -31,8 +31,7 @@ _EXIF_FIELDS = {0x010F: "Make", 0x0110: "Model", 0x0112: "Orientation"}
 _EXIF_IFD, _DATE_ORIGINAL = 0x8769, 0x9003
 _THUMB_FALLBACK_EDGE = 240
 
-# Bundled models from the pinned rapidocr==3.10.0 wheel. Explicit model paths
-# bypass OrtInferSession's default-model downloader, including checksum repair.
+# Pinned rapidocr==3.10.0 wheel models; explicit paths bypass its downloader.
 _RAPIDOCR_MODELS = {
     "Det": ("PP-OCRv6_det_small.onnx",
             "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f"),
@@ -140,10 +139,9 @@ def prepare_image(src: str, out_dir: str, *, thumb_edge: int = 320, thumb_max_by
                   classify: bool = True) -> dict:
     """Strip, thumbnail and hash an image; write both results into ``out_dir``.
 
-    ``classify=False`` skips the offline subject classifier (for a rasterised document page).
-
-    Raises ValueError for anything that is not a plain PNG, JPEG, WEBP or GIF.
-    On any failure nothing is left in ``out_dir``.
+    ``classify=False`` skips the subject classifier (a rasterised document page).
+    Raises ValueError unless the image is a plain PNG, JPEG, WEBP or GIF; on any
+    failure nothing is left in ``out_dir``.
     """
     imagehash = importlib.import_module("imagehash")
     written: list[str] = []

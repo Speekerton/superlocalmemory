@@ -119,13 +119,11 @@ def identity(pid: int) -> dict:
 
 
 def _alive(pid) -> bool:
+    from superlocalmemory.core.platform_utils import is_pid_alive
     try:
-        os.kill(int(pid), 0)
-    except (ProcessLookupError, ValueError, TypeError):
+        return is_pid_alive(int(pid))
+    except (ValueError, TypeError):
         return False
-    except PermissionError:
-        return True
-    return True
 
 
 def writer_alive(record: dict, *, require_identity: bool = False) -> bool:

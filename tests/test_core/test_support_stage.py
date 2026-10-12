@@ -50,8 +50,8 @@ def test_nothing_to_judge_is_no_verdict() -> None:
 
 def test_explicit_filters_are_facets_windows_and_time_travel() -> None:
     assert not support_stage.explicit_filter(None, None)
-    assert not support_stage.explicit_filter(SimpleNamespace(empty=True), None)
-    assert support_stage.explicit_filter(SimpleNamespace(empty=False), None)
+    assert not support_stage.explicit_filter(SimpleNamespace(narrows=False), None)
+    assert support_stage.explicit_filter(SimpleNamespace(narrows=True), None)
     assert support_stage.explicit_filter(None, "7d")
     assert support_stage.explicit_filter(None, None, valid_at="2026-01-01")
 
@@ -75,3 +75,28 @@ def test_the_gate_switches_off_by_config_or_env(monkeypatch) -> None:
     assert support_stage.enabled(SimpleNamespace())
     monkeypatch.setenv("SLM_RECALL_NO_SUPPORT_GATE", "1")
     assert not support_stage.enabled(on)
+
+
+def test_the_kill_switch_reads_true_and_yes_and_also_turns_off_the_floor_door(monkeypatch) -> None:
+    from superlocalmemory.retrieval import support_gate as sg
+    from superlocalmemory.retrieval.engine import RetrievalEngine
+
+    on = SimpleNamespace(retrieval=SimpleNamespace(answer_support_gate=True))
+    for value in ("1", "true", "YES", "True"):
+        monkeypatch.setenv("SLM_RECALL_NO_SUPPORT_GATE", value)
+        assert not support_stage.enabled(on)
+        assert sg.switched_off(SimpleNamespace(answer_support_gate=True))
+    monkeypatch.setenv("SLM_RECALL_NO_SUPPORT_GATE", "0")
+    assert support_stage.enabled(on)
+    assert sg.switched_off(SimpleNamespace(answer_support_gate=False))
+    eng = RetrievalEngine.__new__(RetrievalEngine)
+    eng._config = SimpleNamespace(answer_support_gate=False)
+    eng._probe_matrix = lambda: (_ for _ in ()).throw(AssertionError("measured"))
+    assert eng._floor_hub_corrected([], {}, 0.6, "default") == {}
+
+
+def test_prefer_project_is_not_an_explicit_filter() -> None:
+    from superlocalmemory.retrieval.facets import Facets
+
+    assert not support_stage.explicit_filter(Facets.of(prefer_project="core"), None)
+    assert support_stage.explicit_filter(Facets.of(project="core"), None)

@@ -28,17 +28,14 @@ _WORD = re.compile(r"\w+(?:[._:/-]\w+)*", re.UNICODE)
 
 def enabled(config: Any) -> bool:
     """The gate is on unless switched off in config or by the env kill-switch."""
-    import os
-
-    if os.environ.get("SLM_RECALL_NO_SUPPORT_GATE", "0") == "1":
-        return False
-    return bool(getattr(getattr(config, "retrieval", None), "answer_support_gate", True))
+    return not support_gate.switched_off(getattr(config, "retrieval", None))
 
 
 def explicit_filter(facets: Any, window: Any, *, as_of: Any = None,
                     known_as_of: Any = None, valid_at: Any = None) -> bool:
-    """The caller narrowed recall on purpose: its results keep today's behaviour."""
-    if facets is not None and not getattr(facets, "empty", True):
+    """The caller narrowed recall on purpose: its results keep today's behaviour.
+    ``prefer_project`` only reorders, so it is not a filter."""
+    if facets is not None and getattr(facets, "narrows", False):
         return True
     return any(v not in (None, "") for v in (window, as_of, known_as_of, valid_at))
 

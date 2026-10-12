@@ -866,9 +866,13 @@ class RetrievalEngine:
 
     def _floor_hub_corrected(self, top: list[FusionResult], facts: dict[str, AtomicFact],
                              min_semantic: float, profile_id: str) -> dict[str, float]:
-        """Hub-corrected cosine for the candidates the raw floor would drop."""
+        """Hub-corrected cosine for the candidates the raw floor would drop; none
+        when the answer-support gate is switched off (the floor as before)."""
         from superlocalmemory.retrieval.evidence_attach import floor_hub_corrected
+        from superlocalmemory.retrieval.support_gate import switched_off
 
+        if switched_off(self._config):
+            return {}
         try:
             return floor_hub_corrected(
                 top, facts, min_semantic, probes=self._probe_matrix(),

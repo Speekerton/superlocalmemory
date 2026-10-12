@@ -147,6 +147,20 @@ def assess(results: Sequence[Any], query_evidence: Mapping[str, Any], *,
                       imputed=tuple(gaps))
 
 
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
+
+
+def switched_off(retrieval_config: Any) -> bool:
+    """The answer-support gate, and everything that came with it (the floor's
+    hub-corrected door), is off: ``SLM_RECALL_NO_SUPPORT_GATE`` set to 1, true
+    or yes, or ``retrieval.answer_support_gate`` false."""
+    import os
+
+    if os.environ.get("SLM_RECALL_NO_SUPPORT_GATE", "").strip().lower() in _TRUTHY:
+        return True
+    return not bool(getattr(retrieval_config, "answer_support_gate", True))
+
+
 def lexical_support(query: str, content: str) -> bool:
     """The gate when only words are left (a recall past its budget falls back
     to keyword search, with no vectors and no cross-encoder): the memory must
@@ -163,5 +177,5 @@ def lexical_support(query: str, content: str) -> bool:
 
 
 __all__ = ["ABSTAIN_NOTE", "Assessment", "LEXICAL_MIN_COVERAGE", "REASON_NO_RESULTS",
-           "REASON_UNSUPPORTED", "assess", "features", "imputed", "lexical_support", "logit",
+           "REASON_UNSUPPORTED", "assess", "switched_off", "features", "imputed", "lexical_support", "logit",
            "probability"]

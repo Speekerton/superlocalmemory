@@ -17,7 +17,11 @@ from typing import Any, Callable
 
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
+
 from superlocalmemory.server.routes.helpers import DB_PATH, get_active_profile, get_read_connection
+from superlocalmemory.storage.database import visible_fact_clause_for_connection
+
+from superlocalmemory.storage.erasure_visibility import erasure_clause_for_connection
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +69,8 @@ def _action_changed_this_week(
             "SELECT fact_id, content, fact_type, created_at, session_id, "
             f"confidence{kind_select} "
             "FROM atomic_facts "
-            "WHERE profile_id = ? AND created_at >= datetime('now', ?) "
+            "WHERE profile_id = ? AND created_at >= datetime('now', ?)"
+            f"{visible_fact_clause_for_connection(conn)} "
             "ORDER BY created_at DESC LIMIT ?",
             (pid, f"-{days} days", limit),
         ).fetchall()
@@ -94,7 +99,8 @@ def _action_changed_this_week(
             "cl.reason, cl.timestamp, af.content AS new_content "
             "FROM consolidation_log cl "
             "LEFT JOIN atomic_facts af ON af.fact_id = cl.new_fact_id "
-            "WHERE cl.profile_id = ? AND cl.timestamp >= datetime('now', ?) "
+            "WHERE cl.profile_id = ? AND cl.timestamp >= datetime('now', ?)"
+            f"{visible_fact_clause_for_connection(conn, 'af')} "
             "AND cl.action_type IN ('update', 'supersede') "
             "ORDER BY cl.timestamp DESC LIMIT ?",
             (pid, f"-{days} days", limit),
@@ -134,7 +140,8 @@ def _action_opinions(
         rows = conn.execute(
             "SELECT fact_id, content, created_at, session_id, confidence "
             "FROM atomic_facts "
-            "WHERE profile_id = ? AND fact_type = 'opinion' AND lifecycle = 'active' "
+            "WHERE profile_id = ? AND fact_type = 'opinion' AND lifecycle = 'active'"
+            f"{visible_fact_clause_for_connection(conn)} "
             "ORDER BY created_at DESC LIMIT ?",
             (pid, limit),
         ).fetchall()
@@ -166,7 +173,11 @@ def _action_contradictions(
             "FROM graph_edges ge "
             "LEFT JOIN atomic_facts sf ON sf.fact_id = ge.source_id "
             "LEFT JOIN atomic_facts tf ON tf.fact_id = ge.target_id "
-            "WHERE ge.profile_id = ? AND ge.edge_type = 'contradiction' "
+            "WHERE ge.profile_id = ? AND ge.edge_type = 'contradiction'"
+            f"{visible_fact_clause_for_connection(conn, 'sf')}"
+            f"{visible_fact_clause_for_connection(conn, 'tf')}"
+            f"{erasure_clause_for_connection(conn, 'ge', fact_column='source_id')}"
+            f"{erasure_clause_for_connection(conn, 'ge', fact_column='target_id')} "
             "ORDER BY ge.weight DESC, ge.created_at DESC LIMIT ?",
             (pid, limit),
         ).fetchall()
@@ -244,7 +255,8 @@ def _action_health(
     try:
         rows = conn.execute(
             "SELECT fact_type, COUNT(*) AS cnt "
-            "FROM atomic_facts WHERE profile_id = ? AND lifecycle = 'active' "
+            "FROM atomic_facts WHERE profile_id = ? AND lifecycle = 'active'"
+            f"{visible_fact_clause_for_connection(conn)} "
             "GROUP BY fact_type",
             (pid,),
         ).fetchall()
@@ -256,7 +268,8 @@ def _action_health(
     try:
         row = conn.execute(
             "SELECT "
-            "(SELECT COUNT(*) FROM atomic_facts WHERE profile_id = ?) AS total_facts, "
+            f"(SELECT COUNT(*) FROM atomic_facts WHERE profile_id = ?"
+            f"{visible_fact_clause_for_connection(conn)}) AS total_facts, "
             "(SELECT COUNT(*) FROM canonical_entities WHERE profile_id = ?) AS total_entities, "
             "(SELECT COUNT(*) FROM graph_edges WHERE profile_id = ?) AS total_edges",
             (pid, pid, pid),

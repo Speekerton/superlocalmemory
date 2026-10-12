@@ -11,7 +11,10 @@ from superlocalmemory.core.delete_refusal import STALE_AFTER_S, _drop_stale_eras
 from superlocalmemory.retrieval.bm25_channel import BM25Channel
 from superlocalmemory.retrieval.entity_channel import EntityGraphChannel
 from superlocalmemory.retrieval.semantic_channel import SemanticChannel
-from superlocalmemory.retrieval.spreading_activation import SpreadingActivation
+from superlocalmemory.retrieval.spreading_activation import (
+    SpreadingActivation,
+    SpreadingActivationConfig,
+)
 from superlocalmemory.retrieval.temporal_channel import TemporalChannel
 from superlocalmemory.storage.database import DatabaseManager
 
@@ -58,8 +61,8 @@ def _channel_read(db, name):
         query = "Alice" if name == "temporal_entity" else "2025-01-01T00:00:00"
         return lambda: channel.search(query, "default", top_k=30)
     if name == "graph":
-        channel = SpreadingActivation(db, None)
-        return lambda: channel.search([(HIDDEN, .9), (CONTROL, .9)], "default", top_k=30)
+        channel = SpreadingActivation(db, None, SpreadingActivationConfig(top_m=30))
+        return lambda: channel.search([0.01] * 768, "default", top_k=30)
     raise AssertionError(name)
 
 
@@ -143,7 +146,8 @@ def test_native_vector_search_refills_slots_and_restores_after_heal(store):
         pytest.skip("sqlite-vec extension unavailable")
     assert vectors.upsert(HIDDEN, "default", [1., 0., 0., 0.])
     assert vectors.upsert(CONTROL, "default", [0., 1., 0., 0.])
-    read = lambda: vectors.search([1., 0., 0., 0.], top_k=1, profile_id="default")
+    def read():
+        return vectors.search([1., 0., 0., 0.], top_k=1, profile_id="default")
     assert read()[0][0] == HIDDEN
     tombstone(store)
     assert read()[0][0] == CONTROL

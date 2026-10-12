@@ -24,6 +24,21 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Generator, NoReturn
 
+from superlocalmemory.storage import projection_outbox, store_signature
+from superlocalmemory.storage.correction_cases import SAVED_SUCCESSOR_PARAMS, SAVED_SUCCESSOR_SQL
+from superlocalmemory.storage.embedding_codec import (
+    decode_embedding,
+    decode_float_vector,
+    encode_embedding,
+    encode_float_vector,
+)
+from superlocalmemory.storage.erasure_visibility import (
+    aggregate_erasure_clause,
+    erasure_clause,
+    has_tombstones,
+    memory_erasure_clause,
+)
+from superlocalmemory.storage.memory_kinds import KIND_COLUMNS
 from superlocalmemory.storage.models import (
     AtomicFact,
     CanonicalEntity,
@@ -40,18 +55,8 @@ from superlocalmemory.storage.models import (
     TemporalEvent,
     TrustScore,
 )
-from superlocalmemory.storage.embedding_codec import (
-    decode_embedding,
-    decode_float_vector,
-    encode_embedding,
-    encode_float_vector,
-)
-from superlocalmemory.storage.write_lock import get_write_lock
 from superlocalmemory.storage.read_connection import read_only_snapshot
-from superlocalmemory.storage import projection_outbox
-from superlocalmemory.storage.memory_kinds import KIND_COLUMNS
-from superlocalmemory.storage.correction_cases import SAVED_SUCCESSOR_PARAMS, SAVED_SUCCESSOR_SQL
-from superlocalmemory.storage import store_signature
+from superlocalmemory.storage.write_lock import get_write_lock
 
 logger = logging.getLogger(__name__)
 
@@ -330,6 +335,7 @@ def _compose_visible_clause(
     has_archive: bool,
     has_quarantine: bool,
     include_quarantined: bool = False,
+    has_erasure: bool = False,
 ) -> str:
     """Build the AND-clause from what the store actually has.
 
@@ -343,6 +349,8 @@ def _compose_visible_clause(
         clause += f" AND COALESCE({table}archive_status, 'live') != 'archived'"
     if not include_quarantined and has_quarantine:
         clause += f" AND COALESCE({table}quarantined, 0) = 0"
+    if has_erasure:
+        clause += erasure_clause(prefix)
     return clause
 
 
@@ -436,6 +444,7 @@ def visible_fact_clause_for_connection(
         prefix,
         has_archive=_has("archive_status"),
         has_quarantine=_has("quarantined"),
+        has_erasure=has_tombstones(conn),
         include_quarantined=include_quarantined,
     )
 
@@ -1361,6 +1370,17 @@ class DatabaseManager:
             self._temporal_table_present = True
         return present
 
+    def _has_projection_tombstones_table(self) -> bool:
+        """Cache only schema presence; re-probe absent tables after migrations."""
+        if getattr(self, "_tombstone_table_present", False):
+            return True
+        present = bool(self.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='projection_tombstones'"
+        ))
+        if present:
+            self._tombstone_table_present = True
+        return present
+
     def current_fact_clause(
         self, prefix: str = "", *, include_quarantined: bool = False,
     ) -> str:
@@ -1383,7 +1403,10 @@ class DatabaseManager:
     ) -> str:
         """AND-clause excluding rows no caller should be shown as a memory.
 
-        Two exclusions, one definition: soft-deleted (``archive_status``) and
+        Erasure intent always wins, including for include_quarantined callers.
+        Membership is evaluated by SQLite on every read and is never cached.
+
+        Two other exclusions, one definition: soft-deleted (``archive_status``) and
         withheld (``quarantined``). Both are presence-guarded, because each
         column arrives with a migration and may be absent on a store the engine
         has not opened.
@@ -1410,6 +1433,7 @@ class DatabaseManager:
         """
         return _compose_visible_clause(
             prefix,
+            has_erasure=self._has_projection_tombstones_table(),
             has_archive=self._has_archive_status(),
             has_quarantine=self._has_quarantine_column(),
             include_quarantined=include_quarantined,
@@ -1831,9 +1855,11 @@ class DatabaseManager:
         where, sparams = _scope_where(
             profile_id, include_global=include_global, include_shared=include_shared,
         )
+        with self.raw_connection() as conn:
+            erasure = memory_erasure_clause(conn)
         rows = self.execute(
             f"SELECT memory_id, content FROM memories "
-            f"WHERE memory_id IN ({ph}) AND {where}",
+            f"WHERE memory_id IN ({ph}) AND {where}{erasure}",
             (*unique_ids, *sparams),
         )
         return {dict(r)["memory_id"]: dict(r)["content"] for r in rows}
@@ -1850,7 +1876,8 @@ class DatabaseManager:
             include_shared=include_shared,
         )
         rows = self.execute(
-            f"SELECT * FROM atomic_facts WHERE memory_id = ? AND {where} "
+            f"SELECT * FROM atomic_facts WHERE memory_id = ? AND {where}"
+            f"{self.visible_fact_clause()} "
             "ORDER BY confidence DESC",
             (memory_id, *params),
         )
@@ -2283,8 +2310,10 @@ class DatabaseManager:
 
     def get_all_scenes(self, profile_id: str) -> list[MemoryScene]:
         """All scenes for a profile, newest first."""
+        with self.raw_connection() as conn:
+            erasure = aggregate_erasure_clause(conn, "memory_scenes")
         rows = self.execute(
-            "SELECT * FROM memory_scenes WHERE profile_id = ? "
+            f"SELECT * FROM memory_scenes WHERE profile_id = ?{erasure} "
             "ORDER BY last_updated DESC",
             (profile_id,),
         )

@@ -8,24 +8,30 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
-import os
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
-from superlocalmemory.core.session_identity import synthetic_session_id
+
 from superlocalmemory.core.config import CANONICAL_RECALL_LIMIT
+from superlocalmemory.core.session_identity import synthetic_session_id
 from superlocalmemory.core.status_contract import (
     COUNT_QUERIES,
     counts_from_sqlite,
     projection_queue_depth,
     store_size_mb,
 )
-from superlocalmemory.server.routes.helpers import SLM_VERSION, get_read_connection
 from superlocalmemory.server.route_mutations import authorize_route_mutation
+from superlocalmemory.server.routes.helpers import SLM_VERSION, get_read_connection
 
 if TYPE_CHECKING:
     from superlocalmemory.core.config import LLMConfig, SLMConfig
+
+from superlocalmemory.storage.database import visible_fact_clause_for_connection
+
+from superlocalmemory.storage.erasure_visibility import erasure_clause_for_connection
 
 logger = logging.getLogger(__name__)
 
@@ -1920,7 +1926,11 @@ async def get_associations(
             "FROM association_edges ae "
             "LEFT JOIN atomic_facts sf ON sf.fact_id = ae.source_fact_id "
             "LEFT JOIN atomic_facts tf ON tf.fact_id = ae.target_fact_id "
-            "WHERE ae.profile_id = ? "
+            "WHERE ae.profile_id = ?"
+            f"{visible_fact_clause_for_connection(conn, 'sf')}"
+            f"{visible_fact_clause_for_connection(conn, 'tf')}"
+            f"{erasure_clause_for_connection(conn, 'ae', fact_column='source_fact_id')}"
+            f"{erasure_clause_for_connection(conn, 'ae', fact_column='target_fact_id')} "
         )
         if type:
             sql += "AND ae.association_type = ? "
@@ -2038,10 +2048,13 @@ async def get_association_stats(request: Request, profile: str = ""):
             for dr in degree_rows:
                 fact_id = dr["fact_id"]
                 preview_row = conn.execute(
-                    "SELECT content FROM atomic_facts WHERE fact_id = ?",
-                    (fact_id,),
+                    "SELECT content FROM atomic_facts WHERE fact_id = ? AND profile_id = ?"
+                    f"{visible_fact_clause_for_connection(conn)}",
+                    (fact_id, pid),
                 ).fetchone()
-                preview = (dict(preview_row).get("content", "")[:80]) if preview_row else ""
+                if not preview_row:
+                    continue
+                preview = dict(preview_row).get("content", "")[:80]
                 top_facts.append({
                     "fact_id": fact_id,
                     "degree": dr["degree"],
@@ -2823,7 +2836,8 @@ async def get_graph_communities(request: Request, profile: str = ""):
                     fact_rows = conn.execute(
                         "SELECT af.content FROM fact_importance fi "
                         "JOIN atomic_facts af ON fi.fact_id = af.fact_id "
-                        "WHERE fi.profile_id = ? AND fi.community_id = ? "
+                        "WHERE fi.profile_id = ? AND fi.community_id = ?"
+                        f"{visible_fact_clause_for_connection(conn, 'af')} "
                         "ORDER BY fi.pagerank_score DESC LIMIT 20",
                         (pid, comm_id),
                     ).fetchall()
@@ -2849,7 +2863,8 @@ async def get_graph_communities(request: Request, profile: str = ""):
                 ent_rows = conn.execute(
                     "SELECT af.canonical_entities_json FROM fact_importance fi "
                     "JOIN atomic_facts af ON fi.fact_id = af.fact_id "
-                    "WHERE fi.profile_id = ? AND fi.community_id = ? "
+                    "WHERE fi.profile_id = ? AND fi.community_id = ?"
+                        f"{visible_fact_clause_for_connection(conn, 'af')} "
                     "ORDER BY fi.pagerank_score DESC LIMIT 10",
                     (pid, comm_id),
                 ).fetchall()

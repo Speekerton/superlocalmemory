@@ -7,14 +7,15 @@ from types import SimpleNamespace
 
 import pytest
 
+from superlocalmemory.core.delete_refusal import _drop_stale_erasure
 from tests.test_retrieval.test_erasure_visibility import (  # noqa: F401
     CONTROL,
     HIDDEN,
-    store,
     tombstone,
 )
-
-from superlocalmemory.core.delete_refusal import _drop_stale_erasure
+from tests.test_retrieval.test_erasure_visibility import (
+    store as store,
+)
 
 
 class CapturingServer:

@@ -23,6 +23,7 @@ from dateutil.parser import parse as dateutil_parse
 
 from superlocalmemory.encoding.temporal_parser import TemporalParser
 from superlocalmemory.retrieval.fact_cover import fact_table
+from superlocalmemory.retrieval.scope_policy import authorized_topk
 from superlocalmemory.retrieval.temporal_slice_cache import TemporalSliceCache
 from superlocalmemory.storage.database import _scope_where
 
@@ -193,7 +194,10 @@ class TemporalChannel:
                     scored[fid] = max(scored.get(fid, 0.0), best)
 
         results = sorted(scored.items(), key=lambda x: (-x[1], x[0]))
-        return results[:top_k]
+        return authorized_topk(
+            self._db, results, profile_id, top_k,
+            include_global=include_global, include_shared=include_shared,
+        )
 
     def _entity_temporal_search(
         self,
@@ -233,7 +237,8 @@ class TemporalChannel:
                 "SELECT te.fact_id FROM temporal_events AS te "
                 "JOIN canonical_entities AS ce ON ce.entity_id = te.entity_id "
                 f"JOIN {fact_table(self._db)} ON af.fact_id = te.fact_id "
-                f"WHERE {where} AND ce.canonical_name COLLATE NOCASE = ? "
+                f"WHERE {where}{self._db.visible_fact_clause('af')} "
+                "AND ce.canonical_name COLLATE NOCASE = ? "
                 "ORDER BY af.created_at ASC, te.fact_id ASC",
                 (*params, name),
             )

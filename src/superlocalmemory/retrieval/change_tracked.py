@@ -25,6 +25,7 @@ import threading
 from typing import Any, Generic, TypeVar
 
 from superlocalmemory.storage import fact_search_changes as changes
+from superlocalmemory.storage.erasure_visibility import erasure_cache_ready
 
 logger = logging.getLogger(__name__)
 
@@ -48,18 +49,27 @@ class ChangeTrackedCache(Generic[P]):
 
     @property
     def available(self) -> bool:
-        if self._available is None:
+        with self._lock:
             try:
-                changes.log_bounds(self._db)
-                self._available = True
-            except Exception as exc:  # noqa: BLE001 -- no log, no freshness proof
+                rows = self._db.execute("PRAGMA schema_version")
+                version = dict(rows[0]).get("schema_version") if rows else None
+                if version != getattr(self, "_erasure_schema_version", None):
+                    self._parts.clear()
+                    self._available = None
+                    self._erasure_schema_version = version
+                if self._available is None:
+                    changes.log_bounds(self._db)
+                    self._available = erasure_cache_ready(self._db)
+            except Exception as exc:  # no freshness proof: use canonical SQL
                 logger.info("%s off (%s); the uncached path is kept",
                             type(self).__name__, exc)
                 self._available = False
-        return self._available
+            return bool(self._available)
 
     def _fresh(self, profile_id: str) -> P:
         """The profile's partition, current as of now. Call with the lock held."""
+        if not self.available:
+            raise RuntimeError("visibility cache currency unavailable")
         head, oldest = changes.log_bounds(self._db)
         if head < self._seq:
             self._parts.clear()

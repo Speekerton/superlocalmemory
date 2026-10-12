@@ -230,3 +230,70 @@ def test_the_engine_floor_uses_the_hub_door() -> None:
     kept = RetrievalEngine._apply_evidence_floor([near], facts, 0.60,
                                                  hub_corrected={"near": 0.15})
     assert kept == [near]
+
+
+def test_orphan_terms_are_question_words_no_stored_memory_contains() -> None:
+    terms = ef.query_terms("Which release notes mention the moon?")
+    countable = ef.countable_terms(terms)
+    assert countable == ["release", "notes", "mention", "moon"]
+    assert ef.orphan_share(countable, {"release", "notes", "mention"}) == pytest.approx(0.25)
+    assert ef.orphan_share([], set()) is None
+    # Question-frame words are not judged, nor text in a script written without
+    # spaces (a Chinese or Japanese question is one "term" to the keyword index).
+    assert ef.countable_terms(ef.query_terms("How long did it take?")) == []
+    assert ef.countable_terms(["läuft", "日志保留多久", "ステージング", "डेटाबेस", "бвг"]) == [
+        "läuft", "डेटाबेस", "бвг"]
+
+
+def test_attach_reports_the_orphan_share_from_the_store() -> None:
+    eng = _engine_with(None, {})
+    eng._terms_in_store = lambda terms, profile: {t for t in terms if t != "moon"}
+    q = eng._attach_evidence("release notes for the moon", [], {}, "default")
+    assert q["orphan_terms"] == pytest.approx(1 / 3)
+    eng._terms_in_store = lambda terms, profile: (_ for _ in ()).throw(RuntimeError("no fts"))
+    assert eng._attach_evidence("release notes for the moon", [], {}, "default")[
+        "orphan_terms"] is None
+
+
+def test_terms_in_store_reads_the_keyword_index_with_base_forms(tmp_path) -> None:
+    import sqlite3
+
+    from superlocalmemory.retrieval.engine import RetrievalEngine
+
+    conn = sqlite3.connect(tmp_path / "m.db")
+    conn.executescript("""
+        CREATE TABLE atomic_facts (fact_id TEXT, profile_id TEXT, content TEXT);
+        CREATE VIRTUAL TABLE atomic_facts_fts USING fts5(fact_id UNINDEXED, content,
+            content='atomic_facts', content_rowid='rowid');
+        INSERT INTO atomic_facts VALUES ('f1', 'p', 'The nightly job failed on v0.3.4');
+        INSERT INTO atomic_facts VALUES ('f2', 'other', 'saxophone lessons');
+        INSERT INTO atomic_facts_fts (rowid, fact_id, content)
+            SELECT rowid, fact_id, content FROM atomic_facts;
+    """)
+    eng = RetrievalEngine.__new__(RetrievalEngine)
+    eng._db = SimpleNamespace(execute=lambda sql, params=(): conn.execute(sql, params).fetchall())
+    found = eng._terms_in_store(["nightly", "failing", "v0.3.4", "saxophone", "moon"], "p")
+    assert found == {"nightly", "failing", "v0.3.4"}
+
+
+def test_a_question_frame_is_a_question_word_or_auxiliary() -> None:
+    assert ef.question_frame("How long did it take?")
+    assert ef.question_frame("which port does the dashboard use")
+    assert not ef.question_frame("ensure_daemon trance")
+    assert not ef.question_frame("release notes for the moon")
+
+
+def test_subject_coverage_counts_only_the_words_that_name_a_subject() -> None:
+    fact = SimpleNamespace(content="ensure_daemon waits 12 seconds for the socket",
+                           embedding=None, canonical_entities=[], entities=[])
+    q = "ensure_daemon trance"
+    out = ef.build(query=q, terms=ef.query_terms(q), query_vector=None, fact=fact,
+                   channel_scores={})
+    assert out["subject_coverage"] == pytest.approx(0.5)
+    long_q = "How long does ensure_daemon wait?"  # "long" frames, "wait" != "waits"
+    out = ef.build(query=long_q, terms=ef.query_terms(long_q), query_vector=None, fact=fact,
+                   channel_scores={})
+    assert out["subject_coverage"] == pytest.approx(0.5)
+    jp = "日志保留多久？"
+    assert ef.build(query=jp, terms=ef.query_terms(jp), query_vector=None, fact=fact,
+                    channel_scores={})["subject_coverage"] == 1.0

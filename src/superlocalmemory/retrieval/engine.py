@@ -800,7 +800,26 @@ class RetrievalEngine:
             ce_scores=ce_scores,
             stored_baselines=lambda ids: self._hub_baselines(ids, profile_id),
             probes=probes,
+            terms_in_store=lambda terms: self._terms_in_store(terms, profile_id),
         )
+
+    def _terms_in_store(self, terms: list[str], profile_id: str) -> set[str]:
+        """The terms some stored memory of this profile contains, in any
+        inflection the shipped word list knows (a base form of four or more
+        letters is matched as a prefix). One indexed keyword lookup per term."""
+        from superlocalmemory.encoding.common_words import _bases
+
+        found: set[str] = set()
+        for term in terms:
+            variants = ['"' + term.replace('"', "") + '"'] + [
+                '"' + b + '"*' for b in _bases(term)[1:] if len(b) >= 4 and b.isalpha()]
+            row = self._db.execute(
+                "SELECT 1 FROM atomic_facts_fts f JOIN atomic_facts a ON a.rowid = f.rowid "
+                "WHERE atomic_facts_fts MATCH ? AND a.profile_id = ? LIMIT 1",
+                (" OR ".join(variants), profile_id))
+            if row:
+                found.add(term)
+        return found
 
     # -- Community context (Wave Q2b) --------------------------------------
 

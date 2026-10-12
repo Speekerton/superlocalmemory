@@ -33,6 +33,15 @@ THE FEATURES (per result)
 ``bm25_raw``          the BM25 score before the channel's saturating transform
 ``keyword_coverage``  share of the question's content words found in the memory
 ``entity_hit``        the question names an entity the memory carries
+``subject_coverage``  share of the question's subject words (content words that
+                      do not just frame the question) found in the memory; 1.0
+                      when the question has none (a non-Latin question)
+``question_frame``    (question level) the question has a question word or an
+                      auxiliary ("what", "how", "does"); without one, the words
+                      ARE the question, as in "ensure_daemon trance"
+``orphan_terms``      (question level) share of the question's content words that
+                      NO stored memory contains, in any inflection: "release
+                      notes for the moon" leaves "moon" an orphan
 ``rare_miss``         share of the question's rare terms (identifiers, versions,
                       words no dictionary knows) the memory does NOT contain:
                       "v0.3.4 snazzle" against the v0.3.4 note misses half
@@ -80,6 +89,15 @@ _IDENTIFIER_RE = re.compile(r"[0-9_]")
 _PIECE_RE = re.compile(r"[._:/-]")
 #: Pieces shorter than this ("ci", "db", "id") are never judged rare.
 _RARE_MIN_LEN = 3
+#: Words that frame a question rather than name its subject: never judged as
+#: orphans ("How long did the backup take?" asks about the backup).
+_FRAME_WORDS = frozenset({
+    "long", "need", "needs", "make", "made", "take", "took", "went", "go", "goes",
+    "happen", "happened", "use", "used", "uses", "get", "got", "give", "given", "keep",
+    "kept", "say", "said", "tell", "know", "way", "thing", "things", "time", "current",
+    "currently", "new", "old", "last", "first", "next", "mean", "means", "work", "works",
+    "kind", "type", "part", "like", "about", "still", "anything", "something", "details",
+})
 
 
 def query_terms(text: str) -> list[str]:
@@ -161,6 +179,45 @@ def rare_miss(rare: Sequence[str], content: str) -> float:
     return sum(1 for t in rare if t not in have) / len(rare)
 
 
+_FRAME_RE = re.compile(r"[a-z]+")
+#: Words that make a string a question rather than a list of keywords.
+_QUESTION_FRAME = frozenset({
+    "what", "which", "who", "whom", "whose", "when", "where", "why", "how", "is", "are",
+    "was", "were", "do", "does", "did", "can", "could", "should", "will", "would", "has",
+    "have", "had",
+})
+
+
+def question_frame(text: str) -> bool:
+    """True when the text asks something: a question word or an auxiliary."""
+    return bool(set(_FRAME_RE.findall(text.lower())) & _QUESTION_FRAME)
+
+
+#: Scripts written without spaces between words (Chinese, Japanese, Korean,
+#: Thai): the keyword index sees a whole run as one term, so such a term is
+#: never judged an orphan.
+_UNSPACED = ((0x2E80, 0x9FFF), (0xAC00, 0xD7AF), (0x0E00, 0x0E7F), (0xF900, 0xFAFF))
+
+
+def _spaced_script(term: str) -> bool:
+    return not any(lo <= ord(ch) <= hi for ch in term for lo, hi in _UNSPACED)
+
+
+def countable_terms(terms: Sequence[str]) -> list[str]:
+    """The question terms judged for ``orphan_share``: terms of three or more
+    characters, in a script written with spaces, that name a subject rather
+    than frame the question."""
+    return [t for t in terms if len(t) >= _RARE_MIN_LEN and t not in _FRAME_WORDS
+            and _spaced_script(t)]
+
+
+def orphan_share(countable: Sequence[str], in_store: set[str]) -> float | None:
+    """Share of ``countable`` that no stored memory contains; None with none."""
+    if not countable:
+        return None
+    return sum(1 for t in countable if t not in in_store) / len(countable)
+
+
 def cosine(a: Sequence[float] | None, b: Sequence[float] | None) -> float | None:
     if a is None or b is None or len(a) == 0 or len(a) != len(b):
         return None
@@ -215,7 +272,13 @@ def build(
         "keyword_coverage": _r(keyword_coverage(terms, content)),
         "entity_hit": entity_hit(query, entities),
         "rare_miss": _r(rare_miss(rare, content)),
+        "subject_coverage": _r(_subject_coverage(terms, content)),
     }
+
+
+def _subject_coverage(terms: Sequence[str], content: str) -> float:
+    subject = countable_terms(terms)
+    return keyword_coverage(subject, content) if subject else 1.0
 
 
 def model_vocabulary() -> frozenset[str] | None:
@@ -230,7 +293,8 @@ def model_vocabulary() -> frozenset[str] | None:
 
 def query_evidence(query: str, terms: Sequence[str] | None = None, *,
                    rare: Sequence[str] | None = None,
-                   nonsense_similarity: float | None = None) -> dict:
+                   nonsense_similarity: float | None = None,
+                   orphan_terms: float | None = None) -> dict:
     """Question-level evidence (see the module docstring)."""
     from superlocalmemory.retrieval.query_lexicon import oov_phrase
 
@@ -245,6 +309,8 @@ def query_evidence(query: str, terms: Sequence[str] | None = None, *,
         "rare_terms": len(rare),
         "latin_script": is_latin(query),
         "nonsense_similarity": _r(nonsense_similarity),
+        "orphan_terms": _r(orphan_terms),
+        "question_frame": question_frame(query),
     }
 
 

@@ -37,6 +37,7 @@ def attach(
     ce_scores: Mapping[str, tuple[float, float]],
     stored_baselines: Callable[[list[str]], Mapping[str, tuple[float, float]]],
     probes: np.ndarray | None,
+    terms_in_store: Callable[[list[str]], set[str]] | None = None,
 ) -> dict:
     """Record every result's features; return the question's own."""
     try:
@@ -44,7 +45,8 @@ def attach(
         rare = ef.rare_terms(terms, ef.model_vocabulary())
         q_evidence = ef.query_evidence(
             query, terms, rare=rare,
-            nonsense_similarity=hub_baseline.query_profile(query_vector, probes))
+            nonsense_similarity=hub_baseline.query_profile(query_vector, probes),
+            orphan_terms=_orphans(terms, terms_in_store))
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug("query evidence: %s", exc)
         return {}
@@ -63,6 +65,18 @@ def attach(
     except Exception as exc:
         logger.debug("result evidence: %s", exc)
     return q_evidence
+
+
+def _orphans(terms: Sequence[str],
+             terms_in_store: Callable[[list[str]], set[str]] | None) -> float | None:
+    countable = ef.countable_terms(terms)
+    if not countable or terms_in_store is None:
+        return None
+    try:
+        return ef.orphan_share(countable, terms_in_store(countable))
+    except Exception as exc:  # no keyword index: unmeasured, never an error
+        logger.debug("orphan terms: %s", exc)
+        return None
 
 
 def floor_hub_corrected(

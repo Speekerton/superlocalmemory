@@ -436,7 +436,8 @@ def evolution_approve(request: Request, body: ApproveSkillRequest):
 
         profile_id = get_active_profile()
         record = store.get_record(body.record_id, profile_id)
-        dir_name = _candidate_source(store, record, profile_id).quarantine_dir_name if record else ""
+        source = _candidate_source(store, record, profile_id) if record else None
+        dir_name = source.quarantine_dir_name if source else ""
         return approve(
             store, profile_id, body.record_id, body.reviewed_hash,
             _activator(body.installation_wide, dir_name or ""),

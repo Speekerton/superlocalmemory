@@ -65,11 +65,17 @@ def _ids(raw: Any) -> list[str]:
     return [str(v) for v in value] if isinstance(value, list) else []
 
 
+def _content(row) -> str:
+    """The content column of a row, whether keyed by name or by position."""
+    value = row["content"] if hasattr(row, "keys") else row[0]
+    return str(value or "")
+
+
 def fact_content(execute: Execute, profile_id: str, fact_id: str) -> str | None:
     """The fact's text while its row still exists, else ``None``."""
     rows = list(execute("SELECT content FROM atomic_facts WHERE fact_id = ? AND profile_id = ? "
                         "LIMIT 1", (fact_id, profile_id)))
-    return str(rows[0][0] or "") if rows else None
+    return _content(rows[0]) if rows else None
 
 
 def theme_quotes(theme: str, fact_ids: Sequence[str], fact_id: str, erased_text: str | None) -> bool:
@@ -107,7 +113,7 @@ def _member_text(execute: Execute, profile_id: str, fact_id: str) -> str:
         if "no such table" not in str(exc).lower():
             raise
         rows = list(execute(base + " LIMIT 1", (fact_id, profile_id)))
-    return str(rows[0][0] or "") if rows else ""
+    return _content(rows[0]) if rows else ""
 
 
 def retheme_scenes_quoting(execute: Execute, profile_id: str, fact_id: str) -> int:

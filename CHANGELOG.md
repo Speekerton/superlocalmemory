@@ -5,253 +5,246 @@ All notable changes to SuperLocalMemory will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.1.25] — Pictures and documents, and bots that talk to each other
+## [4.2.0] — Recall that says "nothing supports this", memory that looks after itself, pictures and documents
 
-### Added
+This release changes what recall does when memory cannot answer, adds a Memory
+health service that improves older memories without touching what you wrote,
+and lets SLM remember pictures and documents. It also closes a long list of
+erasure, access-control and backup gaps. Upgrading never moves or deletes
+memory, and an update that changes the store takes a restore point first.
 
-- **Pictures and documents.** Save screenshots, photos and PDFs and find them
-  later by describing them. A picture model runs on your computer
-  (EmbeddingGemma 2), OCR reads the text inside pictures, and each PDF page is
-  indexed by its picture and its text. No generative model looks at your
-  files. Off by default; turn it on from the npm installer or upgrader, the
-  dashboard (**Documents & Images**, with progress and a restart button) or
-  `slm media enable`. Turning it on does not change your existing memories or
-  their embeddings: pictures live in their own database. Needs a computer with
-  16 GB of memory and downloads about 1.5 GB the first time. Limits are listed
-  in docs/pictures-and-documents.md.
-- **Find a picture** in the dashboard, a drop zone for pictures and PDFs (up to
-  25 MB and 100 MB), and `slm media status|disable|gc|repair`.
-- **Folders and Obsidian vaults** as read-only sources: `slm sources add`, or
-  **Choose folder** in the dashboard with the computer's own folder picker.
-- **Bots that talk to each other.** Web apps connected through Web access
-  (ChatGPT, Claude on the web, Grok Bot, Muse, Composio) can join SLM-Mesh
-  beside the agents on your computer: see peers, send a named bot a message,
-  read their inbox and shared state. Each app needs two yeses: a box on the
-  approval page, and a switch on the **Web access** row in Connected apps (or
-  `slm remote keys allow <key> mesh`). A web app's messages are delivered at
-  least once: one it did not acknowledge comes again, marked as a repeat. The
-  **Bot messages** tab lists every bot by name with mute, rename and retire.
-- **Web apps save real files.** Any connected web app can ask for a one-time
-  upload link: you open it, pick the file, and it streams to your computer
-  through the connection gateway, which keeps no copy. A link belongs to the
-  app that asked for it, works once and expires in 10 minutes. ChatGPT can also
-  hand over an attached file directly once its file hosts are on your allowed
-  list (docs/remote-access/hosts.md).
-- **Upgrade memory engine** (preview, opt-in): re-read existing memories with
-  the one-model engine in the background, with recall working throughout and
-  one-click rollback; the previous engine's data stays until you free it.
-  `slm embedder upgrade` or the card in Settings.
-- `slm team status` and `slm team policy --require-login on|off`, run on the
-  SLM computer, so a company workspace's owner can never be locked out.
-- A **What's new** card on the dashboard that knows what is already on.
-- **`slm outcome success|partial|failure <fact_id>...`** tells SLM whether the
-  memories a recall gave you helped. MCP, the REST API, the dashboard and this
-  command now share one outcome writer, so a report settles the same way from
-  any of them (docs/cli-reference.md).
-- **`slm db repair-entities`** previews, applies (after a backup, with an undo
-  record) and undoes the clean-up of entity links left by the older name-matching
-  rules.
-- **`slm doctor --refile-hidden`** lists memories that were moved out of sight
-  although their retention score says to keep them; `--yes` moves exactly those
-  back.
-- **The dashboard shows which apps are connected right now**: live MCP processes
-  by host with a count, a flag on apps still running older SLM code, and a
-  reconnect. Connect, doctor, repair and restart are buttons, and Connect writes
-  an absolute interpreter path.
-- **Agent skills and instructions teach 4.1.25.** A new `slm-media` skill
-  (pictures, PDFs, folders, upload links, `slm media`, `slm sources`) ships in
-  the Claude Code, Codex, Copilot, Antigravity and Hermes plugins, so each
-  carries 16 skills. `slm-mesh` covers `mesh_wait`, web-app peers and
-  at-least-once delivery (`ack_ids` passed back as `ack`); `slm-web-access`
-  covers the Connected apps switches and upload links; `slm-governance` covers
-  `slm team`, `slm token show` and what remote apps can never see; the bot
-  skills, both advisors, the universal agent rules, the web-agent
-  instructions (full, short and the dashboard's **Copy instructions**), the host
-  guides and the text `slm connect` writes for Cursor, Copilot and Antigravity say
-  the same.
+### Recall quality
 
-### Changed
-
-- Memory guards read real memory use on macOS (physical footprint); the
-  resident size under-reported up to 15 times on a busy Mac.
-- The picture model embeds in small passes; its peak fell from about 12 GB to
-  under 4 GB on large batches.
-- Roles and profiles apply to every picture, document, folder and feature
-  route: reading a file by path, connecting a folder and turning features on
-  need the owner or an admin; SLM's own data folder can never be named.
-- **Company mode is administered by a signed-in admin.** While users are
-  enrolled and login is required, the install token or an API key alone no
-  longer administers the workspace (any local program could fetch the token);
-  use an admin account, or `slm team` on the SLM computer.
-- **Pictures saved before 4.1.25 are held back from web apps** until saved
-  again. They were vetted under the older rule (personal data counted only
-  with redaction on); the whole text is now checked every time. They stay
-  fully searchable on your computer.
+- **Recall says so when nothing supports the question.** A question that no
+  memory answers now returns no results and the plain sentence "Nothing in
+  memory supports this question." Before this, a nonsense question could still
+  return the nearest memories. Each remembered fact is scored on several
+  signals together (meaning, keywords, names, rare terms, how the question is
+  phrased, and how often the memory matches everything), and recall answers only
+  when at least one memory is strong enough. Pinned memories are still returned.
+- **`slm recall --show-weak`** (the `show_weak` option on the MCP recall tool,
+  the REST API and the dashboard) returns the closest weak matches when nothing
+  supports the question, each marked weak and with the same sentence on top.
+- **A recall that matches by keyword alone is no longer written off**, and the
+  keyword fallback serves only memories that cover the words you asked with.
+  Questions are also rewritten into base forms and known aliases for the keyword
+  search; the check that decides whether a memory answers always reads your
+  original words, so a rewrite can never make nonsense answer.
+- **The on-device answer check (Laya) is the default where it is supported.**
+  On an Apple Silicon Mac, setup offers it with "yes" as the default and the
+  `auto` setting uses it once it is installed and has passed its own check; it
+  does not depend on the mode, so Mode A and Mode B both run it entirely on
+  your computer. Unattended installs skip the download unless
+  `SLM_INSTALL_LAYA=1`. The check has its own time budget, so a slow check can
+  no longer eat the recall ceiling. The online option (Jev) stays off until you
+  choose it and tick its consent.
+- **Local checks are calibrated in the background**, with visible progress and a
+  cancel button, and a new calibration is rejected if it does worse than the
+  current one on held-out questions.
+- **Recall stays fast while you write.** A save no longer forces the whole graph
+  to rebuild on the next recall: the cached graph follows writes, deletes and
+  erasures, and full rebuilds run in the background. On a 26,000-fact store with
+  a write every 2 seconds, p95 recall fell from 4.3 s to 0.94 s and peak memory
+  from up to 1.7 GB to about 260 MB. Large stores get new recall indexes, and
+  recall waits are bounded all the way through the HTTP layer.
 - **Entity matching is exact.** A name matches exactly, then after
   normalisation, then with one typo in one word. It never merges different
-  numbers or versions, never matches against aliases that were themselves fuzzy,
-  and a question word is looked up exactly unless it is everyday English.
-- **Recall stays fast while you write.** A save no longer forces the whole graph
-  to rebuild on the next recall: the cached graph follows writes incrementally,
-  deletes and erasures leave it before the walk, and full rebuilds run in the
-  background. On a 26k-fact store with a write every 2 seconds, p95 recall fell
-  from 4.3 s to 0.94 s and peak memory from up to 1.7 GB to about 260 MB.
-  Large stores also get new recall indexes (migrations M056 to M058), and the
-  keyword fallback no longer keeps an unread copy of every saved text.
+  numbers or versions, never chains near-miss names into an unrelated person or
+  project, and timestamps, hashes, paths, status words and sentence fragments
+  are no longer saved as people or projects. `slm db repair-entities` previews,
+  applies (after a backup, with an undo record) and undoes the clean-up of links
+  left by the older rules.
 - **Saving is checked against what you wrote.** Every statement SLM extracts is
   checked against its source before it is stored: no added names, numbers or
-  dates, no flipped negation, no names leaking from the prompt's example. The
-  original note is always kept. Quoted speech is never rewritten, each speaker's
-  turn is handled separately, and relative dates ("last Tuesday") resolve against
-  the memory's own date. Saving the same text twice adds no row and keeps the new
-  save's scope, project and event date. Long texts are chunked, a long paste says
-  it was truncated, and the best installed local model is recommended but never
-  switched silently.
+  dates, no flipped negation. The original note is always kept. Quoted speech is
+  never rewritten, relative dates ("last Tuesday") resolve against the memory's
+  own date, and saving the same text twice adds no row.
 - **The learning loop learns from real outcomes.** One query id runs from recall
-  through to the reward, and each outcome settles exactly one recall, across
-  restarts (migration M055, additive). The candidate ranker is served during its
-  test and promoted or rejected by a sequential test; training sees real labels.
-  Consolidation's dry run writes nothing, never revives an invalidated fact and
-  does not count itself as use; the behaviour miner stays within one session and
-  project; "lossless" normalisation keeps code byte for byte. Health shows "Not
-  demonstrated" until an outcome has settled (`GET /api/learning/readiness`).
-- **Services and ports belong to one install.** `slm dashboard`, Health,
-  Settings and HTTP setup use the configured port, strict credential settings
-  survive auto-start, and a second install gets its own service name. Older
-  services are migrated only when they provably belong to this install.
-  `--sync` saves return after enrichment completes, the Python API shares the
-  daemon's embedder, failed session opens exit non-zero, and a queued embedding
-  upgrade says why it waits.
-- **Quantized retrieval is used when configured**, and the status says when a
-  tier is degraded. Damaged or legacy QJL sketches are repaired by
-  `slm quantize` instead of hiding the memory from search.
-- **Company mode checks a role on every change.** Every state-changing route asks
-  for a role, and the check runs before the request body is read, so refusals are
-  401 or 403, never 422 or 500. Restarting the daemon needs MANAGE.
-- `npm install` says plainly when the Python it found cannot work (an Intel
-  build on a Mac, 32-bit on Windows) and how to install a supported one;
-  `slm media enable` starts SuperLocalMemory if it is not running.
+  to the reward, and each outcome settles exactly one recall, across restarts.
+  `slm outcome success|partial|failure <fact_id>...` tells SLM whether the
+  memories a recall gave you helped; MCP, the REST API, the dashboard and the
+  command share one writer. Health shows "Not demonstrated" until an outcome has
+  settled.
+- **Upgrade memory engine** (preview, opt-in): `slm embedder upgrade` or the
+  Settings card re-reads memories with the one-model engine in the background,
+  with recall working throughout and one-click rollback.
+- **Quantized retrieval is used when configured**, the status says when a tier is
+  degraded, and damaged or older sketches are repaired by `slm quantize` instead
+  of hiding the memory from search.
 
-### Fixed
+### Memory health
+
+- **A Memory health card** in the dashboard shows what SLM can improve in older
+  memories and what it is doing about it. A background worker runs only when the
+  computer is idle and **only adds**: it fills in missing event dates, entities
+  and kinds, writes a short description for older memories, and never edits the
+  text you saved. It stops when you are working and when memory is tight.
+- **Stubs are marked, not hidden.** A memory that is only a label and an id
+  (for example a session receipt) carries a **stub** badge in lists and counts.
+  Only recall leaves stubs out of its answers.
+- **Anything that deletes or moves something waits for your explicit Fix.**
+  Repairs that remove junk entity links, re-file hidden memories or repair failed
+  saves are offered as a count with a **Fix** button, and every run that changed
+  something has an **Undo** that restores exactly what it changed (anything you
+  edited since is kept).
+- **`slm enrich`** is the command-line side: `status`, `pause`, `resume`,
+  `undo`, and `fix entity-links|refile-hidden|repair-saves` (the last has no
+  undo, so it takes a safety copy first and says so). `--include-undone`
+  applies items from a repair you undid earlier.
+- **One safety copy per store**, taken before the first automatic change and
+  reused by every later run.
+- **`slm doctor`** reports the same state, a **Failed saves** row (it warns when
+  saves were given up on after repeated attempts and fails at 50 or more), and
+  `slm doctor --refile-hidden` lists memories that were moved out of sight
+  although their retention score says to keep them; `--yes` moves exactly those
+  back.
+
+### Privacy and erasure
 
 - **Erasing a person leaves no readable copy.** The bytes of the data folder are
-  now checked after an erasure, and everything they found is closed: queued
-  saves (`pending.db`), the encrypted request journal, the recall queue, the MCP
-  cache and the reversible compression originals, free pages inside the side
-  databases, event previews, the vector index itself (the command line used to
-  delete the bookkeeping and keep the vectors), the Lance history, the graph's
-  entity nodes, an erased picture's backup mirror, and the prompt text that two
-  logs kept. The workspace is removed from `profiles.json` and no longer comes
-  back at the next page load, and the service moves off the profile it erases.
+  checked after an erasure and everything they found is closed: queued saves,
+  the encrypted request journal, the recall queue, caches, reversible
+  compression originals, free pages inside the side databases, event previews,
+  the vector index itself, the Lance history, the graph's entity nodes, an erased
+  picture's backup mirror and the prompt text two logs kept.
 - **Erasure says exactly what it did.** `slm gdpr erase --json` reports
   `success: false` for an incomplete erasure, the dashboard lists what was
-  removed and what remains, and the stored receipt is written after every step,
-  so it can no longer read COMPLETE over a failed sweep. Profile erasure no
-  longer collides with the immutable write receipts. A backup keeps its erasure
-  obligation until it is deleted or re-read clean (never by age), an unreadable
-  backup is an obligation too, and a restore replays targeted erasures (one
-  memory, one person's mentions) as well as profile ones.
-- **Recall says "nothing found" instead of guessing.** The evidence floor again
-  compares the cosine it documents, on the channel's own scale, so a question
-  with no support in memory gets no answer. A chain of near-miss names can no
-  longer lead a question to an unrelated person or project.
-- **Entity names are real names.** Timestamps, hashes, paths, status words such
-  as PASS or LIVE, and sentence fragments are no longer saved as people or
-  projects. `slm db repair-entities` cleans up links left by the old rules.
-- **Frameworks and editors.** Google ADK, CrewAI and Semantic Kernel run through
-  an isolated engine bridge instead of failing to install next to SLM, and CrewAI
-  declares its real Python range (3.12 to 3.13). Microsoft Agent Framework keeps
-  message roles and content, and AutoGen returns the text with the caller's
-  metadata. Continue, OpenCode, Antigravity, VS Code and Gemini CLI setup write
-  each host's current schema, and HTTP verification checks the real `/health` and
-  lists tools. The Optimize SDK quickstarts import what exists.
-- **Smaller fixes.** A shared code graph is exported only as the person's own
-  links; exports and evidence bundles are created owner-only. `slm doctor`
-  counts memories whose vector is really in the index. `VectorStore.delete`
-  answers deleted, absent or failed. A backup just taken is no longer "overdue".
-  Erasing a PDF page removes the stored PDF that still holds it. The dashboard
-  backup export is one archive with every store, the picture originals and a
-  manifest. Deleting a profile no longer stops on the learning tables that
-  ordinary recall creates, the Compliance view counts and pages the audit trail,
-  and the unused `keep_float32_backup` switch now says it does nothing.
+  removed and what remains, and the stored receipt is written after every step.
+  A backup keeps its erasure obligation until it is deleted or re-read clean, and
+  a restore replays targeted erasures as well as profile ones.
+- **Exporting your data works on a real store.** Export writes plain JSON,
+  leaves embeddings out unless you ask (`--include-embeddings`), streams to
+  disk, and reports failures instead of "Export started". The full export now
+  carries the audit records about you, pictures, documents, folders and jobs,
+  and lists what it leaves out under `export_manifest`.
+- **Personal data is redacted on every save path** when redaction is on,
+  including metadata, tags, keys and events, for pictures as well as text.
+- **Mode A says what it is:** "Memories are saved and recalled without a
+  language model — nothing leaves this device." The server serves that one
+  sentence and the dashboard shows it, and it stays true when the on-device
+  answer check is running.
 
-- A daemon started with `python -m` now publishes its ready record, so `stop`
-  no longer waits 90 seconds.
-- On SQLite 3.44.0 to 3.46.0, existing stores switch off the setting that
-  damages the keyword index, and `slm db repair` rebuilds a damaged one.
-- A picture with no readable text no longer surfaces for questions about
-  pictures you never saved.
-- Removing a PDF or a folder never reports success while one of its memories
-  can still be recalled; it says so and can be retried. A PDF removed while it
-  was finishing stays removed.
-- Imports never lose track of what they saved: a save queued under load, or a
-  file that failed part-way, stays owned, so removal and erasure reach it.
-- PDFs and pictures in a folder that were skipped while pictures were off are
-  read once they are on; a failed save no longer leaves a PDF that answers
-  "Already saved" forever.
-- `slm media gc --apply` only ever touches stored picture files, never SLM's
-  databases; local backups keep picture and PDF originals.
-- Claude Desktop on Windows is configured in %APPDATA%\Claude.
-- **Company mode covers every data route.** With login required, every page of
-  data (export, compliance records, profiles, learning and trust details)
-  needs a signed-in user; a test now walks every route so a new one cannot
-  slip through.
-- A connected web app cannot change, delete, pin or replace a memory it is not
-  allowed to see; it is answered as if the memory did not exist.
-- A folder whose save was still queued is not reported as removed until that
-  save is hidden too; a PDF or picture replaced in a folder is erased at the
-  end of the retention window, like an older text version.
-- Local backups copy picture and PDF originals only, never the upload-link
-  database. A full disk during an upload is reported in plain words.
-- `npm install` also explains Windows on ARM, 32-bit Linux and a Node running
-  under Rosetta, and every repair hint uses `npm rebuild -g superlocalmemory`.
-- **Linux on 64-bit ARM** (aarch64) installs again and can turn on pictures and
-  documents: the graph library uses the version built for it, and the picture
-  tools have their own verified package list. Tested in an ARM64 Linux
-  container.
-- The picture tools are stopped before they go past their memory cap, not
-  after: their memory use is watched during each request, Linux also sets a
-  hard ceiling, and oversized input is refused before it is sent.
-- With `SLM_REQUIRE_CREDENTIALS=1`, the dashboard key is no longer handed to
-  other programs on the computer; the dashboard asks for it once
-  (`slm token show` prints it).
-- A PDF that did not finish has a **Try again** button.
-- Pictures and pages saved before 4.1.25 are re-checked in the background and
-  shared with web apps again when their text is clean.
-- Upload links made before the update stop working; ask the app for a new one.
-- Backup sets made through every backup path include picture and PDF
-  originals.
-- **A damaged keyword index is repaired for good** (#204). On SQLite 3.44.0 to
-  3.46.0, `slm db repair --apply` now turns off the SQLite setting that damages
-  the index before rebuilding it, then checks it again and says plainly if it
-  is still damaged. `slm doctor` and `slm restart` show the SQLite message and
-  the exact repair command instead of "recreate the database". Your memories
-  are kept.
-- **Hermes:** the four SLM advisor tools load again (they failed with
-  "'str' object is not callable"), all 16 skills are registered, and
-  `/slm-agent` outside a chat says how to start an advisor (#155).
-- Every plugin, skill and setup text teaches 4.1.25: a new `slm-media` skill,
-  and the mesh, web access, governance and bot skills, the web agent
-  instructions, Cursor, VS Code, Continue and Cody cover pictures, upload
-  links, `mesh_wait` and the Connected apps switches.
-- **Exporting your data works on a real store.** The dashboard's **Export my data**,
-  the memory export (`/api/export`) and `slm gdpr export` died or wrote junk on any
-  store that held embeddings (a vector is stored as binary), and the dashboard still
-  said "Export started". Both exports now write plain JSON, leave embeddings out
-  unless you ask for them (`--include-embeddings`, or `include_embeddings=true`,
-  written as base64), stream to disk instead of building the file in memory, and
-  send the file only when it is complete. A failed export is an error status and the
-  dashboard shows the error and the saved file's name and size. The full export now
-  also carries the audit records about you and any save still waiting, and lists what
-  it leaves out and why under `export_manifest`. The memory export's filter for
-  withheld summaries, which never applied, now does.
-- `slm doctor` has a **Failed saves** row that reads the same counts as
-  `slm ops status`: it warns when saves were dead-lettered (and fails at 50 or more),
-  and prints `slm ops list` and `slm ops resolve <id> --action retry|cancel`.
-- After `slm upgrade-hosts --host codex --apply`, `slm doctor` reports the refreshed
-  Codex version instead of the old copy in Codex's own plugin cache.
-- A refused write from this computer names `X-Install-Token` first (and `slm token
-  show`); `X-SLM-API-Key` is named first only for callers on other hosts.
+### Access control
+
+- **Company mode checks a role on every change and every data route.** Every
+  state-changing route asks for a role before the request body is read, so a
+  refusal is 401 or 403, never 422 or 500; with login required, every page of
+  data needs a signed-in user. While users are enrolled, the install token or an
+  API key alone no longer administers the workspace; use an admin account, or
+  `slm team` on the SLM computer (`slm team status`, `slm team policy
+  --require-login on|off`, so the owner can never be locked out).
+- **Skill approvals and maintenance are scoped to the workspace.** Skill
+  evolution keeps each workspace's skills, backups and quarantine apart; an
+  approval applies to the workspace it was made in, and installation-wide
+  settings need authority over every workspace.
+- **Roles and profiles apply to every picture, document, folder and feature
+  route.** Reading a file by path, connecting a folder and turning features on
+  need the owner or an admin, and SLM's own data folder can never be named.
+- **A connected web app cannot see or change what it may not read.** It cannot
+  update, delete, pin, replace or give feedback on a memory by id when it may not
+  see that memory; it is answered as if the memory did not exist. Pictures saved
+  before this release are held back from web apps until they are re-checked in
+  the background.
+- With `SLM_REQUIRE_CREDENTIALS=1` the dashboard key is no longer handed to other
+  programs on the computer; the dashboard asks for it once (`slm token show`).
+
+### Backup and restore
+
+- **A restore is all or nothing.** While it runs, the store is held so no daemon
+  can start and write part-way; everything the restore may change is copied
+  first, and a failure puts those files back. Only if that put-back also fails
+  does `slm backup restore-safety-copy` bring back the safety copy taken after
+  the service stopped. The dashboard and the command line say in plain words
+  what happened and what to run next.
+- **Backups are complete and honest.** Local backups copy picture and PDF
+  originals (never the upload-link database), a backup just taken is no longer
+  "overdue", and the dashboard export is one archive with every store, the
+  originals and a manifest.
+- **A damaged keyword index is repaired for good.** On SQLite 3.44.0 to 3.46.0,
+  `slm db repair --apply` turns off the setting that damages the index, rebuilds
+  it, checks it again and says plainly if it is still damaged. Your memories are
+  kept.
+
+### Dashboard
+
+- **Documents & Images** pane with progress, a drop zone, **Find a picture**,
+  connected folders and a **Choose folder** button that uses the computer's own
+  picker; **Bot messages** tab listing every bot by name with mute, rename and
+  retire; a **What's new** card that knows what is already on.
+- **Connected apps shows which apps are connected right now**: live MCP
+  processes by host with a count, a flag on apps still running older SLM code,
+  and a reconnect. Connect, doctor, repair and restart are buttons.
+- **Answer Check** tab, Settings → Answer check with a test for each option, and
+  the Memory health card described above.
+- Memory guards read real memory use on macOS (physical footprint); the
+  resident size under-reported up to 15 times on a busy Mac.
+
+### Pictures and documents
+
+- **Save screenshots, photos and PDFs and find them by describing them.** A
+  picture model runs on your computer (EmbeddingGemma 2), OCR reads the text
+  inside pictures, and each PDF page is indexed by its picture and its text. No
+  generative model looks at your files. Off by default; turn it on from the npm
+  installer or upgrader, the dashboard, or `slm media enable`. Pictures live in
+  their own database, so your existing memories and embeddings are never
+  changed. It needs a computer with 16 GB of memory and downloads about 1.5 GB the
+  first time; limits are in `docs/pictures-and-documents.md`.
+- `slm media status|disable|gc|repair`; `slm sources add` mirrors **folders and
+  Obsidian vaults** read-only (properties, links and canvases kept) and re-reads a
+  file as soon as it changes.
+- **Recall finds pictures and pages** beside text memories, shows them to local AI
+  apps, and counts a picture as evidence only above the model's own similarity
+  floor. The generated picture caption stays in the picture's metadata and never
+  becomes searchable words or facts.
+- **Erasing a memory erases its picture**, and a replaced picture or PDF is
+  erased for good at the end of its grace period.
+- Pictures and documents work on Linux 64-bit ARM, are refused with a plain
+  reason on computers under 16 GB, and the picture tools are stopped before they
+  pass their memory cap. The picture model embeds in small passes; its peak fell
+  from about 12 GB to under 4 GB on large batches.
+
+### Bots and web apps
+
+- **Bots that talk to each other.** Web apps connected through Web access
+  (ChatGPT, Claude on the web, Grok Bot, Muse, Composio) can join SLM-Mesh beside
+  the agents on your computer: see peers, send a named bot a message, wait for a
+  reply and read shared state. Each app needs two yeses: a box on the approval
+  page and a switch on the **Web access** row in Connected apps (or `slm remote
+  keys allow <key> mesh`). Messages reach a web app at least once, marked as a
+  repeat if it did not acknowledge them.
+- **Web apps save real files.** A connected app can ask for a one-time upload
+  link: you open it, pick the file, and it streams to your computer through the
+  connection gateway, which keeps no copy. A link belongs to the app that asked
+  for it, works once and expires in 10 minutes. ChatGPT can hand over an
+  attached file directly once its file hosts are on your allowed list.
+- **Frameworks and editors.** Google ADK, CrewAI and Semantic Kernel run through
+  an isolated engine bridge instead of failing to install next to SLM; Continue,
+  OpenCode, Antigravity, VS Code and Gemini CLI setup write each host's current
+  schema; and Claude Desktop on Windows is configured in `%APPDATA%\Claude`.
+- Every plugin, skill and setup text now teaches this release: a new `slm-media`
+  skill, and the mesh, web access, governance and bot skills cover upload links,
+  `mesh_wait` and the Connected apps switches. Hermes registers all 16 skills
+  and its four advisor tools load again.
+
+### Reliability
+
+- **Windows reads and writes SLM's own files as UTF-8**: the dashboard, the
+  answer-check settings and the backup reader no longer depend on the Windows
+  code page, so text outside it round-trips.
+- Services and ports belong to one install: `slm dashboard`, Health, Settings and
+  HTTP setup use the configured port, strict credential settings survive
+  auto-start, and a second install gets its own service name. A daemon started
+  with `python -m` publishes its ready record, so `stop` no longer waits 90
+  seconds.
+- `--sync` saves return after enrichment completes, the Python API shares the
+  daemon's embedder, failed session opens exit non-zero, and a queued embedding
+  upgrade says why it waits. A model refused for lack of memory says so instead
+  of "no vector", and an embedding pause explains itself in the model status.
+- `npm install` says plainly when the Python it found cannot work (an Intel Mac,
+  32-bit Windows, Windows on ARM, 32-bit Linux, Node under Rosetta) and how to
+  install a supported one; pip installs on 64-bit ARM Linux.
+- `slm doctor` makes at most one short health probe of the daemon, never starts
+  it, and prints a full report within a hard deadline instead of hanging.
 
 ## [4.1.24] — Connecting ChatGPT, Grok Bot, Muse and dots works the first time
 

@@ -45,7 +45,7 @@ In Mode A, core remember and recall make no model-provider call unless you turn 
 ```bash
 npm install -g superlocalmemory   # primary route (Node 18+, Python 3.12+); or: pipx install superlocalmemory
 slm setup                         # pick Mode A to keep everything on this machine
-slm connect cursor                # or codex, windsurf, zed, claude-desktop ... (11 MCP configs; Claude Code uses the plugin)
+slm connect cursor                # or codex, windsurf, zed, claude-desktop, jetbrains, opencode ... (Claude Code uses the plugin)
 ```
 
 npm installs SLM into a package-owned virtual environment. The other primary route is pip in a Python virtual environment you activate: `python3 -m venv .venv`, activate it, then `python -m pip install superlocalmemory`. Repository clone: `./scripts/install.sh install` (macOS, Linux) or `.\scripts\install.ps1 -Action Install` (Windows); see [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -132,7 +132,7 @@ SLM is part of Qualixar's AI Reliability Engineering work: agent memory that is 
 |---|---|---|
 | Editor plugins | Claude Code, Codex, VS Code / Copilot, Antigravity, Hermes. Each ships 16 skills, 4 sub-agents and session hooks; the npm package carries every plugin folder | [Plugins](docs/plugins.md), [IDE setup](docs/ide-setup.md), [Hermes](docs/hermes.md) |
 | Any other agent | The universal agent rules: one file that teaches any agent when to recall, what to save and how to keep memory clean. Paste it into `AGENTS.md`, `CLAUDE.md`, `.cursorrules` or the agent's system prompt | [Universal agent rules](plugin-src/rules/AGENTS.md) |
-| `slm connect <ide>` | Writes the MCP config for 11 editors and apps, including Cursor, Windsurf, Zed, JetBrains, Gemini CLI and Claude Desktop; `slm connect claude-code` points you to the plugin | [IDE setup](docs/ide-setup.md) |
+| `slm connect <ide>` | Writes the MCP config for Cursor, Windsurf, Zed, JetBrains, Gemini CLI, Claude Desktop, VS Code / Copilot, Antigravity, OpenCode, Continue and Codex CLI; `slm connect claude-code` points you to the plugin and Hermes installs as a native plugin | [IDE setup](docs/ide-setup.md) |
 | MCP | stdio (`slm mcp`) or HTTP at `http://127.0.0.1:8765/mcp/`; profiles from 9 to 109 tools | [MCP tools](docs/mcp-tools.md) |
 | Framework adapters | LangGraph, LangChain, LlamaIndex, CrewAI, AutoGen, Semantic Kernel, Microsoft Agent Framework, Google ADK, OpenAI Agents | [Framework adapters](docs/framework-adapters.md) |
 | Python SDK and HTTP API | `MemoryEngine` in your code; the local REST API | [API reference](docs/api-reference.md) |
@@ -397,7 +397,7 @@ Cite the governed-memory paper with [CITATION.cff](CITATION.cff) or GitHub's "Ci
 
 ## Documentation
 
-**Start:** [Getting started](docs/getting-started.md) · [IDE setup](docs/ide-setup.md) · [Plugins](docs/plugins.md) · [Linux install](docs/install-linux.md) · [Quick proof](docs/QUICK_PROOF.md) · [Migrating an old store](docs/migration-from-v2.md)
+**Start:** [Getting started](docs/getting-started.md) · [IDE setup](docs/ide-setup.md) · [Plugins](docs/plugins.md) · [Linux install](docs/install-linux.md) · [Quick proof](docs/QUICK_PROOF.md)
 
 **Use:** [Recall](docs/recall.md) · [Memory kinds](docs/memory-kinds.md) · [Answer check](docs/answer-check.md) · [Auto-memory](docs/auto-memory.md) · [Universal agent rules](plugin-src/rules/AGENTS.md) · [Web agent instructions](docs/web-agents/README.md) · [Shared memory](docs/shared-memory.md) · [Optimize](docs/optimize-overview.md)
 

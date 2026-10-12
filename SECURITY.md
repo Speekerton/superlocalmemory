@@ -6,9 +6,8 @@
 
 | Version | Supported |
 |:--------|:---------:|
-| 4.1.x | Yes (current line; fixes ship in the next 4.1 release, so upgrade to the latest) |
-| 4.0.x | No (no 4.0 release since 4.1.0 on 2026-08-23; upgrade to 4.1.x) |
-| 3.x | No (no 3.x release since 4.0.0 on 2026-08-08; upgrade to 4.1.x) |
+| 4.2.x | Yes (current line; fixes ship in the next 4.2 release, so upgrade to the latest) |
+| 4.1.x and older | No (upgrade to 4.2.x) |
 
 ### Reporting Vulnerabilities
 
@@ -29,7 +28,7 @@ We will respond within 48 hours and provide a fix timeline within 7 days.
 #### Mode A (Zero-LLM, local core)
 - The core store/recall path can run locally at the configured SLM data root
   (default: `~/.superlocalmemory/`)
-- The local core has no telemetry, analytics, or phone-home behavior
+- In Mode A the store and recall path sends no memory content off this computer, and SLM collects no usage analytics from it; the optional features listed below are the exceptions
 - Configured remote embedding, remote reranking, connectors, cloud backups, or
   model downloads can make network calls during store/recall or related jobs;
   assess those explicit choices before treating an installation as local-only
@@ -51,14 +50,14 @@ controls in addition to the session: `Origin` must match the daemon,
 (`src/superlocalmemory/server/routes/backup.py`, `server/origin.py`,
 `server/rbac_enforce.py`). See `docs/rbac-teams.md`.
 
-From 4.1.20 every read that returns memory needs READ on the workspace when
+Every read that returns memory needs READ on the workspace when
 login is required, including the dashboard search and memory chat (sent as
 POST) and the mesh read routes (`GET /mesh/*`). This computer's own agents
 (daemon capability) and mesh nodes (shared secret) are programs, not people,
 and keep reading without a user session; a mesh node reads only the workspace
 the node serves, whatever `?profile=` it asks for.
 
-#### Network access (4.1.20+)
+#### Network access
 
 **Another computer must sign in to read.** When the daemon is bound to a
 network address, a request from another computer is refused (`401
@@ -66,12 +65,11 @@ remote_auth_required`) before any route runs unless it presents the SLM API
 key (`X-SLM-API-Key`), a team-account session, the daemon capability, the mesh
 shared secret (mesh routes only), or comes from an address you allowlisted for
 LAN use (`SLM_REMOTE=1` with `SLM_MCP_ALLOWED_HOSTS`). This covers reads as
-well as writes, and the dashboard WebSocket. Up to 4.1.19 reads from the LAN
-needed no credentials. Only the dashboard page itself, its static files and
+well as writes, and the dashboard WebSocket. Only the dashboard page itself, its static files and
 `/health` are served without them; `/mcp` has its own check (below). The
 install token is not accepted from another computer.
 
-**Remote access (4.1.20+).** Off by default. When enabled with `slm remote
+**Remote access.** Off by default. When enabled with `slm remote
 enable`, SLM opens a second listener that only speaks TLS and only serves
 `/mcp` and `/health`. The dashboard, the HTTP API and the internal hook
 endpoints are never reachable through it, and every caller on it is treated as
@@ -89,8 +87,8 @@ anywhere in a call is refused, never rewritten; recall, remember and correction
 review are served for the key's profile without moving the host's active one;
 tools that only work on the active profile are refused while another profile is
 active (a profile switch waits for one that is running); remote saves stay
-`personal` to the key's profile. Keys made before 4.1.20 are bound to
-the profile active at upgrade and are refused until then. A key holder can read
+`personal` to the key's profile. A key without a profile binding is
+refused until it is bound. A key holder can read
 the full text of every memory in its profile, including paths written into
 those memories; other host details (data folder, home, account, environment,
 paths in errors, tracebacks and receipts) are withheld from remote answers.
@@ -122,10 +120,9 @@ still looks local; configure the proxy to send `X-Forwarded-For`. See
 - XSS protection via `escapeHtml()` in all UI rendering
 - Security headers: X-Frame-Options, CSP, X-Content-Type-Options
 - CORS whitelist with credential control
-- Credentials are stored as written (4.1.19+): SuperLocalMemory keeps the
-  keys and passwords you save so an agent can recall them. Releases up to
-  4.1.18 stripped them on save. Opt-in PII redaction at save
-  (`SLM_PII_REDACTION=1`) is unchanged.
+- Credentials are stored as written: SuperLocalMemory keeps the keys and
+  passwords you save so an agent can recall them. Opt-in PII redaction at save
+  (`SLM_PII_REDACTION=1`) removes personal data on every save path.
 - Credential redaction on egress: every request that can carry memory text
   off this machine goes through one gate (`core/outbound_http.py`), which
   redacts credentials for any host that is not loopback. That covers LLM
@@ -145,7 +142,7 @@ still looks local; configure the proxy to send `X-Forwarded-For`. See
 SuperLocalMemory loads local embedding, reranker, and compression models via
 Hugging Face. Two risks apply:
 
-- **`trust_remote_code`**: since v3.7.9, `trust_remote_code=True` is passed only
+- **`trust_remote_code`**: `trust_remote_code=True` is passed only
   for an internal allowlist of pinned models (the nomic-embed family, which
   requires custom modeling code). Any other model — including one swapped into
   config through a write path — loads with `trust_remote_code=False` and cannot

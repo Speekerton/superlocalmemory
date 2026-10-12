@@ -1,3 +1,5 @@
+> **Archived: describes an older release that is no longer supported.**
+
 # 3.8.7 Cozo store compatibility hotfix
 
 ## Incident

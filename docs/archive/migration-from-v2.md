@@ -1,3 +1,5 @@
+> **Archived: describes an older release that is no longer supported.**
+
 # Migration from V2
 
 Upgrade from SuperLocalMemory V2. Verify a backup before migrating; see the

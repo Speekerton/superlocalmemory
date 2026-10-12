@@ -163,7 +163,8 @@ import pytest
 #: one partial unique index, one new table).
 #: 58 as of WP-4b: +M056 recall indexes, M057 temporal version triggers,
 #: M058 covering fact index. All additive, with downgrade floor 51.
-_EXPECTED_SCHEMA_VERSION: int = 59
+#: 60 as of WP-19: +M060 memory description (two columns, ledger tables; floor 51).
+_EXPECTED_SCHEMA_VERSION: int = 60
 
 #: Total migrations in the MIGRATIONS + DEFERRED_MIGRATIONS catalogue.
 #: M001–M043 with M008 absent = 42 total.
@@ -185,7 +186,8 @@ _EXPECTED_SCHEMA_VERSION: int = 59
 # 53 as of 4.1.21: +M054_saved_views (eager, learning.db, additive).
 # 54 as of 4.1.25: +M055_learning_attribution (eager, learning.db, additive).
 # 57 as of WP-4b: +M056, M057, M058 (deferred, memory.db, additive).
-_EXPECTED_MIGRATION_COUNT: int = 58
+# 59 as of WP-19: +M060_memory_description (deferred, memory.db, additive).
+_EXPECTED_MIGRATION_COUNT: int = 59
 
 #: Path to an installed reference package's migrations directory, if one exists.
 #:

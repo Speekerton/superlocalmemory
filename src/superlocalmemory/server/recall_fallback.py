@@ -106,7 +106,8 @@ def _fetch_candidates(db, pid: str, query: str, pool_limit: int) -> list[dict]:
     # fact_id/profile_id columns. Unqualified, SQLite resolves the outer
     # reference against the subquery's OWN table and excludes every row once
     # any one fact in the profile was ever superseded.
-    current_clause = db.current_fact_clause("af")
+    # Degraded recall answers questions too: stored stubs are never answers.
+    current_clause = db.current_fact_clause("af", exclude_non_answer=True)
     rows = db.execute(
         "SELECT af.fact_id AS fact_id, af.content AS content, "
         "af.confidence AS confidence, af.memory_id, af.profile_id FROM atomic_facts AS af "

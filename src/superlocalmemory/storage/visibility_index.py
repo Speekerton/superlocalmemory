@@ -43,14 +43,28 @@ COLUMNS = ("profile_id", "fact_id", "scope", "archive_status", "quarantined")
 def ensure(conn: sqlite3.Connection) -> bool:
     """Create the index when the columns exist. True when it exists afterwards."""
     try:
-        have = {row[1] for row in conn.execute("PRAGMA table_info(atomic_facts)")}
-        if not set(COLUMNS) <= have:
-            return False
-        conn.execute(f"CREATE INDEX IF NOT EXISTS {NAME} ON atomic_facts ({', '.join(COLUMNS)})")
-        return True
+        return ensure_covering(conn, NAME, COLUMNS)
     except sqlite3.Error as exc:  # never fatal: reads stay correct, only slower
         logger.warning("visibility index not created: %s", exc)
         return False
 
 
-__all__ = ["COLUMNS", "NAME", "ensure"]
+def ensure_covering(conn: sqlite3.Connection, name: str, columns: tuple[str, ...],
+                    optional: tuple[str, ...] = ("non_answer",)) -> bool:
+    """Create *name* over *columns* (+ any *optional* present). True when it exists.
+
+    An index built before an optional column existed is rebuilt once, so the
+    visibility predicate stays answerable from the index alone.
+    """
+    have = {row[1] for row in conn.execute("PRAGMA table_info(atomic_facts)")}
+    if not set(columns) <= have:
+        return False
+    wanted = (*columns, *(c for c in optional if c in have))
+    current = tuple(row[2] for row in conn.execute(f"PRAGMA index_info({name})"))
+    if current and current != wanted:
+        conn.execute(f"DROP INDEX IF EXISTS {name}")
+    conn.execute(f"CREATE INDEX IF NOT EXISTS {name} ON atomic_facts ({', '.join(wanted)})")
+    return True
+
+
+__all__ = ["COLUMNS", "NAME", "ensure", "ensure_covering"]

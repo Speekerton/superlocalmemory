@@ -73,6 +73,7 @@ def build_kind_classifier(engine: Any) -> Any | None:
             mode=engine_mode(engine),
             judge_supplier=lambda: live_judge(engine),
             llm_available=llm_available(engine),
+            llm_supplier=lambda: getattr(engine, "_llm", None),
         )
     except Exception as exc:  # noqa: BLE001 — typing is optional, saving is not
         logger.warning("Memory kind suggestions unavailable (%s)", type(exc).__name__)

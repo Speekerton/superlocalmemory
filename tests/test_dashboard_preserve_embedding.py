@@ -495,7 +495,7 @@ class TestSetFullConfig:
 def test_settings_render_redacted_endpoints_as_hints_not_replacements():
     """A GET response containing only a redacted host must be safe to re-save."""
     root = Path(__file__).resolve().parents[1]
-    operations = (root / "src/superlocalmemory/ui/js/od-settings.js").read_text(encoding="utf-8")
+    operations = (root / "src/superlocalmemory/ui/js/od-settings-models.js").read_text(encoding="utf-8")
     automatic = (root / "src/superlocalmemory/ui/js/auto-settings.js").read_text(encoding="utf-8")
 
     assert "ep.value = d.endpoint" not in operations
@@ -506,7 +506,7 @@ def test_settings_render_redacted_endpoints_as_hints_not_replacements():
 
 def test_settings_omit_blank_api_keys_from_save_payloads():
     root = Path(__file__).resolve().parents[1]
-    operations = (root / "src/superlocalmemory/ui/js/od-settings.js").read_text(encoding="utf-8")
+    operations = (root / "src/superlocalmemory/ui/js/od-settings-models.js").read_text(encoding="utf-8")
     automatic = (root / "src/superlocalmemory/ui/js/auto-settings.js").read_text(encoding="utf-8")
 
     assert "if (k)  { body.api_key = k; }" in operations

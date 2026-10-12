@@ -62,13 +62,24 @@ def test_expand_uses_the_fetch_gate_and_accepts_a_memory_id(monkeypatch) -> None
     async def _call_profile(get_engine, profile_id):
         return "default", None
     monkeypatch.setattr(tools_core, "_call_profile", _call_profile)
-    monkeypatch.setattr(tools_core, "visible_facts", lambda db, pid, found: list(found))
-    tools_core.register_core_tools(server, lambda: engine)
+    from superlocalmemory.mcp import tools_expand
+
+    monkeypatch.setattr(tools_expand, "visible_facts", lambda db, pid, found: list(found))
+    tools_core.register_core_tools(server, lambda: engine)  # registers expand too
     out = asyncio.run(server.captured["expand"]("m1", depth=1))
     assert out["success"] and [r["fact_id"] for r in out["results"]] == ["f1", "f2"]
     assert asked[0] == (("m1",), "default")  # tried as a fact id first, in the profile
     hidden = SimpleNamespace(get_facts_by_ids=get_facts_by_ids, execute=lambda *a: [])
-    monkeypatch.setattr(tools_core, "visible_facts", lambda db, pid, found: [])
+    monkeypatch.setattr(tools_expand, "visible_facts", lambda db, pid, found: [])
     engine._db = hidden
     assert not asyncio.run(server.captured["expand"]("f1", depth=1))["success"]
     assert asyncio.run(server.captured["expand"]("f1", depth=5))["code"] == "INVALID_LAYERS"
+
+
+def test_expand_lives_in_its_own_module_and_is_admitted_as_a_recall() -> None:
+    import inspect
+
+    from superlocalmemory.mcp import tools_expand
+
+    assert "async def expand" not in inspect.getsource(tools_core)
+    assert "@admits(OperationKind.RECALL)" in inspect.getsource(tools_expand)

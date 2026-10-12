@@ -38,22 +38,22 @@ def _try_daemon_post(path: str, body: dict, timeout_s: float = 60.0) -> dict | N
     execution.
     """
     try:
-        from superlocalmemory.cli.daemon import _get_port, is_daemon_running
+        # Through daemon_request, the one place that verifies the daemon's
+        # identity and forwards the caller's own connection: its user session,
+        # its workspace binding and its agent name. A bare POST carried none of
+        # these, so the daemon ran maintenance against the shared default
+        # workspace instead of the caller's bound one.
+        from superlocalmemory.cli.daemon import DaemonRefused, daemon_request, is_daemon_running
         if not is_daemon_running():
             return None
-        import json as _json
-        import urllib.request as _urq
-        port = _get_port()
-        req = _urq.Request(
-            f"http://127.0.0.1:{port}{path}",
-            data=_json.dumps(body).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        from superlocalmemory.core import outbound_http
-        with outbound_http.urlopen(req, timeout=timeout_s) as resp:
-            raw = resp.read().decode() or "{}"
-        return _json.loads(raw)
+        try:
+            return daemon_request("POST", path, body, timeout_seconds=timeout_s)
+        except DaemonRefused:
+            # An answer, not an outage: running it locally would perform as the
+            # machine owner what the workspace just declined.
+            raise
+    except DaemonRefused:
+        raise
     except Exception as exc:
         logger.warning("daemon POST %s failed: %s", path, exc)
         return None

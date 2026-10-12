@@ -2184,6 +2184,7 @@ def cmd_recall(args: Namespace) -> None:
                     context_lines,
                     project_line,
                     result_line,
+                    status_line,
                     tag_line,
                 )
                 incomplete = incomplete_line(result)
@@ -2202,6 +2203,8 @@ def cmd_recall(args: Namespace) -> None:
                 logger.debug("recall completed via daemon (%.0fms)", elapsed_ms)
                 if result.get("abstention_note"):  # weak matches shown on request
                     print(result["abstention_note"])
+                if status_line(result):
+                    print(status_line(result))
                 for i, r in enumerate(result["results"], 1):
                     print(result_line(i, r))
                     for line in context_lines(r):

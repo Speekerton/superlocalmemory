@@ -24,6 +24,9 @@ def test_search_tiers_put_supported_rows_first_and_cap_related() -> None:
     items, info = tools_core._search_tiers("zxqv", [], filtered=False)
     assert items == [] and info["abstention_note"] == tools_core.SEARCH_NO_MATCH
     assert len(tools_core._search_tiers("q", rows, filtered=True)[0]) == 3
+    # Keyword search needs no model, so it is never warming up; the fields are
+    # there so every recall door has the same envelope.
+    assert info["warming_up"] is False and info["status_note"] == ""
 
 
 class _Server:

@@ -13,7 +13,7 @@ by a search that did not look everywhere. These lines say what was skipped.
 from __future__ import annotations
 
 __all__ = ["empty_result_line", "incomplete_line", "project_line", "remember_receipt_text",
-           "tag_line"]
+           "status_line", "tag_line"]
 
 
 def incomplete_line(result: dict) -> str:
@@ -80,8 +80,18 @@ def context_lines(item: dict) -> list[str]:
     return out
 
 
+def status_line(result: dict) -> str:
+    """The warming-up note, when the recall ran before SLM was ready and no
+    other line printed says so already."""
+    note = str(result.get("status_note") or "") if result.get("warming_up") else ""
+    return "" if note == str(result.get("abstention_note") or "") else note
+
+
 def empty_result_line(result: dict) -> str:
-    """What to print when no memory came back."""
+    """What to print when no memory came back. While warming up that is the
+    warming note, never "That isn't in SuperLocalMemory."."""
+    if result.get("warming_up") and result.get("status_note"):
+        return str(result["status_note"])
     if incomplete_line(result):
         return "Nothing found yet."
     if result.get("abstention_note"):

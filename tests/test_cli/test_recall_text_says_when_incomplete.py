@@ -72,3 +72,17 @@ def test_the_remember_receipt_says_which_searches_reach_it_yet() -> None:
     done = remember_receipt_text(
         {"materialization_state": "complete", "count": 2, "operation_id": "op"})
     assert done == "Complete ✓ 2 facts (operation=op)."
+
+
+def test_while_warming_up_the_cli_prints_the_warming_note_never_not_in_memory() -> None:
+    from superlocalmemory.cli.recall_text import empty_result_line, status_line
+    from superlocalmemory.retrieval.support_tiers import WARMING_NOTE
+
+    warming = {"results": [], "warming_up": True, "status_note": WARMING_NOTE,
+               "incomplete_channels": ["semantic"], "channel_status": {"semantic": "warming"},
+               "abstention_note": WARMING_NOTE}
+    assert empty_result_line(warming) == WARMING_NOTE
+    assert status_line(warming) == ""  # the abstention note already says it
+    assert status_line({"warming_up": True, "status_note": WARMING_NOTE,
+                        "abstention_note": ""}) == WARMING_NOTE
+    assert status_line({"warming_up": False}) == ""

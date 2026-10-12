@@ -130,9 +130,19 @@ _ADDS_ONLY_ANNOTATIONS = ToolAnnotations(
 )
 
 
+#: Keyword search needs no model: never warming up. Present so every recall
+#: door carries the same envelope (warming_up, status_note).
+_SEARCH_READY = {"warming_up": False, "status_note": ""}
+
+
 def _search_tiers(query: str, items: list[dict], *, filtered: bool) -> tuple[list[dict], dict]:
     """``search``'s tiers: rows the question's words support first, then at most
     three related ones; an explicit kind or tag filter keeps every row."""
+    rows, info = _tiered_rows(query, items, filtered=filtered)
+    return rows, {**info, **_SEARCH_READY}
+
+
+def _tiered_rows(query: str, items: list[dict], *, filtered: bool) -> tuple[list[dict], dict]:
     from superlocalmemory.retrieval import support_tiers as st
     from superlocalmemory.retrieval.support_gate import lexical_support
 

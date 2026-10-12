@@ -1,4 +1,4 @@
-**SuperLocalMemory V4.0.5**
+**SuperLocalMemory V4**
 
 * [Home](Home)
 
@@ -11,9 +11,15 @@
 * [Host Integration Upgrades](Host-Upgrades)
 * [Migration from V2](Migration-from-V2)
 
+**Using it**
+* [Pictures and Documents](Pictures-and-Documents)
+* [Connect Web Apps](Connect-Web-Apps)
+* [Backup and Restore](Backup-and-Restore)
+* [Troubleshooting](Troubleshooting)
+
 **Reference**
 * [CLI Commands](CLI-Reference)
-* [MCP Tools](MCP-Tools) — 101 whole / 66 power / 54 full / 38 code / 18 core
+* [MCP Tools](MCP-Tools) — 109 whole / 69 power / 57 full / 38 code / 18 core
 * [Retrieval Score Contract](Retrieval-Score-Contract)
 * [Answer Check](Answer-Check)
 * [Auto-Memory](Auto-Memory)

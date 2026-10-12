@@ -1,11 +1,11 @@
-# Installation — V4.0.5
+# Installation
 
 SuperLocalMemory V4 has two primary paths: an npm global CLI with a
 package-owned Python environment, and a Python CLI + SDK inside an activated
 virtual environment. Repository-clone installers share the same release
 identity but have different ownership and verification contracts.
 
-> **Current release:** **V4.0.5** (`2026-08-16`, see [CHANGELOG](https://github.com/qualixar/superlocalmemory/blob/main/CHANGELOG.md)). All commands below describe the installed V4.0.5 artifact.
+> Run `slm --version` to see what you have installed; the [CHANGELOG](https://github.com/qualixar/superlocalmemory/blob/main/CHANGELOG.md) lists what changed in each release.
 
 ## Prerequisites
 
@@ -145,7 +145,7 @@ bootstrap Homebrew, uv, pipx, or Python.
 
 > Intel Mac is **not supported** in V4 (pinned `cryptography==50.0.0` has no Intel macOS wheel).
 
-### 64-bit Linux (Ubuntu/Debian/Fedora — supported)
+### 64-bit Linux, x86_64 and ARM64 (Ubuntu/Debian/Fedora — supported)
 
 ```bash
 npm install -g superlocalmemory
@@ -191,9 +191,9 @@ slm connect        # Configure all detected IDEs
 slm connect --list # See which IDEs are configured
 ```
 
-See [IDE Setup](IDE-Setup) for per-IDE instructions. Current MCP tool counts: `core` 18 / `code` 38 / `full` 54 / `power` 66 / `mesh` 8 / **`whole` 101** (see [MCP Tools](MCP-Tools)).
+See [IDE Setup](IDE-Setup) for per-IDE instructions. Current MCP tool counts: `core` 18 / `code` 38 / `full` 57 / `power` 69 / `mesh` 9 / **`whole` 109** (see [MCP Tools](MCP-Tools)).
 
-> **V4.0.5 ranking migration:** adaptive ranking is now opt-in. Leave it off
+> **Adaptive ranking is opt-in.** Leave it off
 > for the governed default, or set `SLM_RANKING=v1`, `v2`, or `v2-ensemble`
 > deliberately. Normal memory retrieval remains enabled either way.
 
@@ -241,6 +241,9 @@ See [Migration from V2](Migration-from-V2) for the full V2→V3 guide.
 ### `cryptography` install fails on Intel Mac or Win32
 - Expected: V4's pinned `cryptography==50.0.0` has no wheel for those architectures — packaging metadata does not hard-block them, but install will fail where `cryptography==50.0.0` wheels are absent. Use Apple Silicon macOS, 64-bit Windows, or 64-bit Linux.
 
+### `npm install` says the Python it found cannot work
+- The installer checks the Python it finds and says plainly when it cannot be used: an Intel build on a Mac, 32-bit on Windows, Windows on ARM, 32-bit Linux, or a Node running under Rosetta. Install a supported 64-bit Python (3.12 to 3.14) and run the repair command it prints, `npm rebuild -g superlocalmemory`.
+
 ### Embedding model fails to download
 - Check internet connection
 - Try manual warmup: `slm warmup`
@@ -257,7 +260,7 @@ See [Migration from V2](Migration-from-V2) for the full V2→V3 guide.
 - [Quick Start Tutorial](Quick-Start-Tutorial) — Your first memory in 2 minutes
 - [Modes Explained](Modes-Explained) — Choose between A (zero-cloud), B (local Ollama), C (full power)
 - [CLI Reference](CLI-Reference) — Current command guidance and installed-help contract (`slm --help` is the source of truth)
-- [MCP Tools](MCP-Tools) — current profile counts and the whole 101 distinction
+- [MCP Tools](MCP-Tools) — current profile counts and the whole 109 distinction
 
 ---
 *Part of [Qualixar](https://qualixar.com) | Created by [Varun Pratap Bhardwaj](https://varunpratap.com)*

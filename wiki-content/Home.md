@@ -1,6 +1,6 @@
-# SuperLocalMemory V4.0.5
+# SuperLocalMemory V4
 
-> **V4.0.5 — governed local-first agent memory control plane built on the V3.8 foundation:
+> **V4 — governed local-first agent memory control plane built on the V3.8 foundation:
 > local-first agent memory, 5-channel retrieval, cache, compression, trusted-peer
 > coordination, team workspaces, roles, and governance controls.**
 
@@ -11,9 +11,9 @@ canonical local store. The product also includes an explicit Scale Engine for
 CozoDB graph and LanceDB vector projections, a cache/compression module, and
 **SLM-Mesh** coordination controls.
 
-> **V4.0.5 is the current release** (see [CHANGELOG](https://github.com/qualixar/superlocalmemory/blob/main/CHANGELOG.md) and `src/superlocalmemory/__init__.py`). Every Current page in this Wiki describes V4. Historical V3 research pages are labeled as historical and carried forward where still accurate.
+> Every Current page in this Wiki describes V4; the [CHANGELOG](https://github.com/qualixar/superlocalmemory/blob/main/CHANGELOG.md) lists what changed in each release, and `slm --version` shows what you have installed. Historical V3 research pages are labeled as historical and carried forward where still accurate.
 
-## What changed in V4.0.5
+## Reviewed corrections and host upgrades (V4.0.4 and V4.0.5)
 
 V4.0.5 adds reviewed corrections. An update creates an immutable successor and
 profile-scoped proposal; current recall keeps it out until an authenticated
@@ -50,6 +50,18 @@ Off by default; choose **On this Mac** (private, on-device) or **Online
 with Jev** (hosted, your own key) from **Settings → Answer check**. Nothing
 is ever hidden because of it — the signal is additive. See
 [[Answer Check]].
+
+## What you can do now
+
+Pictures and PDFs can be saved and found by describing them, and a picture model
+runs on your computer ([[Pictures and Documents]]). Folders and Obsidian vaults
+can be connected as read-only sources (`slm sources add`). AI apps on the
+internet, such as ChatGPT or Claude on the web, can use the same memory through
+Web access, and can message other bots through SLM-Mesh ([[Connect Web Apps]]).
+`slm outcome` tells SLM whether recalled memories helped, which is what trains
+the ranking. Erasure now reports exactly what it removed and what remains, and
+`slm doctor` shows failed saves and how to retry them ([[Backup and Restore]],
+[[Troubleshooting]]).
 
 ## The product in one view
 
@@ -89,6 +101,8 @@ optional enrichers and retrieval channels are dependency- and mode-aware.
 | Optimize | Exact cache, tag invalidation, safe compression, opt-in lossy prose compression and CCR originals | Only the proxy can intercept a primary provider turn. |
 | **SLM-Mesh** | Authenticated peer messages, locks, inbox/outbox, queues and optional discovery | Mesh coordinates peers; it is not a replicated distributed-memory database. |
 | Governance | Provenance, audit, retention, policy, export/erasure, health and diagnostics | Deployment configuration determines compliance posture. |
+| Pictures and documents | Opt-in. Pictures and PDF pages are found by describing them; OCR reads text inside pictures; a picture model runs on your computer | Off until you turn it on; needs 16 GB of memory and about 1.5 GB of downloads. See [[Pictures and Documents]]. |
+| Web access | Optional. ChatGPT, Claude on the web, Composio and similar apps recall from and (if you allow it) save to your memory | Your database stays on your computer; the app asks your computer a question. See [[Connect Web Apps]]. |
 | Integrations | CLI, Python SDK, MCP, Claude plugin, Codex add-on, documented IDE configs, Gmail/Calendar/transcript adapters, nine framework adapters (LangGraph, Semantic Kernel, Microsoft Agent Framework, LangChain, LlamaIndex, CrewAI, AutoGen, Google ADK, OpenAI Agents) | Connectors and hooks are opt-in and have their own data paths. |
 
 ## V4 Reliability Contract — Verified 2,200/2,200 (Scoped)
@@ -159,12 +173,12 @@ through the SLM V4 ingestion contract. See [[Framework Adapters]].
 
 **MCP profile update** — profiles include bounded-loop evidence, reviewed
 correction lifecycle, and memory-kind management tools. Current counts:
-`core` 18 / `code` 38 / `full` 54 / `power` 66 / `mesh` 8 /
-**`whole` 101** (all registered). See [[MCP Tools]].
+`core` 18 / `code` 38 / `full` 57 / `power` 69 / `mesh` 9 /
+**`whole` 109** (all registered). See [[MCP Tools]].
 
 ## Dashboard workspaces
 
-The local dashboard (`slm dashboard`, default `http://localhost:8765`) exposes Dashboard, Brain, Knowledge Graph, Memories, Health, Governance (Access & Users / Data Privacy / Audit / Lifecycle & Trust), Entity Explorer, Skill Evolution, Mesh Peers, MCP & Tools, Cloud Backup, Settings, and Optimize workspaces. Workspace and tab counts are illustrative — verify the installed dashboard. Use `slm health`, `slm doctor`, and `slm trace` for operational verification rather than treating a visual status or tab count as a contract.
+The local dashboard (`slm dashboard`, default `http://localhost:8765`) exposes Dashboard, Brain, Knowledge Graph, Memories, Health, Governance (Access & Users / Data Privacy / Audit / Lifecycle & Trust), Entity Explorer, Skill Evolution, Mesh Peers, Bot messages, Connected apps, Documents & Images, MCP & Tools, Cloud Backup, Settings, and Optimize workspaces. Workspace and tab counts are illustrative — verify the installed dashboard. Use `slm health`, `slm doctor`, and `slm trace` for operational verification rather than treating a visual status or tab count as a contract.
 
 ## Quick Start
 
@@ -185,4 +199,4 @@ slm setup
 
 Then configure the client you intend to use and verify it with `slm doctor`. See [[Installation]], [[Getting Started]], and [[Quick Start Tutorial]].
 
-> **Platform boundary (V4):** **Apple Silicon macOS, 64-bit Windows, 64-bit Linux.** Intel Mac and 32-bit Windows are not supported — packaging metadata (`package.json` `os: [darwin, linux, win32]`) does not hard-block architectures; install will fail where `cryptography==50.0.0` wheels are absent (see `pyproject.toml`).
+> **Platform boundary (V4):** **Apple Silicon macOS, 64-bit Windows, 64-bit Linux (x86_64 and ARM64).** Intel Mac and 32-bit Windows are not supported — packaging metadata (`package.json` `os: [darwin, linux, win32]`) does not hard-block architectures; install will fail where `cryptography==50.0.0` wheels are absent (see `pyproject.toml`).

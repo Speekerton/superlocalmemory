@@ -1,4 +1,4 @@
-# MCP Tools — V4.1.21 (109 whole)
+# MCP Tools (109 whole)
 
 SuperLocalMemory exposes profile-selected tools and resources through the Model
 Context Protocol (MCP). The installed profile registry (`src/superlocalmemory/mcp/profiles.py` and `src/superlocalmemory/mcp/server.py`) is the source of truth
@@ -130,7 +130,7 @@ boundary.
 
 > **Hard constraint:** Surfaces B and C cache results you explicitly route through SLM — not the Claude conversation turn. Full-turn caching requires Surface A (proxy).
 
-## MCP Profiles (V4.1.21 — whole is 109)
+## MCP Profiles (whole is 109)
 
 A profile is a named, fixed subset of tools exposed to the connecting client.
 Set the active profile via the `SLM_MCP_PROFILE` environment variable (or `SLM_MCP_ALL_TOOLS`/`SLM_MCP_TOOLS` overrides — see `src/superlocalmemory/mcp/server.py` precedence: `ALL > TOOLS > PROFILE > default`). `whole` exposes the raw server with all registered tools; `switch_profile` tool switches the active workspace profile (separate concept).

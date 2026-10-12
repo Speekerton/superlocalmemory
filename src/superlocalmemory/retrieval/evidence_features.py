@@ -33,6 +33,16 @@ THE FEATURES (per result)
 ``bm25_raw``          the BM25 score before the channel's saturating transform
 ``keyword_coverage``  share of the question's content words found in the memory
 ``entity_hit``        the question names an entity the memory carries
+``rare_miss``         share of the question's rare terms (identifiers, versions,
+                      words no dictionary knows) the memory does NOT contain:
+                      "v0.3.4 snazzle" against the v0.3.4 note misses half
+
+Question level (``query_evidence``): the nonsense-phrase flag, whether the
+question is in Latin script (the cross-encoder is English-only and gets no vote
+otherwise), how many rare terms it has, and ``nonsense_similarity`` -- its mean
+cosine to the hub probes made of ordinary words with no meaning
+(``hub_baseline.query_profile``), so "purple elephants juggling quantum
+bananas" reads as what it is.
 
 Pure functions of values recall already has: no I/O, no model call.
 """
@@ -40,13 +50,14 @@ Pure functions of values recall already has: no I/O, no model call.
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 import numpy as np
 
 #: Bump when a feature's definition changes; logged features name it.
-FEATURES_VERSION = "evidence-features-v1"
+FEATURES_VERSION = "evidence-features-v2"
 
 # The words a question is made of but that say nothing about its subject.
 _QUESTION_WORDS = frozenset({
@@ -64,6 +75,11 @@ _QUESTION_WORDS = frozenset({
 # (ensure_daemon, v0.3.4, asdk_app_6ac9e8, OPS-4471) as one term.
 _TERM_RE = re.compile(r"\w+(?:[._:/-]\w+)*", re.UNICODE)
 _BM25_SATURATION = 5.0  # bm25_channel._BM25_SATURATION; inverted below
+# A term with a digit or an underscore is an identifier, a version or a code.
+_IDENTIFIER_RE = re.compile(r"[0-9_]")
+_PIECE_RE = re.compile(r"[._:/-]")
+#: Pieces shorter than this ("ci", "db", "id") are never judged rare.
+_RARE_MIN_LEN = 3
 
 
 def query_terms(text: str) -> list[str]:
@@ -103,6 +119,48 @@ def entity_hit(query: str, entities: Iterable[str]) -> bool:
     return False
 
 
+def is_latin(text: str) -> bool:
+    """True when every letter in ``text`` is Latin script (digits and punctuation
+    do not count, so an identifier is Latin). The cross-encoder reads English;
+    on Chinese, Hindi or Japanese its score is noise and gets no vote."""
+    for ch in text:
+        if ch.isalpha() and not (ch.isascii() or "LATIN" in unicodedata.name(ch, "")):
+            return False
+    return True
+
+
+def _known_word(piece: str, vocab: frozenset[str] | None) -> bool:
+    from superlocalmemory.encoding.common_words import is_common_word
+
+    return (vocab is not None and piece in vocab) or is_common_word(piece)
+
+
+def rare_terms(terms: Sequence[str], vocab: frozenset[str] | None) -> list[str]:
+    """The question terms that name something specific: identifiers, versions
+    and codes (a digit or underscore), and plain-ASCII words that neither the
+    shipped English word list nor the model's vocabulary knows ("kestrel",
+    "snazzle"). Terms with other letters ("läuft") are not judged."""
+    out: list[str] = []
+    for term in terms:
+        if _IDENTIFIER_RE.search(term):
+            out.append(term)
+        elif term.isascii() and any(
+                len(p) >= _RARE_MIN_LEN and not _known_word(p, vocab)
+                for p in _PIECE_RE.split(term) if p):
+            out.append(term)
+    return out
+
+
+def rare_miss(rare: Sequence[str], content: str) -> float:
+    """Share of ``rare`` the memory does not contain as a whole term (0.0 when
+    the question has none). A question that names an identifier is answered
+    only by a memory that carries it."""
+    if not rare:
+        return 0.0
+    have = _content_terms(content)
+    return sum(1 for t in rare if t not in have) / len(rare)
+
+
 def cosine(a: Sequence[float] | None, b: Sequence[float] | None) -> float | None:
     if a is None or b is None or len(a) == 0 or len(a) != len(b):
         return None
@@ -134,6 +192,7 @@ def build(
     ce_batch_norm: float | None = None,
     hub_baseline: float | None = None,
     hub_baseline_mean: float | None = None,
+    rare: Sequence[str] = (),
 ) -> dict:
     """Every evidence feature for one result, as plain JSON-safe values."""
     cs = channel_scores or {}
@@ -141,6 +200,7 @@ def build(
     entities = [*(getattr(fact, "canonical_entities", None) or ()),
                 *(getattr(fact, "entities", None) or ())]
     raw_bm25 = bm25_raw(cs.get("bm25")) if "bm25" in cs else 0.0
+    content = getattr(fact, "content", "") or ""
     return {
         "cosine": _r(cos),
         "hub_baseline": _r(hub_baseline),
@@ -150,24 +210,39 @@ def build(
         "ce_raw": _r(ce_raw),
         "ce_batch_norm": _r(ce_batch_norm),
         "bm25_raw": _r(raw_bm25),
-        "keyword_coverage": _r(keyword_coverage(terms, getattr(fact, "content", "") or "")),
+        "keyword_coverage": _r(keyword_coverage(terms, content)),
         "entity_hit": entity_hit(query, entities),
+        "rare_miss": _r(rare_miss(rare, content)),
     }
 
 
-def query_evidence(query: str, terms: Sequence[str] | None = None) -> dict:
-    """Question-level evidence: the unused nonsense check, and its term count."""
-    from superlocalmemory.retrieval.query_lexicon import oov_phrase, vocabulary
+def model_vocabulary() -> frozenset[str] | None:
+    """The embedding model's word list when it is cached; None otherwise."""
+    from superlocalmemory.retrieval.query_lexicon import vocabulary
 
     try:
-        vocab = vocabulary()
+        return vocabulary()
     except Exception:  # never let a cache read break recall
-        vocab = None
+        return None
+
+
+def query_evidence(query: str, terms: Sequence[str] | None = None, *,
+                   rare: Sequence[str] | None = None,
+                   nonsense_similarity: float | None = None) -> dict:
+    """Question-level evidence (see the module docstring)."""
+    from superlocalmemory.retrieval.query_lexicon import oov_phrase
+
+    vocab = model_vocabulary()
+    terms = query_terms(query) if terms is None else terms
+    rare = rare_terms(terms, vocab) if rare is None else rare
     return {
         "features_version": FEATURES_VERSION,
         "oov_phrase": bool(oov_phrase(query, vocab)),
         "vocabulary_available": vocab is not None,
-        "query_terms": len(query_terms(query) if terms is None else terms),
+        "query_terms": len(terms),
+        "rare_terms": len(rare),
+        "latin_script": is_latin(query),
+        "nonsense_similarity": _r(nonsense_similarity),
     }
 
 

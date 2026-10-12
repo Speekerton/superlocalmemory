@@ -56,6 +56,10 @@ TABLE = "fact_hub_baseline"
 PROBE_SET_VERSION = "hub-probes-v1"
 TOP_K = 16
 BATCH = 256
+#: Rows of ``probe_texts()`` that are ordinary words with no meaning ("crimson
+#: lantern whistles the pebble"). A question's mean cosine to them is how much
+#: it reads like that (``query_profile``); fixed by the probe-set version.
+NONSENSE_SENTENCES = slice(32, 64)
 
 _SYLLABLES = ("ka", "lo", "mi", "nu", "pe", "ra", "si", "to", "vu", "ze", "bri",
               "dro", "fla", "gri", "kle", "mor", "pli", "sna", "tro", "wex")
@@ -138,11 +142,18 @@ class ProbeBank:
         self._lock = threading.Lock()
         self._cache: dict[tuple[str, str], np.ndarray] = {}
 
+    def cached(self, space: str | None,
+               version: str = PROBE_SET_VERSION) -> np.ndarray | None:
+        """The probe vectors when already embedded in this process; never embeds
+        (recall reads this, so it can never wait on the model for probes)."""
+        if space is None:
+            return None
+        with self._lock:
+            return self._cache.get((space, version))
+
     def matrix(self, embedder: Any, space: str,
                version: str = PROBE_SET_VERSION) -> np.ndarray | None:
-        key = (space, version)
-        with self._lock:
-            cached = self._cache.get(key)
+        cached = self.cached(space, version)
         if cached is not None:
             return cached
         texts = list(probe_texts(version))
@@ -151,11 +162,25 @@ class ProbeBank:
             return None
         m = _unit_rows(vectors)
         with self._lock:
-            self._cache[key] = m
+            self._cache[(space, version)] = m
         return m
 
 
 PROBES = ProbeBank()
+
+
+def warm_probes(embedder: Any) -> bool:
+    """Embed the probes for ``embedder``'s space now, once per process, so recall
+    can read them (``ProbeBank.cached``). The daemon calls this at boot, the
+    background pass and every save get it for free. Never raises."""
+    space = space_of(embedder) if embedder is not None else None
+    if space is None:
+        return False
+    try:
+        return PROBES.matrix(embedder, space) is not None
+    except Exception as exc:  # the model may be gone; recall then imputes
+        logger.debug("hub probes not embedded: %s", exc)
+        return False
 
 
 def baselines(vectors: Sequence[Sequence[float]], probes: np.ndarray,
@@ -167,6 +192,33 @@ def baselines(vectors: Sequence[Sequence[float]], probes: np.ndarray,
     k = max(1, min(top_k, sims.shape[1]))
     top = np.sort(sims, axis=1)[:, -k:]
     return [(float(a), float(b)) for a, b in zip(sims.mean(axis=1), top.mean(axis=1))]
+
+
+def _unit(vector: Sequence[float] | None, probes: np.ndarray | None) -> np.ndarray | None:
+    if vector is None or probes is None or len(vector) != probes.shape[1]:
+        return None
+    v = np.asarray(vector, dtype=np.float32)
+    norm = float(np.linalg.norm(v))
+    return None if norm == 0.0 else v / norm
+
+
+def baseline_of(vector: Sequence[float] | None, probes: np.ndarray | None,
+                top_k: int = TOP_K) -> tuple[float, float] | None:
+    """``(top-k mean, mean)`` for one stored vector, the order ``read`` uses: a
+    memory the background pass has not reached yet is measured on the spot."""
+    unit = _unit(vector, probes)
+    if unit is None:
+        return None
+    (mean, top), = baselines([unit], probes, top_k)
+    return top, mean
+
+
+def query_profile(vector: Sequence[float] | None, probes: np.ndarray | None) -> float | None:
+    """A question's mean cosine to the meaningless-sentence probes, or None."""
+    unit = _unit(vector, probes)
+    if unit is None:
+        return None
+    return float((probes[NONSENSE_SENTENCES] @ unit).mean())
 
 
 # -- storage --------------------------------------------------------------------

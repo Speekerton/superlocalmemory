@@ -142,9 +142,11 @@ def _backfill(engine) -> dict:
         from superlocalmemory.retrieval.hub_baseline import Backfill
     except ImportError:
         return {"available": False}
+    from superlocalmemory.retrieval.hub_baseline import warm_probes
+
     t0 = time.monotonic()
     written = Backfill(engine._db, engine._embedder).run_until_done()
-    return {"available": True, "written": written,
+    return {"available": True, "written": written, "probes": warm_probes(engine._embedder),
             "seconds": round(time.monotonic() - t0, 2)}
 
 

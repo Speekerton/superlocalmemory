@@ -762,40 +762,37 @@ class RetrievalEngine:
         return hub_baseline.read(
             self._db, fact_ids, hub_baseline.space_of(getattr(self, "_embedder", None)))
 
+    def _probe_matrix(self) -> Any:
+        """Hub probe vectors when this process has embedded them; never embeds."""
+        from superlocalmemory.retrieval import hub_baseline
+
+        return hub_baseline.PROBES.cached(
+            hub_baseline.space_of(getattr(self, "_embedder", None)))
+
     def _attach_evidence(
         self, query: str, results: list[RetrievalResult],
         ce_scores: dict[str, tuple[float, float]], profile_id: str,
     ) -> dict:
         """Record each result's evidence features; return the question's own.
 
-        Measurement only (``retrieval.evidence_features``): no score, order or
-        abstention changes here. Fail-open -- a feature that cannot be computed
-        is recorded as missing, and an error never reaches the caller.
+        No score or order changes here (``retrieval.evidence_attach``). Fail-open
+        -- a feature that cannot be computed is recorded as missing, and an
+        error never reaches the caller.
         """
-        from superlocalmemory.retrieval import evidence_features as ef
+        from superlocalmemory.retrieval import evidence_attach
 
         try:
-            terms = ef.query_terms(query)
-            q_evidence = ef.query_evidence(query, terms)
+            probes = self._probe_matrix()
         except Exception as exc:  # pragma: no cover - defensive
-            logger.debug("query evidence: %s", exc)
-            return {}
-        if not results:
-            return q_evidence
-        try:
-            vector = getattr(self, "_query_embedding_cache", {}).get(query)
-            baselines = self._hub_baselines([r.fact.fact_id for r in results], profile_id)
-            for r in results:
-                raw, norm = ce_scores.get(r.fact.fact_id, (None, None))
-                topk, mean = baselines.get(r.fact.fact_id, (None, None))
-                r.evidence = ef.build(
-                    query=query, terms=terms, query_vector=vector, fact=r.fact,
-                    channel_scores=r.channel_scores, ce_raw=raw, ce_batch_norm=norm,
-                    hub_baseline=topk, hub_baseline_mean=mean,
-                )
-        except Exception as exc:
-            logger.debug("result evidence: %s", exc)
-        return q_evidence
+            logger.debug("hub probes: %s", exc)
+            probes = None
+        return evidence_attach.attach(
+            query, results,
+            query_vector=getattr(self, "_query_embedding_cache", {}).get(query),
+            ce_scores=ce_scores,
+            stored_baselines=lambda ids: self._hub_baselines(ids, profile_id),
+            probes=probes,
+        )
 
     # -- Community context (Wave Q2b) --------------------------------------
 

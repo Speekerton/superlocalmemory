@@ -121,6 +121,9 @@ def _recalls(engine: Any, profile_runtime: Any,
         early.join()  # started by ``begin``; bounded by the build itself
     else:
         entity_graph_warmup.warm(engine, profile_id)
+    # The answer-support gate reads the hub probe vectors; embed them now rather
+    # than leave the first recalls to impute (retrieval/hub_baseline).
+    warm_hub_probes(engine)
     _set_phase("recalls")
     for query in WARMUP_QUERIES:
         with profile_runtime.operation_nowait() as snapshot:
@@ -141,6 +144,13 @@ def _recalls(engine: Any, profile_runtime: Any,
                 engine.recall(FULL_PATH_QUERY, limit=5, fast=False)
     except Exception as exc:  # noqa: BLE001 — best-effort; never blocks readiness
         logger.debug("Full-path warmup skipped (non-fatal): %s", exc)
+
+
+def warm_hub_probes(engine: Any) -> bool:
+    """Embed the hub probes for the engine's model (never raises)."""
+    from superlocalmemory.retrieval import hub_baseline
+
+    return hub_baseline.warm_probes(getattr(engine, "_embedder", None))
 
 
 def warm_answer_check(engine: Any) -> bool:
@@ -164,4 +174,4 @@ def warm_answer_check(engine: Any) -> bool:
 
 
 __all__ = ["FULL_PATH_QUERY", "WARMUP_QUERIES", "run_warmup_recalls", "warm_answer_check",
-           "begin", "warmup_status"]
+           "warm_hub_probes", "begin", "warmup_status"]

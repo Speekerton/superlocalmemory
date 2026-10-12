@@ -11,7 +11,8 @@ def daemon_browser_origins(port: int) -> tuple[str, ...]:
     """The HTTP browser origins owned by this listener (never the redirect)."""
     if not 1 <= port <= 65535 or port == 8767:
         return ()
-    return (f"http://localhost:{port}", f"http://127.0.0.1:{port}")
+    return (f"http://localhost:{port}", f"http://127.0.0.1:{port}",
+            f"http://[::1]:{port}")
 
 
 def _origin_matches_request_host(host: str, host_header: str, port: int) -> bool:

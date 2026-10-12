@@ -45,7 +45,6 @@
   function render(data) {
     if (!mounted || !mounted.isConnected) return;
     mounted.replaceChildren();
-    mounted.appendChild(el('h3', 'Memory health'));
     var run = data.enrichment || {};
     var status = run.status || 'waiting_for_idle';
     mounted.appendChild(el('p', 'Improving your memories: ' + (run.processed || 0) +
@@ -101,7 +100,7 @@
       }
     }).catch(function (error) {
       if (generation === mountGeneration && requestNumber === sequence && mounted === target) {
-        target.replaceChildren(el('h3', 'Memory health'), el('p', error.message));
+        target.replaceChildren(el('p', error.message));
       }
     }).finally(function () {
       if (generation === mountGeneration) activeRead = false;
@@ -111,11 +110,22 @@
     clearInterval(timer);
     generation += 1;
     activeRead = false;
-    mounted = el('section');
-    mounted.className = 'ng-glass';
-    mounted.id = 'memory-health-card';
-    mounted.style.padding = '20px';
-    parent.prepend(mounted);
+    // One card: the automatic improvements and repairs (refreshed below) and
+    // the upgrade store check (od-store-check.js renders into #store-check).
+    var card = el('section');
+    card.className = 'ng-glass';
+    card.id = 'memory-health-card';
+    card.style.padding = '20px';
+    card.appendChild(el('h3', 'Memory health'));
+    mounted = el('div');
+    mounted.setAttribute('aria-live', 'polite');
+    card.appendChild(mounted);
+    var store = el('div');
+    store.id = 'store-check';
+    store.style.marginTop = '12px';
+    card.appendChild(store);
+    parent.prepend(card);
+    if (window.odStoreCheck) window.odStoreCheck.init();
     refresh();
     timer = setInterval(function () {
       if (!mounted || !mounted.isConnected) {

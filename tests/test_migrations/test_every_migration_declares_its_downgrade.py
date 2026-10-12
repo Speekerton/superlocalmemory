@@ -33,5 +33,5 @@ def test_every_migration_after_51_declares_a_floor_or_a_break() -> None:
 
 def test_recall_migrations_keep_the_way_back_to_4_1_18_open() -> None:
     for name in ("M056_recall_channel_indexes", "M057_temporal_retrieval_version",
-                 "M058_recall_fact_cover"):
+                 "M058_recall_fact_cover", "M059_fact_hub_baseline"):
         assert getattr(_MODULES[name], "DOWNGRADE_FLOOR", None) == 51, name

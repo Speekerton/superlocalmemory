@@ -168,6 +168,7 @@ class MemoryEngine:
         self._provenance = None
         self._adaptive_learner = None
         self._kind_reconcile = None  # background start-up kind check (kind_reconcile_task)
+        self._hub_backfill = None  # background hub-baseline pass (retrieval/hub_baseline.py)
         self._compliance_checker = None
         self._vector_store = None
         self._access_log = None
@@ -244,6 +245,7 @@ class MemoryEngine:
             self._kind_reconcile = KindReconcileTask(self._db, self._profile_id).start()
         except Exception as exc:
             logger.warning("Memory kind reconcile skipped at start: %s", exc)
+        self._start_hub_backfill()
         logger.info(
             "MemoryEngine initialized: mode=%s profile=%s capabilities=%s",
             self._config.mode.value, self._profile_id,
@@ -253,6 +255,22 @@ class MemoryEngine:
         if self._capabilities is Capabilities.FULL:
             # Replay pending async writes only when heavy layer is available.
             self._process_pending_memories()
+
+    def _start_hub_backfill(self) -> None:
+        """Give stored memories their hub baselines, in the background.
+
+        Bounded and resumable (``retrieval/hub_baseline.Backfill``); recall works
+        while it runs. ``SLM_HUB_BASELINE_BACKFILL=0`` leaves it off.
+        """
+        if (self._capabilities is not Capabilities.FULL or self._embedder is None
+                or os.environ.get("SLM_HUB_BASELINE_BACKFILL", "1") == "0"):
+            return
+        try:
+            from superlocalmemory.retrieval.hub_baseline import Backfill
+            self._hub_backfill = Backfill(self._db, self._embedder)
+            self._hub_backfill.start()
+        except Exception as exc:
+            logger.warning("Hub baseline backfill skipped at start: %s", exc)
 
     def _init_db_layer(self) -> None:
         from superlocalmemory.storage import schema
@@ -1334,6 +1352,11 @@ class MemoryEngine:
         reconcile, self._kind_reconcile = getattr(self, "_kind_reconcile", None), None
         if reconcile is not None:  # interrupts its read; joined with the pools below
             owned_threads.extend(reconcile.stop())
+        hub_backfill, self._hub_backfill = getattr(self, "_hub_backfill", None), None
+        if hub_backfill is not None:  # stops between batches; joined below
+            hub_backfill.stop(timeout=0)
+            if hub_backfill.thread is not None:
+                owned_threads.append(hub_backfill.thread)
         scheduler = getattr(self, "_maintenance_scheduler", None)
         self._maintenance_scheduler = None
         if scheduler is not None:

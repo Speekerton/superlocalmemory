@@ -756,11 +756,11 @@ class RetrievalEngine:
     def _hub_baselines(
         self, fact_ids: list[str], profile_id: str,
     ) -> dict[str, tuple[float, float]]:
-        """``fact_id -> (top-k, mean)`` hub baselines stored for the live space.
+        """``fact_id -> (top-k, mean)`` hub baselines stored for the live space."""
+        from superlocalmemory.retrieval import hub_baseline
 
-        None are stored yet; the hub-baseline pass fills them in.
-        """
-        return {}
+        return hub_baseline.read(
+            self._db, fact_ids, hub_baseline.space_of(getattr(self, "_embedder", None)))
 
     def _attach_evidence(
         self, query: str, results: list[RetrievalResult],

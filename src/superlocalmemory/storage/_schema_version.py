@@ -62,7 +62,9 @@ from pathlib import Path
 #: new learning.db table for learning attribution); the ceiling moves to it by
 #: the same convention, with ``DOWNGRADE_FLOOR`` 51.
 #: M056 adds recall indexes only; the ceiling follows the newest migration.
-SUPPORTED_SCHEMA_VERSION: int = 58
+#: M059 is additive (one new memory.db table of hub baselines and an erase
+#: trigger); the ceiling follows it, with ``DOWNGRADE_FLOOR`` 51.
+SUPPORTED_SCHEMA_VERSION: int = 59
 
 
 class SchemaVersionError(RuntimeError):

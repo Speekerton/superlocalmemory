@@ -239,10 +239,12 @@
 
   function makeRow(lbl, desc, key, ctrl) {
     var d = el('div', { 'data-set':'', 'data-txt':(lbl + ' ' + key).toLowerCase() });
-    Object.assign(d.style, { display:'flex', alignItems:'center',
+    // Wraps: a wide control (the re-index or engine-upgrade panel) drops below
+    // its label instead of squeezing the label to one letter per line.
+    Object.assign(d.style, { display:'flex', alignItems:'center', flexWrap:'wrap',
       justifyContent:'space-between', gap:'16px',
       padding:'14px 20px', borderBottom:'1px solid var(--border)' });
-    var lv = el('div');
+    var lv = el('div', null, { flex:'1 1 220px', minWidth:'180px' });
     var labelId = 'od-setting-label-' + (ctrl.id || key || lbl).replace(/[^a-z0-9-]/gi, '-');
     lv.appendChild(el('b', { text: lbl, id: labelId }));
     var fields = ctrl.matches('input,select,[role=switch]') ? [ctrl] : Array.from(ctrl.querySelectorAll('input,select,[role=switch]'));
@@ -256,7 +258,8 @@
     if (key) lv.appendChild(el('div', { text: key },
       { fontFamily:'var(--font-mono)', fontSize:'10.5px', color:'var(--fg-2)', marginTop:'3px' }));
     d.appendChild(lv);
-    var cv = el('div', null, { flexShrink:'0' }); cv.appendChild(ctrl); d.appendChild(cv);
+    var cv = el('div', null, { flex:'0 1 auto', minWidth:'0', maxWidth:'100%' });
+    cv.appendChild(ctrl); d.appendChild(cv);
     return d;
   }
   function makeGrp(title, ic, rows) {

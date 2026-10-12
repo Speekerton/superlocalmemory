@@ -660,7 +660,8 @@ class RetrievalEngine:
             # removed by the floor, producing a false abstention even though a
             # qualified candidate was immediately below the slice.
             top = self._apply_evidence_floor(
-                top, facts, min_sem, self._media_floor())
+                top, facts, min_sem, self._media_floor(),
+                hub_corrected=self._floor_hub_corrected(top, facts, min_sem, profile_id))
 
         # 5. Cross-encoder rerank (optional, on the evidence-qualified pool)
         # Bug 4 fix: reduced alpha for multi-hop/temporal to preserve diversity
@@ -844,12 +845,26 @@ class RetrievalEngine:
         channel = getattr(self, "_media_channel", None)
         return default if channel is None else channel.min_score(default)
 
+    def _floor_hub_corrected(self, top: list[FusionResult], facts: dict[str, AtomicFact],
+                             min_semantic: float, profile_id: str) -> dict[str, float]:
+        """Hub-corrected cosine for the candidates the raw floor would drop."""
+        from superlocalmemory.retrieval.evidence_attach import floor_hub_corrected
+
+        try:
+            return floor_hub_corrected(
+                top, facts, min_semantic, probes=self._probe_matrix(),
+                stored=lambda ids: self._hub_baselines(ids, profile_id))
+        except Exception as exc:  # fail-open: the raw floor alone, as before
+            logger.debug("floor hub correction: %s", exc)
+            return {}
+
     @staticmethod
     def _apply_evidence_floor(
         final_top: list[FusionResult],
         facts: dict[str, AtomicFact],
         min_semantic: float,
         min_media: float = 0.30,
+        hub_corrected: dict[str, float] | None = None,
     ) -> list[FusionResult]:
         """Filter results that earned no channel evidence.
 
@@ -869,7 +884,9 @@ class RetrievalEngine:
             if fact is not None and media_rerank.is_wordless_picture(getattr(fact, "content", "") or ""):
                 evident = media_rerank.wordless_picture_evidence(fr.channel_scores or {}, min_media)
             else:
-                evident = has_primary_evidence(fr.channel_scores, min_semantic, min_media)
+                evident = has_primary_evidence(
+                    fr.channel_scores, min_semantic, min_media,
+                    hub_corrected=(hub_corrected or {}).get(fr.fact_id))
             # Pinned fact bypass — always pass regardless of channel scores
             if evident or (fact is not None and getattr(fact, "pinned", False)):
                 kept.append(fr)

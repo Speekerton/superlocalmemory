@@ -188,3 +188,45 @@ def test_cosine_falls_back_to_the_semantic_channel_when_no_vector_is_loaded() ->
     out = ef.build(query="q", terms=["q"], query_vector=[1.0, 0.0], fact=fact,
                    channel_scores={"semantic": 0.9})
     assert out["cosine"] == pytest.approx(0.8)
+
+
+def test_the_floor_admits_a_memory_that_stands_out_from_its_own_hub_baseline() -> None:
+    from superlocalmemory.retrieval.time_window import HUB_CORRECTED_DOOR, has_primary_evidence
+
+    below = {"semantic": (0.59 + 1) / 2}  # raw cosine 0.59, under the 0.60 floor
+    assert not has_primary_evidence(below, 0.60)
+    assert has_primary_evidence(below, 0.60, hub_corrected=HUB_CORRECTED_DOOR)
+    assert not has_primary_evidence(below, 0.60, hub_corrected=HUB_CORRECTED_DOOR - 0.01)
+
+
+def test_hub_corrected_is_measured_only_for_memories_the_floor_would_drop() -> None:
+    from superlocalmemory.retrieval.evidence_attach import floor_hub_corrected
+    from superlocalmemory.retrieval.fusion import FusionResult
+
+    probes = _probe_matrix()
+    top = [FusionResult("keep", 0.5, channel_scores={"semantic": 0.9}),
+           FusionResult("near", 0.4, channel_scores={"semantic": (0.59 + 1) / 2}),
+           FusionResult("bm25", 0.3, channel_scores={"bm25": 0.4}),
+           FusionResult("assoc", 0.2, channel_scores={"hopfield": 0.9})]
+    facts = {fid: SimpleNamespace(fact_id=fid, embedding=[1.0, 0.0, 0.0, 0.0])
+             for fid in ("keep", "near", "bm25", "assoc")}
+    asked: list = []
+    out = floor_hub_corrected(top, facts, 0.60, stored=lambda ids: asked.extend(ids) or {},
+                              probes=probes)
+    assert asked == ["near"]
+    topk, _ = hb.baseline_of([1.0, 0.0, 0.0, 0.0], probes)
+    assert out == {"near": pytest.approx(0.59 - topk, abs=1e-6)}
+    assert floor_hub_corrected(top, facts, 0.60, stored=lambda ids: {"near": (0.4, 0.3)},
+                               probes=None) == {"near": pytest.approx(0.19)}
+
+
+def test_the_engine_floor_uses_the_hub_door() -> None:
+    from superlocalmemory.retrieval.engine import RetrievalEngine
+    from superlocalmemory.retrieval.fusion import FusionResult
+
+    near = FusionResult("near", 0.4, channel_scores={"semantic": (0.59 + 1) / 2})
+    facts = {"near": SimpleNamespace(fact_id="near", content="a note", pinned=False)}
+    assert RetrievalEngine._apply_evidence_floor([near], facts, 0.60) == []
+    kept = RetrievalEngine._apply_evidence_floor([near], facts, 0.60,
+                                                 hub_corrected={"near": 0.15})
+    assert kept == [near]

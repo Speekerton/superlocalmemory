@@ -184,5 +184,5 @@ def lexical_support(query: str, content: str) -> bool:
 
 
 __all__ = ["ABSTAIN_NOTE", "Assessment", "LEXICAL_MIN_COVERAGE", "REASON_NO_RESULTS",
-           "REASON_UNSUPPORTED", "assess", "switched_off", "features", "imputed", "lexical_support", "logit",
-           "probability"]
+           "REASON_UNSUPPORTED", "assess", "features", "imputed", "lexical_support", "logit",
+           "probability", "switched_off"]

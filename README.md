@@ -9,7 +9,7 @@
 
 ### The governed memory brain for every AI agent. It lives on your machine. It never bluffs.
 
-**One memory for every agent you and your team use** — Claude Code, Codex, Cursor, Copilot, Antigravity, Hermes, ChatGPT, Claude on the web, Grok Bot, Muse and any harness that speaks MCP or runs a command. Decisions, documents, screenshots and PDFs, recalled the way you ask for them, governed like company data, and answered honestly: when the answer isn't there, your agent hears *"That isn't in SuperLocalMemory."* — not a confident guess.
+**One memory for every agent you and your team use** — Claude Code, Codex, Cursor, Copilot, Antigravity, Hermes, ChatGPT, Claude on the web, Grok Bot, Muse and any harness that speaks MCP or runs a command. Decisions, documents, screenshots and PDFs, recalled the way you ask for them, governed like company data, shared through a mesh where your local agents and web bots talk to each other, and answered honestly: when the answer isn't there, your agent hears *"That isn't in SuperLocalMemory."* — not a confident guess.
 
 [![PyPI](https://img.shields.io/pypi/v/superlocalmemory)](https://pypi.org/project/superlocalmemory/)
 [![npm](https://img.shields.io/npm/v/superlocalmemory)](https://www.npmjs.com/package/superlocalmemory)
@@ -85,7 +85,7 @@ Real output from a fresh Mode A install, trimmed. Scores rank memories; they are
 
 **9. Many agents, one brain.** Every write records which agent made it, with trust scores against memory poisoning, so ten agents can share one memory without poisoning it.
 
-**10. Your agents talk to each other.** **SLM-Mesh** gives every agent session messages, waits, locks and shared state — on one machine or across several — so Claude Code can hand work to Codex, and two sessions never edit the same file at once. The web apps and bots you allow join too: ChatGPT, Claude on the web, Grok Bot and Muse can list each other, message a named bot and read their inbox, with every message labelled as data, never as instructions.
+**10. Your agents talk to each other — even across the internet.** Through **SLM-Mesh**, the agents on your computer and the bots on the web finally share one conversation. Claude Code, Codex and Hermes sessions exchange messages, waits, locks and shared state, on one machine or several, so one agent can hand work to another and two never edit the same file at once. And the bots you allow — ChatGPT, Claude on the web, Grok Bot, Muse — join the same mesh: a bot in your browser can message the agent on your laptop by name and read its reply. Every message arrives labelled as data, never as instructions; a web bot reads new messages when its next turn starts.
 
 **11. It learns every day, and it can't quietly get worse.** Every reported outcome teaches it: ranking learns which memories actually helped, stable habits become soft prompts for new sessions, and agent skills are measured and revised. A new ranker is promoted only on a statistically valid win and rolled back automatically if it slips. Work runs as **bounded loops** that end only when an independent gate passes — never on an agent's word — and multi-step pipelines run as **bounded graphs** with [Bounded Loops](https://github.com/qualixar/bounded-loops), whose finished runs SLM keeps as read-only evidence.
 

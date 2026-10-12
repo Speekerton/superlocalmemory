@@ -101,6 +101,8 @@ class DaemonPoolProxy:
         evidence: bool = False,
         show_weak: bool = False,
         include_related: bool = False,
+        depth: int | None = None,
+        max_tokens: int | None = None,
     ) -> dict[str, Any]:
         if self._unavailable:
             return self._unavailable_response()
@@ -169,6 +171,11 @@ class DaemonPoolProxy:
             _params["show_weak"] = "true"
         if include_related:
             _params["include_related"] = "true"
+        # 4.1.25 layered recall; sent only when set.
+        if depth is not None:
+            _params["depth"] = str(int(depth))
+        if max_tokens:
+            _params["max_tokens"] = str(int(max_tokens))
         if known_as_of:
             _params["known_as_of"] = known_as_of
         if valid_at:

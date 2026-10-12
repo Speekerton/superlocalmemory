@@ -69,6 +69,8 @@ def _handle_recall(
     include_unknown: bool = False,
     show_weak: bool = False,
     include_related: bool = False,
+    depth: int = 1,
+    max_tokens: int | None = None,
 ) -> dict:
     engine = _get_engine()
     # v3.6.15 multi-scope: None flags let engine.recall resolve the configured
@@ -122,10 +124,18 @@ def _handle_recall(
         include_marker=bool(session_id),
         display_min_confidence=engine_display_min_confidence(engine),
     )
+    layers: dict = {}
+    if depth != 1 or max_tokens:  # 4.1.25 layered recall, as the daemon does it
+        from superlocalmemory.core import recall_layers
+        results, layers = recall_layers.shape(
+            results, depth, max_tokens,
+            context_of=lambda item: recall_layers.context_for(
+                engine._db, engine.profile_id, str(item.get("fact_id", ""))))
     return {
         "ok": True,
         "query": query,
         "query_type": response.query_type,
+        **({"layers": layers} if layers else {}),
         "result_count": len(results),
         "retrieval_time_ms": round(response.retrieval_time_ms, 1),
         "channel_weights": {
@@ -372,6 +382,8 @@ def _worker_main() -> None:
                     include_unknown=bool(req.get("include_unknown", False)),
                     show_weak=bool(req.get("show_weak", False)),
                     include_related=bool(req.get("include_related", False)),
+                    depth=int(req.get("depth", 1)),
+                    max_tokens=req.get("max_tokens"),
                 )
                 _respond(result)
             elif cmd == "store":

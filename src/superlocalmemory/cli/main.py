@@ -567,6 +567,16 @@ def main() -> None:
         help="Strict event-time boundary: return only facts valid at this ISO-8601 time.",
     )
     recall_p.add_argument(
+        "--depth", type=int, choices=(0, 1, 2), default=1,
+        help="0 glance (ids and one-line previews), 1 recall (full facts, default), "
+             "2 context (+ source memory, same-session neighbours, facts about the same "
+             "entities, the correction that replaced it).",
+    )
+    recall_p.add_argument(
+        "--max-tokens", dest="max_tokens", type=int, default=0,
+        help="Cap the returned results at this many (estimated) tokens; never exceeded.",
+    )
+    recall_p.add_argument(
         "--show-weak", dest="show_weak", action="store_true",
         help="When nothing in memory supports the question, show the closest weak "
              "matches (labelled [weak]) instead of nothing.",

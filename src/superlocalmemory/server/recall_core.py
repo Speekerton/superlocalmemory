@@ -126,6 +126,10 @@ class RecallCall:
     include_related: bool = False
     #: 4.1.25: a context load, not a question: no answer-support gate.
     context_load: bool = False
+    #: 4.1.25 layered recall (``core.recall_layers``): 0 glance, 1 recall,
+    #: 2 context; ``max_tokens`` caps the results and is never exceeded.
+    depth: int = 1
+    max_tokens: int | None = None
     #: 4.1.25: the monotonic instant the daemon stops waiting for the engine;
     #: the answer check, which has its own budget, never runs past it.
     answer_deadline: float | None = None
@@ -235,6 +239,7 @@ def _envelope(engine: Any, call: RecallCall, response: Any, snapshot: Any) -> di
     )
     for item in results:
         item["content"] = sanitize_json_text(item.get("content", ""))
+    results, layers = _layers(engine, call, results)
     return {
         "ok": True,
         # The profile that actually served this recall: the routed profile when
@@ -251,10 +256,26 @@ def _envelope(engine: Any, call: RecallCall, response: Any, snapshot: Any) -> di
         "results": results,
         "count": len(results),
         "no_confident_match": no_confident_match,
+        **({"layers": layers} if layers else {}),
         **recall_response_metadata(response),
         **({"query_evidence": dict(getattr(response, "query_evidence", {}) or {})}
            if call.include_evidence else {}),
     }
+
+
+def _layers(engine: Any, call: RecallCall, results: list[dict]) -> tuple[list[dict], dict]:
+    """The results at the call's depth within its budget (``core.recall_layers``);
+    depth 2 context goes through the fetch gate and the caller's visibility."""
+    if call.depth == 1 and call.max_tokens is None:
+        return results, {}
+    from superlocalmemory.core import recall_layers
+
+    pid = call.profile_id or engine.profile_id
+    with _visibility_for(engine, call):
+        return recall_layers.shape(
+            results, call.depth, call.max_tokens,
+            context_of=lambda item: recall_layers.context_for(
+                engine._db, pid, str(item.get("fact_id", ""))))
 
 
 async def run_recall(engine: Any, call: RecallCall, *, app_state: Any) -> dict:

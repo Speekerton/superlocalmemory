@@ -2146,6 +2146,12 @@ def cmd_recall(args: Namespace) -> None:
             # A person searching: close memories of a real question are shown,
             # labelled related (agents opt in instead).
             unknown_qs += "&include_related=true"
+            _depth = getattr(args, "depth", 1)
+            if isinstance(_depth, int) and _depth != 1:
+                unknown_qs += f"&depth={_depth}"
+            _max_tokens = getattr(args, "max_tokens", 0)
+            if isinstance(_max_tokens, int) and _max_tokens > 0:
+                unknown_qs += f"&max_tokens={_max_tokens}"
             facet_qs = "".join(
                 f"&{name}={quote(str(value).strip())}"
                 for name, value in (("project", getattr(args, "project", "")),
@@ -2175,6 +2181,7 @@ def cmd_recall(args: Namespace) -> None:
                 from superlocalmemory.cli.recall_text import (
                     empty_result_line,
                     incomplete_line,
+                    context_lines,
                     project_line,
                     result_line,
                     tag_line,
@@ -2197,6 +2204,8 @@ def cmd_recall(args: Namespace) -> None:
                     print(result["abstention_note"])
                 for i, r in enumerate(result["results"], 1):
                     print(result_line(i, r))
+                    for line in context_lines(r):
+                        print(line)
                 for note in filter(None, (incomplete, project_line(result),
                                           _answer_check_line(result))):
                     print(f"\n{note}")

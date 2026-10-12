@@ -315,6 +315,8 @@ TOOL_CLI_MAP: dict[str, CliVerb] = {
 NON_BACKED_TOOLS: frozenset[str] = frozenset({
     # Fetch — no single-fact CLI verb
     "fetch",
+    # Expand — drill into one recall result (no CLI verb; `slm recall --depth 2`)
+    "expand",
     # Code-graph tools (20)
     "build_code_graph",
     "update_code_graph",

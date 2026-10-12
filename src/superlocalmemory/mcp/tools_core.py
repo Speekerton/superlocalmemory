@@ -130,6 +130,31 @@ _ADDS_ONLY_ANNOTATIONS = ToolAnnotations(
 )
 
 
+def _search_tiers(query: str, items: list[dict], *, filtered: bool) -> tuple[list[dict], dict]:
+    """``search``'s tiers: rows the question's words support first, then at most
+    three related ones; an explicit kind or tag filter keeps every row."""
+    from superlocalmemory.retrieval import support_tiers as st
+    from superlocalmemory.retrieval.support_gate import lexical_support
+
+    supported = [{**i, "tier": st.SUPPORTED} for i in items
+                 if lexical_support(query, str(i.get("content", "")))]
+    others = [{**i, "tier": st.RELATED} for i in items
+              if not lexical_support(query, str(i.get("content", "")))]
+    if filtered:
+        return supported + others, {"tier": st.SUPPORTED if supported else st.RELATED}
+    if supported:
+        return supported + others[:st.RELATED_MAX], {"tier": st.SUPPORTED}
+    if others:
+        return others[:st.RELATED_MAX], {"tier": st.RELATED,
+                                         "abstention_note": st.RELATED_NOTE}
+    return [], {"tier": st.NONE, "abstention_note": SEARCH_NO_MATCH}
+
+
+#: ``search`` matches words only; with no match it says that, not that the
+#: memory does not exist (only recall, warm, measures that).
+SEARCH_NO_MATCH = "No stored memory matches those words."
+
+
 def register_core_tools(server, get_engine: Callable) -> None:
     """Register the 13 core MCP tools on *server*."""
 
@@ -541,12 +566,21 @@ def register_core_tools(server, get_engine: Callable) -> None:
         project_strict: bool = False,
         show_weak: bool = False,
         include_related: bool = False,
+        depth: int = 1,
+        max_tokens: int = 0,
     ) -> dict:
         """Search memories through hybrid retrieval, RRF fusion, and reranking.
 
         When nothing in memory supports the question, recall returns NO results
         and ``abstention_note`` says so in plain words ("Nothing in memory
         supports this question."). Do not invent an answer then. Pass
+        ``depth``: 0 glance (ids, tier, one-line previews -- cheapest), 1 recall
+        (full facts, the default), 2 context (+ source memory, same-session
+        neighbours, facts about the same entities, the correction that replaced
+        it). Start at 0 or 1; drill into one result with ``expand``.
+        ``max_tokens`` caps the returned results; it is never exceeded.
+        If ``warming_up`` is true, tell the user SuperLocalMemory is still
+        warming up and to retry shortly; do not conclude the memory is absent.
         ``include_related=true`` to see up to three close memories when the
         question is real but not answered exactly ("I don't have this exactly
         -- here are the closest memories."), each labelled ``tier: related``.
@@ -641,6 +675,12 @@ def register_core_tools(server, get_engine: Callable) -> None:
             _kind = resolve_kind(kind)
         except InvalidKind as exc:
             return {"success": False, "code": "INVALID_KIND", "retryable": False,
+                    "error": str(exc)}
+        from superlocalmemory.core.recall_layers import parse_depth, parse_max_tokens
+        try:
+            depth, max_tokens = parse_depth(depth), parse_max_tokens(max_tokens) or 0
+        except (TypeError, ValueError) as exc:
+            return {"success": False, "code": "INVALID_LAYERS", "retryable": False,
                     "error": str(exc)}
         # 4.1.20 (R5): an unreadable window is refused, not passed on to run
         # unfiltered — the same check and code as the CLI and HTTP.
@@ -748,6 +788,8 @@ def register_core_tools(server, get_engine: Callable) -> None:
                     # 4.1.25: only when asked, so every other call is unchanged.
                     **({"show_weak": True} if show_weak else {}),
                     **({"include_related": True} if include_related else {}),
+                    **({"depth": int(depth)} if int(depth) != 1 else {}),
+                    **({"max_tokens": int(max_tokens)} if max_tokens else {}),
                 )
 
             result = await asyncio.to_thread(
@@ -796,8 +838,14 @@ def register_core_tools(server, get_engine: Callable) -> None:
     @admits(OperationKind.RECALL)
     async def search(query: str, limit: int = CANONICAL_RECALL_LIMIT, kind: str = "",
                      profile_id: str = "", tags: "str | list[str]" = "",
-                     tags_match: str = "all") -> dict:
+                     tags_match: str = "all", depth: int = 1,
+                     max_tokens: int = 0) -> dict:
         """Full-text search across memories using FTS5 with BM25 ranking.
+
+        4.1.25: each result carries a ``tier`` -- ``supported`` when the
+        question's words support it, ``related`` (at most three) otherwise --
+        and ``abstention_note`` says so when none is supported. ``depth`` and
+        ``max_tokens`` work as in ``recall`` (0 glance, 1 full, 2 context).
 
         ``kind`` (4.1.19 WP8) keeps only results whose kind — the same nine
         values ``remember``'s ``kind`` parameter takes — equals this value,
@@ -852,7 +900,16 @@ def register_core_tools(server, get_engine: Callable) -> None:
                     "date": f.observation_date,
                     **kind_fields(f, display_min_confidence=_display_min_confidence),
                 })
-            result = {"success": True, "results": items, "count": len(items)}
+            items, tier_info = _search_tiers(query, items, filtered=bool(parsed_kind or _tags))
+            from superlocalmemory.core import recall_layers
+            _depth = recall_layers.parse_depth(depth)
+            items, layers = recall_layers.shape(
+                items, _depth, recall_layers.parse_max_tokens(max_tokens),
+                context_of=lambda item: recall_layers.context_for(
+                    engine._db, pid, str(item.get("fact_id", "")),
+                    visible=lambda facts: visible_facts(engine._db, pid, facts)))
+            result = {"success": True, "results": items, "count": len(items), **tier_info,
+                      **({"layers": layers} if _depth != 1 or max_tokens else {})}
             # 4.1.19 L2-13/M2: told, never a silent short answer, when the
             # kind filter's windowed fetch hit its hard cap before `limit`
             # was filled and the store was not exhausted.
@@ -932,6 +989,50 @@ def register_core_tools(server, get_engine: Callable) -> None:
         except Exception as exc:
             logger.exception("fetch failed")
             return {"success": False, "error": str(exc)}
+
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    async def expand(memory_id: str, depth: int = 2, max_tokens: int = 0,
+                     profile_id: str = "") -> dict:
+        """Drill into one recall result: the full fact plus, at depth 2, its
+        source memory, same-session neighbours, facts about the same entities
+        and the correction that replaced it. ``memory_id`` takes the result's
+        ``fact_id`` or ``memory_id``. Same profile, quarantine and visibility
+        checks as ``fetch``; ``max_tokens`` is never exceeded.
+        """
+        from superlocalmemory.core import recall_layers
+        try:
+            _depth = recall_layers.parse_depth(depth, default=2)
+            _budget = recall_layers.parse_max_tokens(max_tokens)
+        except (TypeError, ValueError) as exc:
+            return {"success": False, "code": "INVALID_LAYERS", "error": str(exc)}
+        try:
+            engine = get_engine()
+            pid, refused = await _call_profile(get_engine, profile_id)
+            if refused:
+                return refused
+            ident = str(memory_id or "").strip()
+            facts = engine._db.get_facts_by_ids([ident], pid) if ident else []
+            if not facts and ident:
+                rows = engine._db.execute(
+                    "SELECT fact_id FROM atomic_facts WHERE memory_id = ? AND profile_id = ? "
+                    "ORDER BY created_at LIMIT 20", (ident, pid))
+                facts = engine._db.get_facts_by_ids([dict(r)["fact_id"] for r in rows], pid)
+            facts = visible_facts(engine._db, pid, facts)
+            if not facts:
+                return {"success": False, "error": f"no memory {ident!r} in profile {pid!r}",
+                        "results": [], "count": 0}
+            items = [{"fact_id": f.fact_id, "memory_id": f.memory_id, "content": f.content,
+                      "fact_type": f.fact_type.value, "entities": f.canonical_entities,
+                      "created_at": f.created_at} for f in facts]
+            items, layers = recall_layers.shape(
+                items, _depth, _budget,
+                context_of=lambda item: recall_layers.context_for(
+                    engine._db, pid, str(item.get("fact_id", "")),
+                    visible=lambda found: visible_facts(engine._db, pid, found)))
+            return {"success": True, "results": items, "count": len(items), "layers": layers}
+        except Exception as exc:
+            logger.exception("expand failed")
+            return {"success": False, "error": type(exc).__name__}
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
     @admits(OperationKind.RECALL)

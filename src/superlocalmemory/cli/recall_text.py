@@ -66,6 +66,20 @@ def result_line(position: int, item: dict) -> str:
     return f"  {position}. [{score:.2f}]{label} {item.get('content', '')}"
 
 
+def context_lines(item: dict) -> list[str]:
+    """Depth 2: the memory's surroundings, one indented line each."""
+    ctx = item.get("context") or {}
+    out = []
+    if ctx.get("source"):
+        out.append(f"       source: {' '.join(str(ctx['source']).split())[:200]}")
+    for label, key in (("same session", "same_session"), ("same entities", "same_entities")):
+        for row in ctx.get(key) or ():
+            out.append(f"       {label}: {row.get('content', '')}")
+    if ctx.get("superseded_by"):
+        out.append(f"       replaced by: {ctx['superseded_by'].get('content', '')}")
+    return out
+
+
 def empty_result_line(result: dict) -> str:
     """What to print when no memory came back."""
     if incomplete_line(result):

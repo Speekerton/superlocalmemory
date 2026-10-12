@@ -89,7 +89,7 @@ import os as _os_reg
 
 _ESSENTIAL_TOOLS: set[str] = {
     # Core memory operations (8)
-    "remember", "recall", "search", "fetch",
+    "remember", "recall", "search", "fetch", "expand",
     "list_recent", "delete_memory", "update_memory", "get_status",
     "switch_profile",
     # Session lifecycle (3)

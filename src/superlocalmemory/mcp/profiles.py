@@ -18,7 +18,7 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------
 
 _PROFILE_CORE: frozenset[str] = frozenset({  # 18
-    "remember", "recall", "search", "fetch", "list_recent", "update_memory", "forget",
+    "remember", "recall", "search", "fetch", "expand", "list_recent", "update_memory", "forget",
     "session_init", "close_session",
     "slm_compress", "slm_retrieve", "slm_cache_set", "slm_cache_get", "slm_optimize_stats",
     # A client that can propose a correction must be able to inspect and
@@ -100,7 +100,8 @@ def _media_tools_if_enabled() -> frozenset[str]:
 
 # 42 base — explicit literal, not runtime _ESSENTIAL_TOOLS (OQ-2).
 _PROFILE_FULL: frozenset[str] = frozenset({
-    "remember", "recall", "search", "fetch", "list_recent", "delete_memory", "update_memory",
+    "remember", "recall", "search", "fetch", "expand", "list_recent", "delete_memory",
+    "update_memory",
     "get_status", "session_init", "observe", "close_session", "report_feedback", "forget",
     "run_maintenance", "consolidate_cognitive", "get_soft_prompts", "set_mode", "report_outcome",
     "log_tool_event", "get_assertions", "reinforce_assertion", "contradict_assertion",

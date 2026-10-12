@@ -183,6 +183,9 @@ def _fallback_recall(query: str, limit: int, session_id: str) -> list[dict] | No
         params = urllib.parse.urlencode({
             "q": query, "limit": limit, "session_id": session_id or "",
             ANSWER_CHECK_PARAM: ANSWER_CHECK_SKIP,
+            # 4.1.25: a hook injects a glance (one-line previews); the agent
+            # asks recall or expand for more.
+            "depth": "0",
         })
         data = daemon_request("GET", f"/recall?{params}", timeout_seconds=5.0)
         if not isinstance(data, dict):

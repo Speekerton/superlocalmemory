@@ -5035,6 +5035,10 @@ def _register_daemon_routes(application: FastAPI) -> None:
         # 4.1.25: up to three close memories of a real question (people's
         # surfaces send it; agents opt in).
         include_related: bool = False,
+        # 4.1.25 layered recall: 0 glance, 1 recall (default), 2 context;
+        # max_tokens caps the results and is never exceeded. A bad value is a 400.
+        depth: str = "",
+        max_tokens: str = "",
         # 4.1.18: "skip" for a recall that is not a question (context loading,
         # a per-prompt hook): never judged, nothing sent or billed.
         # "no_reorder": the answer check without the opt-in reorder (the loop
@@ -5088,6 +5092,13 @@ def _register_daemon_routes(application: FastAPI) -> None:
                  "message": "answer_check must be one of: skip, no_reorder, full"},
                 status_code=400,
             )
+        from superlocalmemory.core.recall_layers import parse_depth, parse_max_tokens
+        try:
+            _depth, _max_tokens = parse_depth(depth), parse_max_tokens(max_tokens)
+        except ValueError as exc:
+            from starlette.responses import JSONResponse
+            return JSONResponse({"error": "invalid_layers", "message": str(exc)},
+                                status_code=400)
         from superlocalmemory.core.kind_query import InvalidKind, resolve_kind
         try:
             _kind = resolve_kind(kind)
@@ -5224,7 +5235,7 @@ def _register_daemon_routes(application: FastAPI) -> None:
             full=full, include_source=include_source,
             include_marker=bool(session_id), include_evidence=bool(evidence),
             show_weak=bool(show_weak), include_related=bool(include_related),
-            context_load=_context_load,
+            context_load=_context_load, depth=_depth, max_tokens=_max_tokens,
             budget_s=parse_budget_s(budget_s),
             caller_view=parse_view(caller_view),
         )

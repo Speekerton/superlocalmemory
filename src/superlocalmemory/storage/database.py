@@ -24,6 +24,16 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Generator, NoReturn
 
+from superlocalmemory.storage import projection_outbox, store_signature
+from superlocalmemory.storage.correction_cases import SAVED_SUCCESSOR_PARAMS, SAVED_SUCCESSOR_SQL
+from superlocalmemory.storage.embedding_codec import (
+    decode_embedding,
+    decode_float_vector,
+    encode_embedding,
+    encode_float_vector,
+)
+from superlocalmemory.storage.event_time import valid_from as _event_start
+from superlocalmemory.storage.memory_kinds import KIND_COLUMNS
 from superlocalmemory.storage.models import (
     AtomicFact,
     CanonicalEntity,
@@ -40,18 +50,8 @@ from superlocalmemory.storage.models import (
     TemporalEvent,
     TrustScore,
 )
-from superlocalmemory.storage.embedding_codec import (
-    decode_embedding,
-    decode_float_vector,
-    encode_embedding,
-    encode_float_vector,
-)
-from superlocalmemory.storage.write_lock import get_write_lock
 from superlocalmemory.storage.read_connection import read_only_snapshot
-from superlocalmemory.storage import projection_outbox
-from superlocalmemory.storage.memory_kinds import KIND_COLUMNS
-from superlocalmemory.storage.correction_cases import SAVED_SUCCESSOR_PARAMS, SAVED_SUCCESSOR_SQL
-from superlocalmemory.storage import store_signature
+from superlocalmemory.storage.write_lock import get_write_lock
 
 logger = logging.getLogger(__name__)
 
@@ -1023,7 +1023,11 @@ class DatabaseManager:
                 # timestamp from ``created_at``; this retry is the earliest
                 # trustworthy observation that the anchor was missing.
                 if self.get_temporal_validity(canonical_id, fact.profile_id) is None:
-                    self.store_temporal_validity(canonical_id, fact.profile_id)
+                    canonical = self.get_fact(canonical_id, fact.profile_id)
+                    self.store_temporal_validity(
+                        canonical_id, fact.profile_id,
+                        valid_from=_event_start(canonical or fact),
+                    )
                 # Re-storing known content is the natural moment to notice a
                 # projection that was never written — an upgraded store whose
                 # graph predates the migration reaches this branch, not the
@@ -1069,7 +1073,8 @@ class DatabaseManager:
             # Every fact written after 4.0.2 has an explicit transaction-time
             # anchor. Absence deliberately represents pre-4.0.2
             # ``legacy_unknown``; never backfill it from ``created_at``.
-            self.store_temporal_validity(fact.fact_id, fact.profile_id)
+            self.store_temporal_validity(fact.fact_id, fact.profile_id,
+                                         valid_from=_event_start(fact))
             # Which facts name an entity is answered from an index; every
             # write path lands here, so this keeps it complete
             # (storage/entity_index.py).
@@ -1207,7 +1212,8 @@ class DatabaseManager:
             _FACT_INSERT_SQL_WITH_KIND if use_kind else _FACT_INSERT_SQL_LEGACY,
             tuple(params),
         )
-        self.store_temporal_validity(fact.fact_id, fact.profile_id)
+        self.store_temporal_validity(fact.fact_id, fact.profile_id,
+                                         valid_from=_event_start(fact))
         from superlocalmemory.storage.entity_index import record_fact_entities
 
         record_fact_entities(
@@ -2641,6 +2647,10 @@ class DatabaseManager:
                 (valid_from, valid_until, fact_id, profile_id),
             )
 
+        from superlocalmemory.storage.event_time import mirror
+
+        mirror(self, fact_id, profile_id, valid_from)
+
     def get_temporal_validity(self, fact_id: str, profile_id: str | None = None) -> dict | None:
         """Get temporal validity record for a fact (C4: optionally tenant-scoped)."""
         if profile_id is not None:
@@ -2952,6 +2962,7 @@ class DatabaseManager:
         if not fact_ids or (known_as_of is None and valid_at is None):
             return set()
         from datetime import datetime as _dt
+
         from superlocalmemory.retrieval.temporal_utils import normalize_as_of
 
         def _parse_timestamp(value: object) -> _dt | None:

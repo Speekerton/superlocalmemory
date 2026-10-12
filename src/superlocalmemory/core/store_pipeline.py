@@ -951,7 +951,7 @@ def run_store(
                 db.store_temporal_validity(
                     fact_id=fact.fact_id,
                     profile_id=profile_id,
-                    valid_from=fact.observation_date,
+                    valid_from=fact.referenced_date or fact.observation_date or fact.created_at,
                     valid_until=None,
                 )
                 invalidations = temporal_validator.validate_and_invalidate(

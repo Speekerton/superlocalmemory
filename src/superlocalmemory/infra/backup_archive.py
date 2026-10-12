@@ -114,7 +114,7 @@ def _write_archive(data_root: Path, destination: Path, set_id: str,
     from superlocalmemory.infra.backup_credentials import OMISSION
     from superlocalmemory.infra.private_files import open_private_new
 
-    native = json.loads((set_dir / "manifest.json").read_text()) if set_dir else {}
+    native = json.loads((set_dir / "manifest.json").read_text(encoding="utf-8")) if set_dir else {}
     stores = [{"name": s["store_name"], "sha256": s["sha256"], "bytes": s["size_bytes"]}
               for s in native.get("stores", [])]
     originals = _originals(data_root)

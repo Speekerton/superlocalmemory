@@ -417,9 +417,7 @@ async function loadDashboard() {
 
         setTextById('dashboard-mode',     'Mode ' + data.mode.toUpperCase());
         // #112: the mode's own wording; the provider has its own row below.
-        setTextById('dashboard-mode-desc', data.mode === 'a' ?
-            'Core memory extraction runs locally without a language model. Optional answer checks and background work use their own model settings.' :
-            data.mode_tagline || data.mode_name);
+        setTextById('dashboard-mode-desc', data.mode_tagline || data.mode_name);
         setTextById('dashboard-memory-count', data.fact_count || data.memory_count || '0');
         setTextById('dashboard-provider', data.provider === 'none' ? 'None' : data.provider);
         setTextById('dashboard-model',    data.model || '');

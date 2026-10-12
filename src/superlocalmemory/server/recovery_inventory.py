@@ -17,7 +17,7 @@ def points(root: Path) -> list[dict]:
         if path.is_symlink() or path.parent.is_symlink():
             continue
         try:
-            record = json.loads(path.read_text())
+            record = json.loads(path.read_text(encoding="utf-8"))
             if path.parent.name != "backup_" + record["id"]:
                 continue
             found.append(record)

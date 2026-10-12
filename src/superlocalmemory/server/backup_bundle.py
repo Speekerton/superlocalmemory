@@ -145,7 +145,7 @@ def _create_point(root: Path, keep: frozenset[str] = frozenset()) -> dict:
 def verify_point(root: Path, point_id: str) -> dict:
     point = _point_dir(Path(root), point_id)
     try:
-        manifest = json.loads((point / "recovery.json").read_text())
+        manifest = json.loads((point / "recovery.json").read_text(encoding="utf-8"))
         if manifest["format"] != 1 or manifest["id"] != point_id or not manifest["files"]:
             raise ValueError("invalid manifest")
         for entry in manifest["files"]:

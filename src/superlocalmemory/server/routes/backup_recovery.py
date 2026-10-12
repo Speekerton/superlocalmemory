@@ -65,7 +65,7 @@ def recovery_list(request: Request):
     items = []
     for file in sorted((_root() / "backups").glob("backup_*/recovery.json"), reverse=True):
         try:
-            record = json.loads(file.read_text())
+            record = json.loads(file.read_text(encoding="utf-8"))
             items.append(
                 {
                     "recovery_id": record["id"],

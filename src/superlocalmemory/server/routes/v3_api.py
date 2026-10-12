@@ -1271,6 +1271,12 @@ async def recall_trace(request: Request):
         include_unknown = body.get("include_unknown", False)
         if not isinstance(include_unknown, bool):
             return JSONResponse({"error": "invalid_include_unknown"}, status_code=400)
+        show_weak = body.get("show_weak", False)
+        if not isinstance(show_weak, bool):
+            return JSONResponse({"error": "invalid_show_weak"}, status_code=400)
+        include_related = body.get("include_related", True)  # a person is looking
+        if not isinstance(include_related, bool):
+            return JSONResponse({"error": "invalid_include_related"}, status_code=400)
 
         # Normalize as_of at HTTP boundary. Invalid → 400.
         _as_of: str | None = None
@@ -1313,6 +1319,8 @@ async def recall_trace(request: Request):
                 window=window or None, as_of=_as_of,
                 known_as_of=_known_as_of, valid_at=_valid_at,
                 include_unknown=include_unknown,
+                **({"show_weak": True} if show_weak else {}),
+                **({"include_related": True} if include_related else {}),
                 # Whoever asked, by the name they arrived under. Without a name
                 # the record of this recall is discarded and no outcome
                 # reported afterwards can be matched back to it.

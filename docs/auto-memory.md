@@ -100,7 +100,7 @@ They are stored under `rules` in `~/.superlocalmemory/config.json`:
     "auto_recall": {
       "enabled": true,
       "on_session_start": true,
-      "on_every_prompt": false,
+      "on_every_prompt": true,
       "max_memories_injected": 10,
       "relevance_threshold": 0.3
     },
@@ -119,7 +119,15 @@ They are stored under `rules` in `~/.superlocalmemory/config.json`:
 The values shown are the defaults. Set `enabled` to `false` to turn either off.
 The MCP tools read these rules: `session_init` honors `enabled`,
 `on_session_start` and `relevance_threshold`, and `observe` honors the capture
-settings. The hook scripts for Claude Code and Codex are installed or removed with
+settings. The hooks read them too: `on_every_prompt` switches the per-prompt
+recall hooks (Claude Code's UserPromptSubmit and Codex's prompt hook), and
+`capture_session_summary` switches the summary saved when a session ends; each
+is also off while its section's `enabled` is `false`.
+
+Upgrading to 4.1.25: earlier versions saved `"on_every_prompt": false` with every
+Settings change even though nothing read it. That stored value is dropped once,
+on the first read after the upgrade, so per-prompt recall keeps running; set it
+to `false` again (the file then carries `"rules_version": 2`) to turn it off. The hook scripts for Claude Code and Codex are installed or removed with
 `slm hooks install` and `slm hooks remove`. When auto-capture or auto-recall is
 off, `slm remember` and `slm recall` still work.
 

@@ -7,6 +7,8 @@ line, never a crash, and never a blocked setup."""
 
 from __future__ import annotations
 
+import pytest
+
 import superlocalmemory.cli.setup_wizard as sw
 import superlocalmemory.core.laya_runtime as laya_runtime
 import superlocalmemory.retrieval.sufficiency as sufficiency_mod
@@ -25,6 +27,15 @@ def _ready_status(**overrides) -> laya_runtime.LayaRuntimeStatus:
                   model_revision="rev", progress=1.0, step="Ready")
     fields.update(overrides)
     return laya_runtime.LayaRuntimeStatus(**fields)
+
+
+@pytest.fixture(autouse=True)
+def _clean_laya_env(monkeypatch, tmp_path):
+    """No opt-out or opt-in from the outside, and a private runtime folder
+    (where a "no" is remembered)."""
+    monkeypatch.delenv("SLM_SKIP_LAYA", raising=False)
+    monkeypatch.delenv("SLM_INSTALL_LAYA", raising=False)
+    monkeypatch.setattr(laya_runtime, "runtime_dir", lambda *a, **k: tmp_path / "laya")
 
 
 class TestLayaStepSkipEnv:
@@ -96,47 +107,64 @@ class TestLayaStepInteractive:
 
 
 class TestLayaStepNonInteractive:
-    """M-13 (4.1.18): unattended setup (``--auto``, CI, no terminal) never
-    downloads the ~1.1 GB model by itself — only when asked to."""
+    """4.1.25 (Varun): Laya is on by default where it can run, unattended
+    setup included. Opting out is SLM_SKIP_LAYA=1 or ``slm setup --no-laya``;
+    the old opt-in SLM_INSTALL_LAYA=1 still works and =0 now opts out."""
 
-    def test_skips_the_install_unless_asked(self, monkeypatch, capsys):
+    def _install_spy(self, monkeypatch):
         monkeypatch.setattr(sufficiency_mod, "laya_supported", lambda: True)
-        monkeypatch.delenv("SLM_INSTALL_LAYA", raising=False)
         monkeypatch.setattr(sw, "_prompt", lambda *a, **k: (_ for _ in ()).throw(
             AssertionError("non-interactive setup must never prompt")))
-        install_calls = []
-        monkeypatch.setattr(
-            laya_runtime, "install",
-            lambda **k: install_calls.append(1) or _ready_status(),
-        )
+        calls = []
+        monkeypatch.setattr(laya_runtime, "install",
+                            lambda **k: calls.append(1) or _ready_status())
+        return calls
 
+    def test_installs_by_default_without_prompting(self, monkeypatch, capsys):
+        calls = self._install_spy(monkeypatch)
         config = _cfg()
         sw._run_laya_step(config, interactive=False)
-
-        assert install_calls == []
-        assert config.retrieval.sufficiency_judge != "laya"
-        out = capsys.readouterr().out
-        assert "SLM_INSTALL_LAYA=1" in out
-
-    def test_installs_automatically_without_prompting_when_asked(self, monkeypatch):
-        monkeypatch.setattr(sufficiency_mod, "laya_supported", lambda: True)
-        monkeypatch.setenv("SLM_INSTALL_LAYA", "1")
-
-        def _prompt_must_not_be_called(*a, **k):
-            raise AssertionError("non-interactive setup must never prompt")
-
-        monkeypatch.setattr(sw, "_prompt", _prompt_must_not_be_called)
-        install_calls = []
-        monkeypatch.setattr(
-            laya_runtime, "install",
-            lambda **k: install_calls.append(1) or _ready_status(),
-        )
-
-        config = _cfg()
-        sw._run_laya_step(config, interactive=False)
-
-        assert install_calls == [1]
+        assert calls == [1]
         assert config.retrieval.sufficiency_judge == "laya"
+        out = capsys.readouterr().out
+        assert "SLM_SKIP_LAYA=1" in out and "--no-laya" in out
+
+    def test_the_old_opt_in_still_installs(self, monkeypatch):
+        calls = self._install_spy(monkeypatch)
+        monkeypatch.setenv("SLM_INSTALL_LAYA", "1")
+        sw._run_laya_step(_cfg(), interactive=False)
+        assert calls == [1]
+
+    def test_opting_out_by_env_or_flag_skips_the_download(self, monkeypatch, capsys):
+        calls = self._install_spy(monkeypatch)
+        for env, value in (("SLM_SKIP_LAYA", "1"), ("SLM_SKIP_LAYA", "true"),
+                           ("SLM_INSTALL_LAYA", "0")):
+            monkeypatch.setenv(env, value)
+            config = _cfg()
+            sw._run_laya_step(config, interactive=False)
+            monkeypatch.delenv(env)
+            assert config.retrieval.sufficiency_judge != "laya"
+        config = _cfg()
+        sw._run_laya_step(config, interactive=False, no_laya=True)
+        assert calls == [] and config.retrieval.sufficiency_judge != "laya"
+        assert "later in the dashboard" in capsys.readouterr().out
+
+    def test_never_on_unsupported_hardware(self, monkeypatch):
+        calls = self._install_spy(monkeypatch)
+        monkeypatch.setattr(sufficiency_mod, "laya_supported", lambda: False)
+        sw._run_laya_step(_cfg(), interactive=False)
+        assert calls == []
+
+    def test_saying_no_is_remembered_and_saying_yes_clears_it(self, monkeypatch):
+        from superlocalmemory.cli import laya_offer
+
+        self._install_spy(monkeypatch)
+        monkeypatch.setattr(sw, "_prompt", lambda *a, **k: "n")
+        sw._run_laya_step(_cfg(), interactive=True)
+        assert laya_offer.declined()
+        monkeypatch.setattr(sw, "_prompt", lambda *a, **k: "y")
+        sw._run_laya_step(_cfg(), interactive=True)
+        assert not laya_offer.declined()
 
 
 class TestLayaStepFailure:
@@ -186,12 +214,12 @@ class TestLayaSummaryLine:
         monkeypatch.setattr(sufficiency_mod, "laya_supported", lambda: False)
         assert sw._laya_summary_line_applies() is False
 
-    def test_unattended_summary_never_announces_a_download_it_will_not_do(self, monkeypatch):
+    def test_unattended_summary_announces_the_default_download(self, monkeypatch):
         monkeypatch.setattr(sufficiency_mod, "laya_supported", lambda: True)
-        monkeypatch.delenv("SLM_INSTALL_LAYA", raising=False)
-        assert sw._laya_summary_line_applies(interactive=False) is False
-        monkeypatch.setenv("SLM_INSTALL_LAYA", "1")
         assert sw._laya_summary_line_applies(interactive=False) is True
+        assert sw._laya_summary_line_applies(interactive=False, no_laya=True) is False
+        monkeypatch.setenv("SLM_INSTALL_LAYA", "0")
+        assert sw._laya_summary_line_applies(interactive=False) is False
 
 
 class TestRerunKeepsAnswerCheckChoices:

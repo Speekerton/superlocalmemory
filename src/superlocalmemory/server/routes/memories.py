@@ -1035,6 +1035,10 @@ async def search_memories(request: Request, body: SearchRequest):
                 lambda: call_as_dashboard(
                     engine.recall, body.query, limit=_search_limit, fast=True,
                     window=_window or None,
+                    # 4.1.25: a person searching sees close memories of a real
+                    # question (labelled related); the toggle shows every weak one.
+                    include_related=True,
+                    **({"show_weak": True} if body.show_weak else {}),
                     # Name the surface. A recall with no name leaves no record
                     # an outcome can be matched to, and a search typed into the
                     # dashboard is one continuous thread of use, not a
@@ -1144,10 +1148,18 @@ async def search_memories(request: Request, body: SearchRequest):
             FROM atomic_facts WHERE profile_id = ? AND {sql[0]}{kind_clause}
             {visible_fact_clause_for_connection(conn)}
             ORDER BY {sql[2]}, confidence DESC LIMIT ?
-        """, (active_profile, *sql[1], *kind_params, *sql[3], body.limit)).fetchall()
+        """, (active_profile, *sql[1], *kind_params, *sql[3],
+              body.limit * 3)).fetchall()  # over-fetch: the tiers below filter
         from superlocalmemory.retrieval.fallback_fidelity import admit_fallback
         from superlocalmemory.server.recall_serializer import recall_response_metadata
         rows, fidelity = admit_fallback(rows, conn, active_profile, close_db=True)
+        _tier, _note = "", ""
+        if not apply_kind_filter:  # 4.1.25: the same tiers as the daemon's fallback
+            from superlocalmemory.server.recall_fallback import _tiered
+            rows, _tier, _note = _tiered(body.query, rows, body.show_weak, True)
+            for row in rows:
+                row["tier"] = row.pop("_tier", "")
+        rows = rows[:body.limit]
 
         if has_kind_columns:
             from superlocalmemory.core.kind_query import engine_display_min_confidence
@@ -1174,6 +1186,8 @@ async def search_memories(request: Request, body: SearchRequest):
             "answerability_reason": "unavailable" if results else "no_results",
             "abstention_reason": None if results else "no_candidates",
             "no_confident_match": False,
+            **({"tier": _tier} if _tier else {}),
+            **({"abstention_note": _note} if _note else {}),
         }
 
     except Exception:

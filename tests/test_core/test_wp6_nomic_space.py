@@ -21,7 +21,7 @@ def test_task_prompts_change_space_and_leave_legacy_untouched():
     assert worker.embed.call_args_list[1].args == ("search_query: Who owns rollback?",)
 
 
-def test_random_identifiers_do_not_dominate_vectors_but_stay_in_text():
+def test_v2_keeps_code_and_hash_identifiers_in_dense_and_lexical_text():
     from superlocalmemory.core.embedding_recipe import RecipeEmbedder
 
     content = "Beacon uses blue green deployment. " + "a24b97ed6ca5f098174d653abc992fde " * 16
@@ -29,10 +29,11 @@ def test_random_identifiers_do_not_dominate_vectors_but_stay_in_text():
     embedder = RecipeEmbedder(worker)
     embedder.embed(content)
     sent = worker.embed.call_args.args[0]
-    assert "a24b97" not in sent
+    assert "a24b97" in sent
     assert "Beacon uses blue green deployment" in sent
     assert "a24b97" in content
-    assert embedder.embed_query("a24b97ed6ca5f098174d653abc992fde") is None
+    embedder.embed_query("a24b97ed6ca5f098174d653abc992fde")
+    worker.embed.assert_called_with("search_query: a24b97ed6ca5f098174d653abc992fde")
 
 
 def test_daemon_reports_the_versioned_space_not_the_bare_delegate():

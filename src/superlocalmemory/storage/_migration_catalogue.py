@@ -187,6 +187,9 @@ from superlocalmemory.storage.migrations import (
 from superlocalmemory.storage.migrations import (
     M060_memory_description as _M060,
 )
+from superlocalmemory.storage.migrations import (
+    M061_fact_hub_baseline as _M061,
+)
 
 # Order matters: M003 creates the log table. The runner handles M003's own
 # bootstrap (it can't record itself before it exists).
@@ -396,4 +399,7 @@ DEFERRED_MIGRATIONS: list[Migration] = [
     Migration(name=_M059.NAME, db_target="memory", ddl=_M059.DDL,
               dependencies=(_M035.NAME,)),
     Migration(name=_M060.NAME, db_target="memory", ddl=_M060.DDL),
+    # M061 adds the hub-baseline table recall reads (retrieval/hub_baseline.py).
+    # Deferred: its delete trigger watches atomic_facts.
+    Migration(name=_M061.NAME, db_target="memory", ddl=_M061.DDL),
 ]

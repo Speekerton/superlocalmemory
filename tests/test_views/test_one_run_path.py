@@ -110,7 +110,9 @@ def test_the_over_budget_keyword_answer_is_shared_too(daemon, capsys, monkeypatc
         time.sleep(0.6)
         raise RuntimeError("never reached in time")
     monkeypatch.setattr(daemon.engine, "recall", slow)
-    monkeypatch.setenv("SLM_SEARCH_RECALL_TIMEOUT_S", "0.1")
+    # The budget now includes middleware and view-history assembly. Keep
+    # those available while the 600 ms primary recall still times out.
+    monkeypatch.setenv("SLM_SEARCH_RECALL_TIMEOUT_S", "0.5")
     runs = [_dashboard(daemon), _cli(capsys), _mcp(daemon)]
     assert all(r["retrieval_mode"] == "degraded_lexical" for r in runs), runs
     assert runs[0]["result_ids"] == runs[1]["result_ids"] == runs[2]["result_ids"]

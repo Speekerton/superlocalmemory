@@ -23,6 +23,9 @@ ceiling, not a target, and nothing here makes retrieval itself faster or shorter
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -72,14 +75,18 @@ ANSWER_CHECK_DETAILS = frozenset({"settings_changed",
     DETAIL_BUDGET, DETAIL_REUSED, DETAIL_MEDIA_UNJUDGED,
 })
 
+_COMPLETE_BUDGET_NOTE = (
+    "Answer check did not run: retrieval used the recall's time budget, so "
+    "there was no time left to ask. The results are complete; only the verdict is missing."
+)
+
 #: One plain sentence per way the check can end without a verdict. A recall
 #: that was not checked must never read like one that was: ``abstained`` is
 #: False on both, so the note (and ``answer_check_ran``) is what tells them apart.
 _NOT_CHECKED = "Answer check did not run"
 _SKIP_NOTES = {
     DETAIL_BUDGET: (f"{_NOT_CHECKED}: retrieval used the recall's time budget, so "
-                    "there was no time left to ask. The results are complete; only "
-                    "the verdict is missing."),
+                    "there was no time left to ask. Returned matches were not checked."),
     DETAIL_NOT_A_QUESTION: f"{_NOT_CHECKED}: this recall loads context, it is not a question.",
     DETAIL_NO_RESULTS: f"{_NOT_CHECKED}: nothing was found to check.",
     DETAIL_OTHER_PROFILE: (f"{_NOT_CHECKED}: the online check would have read a memory "
@@ -114,9 +121,31 @@ POST_JUDGE_RESERVE_S = 0.05
 #: Below this, the check is not asked. A hosted round trip or a local judgement
 #: of three memories rarely completes in a quarter of a second, so asking would
 #: add that wait to the recall for a verdict that would almost always time out.
-#: COST: a recall whose retrieval already used more than ~2.7 s is reported
-#: unjudged (status "skipped") — its results are unchanged.
 JUDGE_FLOOR_S = 0.25
+#: 4.1.25: the check's own budget. It used to get only what retrieval left of
+#: the 3.0 s ceiling, so a slow retrieval (7.4 s on a real store) skipped it and
+#: a question with no answer in memory came back unjudged. Now it always gets
+#: at least this long (Laya's own default timeout), measured from when it
+#: starts -- unless the caller has a deadline of its own (the daemon's public
+#: recall ceiling), which is never overrun (``caller_deadline``).
+ANSWER_CHECK_OWN_BUDGET_S = 1.5
+#: Past this much retrieval time the check is skipped (status "skipped",
+#: detail "budget"): a recall that slow is an outage, not a question to judge.
+ANSWER_CHECK_HARD_CEILING_S = 15.0
+
+_CALLER_DEADLINE: ContextVar[float | None] = ContextVar(
+    "slm_answer_check_caller_deadline", default=None)
+
+
+@contextmanager
+def caller_deadline(deadline: float | None) -> Iterator[None]:
+    """The monotonic instant this recall's caller stops waiting; the check never
+    runs past it. ``None`` leaves the check's own budget alone."""
+    token = _CALLER_DEADLINE.set(deadline)
+    try:
+        yield
+    finally:
+        _CALLER_DEADLINE.reset(token)
 
 
 @dataclass(frozen=True)
@@ -148,13 +177,16 @@ class AnswerCheckTrace:
     total_ms: float          # pipeline start -> the response is returned
 
 
-def answer_check_note(status: object, detail: object = DETAIL_NONE) -> str:
+def answer_check_note(status: object, detail: object = DETAIL_NONE, *,
+                      retrieval_complete: bool = False) -> str:
     """The sentence a person reads when the check gave no verdict; "" otherwise.
 
     "" for ``judged`` (the verdict speaks) and ``off`` (nothing is configured,
     so nothing is missing).
     """
     if status == STATUS_SKIPPED:
+        if detail == DETAIL_BUDGET and retrieval_complete:
+            return _COMPLETE_BUDGET_NOTE
         return _SKIP_NOTES.get(detail, f"{_NOT_CHECKED}.")  # type: ignore[arg-type]
     if status == STATUS_BUSY:
         return (f"{_NOT_CHECKED}: the on-device check was answering another recall "
@@ -172,10 +204,19 @@ def answer_check_note(status: object, detail: object = DETAIL_NONE) -> str:
 def judge_deadline(recall_started: float, *, now: float | None = None) -> float | None:
     """The monotonic instant the check must answer by, or None to skip it.
 
-    ``recall_started`` is ``time.monotonic()`` at the start of the recall.
+    ``recall_started`` is ``time.monotonic()`` at the start of the recall. The
+    later of the ceiling's deadline and the check's own budget from now; never
+    past the caller's deadline; None past the hard ceiling or when less than
+    ``JUDGE_FLOOR_S`` would be left.
     """
     current = time.monotonic() if now is None else now
-    deadline = recall_started + RECALL_CEILING_S - POST_JUDGE_RESERVE_S
+    if current - recall_started > ANSWER_CHECK_HARD_CEILING_S:
+        return None
+    deadline = max(recall_started + RECALL_CEILING_S - POST_JUDGE_RESERVE_S,
+                   current + ANSWER_CHECK_OWN_BUDGET_S)
+    caller = _CALLER_DEADLINE.get()
+    if caller is not None:
+        deadline = min(deadline, caller - POST_JUDGE_RESERVE_S)
     if deadline - current < JUDGE_FLOOR_S:
         return None
     return deadline
@@ -205,6 +246,8 @@ def normalize_request(value: object) -> str:
 
 __all__ = [
     "ANSWER_CHECK_DETAILS",
+    "ANSWER_CHECK_HARD_CEILING_S",
+    "ANSWER_CHECK_OWN_BUDGET_S",
     "ANSWER_CHECK_REQUESTS",
     "ANSWER_CHECK_STATUSES",
     "AnswerCheckTrace",
@@ -219,6 +262,7 @@ __all__ = [
     "JudgeOutcome",
     "POST_JUDGE_RESERVE_S",
     "RECALL_CEILING_S",
+    "caller_deadline",
     "REQUEST_FULL",
     "REQUEST_NO_REORDER",
     "STATUS_BUSY",

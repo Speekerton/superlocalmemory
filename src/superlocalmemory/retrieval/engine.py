@@ -243,8 +243,14 @@ class RetrievalEngine:
         valid_at: str | None = None,
         include_unknown: bool = False,
         facets: Any = None,
+        lexical_query: str | None = None,
     ) -> RecallResponse:
         """Full retrieval pipeline: strategy -> channels -> RRF -> rerank.
+
+        ``lexical_query`` (4.1.25, ``retrieval/query_rewrite``): what the
+        keyword channel searches for, when a rewrite added terms. Every other
+        stage -- the vector channels, the cross-encoder, the evidence features
+        -- reads ``query``.
 
         Multi-scope: ``include_global`` / ``include_shared`` control which
         scopes participate in retrieval. Both default to False so direct
@@ -344,6 +350,7 @@ class RetrievalEngine:
             dropped_channels=dropped_channels,
             channel_status=channel_status,
             stage_ms=stage_ms,
+            lexical_query=lexical_query,
         )
         stage_ms["channels"] = round((time.monotonic() - _t_channels) * 1000.0, 1)
         if getattr(facets, "kind", None) and getattr(self, "_kind_membership", None):
@@ -652,7 +659,8 @@ class RetrievalEngine:
             # removed by the floor, producing a false abstention even though a
             # qualified candidate was immediately below the slice.
             top = self._apply_evidence_floor(
-                top, facts, min_sem, self._media_floor())
+                top, facts, min_sem, self._media_floor(),
+                hub_corrected=self._floor_hub_corrected(top, facts, min_sem, profile_id))
 
         # 5. Cross-encoder rerank (optional, on the evidence-qualified pool)
         # Bug 4 fix: reduced alpha for multi-hop/temporal to preserve diversity
@@ -675,10 +683,13 @@ class RetrievalEngine:
             else "not_configured"
         )
         _t_rerank = time.monotonic()
+        # fact_id -> (raw cross-encoder score, its in-batch normalised value),
+        # kept for the evidence features below rather than thrown away.
+        ce_scores: dict[str, tuple[float, float]] = {}
         if reranker_ready and facts:
             ce_alpha = 0.5 if strat.query_type in ("multi_hop", "temporal") else 0.75
             top, reranker_applied, reranker_status = self._apply_reranker(
-                query, top, facts, alpha=ce_alpha,
+                query, top, facts, alpha=ce_alpha, raw_out=ce_scores,
             )
         elif reranker_ready:
             reranker_status = "no_candidates"
@@ -728,6 +739,9 @@ class RetrievalEngine:
         # which candidates made the cut (boost_order above).
         results = self._build_results(final_top, facts, strat,
                                       reranked=reranker_applied)
+        _t_evidence = time.monotonic()
+        query_evidence = self._attach_evidence(query, results, ce_scores, profile_id)
+        stage_ms["evidence"] = round((time.monotonic() - _t_evidence) * 1000.0, 1)
         ms = (time.monotonic() - t0) * 1000.0
         stage_ms["retrieval_total"] = round(ms, 1)
         no_match = floor_enabled and len(results) == 0
@@ -747,7 +761,87 @@ class RetrievalEngine:
             stage_ms=dict(stage_ms),
             project_scope=project_scope,
             tag_scope=tag_scope,
+            query_evidence=query_evidence,
         )
+
+    # -- Evidence features (measurement only) -------------------------------
+
+    def _hub_baselines(
+        self, fact_ids: list[str], profile_id: str,
+    ) -> dict[str, tuple[float, float]]:
+        """``fact_id -> (top-k, mean)`` hub baselines stored for the live space."""
+        from superlocalmemory.retrieval import hub_baseline
+
+        return hub_baseline.read(
+            self._db, fact_ids, hub_baseline.space_of(getattr(self, "_embedder", None)))
+
+    def _probe_matrix(self) -> Any:
+        """Hub probe vectors when this process has embedded them; never embeds."""
+        from superlocalmemory.retrieval import hub_baseline
+
+        return hub_baseline.PROBES.cached(
+            hub_baseline.space_of(getattr(self, "_embedder", None)))
+
+    def _attach_evidence(
+        self, query: str, results: list[RetrievalResult],
+        ce_scores: dict[str, tuple[float, float]], profile_id: str,
+    ) -> dict:
+        """Record each result's evidence features; return the question's own.
+
+        No score or order changes here (``retrieval.evidence_attach``). Fail-open
+        -- a feature that cannot be computed is recorded as missing, and an
+        error never reaches the caller.
+        """
+        from superlocalmemory.retrieval import evidence_attach
+
+        vector = getattr(self, "_query_embedding_cache", {}).get(query)
+        try:
+            probes = self._probe_matrix()
+            if probes is None and vector is not None and not _gate_off(self):
+                from superlocalmemory.retrieval import hub_baseline
+                if hub_baseline.lazy_warm(getattr(self, "_embedder", None)):
+                    probes = self._probe_matrix()
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("hub probes: %s", exc)
+            probes = None
+        return evidence_attach.attach(
+            query, results,
+            query_vector=vector,
+            ce_scores=ce_scores,
+            stored_baselines=lambda ids: self._hub_baselines(ids, profile_id),
+            probes=probes,
+            terms_in_store=lambda terms: self._terms_in_store(terms, profile_id),
+        )
+
+    def _pairs_in_store(self, pairs: list[str], profile_id: str) -> set[str]:
+        """Character pairs of an unspaced script some memory contains (one scan:
+        the keyword index holds whole runs, never their pairs)."""
+        cols = ", ".join(f"MAX(instr(content, ?{i + 1}) > 0)" for i in range(len(pairs)))
+        rows = self._db.execute(
+            f"SELECT {cols} FROM atomic_facts WHERE profile_id = ?{len(pairs) + 1}",
+            (*pairs, profile_id))
+        hits = tuple(rows[0]) if rows else ()
+        return {p for p, hit in zip(pairs, hits) if hit}
+
+    def _terms_in_store(self, terms: list[str], profile_id: str) -> set[str]:
+        """The terms some stored memory of this profile contains, in any
+        inflection the shipped word list knows (a base form of four or more
+        letters is matched as a prefix). One indexed keyword lookup per term."""
+        from superlocalmemory.encoding.common_words import _bases
+        from superlocalmemory.retrieval.evidence_features import unspaced
+
+        pairs = [t for t in terms if unspaced(t)]
+        found: set[str] = self._pairs_in_store(pairs, profile_id) if pairs else set()
+        for term in (t for t in terms if not unspaced(t)):
+            variants = ['"' + term.replace('"', "") + '"'] + [
+                '"' + b + '"*' for b in _bases(term)[1:] if len(b) >= 4 and b.isalpha()]
+            row = self._db.execute(
+                "SELECT 1 FROM atomic_facts_fts f JOIN atomic_facts a ON a.rowid = f.rowid "
+                "WHERE atomic_facts_fts MATCH ? AND a.profile_id = ? LIMIT 1",
+                (" OR ".join(variants), profile_id))
+            if row:
+                found.add(term)
+        return found
 
     # -- Community context (Wave Q2b) --------------------------------------
 
@@ -792,12 +886,30 @@ class RetrievalEngine:
         channel = getattr(self, "_media_channel", None)
         return default if channel is None else channel.min_score(default)
 
+    def _floor_hub_corrected(self, top: list[FusionResult], facts: dict[str, AtomicFact],
+                             min_semantic: float, profile_id: str) -> dict[str, float]:
+        """Hub-corrected cosine for the candidates the raw floor would drop; none
+        when the answer-support gate is switched off (the floor as before)."""
+        from superlocalmemory.retrieval.evidence_attach import floor_hub_corrected
+        from superlocalmemory.retrieval.support_gate import switched_off
+
+        if switched_off(self._config):
+            return {}
+        try:
+            return floor_hub_corrected(
+                top, facts, min_semantic, probes=self._probe_matrix(),
+                stored=lambda ids: self._hub_baselines(ids, profile_id))
+        except Exception as exc:  # fail-open: the raw floor alone, as before
+            logger.debug("floor hub correction: %s", exc)
+            return {}
+
     @staticmethod
     def _apply_evidence_floor(
         final_top: list[FusionResult],
         facts: dict[str, AtomicFact],
         min_semantic: float,
         min_media: float = 0.30,
+        hub_corrected: dict[str, float] | None = None,
     ) -> list[FusionResult]:
         """Filter results that earned no channel evidence.
 
@@ -817,7 +929,9 @@ class RetrievalEngine:
             if fact is not None and media_rerank.is_wordless_picture(getattr(fact, "content", "") or ""):
                 evident = media_rerank.wordless_picture_evidence(fr.channel_scores or {}, min_media)
             else:
-                evident = has_primary_evidence(fr.channel_scores, min_semantic, min_media)
+                evident = has_primary_evidence(
+                    fr.channel_scores, min_semantic, min_media,
+                    hub_corrected=(hub_corrected or {}).get(fr.fact_id))
             # Pinned fact bypass — always pass regardless of channel scores
             if evident or (fact is not None and getattr(fact, "pinned", False)):
                 kept.append(fr)
@@ -1118,6 +1232,7 @@ class RetrievalEngine:
         dropped_channels: set[str] | None = None,
         channel_status: dict[str, str] | None = None,
         stage_ms: dict[str, float] | None = None,
+        lexical_query: str | None = None,
     ) -> dict[str, list[tuple[str, float]]]:
         """Run active retrieval channels.
 
@@ -1252,7 +1367,7 @@ class RetrievalEngine:
                     self._bm25.search,
                     include_global=include_global, include_shared=include_shared,
                 ),
-                query, profile_id, self._config.bm25_top_k,
+                lexical_query or query, profile_id, self._config.bm25_top_k,
             )
         if self._temporal is not None and "temporal" not in disabled:
             futures["temporal"] = executor.submit(
@@ -1411,11 +1526,18 @@ class RetrievalEngine:
         self, query: str, fused: list[FusionResult],
         fact_map: dict[str, AtomicFact],
         alpha: float = 0.75,
+        *,
+        raw_out: dict[str, tuple[float, float]] | None = None,
     ) -> tuple[list[FusionResult], bool, str]:
         """Rerank with blended CE + RRF scores (Bug 1 fix).
 
         Blended: alpha * sigmoid(CE_score) + (1 - alpha) * rrf_score.
         Speaker tags stripped before scoring (Bug 3 fix).
+
+        ``raw_out``, when given, receives ``fact_id -> (raw CE score, in-batch
+        normalised CE score)`` for every scored candidate. The normalised value
+        is what the blend uses; the raw one is the only form that can be
+        compared across recalls (the best of an unrelated batch normalises to 1.0).
         """
         # Bug 2 fix: score ALL candidates, not just top_k. v3.8.5: verified on
         # the real DB that bounding the CE to the top-N fusion candidates both
@@ -1500,6 +1622,9 @@ class RetrievalEngine:
         ce_min = min(ce_values) if ce_values else 0.0
         ce_max = max(ce_values) if ce_values else 1.0
         ce_range = ce_max - ce_min if ce_max > ce_min else 1.0
+        if raw_out is not None:
+            for fid, raw in score_map.items():
+                raw_out[fid] = (float(raw), (raw - ce_min) / ce_range)
 
         # Also normalize RRF scores so both terms contribute meaningfully
         rrf_values = [fr.fused_score for fr in fused]
@@ -1711,6 +1836,12 @@ _CHANNEL_KEYS: tuple[str, ...] = (
 )
 
 
+def _gate_off(engine: Any) -> bool:
+    from superlocalmemory.retrieval.support_gate import switched_off
+
+    return switched_off(getattr(engine, "_config", None))
+
+
 def apply_channel_weights(
     candidates: list[RetrievalResult],
     weights: dict[str, float] | None,
@@ -1754,5 +1885,6 @@ def apply_channel_weights(
             evidence_chain=c.evidence_chain,
             trust_score=c.trust_score,
             marker=c.marker,
+            evidence=c.evidence,
         ))
     return out

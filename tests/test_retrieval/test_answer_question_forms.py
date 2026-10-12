@@ -191,22 +191,22 @@ class TestTheJudgeAppliesTheRule:
 
 class TestTheVerdictTravelsIntact:
     def test_a_rule_supported_verdict_is_not_an_abstention(self) -> None:
-        verdict = SufficiencyVerdict((0.08, 0.06, 0.02), 0.6, "laya:x+permission-rule-v1",
+        verdict = SufficiencyVerdict((0.08, 0.06, 0.02), 0.6, "laya:x" + forms.RULE_SUFFIX,
                                      rule_support=(0,))
         response = RecallResponse(results=[RetrievalResult(
             fact=AtomicFact(content=A2_DOCS[0]), score=0.5, confidence=1.0)])
         finalize_score_contract(response, verdict)
         assert response.abstained is False
         assert response.answer_confidence == 0.08
-        assert response.calibration_id == "laya:x+permission-rule-v1"
+        assert response.calibration_id == "laya:x" + forms.RULE_SUFFIX
 
     def test_one_memory_at_a_time_combines_to_the_same_verdict(self) -> None:
         from superlocalmemory.core.answer_check_deferred import _combine
 
-        parts = [SufficiencyVerdict((p,), 0.6, "laya:x+permission-rule-v1", rule_support=rs)
+        parts = [SufficiencyVerdict((p,), 0.6, "laya:x" + forms.RULE_SUFFIX, rule_support=rs)
                  for p, rs in ((0.08, (0,)), (0.06, ()), (0.02, ()))]
         combined = _combine(parts)
-        assert combined == SufficiencyVerdict((0.08, 0.06, 0.02), 0.6, "laya:x+permission-rule-v1",
+        assert combined == SufficiencyVerdict((0.08, 0.06, 0.02), 0.6, "laya:x" + forms.RULE_SUFFIX,
                                               rule_support=(0,))
         assert combined.insufficient is False
 

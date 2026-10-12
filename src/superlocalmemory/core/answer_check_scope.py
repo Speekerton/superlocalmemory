@@ -28,6 +28,9 @@ from collections.abc import Iterator
 #: Query parameter (and value) a caller sends so the daemon skips the check.
 ANSWER_CHECK_PARAM = "answer_check"
 ANSWER_CHECK_SKIP = "skip"
+#: 4.1.25: a context load (session start, ``slm://context``, a context file):
+#: the check is skipped AND the answer-support gate does not run.
+ANSWER_CHECK_CONTEXT = "context"
 
 _SKIPPED: contextvars.ContextVar[bool] = contextvars.ContextVar(
     "slm_answer_check_skipped", default=False,
@@ -44,20 +47,52 @@ def skip_answer_check() -> Iterator[None]:
         _SKIPPED.reset(token)
 
 
+_CONTEXT: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "slm_recall_context_load", default=False,
+)
+
+
+@contextlib.contextmanager
+def context_load() -> Iterator[None]:
+    """Within this block a recall loads context, it does not ask a question: no
+    answer check, and no answer-support gate (the surface caps the tokens)."""
+    token = _CONTEXT.set(True)
+    try:
+        with skip_answer_check():
+            yield
+    finally:
+        _CONTEXT.reset(token)
+
+
 def answer_check_skipped() -> bool:
     """Whether the current context asked for the answer check to be skipped."""
     return _SKIPPED.get()
 
 
+def in_context_load() -> bool:
+    """Whether the current recall loads context rather than asking a question."""
+    return _CONTEXT.get()
+
+
 def wants_skip(value: object) -> bool:
     """Whether a wire value (the query parameter) asks for the skip."""
-    return isinstance(value, str) and value.strip().lower() == ANSWER_CHECK_SKIP
+    return isinstance(value, str) and value.strip().lower() in (
+        ANSWER_CHECK_SKIP, ANSWER_CHECK_CONTEXT)
+
+
+def wants_context(value: object) -> bool:
+    """Whether a wire value marks a context load."""
+    return isinstance(value, str) and value.strip().lower() == ANSWER_CHECK_CONTEXT
 
 
 __all__ = [
+    "ANSWER_CHECK_CONTEXT",
     "ANSWER_CHECK_PARAM",
     "ANSWER_CHECK_SKIP",
     "answer_check_skipped",
+    "context_load",
+    "in_context_load",
+    "wants_context",
     "skip_answer_check",
     "wants_skip",
 ]

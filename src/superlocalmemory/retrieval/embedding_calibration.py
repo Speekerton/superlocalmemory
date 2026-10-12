@@ -21,7 +21,7 @@ NOMIC_BOOTSTRAP_FLOOR = 0.54
 
 def floor_for(root: Path, signature: str) -> float | None:
     try:
-        payload = json.loads((root / FILE_NAME).read_text())
+        payload = json.loads((root / FILE_NAME).read_text(encoding="utf-8"))
         if not isinstance(payload, dict) or payload.get("schema") != SCHEMA:
             return None
         parse_entries(payload)

@@ -57,6 +57,7 @@ class QueryEmbedder:
         self._cache_max_size = cache_max_size
         self._lock = threading.Lock()
         self._inflight: dict[tuple[int, str], concurrent.futures.Future] = {}
+        self._waiters: dict[concurrent.futures.Future, int] = {}
         # Created on first use: an engine with no embedder (Mode A without
         # vectors) or one only ever used from background work owns no threads.
         self._executor: concurrent.futures.ThreadPoolExecutor | None = None
@@ -75,7 +76,8 @@ class QueryEmbedder:
                 self._owner = embedder
                 self._generation += 1
                 self._cache.clear()
-                self._inflight.clear()
+                # Keep old running/queued work counted until the executor
+                # actually drains it; a generation swap must not reset capacity.
             return embedder, self._generation
 
     def _remember(self, query: str, vector: list[float] | None, generation: int) -> None:
@@ -89,15 +91,27 @@ class QueryEmbedder:
             self._cache[query] = vector
 
     def _compute(self, query: str, embedder: Any, generation: int) -> list[float] | None:
+        with self._lock:
+            pending = self._inflight.get((generation, query))
+            if (self._closed or generation != self._generation
+                    or (pending is not None and self._waiters.get(pending, 0) == 0)):
+                return None  # abandoned queued work never invokes the provider
         vector = embed_as_query(embedder, query)
         self._remember(query, vector, generation)
         return vector
 
-    def _future_for(self, query: str, embedder: Any, generation: int) -> concurrent.futures.Future:
+    def _future_for(self, query: str, embedder: Any,
+                    generation: int) -> concurrent.futures.Future | None:
         with self._lock:
-            fut = self._inflight.get((generation, query))
+            if self._closed:
+                raise RuntimeError("query embedder is closed")
+            key = (generation, query)
+            fut = self._inflight.get(key)
             if fut is not None:
+                self._waiters[fut] = self._waiters.get(fut, 0) + 1
                 return fut
+            if len(self._inflight) >= 2:
+                return None  # two worker slots, across all provider generations
             if self._executor is None:
                 if self._closed:
                     raise RuntimeError("query embedder is closed")
@@ -109,11 +123,13 @@ class QueryEmbedder:
                 )
             fut = self._executor.submit(self._compute, query, embedder, generation)
             self._inflight[generation, query] = fut
+            self._waiters[fut] = 1
 
         def _done(_f, q=(generation, query)) -> None:
             with self._lock:
                 if self._inflight.get(q) is _f:
                     del self._inflight[q]
+                self._waiters.pop(_f, None)
 
         # Outside the lock: a future that is already done runs the callback
         # inline, and the callback takes the same (non-reentrant) lock.
@@ -173,8 +189,13 @@ class QueryEmbedder:
                 return self._current_result(pending.result(), generation)
             vector = self._compute(query, embedder, generation)
             return self._current_result(vector, generation)
+        return self._foreground(query, embedder, generation, wait_seconds)
+
+    def _foreground(self, query, embedder, generation, wait_seconds):
         warming = self._not_ready()
         fut = self._future_for(query, embedder, generation)
+        if fut is None:
+            return None, chstat.WARMING if warming else chstat.TIMEOUT
         try:
             vector = fut.result(timeout=max(0.0, wait_seconds))
             return self._current_result(vector, generation)
@@ -185,6 +206,10 @@ class QueryEmbedder:
                 wait_seconds,
             )
             return None, chstat.WARMING if warming or self._not_ready() else chstat.TIMEOUT
+        finally:
+            with self._lock:
+                if fut in self._waiters:
+                    self._waiters[fut] -= 1
 
     def worker_threads(self) -> list[threading.Thread]:
         """This embedder's pool threads (none until a cold embed created it)."""

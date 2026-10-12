@@ -48,6 +48,10 @@ class CancelToken:
             or engine._retrieval_engine._sufficiency_judge is not self._judge
         )
 
+    @property
+    def cancel_requested(self):
+        return self._event.is_set()
+
     def report(self, **values):
         if self._progress is not None:
             self._progress(**values)

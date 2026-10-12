@@ -8,7 +8,7 @@ when_to_use: |
   - "Find stored information about authentication / the database / error handling"
   - "Search for what I said about Y"
   - Automatically before any non-trivial task, to surface prior context
-allowed-tools: recall, search, fetch, list_recent, get_memory_summary, run_view, report_outcome, report_feedback, Bash
+allowed-tools: recall, search, fetch, expand, list_recent, get_memory_summary, run_view, report_outcome, report_feedback, Bash
 ---
 
 # slm-recall — Search & Retrieve Memory
@@ -25,6 +25,7 @@ multi-channel retrieval. The golden rule: **recall before you remember**.
 | Conceptual or paraphrase query ("what did we agree on for auth?") | `recall` — full multi-channel retrieval + rerank |
 | Exact keyword match needed ("find facts containing BM25") | `search` — FTS5 BM25 only, lower latency |
 | You have a specific `fact_id` from a prior result | `fetch` — exact lookup, full detail |
+| One result looks right and you need what surrounds it | `expand` — source memory, session neighbours, same-entity facts, the correction that replaced it |
 | Browse newest entries without a query | `list_recent` |
 | A day, a project or a session in readable form | `get_memory_summary` |
 | A question the user saved under a name | `run_view` |
@@ -67,6 +68,7 @@ wraps the same data in a `data` envelope):
       "memory_id": "m7e19ca0",
       "content": "Decided to use JWT with 1h expiry for API auth (2026-06-10)",
       "score": 0.87,
+      "tier": "supported",
       "confidence": 0.91,
       "trust_score": 0.84,
       "fact_type": "semantic",
@@ -107,6 +109,10 @@ wraps the same data in a `data` envelope):
   "answer_confidence": null,
   "abstained": false,
   "abstention_reason": null,
+  "abstention_note": "",
+  "tier": "supported",
+  "warming_up": false,
+  "status_note": "",
   "answer_check_status": "off",
   "answerability": "unjudged",
   "answerability_reason": "disabled"
@@ -180,6 +186,55 @@ or `judged_from_memo` for a verdict, and for `unjudged` one of `disabled`,
 `not_a_question` or `other_profile`. An empty result set is `unjudged` /
 `no_results`, which is not evidence that no answer exists (check
 `channel_status`). `answer_check_note` carries a sentence you can show a person.
+
+### 1b. Tiers: supported, related, none
+
+Every recall says which of three answers it is, in `tier` (on the response and
+on each result):
+
+| `tier` | what it means | what you do |
+|---|---|---|
+| `supported` | a memory carries the answer | use it |
+| `related` | the question is real, but nothing answers it exactly | `abstention_note` is "I don't have this exactly — here are the closest memories." Say you don't have it exactly; you may mention the closest memories (each labelled `tier: related`, a short preview), never present them as the answer |
+| `none` | nonsense, or nothing close | `abstention_note` is "That isn't in SuperLocalMemory." **Stop. Do not invent an answer**, and do not keep rephrasing the same question |
+
+The MCP `recall` returns `supported` results only. Pass `include_related=true`
+to see up to three related memories when there is no supported one (without
+it, a related answer comes back empty with "I don't have this exactly. Closer
+memories exist; ask with include_related to see them."). `search`, the CLI and
+the dashboard show related memories by default, labelled. `show_weak=true`
+shows every weak match anyway, each labelled `weak: true`.
+
+**`warming_up: true` means ask again shortly.** Right after a start, while the
+models and inputs are still loading, recall returns what keyword search found
+(as `related`) with `status_note`: "SuperLocalMemory is still warming up —
+results may be incomplete. Try again in a few minutes." Tell the user that, and
+do not conclude the memory is absent: SLM never says "That isn't in
+SuperLocalMemory." while warming up.
+
+### 1c. Depth, max_tokens and expand
+
+Recall in layers and spend context only where it pays:
+
+| `depth` | returns |
+|---|---|
+| `0` glance | ids, `tier`, score and a one-line preview — the cheapest look |
+| `1` recall | the full facts (the default) |
+| `2` context | + `context`: the source memory, up to three facts from the same session, up to three about the same entities, and `superseded_by` when a correction replaced it |
+
+`max_tokens` caps the whole result list and is never exceeded: context goes
+first, then the last memory is shortened, then memories are left out, and
+`layers` says what was trimmed. Start at `depth=0` or `1`; when one result is
+the right one, drill into it with `expand`:
+
+```
+recall(query="hub resultType fix", depth=0, max_tokens=400, session_id="<sid>")
+expand(memory_id="f8a2bc91", depth=2, max_tokens=800)
+```
+
+`expand` takes a result's `fact_id` or `memory_id` and runs the same profile,
+quarantine and visibility checks as `fetch`; every memory it adds passes them
+too.
 
 ### 2. Passing session_id
 
@@ -362,8 +417,10 @@ No benchmark numbers are cited here; performance is workload-dependent.
 ## CLI fallback (when MCP is unavailable)
 
 ```bash
-# Multi-channel recall
+# Multi-channel recall (related memories are shown, labelled [related])
 slm recall "<query>" [--limit N] [--json]
+slm recall "<query>" --depth 0|1|2 [--max-tokens N]   # glance, full, with context
+slm recall "<query>" --show-weak                       # every weak match, labelled [weak]
 
 # Narrow it (all optional, combined as AND)
 slm recall "<query>" --project <name-or-path> [--project-strict] [--prefer-project <path>]
@@ -400,6 +457,10 @@ configuration. See [docs/shared-memory.md](../../../docs/shared-memory.md).
 ---
 
 ## Never fabricate a memory
+
+"That isn't in SuperLocalMemory." (`tier: none`) is final for that question:
+stop and say so; do not invent an answer. While `warming_up` is true, say SLM
+is still warming up and to try again in a few minutes instead.
 
 After re-querying with refined sub-queries (see **Refine on low confidence** above), if `no_confident_match` is still `true` or results are empty, report it plainly.
 Never construct a response as if a memory was found when it was not. The user

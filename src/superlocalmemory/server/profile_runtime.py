@@ -551,6 +551,9 @@ class ProfileRuntimeMiddleware:
             "/api/v3/mode/set",
             "/api/v3/embedding/config",
             "/api/v3/scope/config",
+            # Per-run cancellation revokes a background token and needs no
+            # profile lease; waiting here would make a transition uninterruptible.
+            "/api/v3/answer-check/calibration/cancel",
             # Erasing the active profile moves the service to another one first,
             # which drains every lease, this request's own included.
             "/api/compliance/gdpr/erase",
@@ -558,6 +561,14 @@ class ProfileRuntimeMiddleware:
         return profile_switch or config_transition
 
     async def __call__(self, scope, receive, send) -> None:
+        from superlocalmemory.server.recall_ingress import is_recall, serve
+
+        if is_recall(scope):
+            await serve(self._call, self._app_state, scope, receive, send)
+        else:
+            await self._call(scope, receive, send)
+
+    async def _call(self, scope, receive, send) -> None:
         if scope.get("type") != "http":
             await self._app(scope, receive, send)
             return
@@ -570,28 +581,16 @@ class ProfileRuntimeMiddleware:
             await self._app(scope, receive, send)
             return
 
-        import asyncio
-
-        from superlocalmemory.server.profile_lease import release_late_lease
+        from superlocalmemory.server.profile_lease import acquire_request_lease
 
         runtime = get_profile_runtime(self._app_state)
-        acquire_task = asyncio.create_task(
-            asyncio.to_thread(runtime.acquire_lease)
-        )
-        try:
-            # Shield the worker so cancellation cannot strand a lease that the
-            # thread acquires after this coroutine has already unwound.
-            lease = await asyncio.shield(acquire_task)
-        except asyncio.CancelledError:
-            acquire_task.add_done_callback(release_late_lease)
-            raise
+        lease = await acquire_request_lease(runtime)
         await self._serve_admitted(scope, receive, send, lease)
 
     async def _serve_admitted(self, scope, receive, send, lease):
         from superlocalmemory.server.profile_lease import bind_request_lease
 
-        snapshot = lease.snapshot
-        scope.setdefault("state", {})["profile_snapshot"] = snapshot
+        scope.setdefault("state", {})["profile_snapshot"] = lease.snapshot
         # A signed-in caller's workspace was pinned before the gates ran and is
         # theirs alone: a daemon switch landing now cannot change what they act
         # on (PR 248 review, finding 2). A caller without a binding (the machine
@@ -599,7 +598,7 @@ class ProfileRuntimeMiddleware:
         # the generation it was admitted under, as before.
         pin = scope["state"].get("caller_workspace")
         bound = pin is not None and pin.bound
-        token = _REQUEST_PROFILE.set(pin.profile_id if bound else snapshot.profile_id)
+        token = _REQUEST_PROFILE.set(pin.profile_id if bound else lease.snapshot.profile_id)
 
         async def _send(message) -> None:
             # Streaming bodies do not keep the request's admission. Any work

@@ -28,7 +28,7 @@ README = REPO_ROOT / "README.md"
 # tests/test_mcp/test_mcp_exposure_contract.py
 # (`test_registration_exposure_is_exact_and_duplicate_free`, exposure
 # "whole", expected_count 107).
-_WHOLE_TOOLS_COUNT = 109
+_WHOLE_TOOLS_COUNT = 110  # 4.1.25: + expand
 
 # "| `core` | 18 |" and "| `full` (and unset) | 54 |".
 _ROW = re.compile(r"^\| `(\w+)`[^|`]*\| (\d+) \|", flags=re.MULTILINE)

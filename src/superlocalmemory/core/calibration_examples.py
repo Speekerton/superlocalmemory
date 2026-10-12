@@ -4,9 +4,10 @@
 
 from __future__ import annotations
 
-import http.client
 import json
 import uuid
+
+from superlocalmemory.core.outbound_http import local_ollama_connection
 
 
 def local_question(model: str, fact: str, absent_subject: str = "", stop=None) -> dict:
@@ -22,7 +23,7 @@ def local_question(model: str, fact: str, absent_subject: str = "", stop=None) -
             + ", an invented project absent from the store, using this fact's topic: "
             + json.dumps(fact)
         )
-    conn = http.client.HTTPConnection("127.0.0.1", 11434, timeout=30)
+    conn = local_ollama_connection()
     from contextlib import closing
 
     context = stop.client(conn) if stop is not None else closing(conn)

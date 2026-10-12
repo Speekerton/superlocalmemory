@@ -183,9 +183,10 @@ class TestTheCheckFitsTheRecallBudget:
     def test_too_little_time_left_skips_the_check_and_keeps_every_result(
         self, mode_a_config, monkeypatch,
     ) -> None:
-        # Shrink the ceiling instead of sleeping two seconds: retrieval takes
-        # 0.2 s of a 0.4 s ceiling, leaving less than the floor.
+        # Shrink the ceilings instead of sleeping: retrieval takes 0.2 s, past
+        # a 0.1 s hard ceiling (4.1.25: the check otherwise has its own budget).
         monkeypatch.setattr(acs, "RECALL_CEILING_S", 0.4)
+        monkeypatch.setattr(acs, "ANSWER_CHECK_HARD_CEILING_S", 0.1)
         judge = _Judge()
         out = _run(judge, mode_a_config, monkeypatch, delay=0.2)
         assert judge.calls == []

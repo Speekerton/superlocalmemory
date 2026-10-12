@@ -33,7 +33,9 @@ def current_request_lease():
 def release_late_lease(task):
     """Release shielded native-thread admission even after repeated cancellation."""
     if not task.cancelled() and task.exception() is None:
-        task.result().release()
+        lease = task.result()
+        if lease is not None:
+            lease.release()
 
 
 @contextmanager
@@ -43,3 +45,28 @@ def bind_request_lease(lease):
         yield
     finally:
         _REQUEST_LEASE.reset(token)
+
+
+async def acquire_request_lease(runtime, deadline=None):
+    """Native admission releases itself even if the awaiting event loop closes."""
+    import asyncio
+
+    abandoned = threading.Event()
+
+    def acquire():
+        lease = runtime.acquire_lease()
+        if abandoned.is_set():
+            lease.release()
+            return None
+        return lease
+
+    task = asyncio.create_task(asyncio.to_thread(acquire))
+    try:
+        if deadline is None:
+            return await asyncio.shield(task)
+        return await asyncio.wait_for(
+            asyncio.shield(task), max(0, deadline - asyncio.get_running_loop().time()))
+    except BaseException:
+        abandoned.set()
+        task.add_done_callback(release_late_lease)
+        raise

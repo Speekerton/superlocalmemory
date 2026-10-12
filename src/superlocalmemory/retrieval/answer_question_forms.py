@@ -45,7 +45,7 @@ import re
 from collections.abc import Sequence
 
 #: Names the rule in the calibration id of every verdict it settled.
-FORMS_ID = "permission-rule-v1"
+FORMS_ID = "permission-rule-v2"
 RULE_SUFFIX = "+" + FORMS_ID
 
 _GENERIC = (r"(?:we|i|you|they|anyone|anybody|someone|somebody|one|"
@@ -144,7 +144,8 @@ def rule_supports(question: str, memory: str) -> bool:
     verb, rest = _stem(words[0]), {_stem(w) for w in words[1:]}
     governed = re.compile(_CUE + r"\s+(?:\w+\s+){0,2}?" + re.escape(verb) + r"\w*", re.I)
     asked = rest | {verb}
-    for sentence in _SENTENCE.findall(memory):
+    from superlocalmemory.retrieval.source_assertions import assertion_sentences
+    for sentence in assertion_sentences(memory):
         found = None if _is_question(sentence) else governed.search(sentence)
         if found is None:
             continue

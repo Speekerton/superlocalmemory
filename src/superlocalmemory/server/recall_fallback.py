@@ -118,6 +118,35 @@ def _fetch_candidates(db, pid: str, query: str, pool_limit: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+#: What a recall past its budget says when no keyword match answers it. Never
+#: "That isn't in SuperLocalMemory.": nothing was measured to say so.
+TIMEOUT_NOTE = ("Recall ran out of time, so only keyword matches were checked. "
+                "Try again in a moment.")
+
+
+def supported_rows(query: str, rows: list[dict]) -> list[dict]:
+    """4.1.25: the rows the question's words support (``support_gate.
+    lexical_support``). The fallback matches ANY word, so without this a
+    question of one stored token plus gibberish answered on a slow recall."""
+    from superlocalmemory.retrieval.support_gate import lexical_support
+
+    return [r for r in rows if lexical_support(query, str(r.get("content") or ""))]
+
+
+def _tiered(query: str, rows: list[dict], show_weak: bool,
+            include_related: bool) -> tuple[list[dict], str, str]:
+    """``(rows to show, tier, note)`` for the fallback's keyword matches."""
+    from superlocalmemory.retrieval import support_tiers as st
+
+    supported = supported_rows(query, rows)
+    if supported:
+        return [{**r, "_tier": st.SUPPORTED} for r in supported], st.SUPPORTED, ""
+    if not rows:
+        return [], st.NONE, TIMEOUT_NOTE
+    others = rows if show_weak else rows[:st.RELATED_MAX] if include_related else []
+    return [{**r, "_tier": st.RELATED} for r in others], st.RELATED, TIMEOUT_NOTE
+
+
 def _apply_facets(engine, db, pid, candidates, facets
                   ) -> tuple[list[dict], str | None, dict | None, dict | None]:
     """Narrow like full recall does (``retrieval.project_scope.narrow``). A
@@ -152,10 +181,14 @@ def _apply_facets(engine, db, pid, candidates, facets
 def recall_keyword_fallback(
     engine, query: str, limit: int, *, profile_id: str | None = None,
     profile: str | None = None, profile_generation: int | None = None,
-    facets: Any = None,
+    facets: Any = None, show_weak: bool = False, include_related: bool = False,
     fidelity_budget_s: float = 0.5,
 ) -> dict:
     """Profile-scoped keyword recall for a recall that exceeded its budget.
+
+    4.1.25: rows the question's words support come first, labelled supported;
+    the others only on request (``include_related``: up to three, labelled
+    related; ``show_weak``: all), with a plain note when none supports it.
 
     Honours the same hard filters as full recall (quarantine, caller
     replacement via ``current_fact_clause``, and project / agent / about / kind
@@ -163,6 +196,7 @@ def recall_keyword_fallback(
     abandoned so the answer can never be read as complete.
     """
     results: list[dict] = []
+    tier, note = "", ""
     has_facets = facets is not None and not facets.empty
     facet_filter_error: str | None = None
     project_scope: dict | None = None
@@ -175,19 +209,21 @@ def recall_keyword_fallback(
         pid = profile_id or engine.profile_id
         from superlocalmemory.retrieval.kind_filter import overfetch_limit
 
-        pool_limit = overfetch_limit(limit) if has_facets else limit
-        candidates = _fetch_candidates(db, pid, query, pool_limit)
+        # Over-fetch: the support filter below may drop the first rows found.
+        candidates = _fetch_candidates(db, pid, query, overfetch_limit(limit))
         from superlocalmemory.retrieval import visibility
 
         if not visibility.is_empty():  # a remote caller: never what it may not see
             hidden = visibility.hidden_among(db, pid, [d.get("fact_id") for d in candidates])
             candidates = [d for d in candidates if d.get("fact_id") not in hidden]
-        if has_facets:
+        if has_facets:  # an explicit filter keeps its behaviour
             candidates, facet_filter_error, project_scope, tag_scope = _apply_facets(
                 engine, db, pid, candidates, facets)
         from superlocalmemory.retrieval.fallback_fidelity import admit_fallback
         candidates, response = admit_fallback(
             candidates, db, pid, budget_s=deadline - time.monotonic())
+        if not has_facets:
+            candidates, tier, note = _tiered(query, candidates, show_weak, include_related)
         for pos, d in enumerate(candidates[:limit], start=1):
             results.append({
                 "fact_id": d.get("fact_id"),
@@ -195,6 +231,7 @@ def recall_keyword_fallback(
                 "score": None, "relevance_score": None, "ranking_score": None,
                 "confidence": d.get("confidence"),
                 "rank_position": pos,
+                **({"tier": d["_tier"]} if "_tier" in d else {}),
             })
     except Exception as exc:
         logger.warning("recall keyword fallback failed (non-fatal): %s", type(exc).__name__)
@@ -231,4 +268,6 @@ def recall_keyword_fallback(
         "answerability": "unjudged",
         "answerability_reason": "budget_exhausted" if results else "no_results",
         "retrieval_time_ms": 0,
+        **({"tier": tier} if tier else {}),
+        **({"abstention_note": note} if note else {}),
     }

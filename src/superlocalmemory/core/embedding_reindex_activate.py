@@ -80,6 +80,8 @@ def _publish(runner: Any, job: dict, embedder: Any, target: Any, snapshot: Any) 
     _write_stored_signature(runner.data_root, job["to_signature"])
     secrets.put(runner.data_root, secrets.PREVIOUS, previous_key)
     secrets.drop(runner.data_root, secrets.TARGET)
+    from superlocalmemory.optimize.cache.semantic_embedder import invalidate_embedding_space
+    invalidate_embedding_space()
     try:  # out-of-process fallbacks still hold the old model
         from superlocalmemory.core.worker_pool import WorkerPool
 
@@ -113,9 +115,7 @@ def activate_job(runner: Any, job: dict, embedder: Any, target: Any) -> dict:
     """One activation attempt. Returns the job as it stands afterwards."""
     from superlocalmemory.server.profile_runtime import (
         TransitionDrainTimeout,
-        get_profile_runtime,
     )
-
     conn = sp.connect(runner.db_path)
     outcome: dict[str, Any] = {}
     try:
@@ -135,14 +135,9 @@ def activate_job(runner: Any, job: dict, embedder: Any, target: Any) -> dict:
                 _reverse(runner, conn, job, f"the new model could not be put in service: {exc}")
                 raise ActivationFailed(str(exc)) from exc
             outcome["publish_ms"] = round((time.perf_counter() - published) * 1000, 1)
-
         held = time.perf_counter()
         try:
-            if runner.app_state is not None:
-                get_profile_runtime(runner.app_state).reconfigure(
-                    _commit, drain_timeout=ACTIVATION_DRAIN_S)
-            else:
-                _commit(None)
+            _activation_window(runner, _commit)
         except NotCaughtUp as exc:
             logger.info("re-index job %s caught new writes at the swap (%s); catching up",
                         job["job_id"], exc)
@@ -152,7 +147,8 @@ def activate_job(runner: Any, job: dict, embedder: Any, target: Any) -> dict:
                     update_job(conn, job["job_id"], state="catching_up")
             return get_job(conn, job["job_id"])
         except TransitionDrainTimeout as exc:
-            logger.info("re-index job %s: requests did not drain (%s); retrying", job["job_id"], exc)
+            logger.info("re-index job %s: requests did not drain (%s); retrying",
+                        job["job_id"], exc)
             return get_job(conn, job["job_id"])
         outcome["window_ms"] = round((time.perf_counter() - held) * 1000, 1)
         outcome["quiet"] = getattr(runner, "quiet", None)
@@ -162,6 +158,14 @@ def activate_job(runner: Any, job: dict, embedder: Any, target: Any) -> dict:
         return get_job(conn, job["job_id"])
     finally:
         conn.close()
+
+
+def _activation_window(runner, commit):
+    from superlocalmemory.server.profile_runtime import get_profile_runtime
+    if runner.app_state is not None:
+        get_profile_runtime(runner.app_state).reconfigure(commit, drain_timeout=ACTIVATION_DRAIN_S)
+    else:
+        commit(None)
 
 
 def _record(runner: Any, conn: Any, job: dict, outcome: dict) -> None:

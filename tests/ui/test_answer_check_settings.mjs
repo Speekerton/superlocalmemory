@@ -334,3 +334,16 @@ it('an installed but warming judge never displays a Ready headline', async () =>
     execution: { state: 'warming', detail: 'The on-device model is warming' } }));
   assert.match(p.text('.ac-laya-state'), /warming/);
 });
+
+it('running local calibration offers a working per-run cancel action', async () => {
+  const p = await mount(status({ mode: 'laya', active: 'laya', laya: { state: 'ready' },
+    execution: { state: 'ready' }, calibration: { state: 'running', done: 12, total: 48 } }), {
+    '/api/v3/answer-check/calibration/cancel': () => ({ status: 202,
+      body: { state: 'cancelling', done: 12, total: 48, detail: 'Cancelling calibration' } }),
+  });
+  assert.ok(p.ac('calibration-cancel'));
+  assert.equal(p.ac('calibration-cancel').disabled, false);
+  await click(p, p.ac('calibration-cancel'));
+  assert.deepEqual(p.sent.map(s => s.url), ['/api/v3/answer-check/calibration/cancel']);
+  assert.match(p.root.textContent, /Calibration cancelling/);
+});

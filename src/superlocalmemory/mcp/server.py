@@ -117,6 +117,7 @@ _ESSENTIAL_TOOLS: set[str] = {
     "recall",
     "search",
     "fetch",
+    "expand",
     "list_recent",
     "delete_memory",
     "update_memory",

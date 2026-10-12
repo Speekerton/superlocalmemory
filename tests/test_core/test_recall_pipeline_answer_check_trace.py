@@ -33,10 +33,16 @@ _ENVELOPE_4_1_20 = _ENVELOPE_4_1_19 | {
 #: 4.1.21 (#150): what a recall's project filter or preference did.
 _ENVELOPE_4_1_21 = _ENVELOPE_4_1_20 | {"project_scope"}
 #: 4.1.22: whether the answer was checked, in one word, and why.
-_ENVELOPE_4_1_22 = _ENVELOPE_4_1_21 | {"answerability", "answerability_reason", "tag_scope"}
-#: 4.1.25: source fidelity and entity graph freshness also travel on the wire.
+# The merged4.1.25 graph freshness contract is additive; the trace stays private.
+_ENVELOPE_4_1_22 = _ENVELOPE_4_1_21 | {
+    "answerability", "answerability_reason", "tag_scope", "graph_lag_s",
+}
+#: 4.1.25: the answer-support gate's verdict, its plain reason, and the
+#: answer check's own verdict (the gate decides ``abstained``); source
+#: fidelity and entity graph freshness also travel on the wire.
 _ENVELOPE_4_1_25 = _ENVELOPE_4_1_22 | {
-    "source_fidelity_status", "source_fidelity_note", "graph_lag_s",
+    "support", "abstention_note", "answer_check_insufficient", "tier", "warming_up",
+    "status_note", "source_fidelity_status", "source_fidelity_note",
 }
 
 
@@ -162,7 +168,8 @@ def test_details_on_each_skip_branch() -> None:
     with skip_answer_check():
         assert run_answer_check(engine, "q", full).detail == acs.DETAIL_NOT_A_QUESTION
     assert run_answer_check(engine, "q", RecallResponse()).detail == acs.DETAIL_NO_RESULTS
-    out = run_answer_check(engine, "q", full, recall_started=time.monotonic() - 10)
+    late = time.monotonic() - acs.ANSWER_CHECK_HARD_CEILING_S - 1
+    out = run_answer_check(engine, "q", full, recall_started=late)
     assert out.detail == acs.DETAIL_BUDGET and out.status == acs.STATUS_SKIPPED
     shared = RecallResponse(results=[RetrievalResult(
         fact=AtomicFact(fact_id="f", content="m", confidence=0.8, profile_id="other"),

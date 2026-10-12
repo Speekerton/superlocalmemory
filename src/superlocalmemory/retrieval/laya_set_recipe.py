@@ -31,7 +31,7 @@ def calibrated_recipe(judge):
         root = getattr(judge, '_answer_check_root', None)
         from pathlib import Path
         path = Path(root) / FILE_NAME if root is not None else state_path(FILE_NAME)
-        payload = json.loads(path.read_text())
+        payload = json.loads(path.read_text(encoding="utf-8"))
         parse_entries(payload)
         entries = payload["entries"]
         matched = any(

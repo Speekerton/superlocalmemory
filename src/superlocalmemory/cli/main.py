@@ -223,6 +223,11 @@ def main() -> None:
                     "  note: data migration check failed — run `slm doctor` to diagnose.",
                     file=sys.stderr,
                 )
+            # 4.1.25: offer the answer check the way setup does (setup and
+            # init run their own step; the offer goes to stderr only).
+            if len(sys.argv) < 2 or sys.argv[1] not in ("setup", "init"):
+                from superlocalmemory.cli import laya_offer
+                laya_offer.after_upgrade()
 
     parser = argparse.ArgumentParser(
         prog="slm",
@@ -254,6 +259,10 @@ def main() -> None:
     setup_p.add_argument(
         "--auto", action="store_true",
         help="Non-interactive mode: use defaults (for CI/scripts)",
+    )
+    setup_p.add_argument(
+        "--no-laya", action="store_true",
+        help="Don't install the local answer check (installed by default on Apple Silicon)",
     )
 
     mode_p = sub.add_parser("mode", help="Get or set operating mode (a/b/c)")
@@ -567,6 +576,21 @@ def main() -> None:
     recall_p.add_argument(
         "--valid-at", dest="valid_at", default="",
         help="Strict event-time boundary: return only facts valid at this ISO-8601 time.",
+    )
+    recall_p.add_argument(
+        "--depth", type=int, choices=(0, 1, 2), default=1,
+        help="0 glance (ids and one-line previews), 1 recall (full facts, default), "
+             "2 context (+ source memory, same-session neighbours, facts about the same "
+             "entities, the correction that replaced it).",
+    )
+    recall_p.add_argument(
+        "--max-tokens", dest="max_tokens", type=int, default=0,
+        help="Cap the returned results at this many (estimated) tokens; never exceeded.",
+    )
+    recall_p.add_argument(
+        "--show-weak", dest="show_weak", action="store_true",
+        help="When nothing in memory supports the question, show the closest weak "
+             "matches (labelled [weak]) instead of nothing.",
     )
     recall_p.add_argument(
         "--include-unknown", action="store_true",

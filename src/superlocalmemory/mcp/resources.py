@@ -20,6 +20,12 @@ from typing import Callable
 logger = logging.getLogger(__name__)
 
 
+#: What ``slm://context`` says when no memory matched the session's context.
+#: It used to say none were stored yet, which was false on a full store.
+EMPTY_CONTEXT_NOTE = ("No stored memory matched this session's context. Use 'recall' to "
+                      "search, or 'remember' to store something.")
+
+
 def register_resources(server, get_engine: Callable) -> None:
     """Register 7 MCP resources on *server*."""
 
@@ -56,7 +62,7 @@ def register_resources(server, get_engine: Callable) -> None:
                 auto.get_session_context, query="recent decisions and important context",
             )
             if not context:
-                return "No session context available yet. Use 'remember' to store memories."
+                return EMPTY_CONTEXT_NOTE
             return context
         except Exception as exc:
             # The type only: a message can quote a path or a memory.

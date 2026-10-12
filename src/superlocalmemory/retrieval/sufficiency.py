@@ -594,29 +594,9 @@ class LayaSufficiencyJudge:
 
     def _background_exchange(self, req: dict, timeout_s: float) -> dict | None:
         """One request on the live worker if it is free; never spawns, never blocks on it."""
-        for _ in range(_BACKGROUND_ATTEMPTS):
-            if self._lock.acquire(blocking=False):
-                break
-            recall_gate.wait_for_foreground_idle()
-            time.sleep(_BACKGROUND_YIELD_S)
-        else:
-            return None
-        proc = self._proc
-        try:
-            if proc is None or proc.poll() is not None or not self._ready:
-                return None
-            deadline = time.monotonic() + timeout_s
-            if not self._drain_stale(proc, deadline):
-                return None
-            return self._exchange(proc, req, deadline)
-        except (BrokenPipeError, EOFError, OSError, ValueError) as exc:
-            logger.warning("Laya worker transport failed during memory typing: %s",
-                           type(exc).__name__)
-            self._worker_lost()
-            return None
-        finally:
-            self._after_use(proc)
-            self._lock.release()
+        from superlocalmemory.retrieval.laya_background import exchange
+
+        return exchange(self, req, timeout_s)
 
     # -- transport --------------------------------------------------------
 
@@ -690,9 +670,10 @@ class LayaSufficiencyJudge:
 
     def _read_reply(self, proc: subprocess.Popen, request_id: int,
                     deadline: float) -> dict | None:
+        from superlocalmemory.retrieval.laya_background import read_line
         reader = self._reader_for(proc)
         while True:
-            line = reader.readline(deadline)
+            line = read_line(reader, deadline)
             if line is None:
                 return None
             reply = json.loads(line)
@@ -727,9 +708,10 @@ class LayaSufficiencyJudge:
             logger.warning("Laya sufficiency judge stopped answering; replacing it")
             self._worker_lost()
             return False
+        from superlocalmemory.retrieval.laya_background import read_line
         wait_until = min(deadline - self._min_ask_s, sent_at + _WEDGED_S)
         while True:
-            line = reader.readline(wait_until)
+            line = read_line(reader, wait_until)
             if line is None:
                 return False
             reply = json.loads(line)

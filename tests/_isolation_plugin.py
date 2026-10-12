@@ -120,6 +120,9 @@ else:
     os.environ["SLM_HOME"] = str(_TEST_ROOT / "wrong-hook-alias")
     os.environ["SLM_DAEMON_PORT"] = str(20_000 + secrets.randbelow(40_000))
     os.environ["SLM_TEST_INSTANCE_CAPABILITY"] = secrets.token_urlsafe(32)
+    # 4.1.25 installs the answer check (~1 GB) by default; no test may start
+    # that download by accident. Tests of the default clear this themselves.
+    os.environ["SLM_SKIP_LAYA"] = "1"
 for _unsafe_env in (
     "SLM_TEST_ALLOW_LIVE_HOME",
     "SLM_HOOK_DAEMON_URL",

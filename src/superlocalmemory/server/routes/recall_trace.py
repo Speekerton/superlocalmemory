@@ -100,6 +100,7 @@ def envelope(engine, call, response):
         per_fact_max=300,
         total_max=max(300, call.limit * 300),
         display_min_confidence=engine_display_min_confidence(engine),
+        include_evidence=True,
     )
     try:
         v3_api._record_learning_signals(call.query, results)
@@ -115,4 +116,5 @@ def envelope(engine, call, response):
         "no_confident_match": no_match,
         **recall_response_metadata(response),
         "answer_check": answer_check_block(response),
+        "query_evidence": dict(getattr(response, "query_evidence", {}) or {}),
     }

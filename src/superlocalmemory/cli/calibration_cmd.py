@@ -14,11 +14,12 @@ PATH = "/api/v3/answer-check/calibration"
 
 def run(args):
     status = args.embedder_command == "calibration-status"
-    body = None if status else {"model": args.model, "samples": args.samples}
+    cancel = args.embedder_command == "calibration-cancel"
+    body = None if status else {} if cancel else {"model": args.model, "samples": args.samples}
     try:
         data = daemon_request(
             "GET" if status else "POST",
-            PATH,
+            PATH + "/cancel" if cancel else PATH,
             body,
             preserve_conflict=True,
             preserve_unprocessable=True,
@@ -36,5 +37,5 @@ def run(args):
             f"Calibration: {data['state']} — {data.get('detail', '')} "
             f"({data.get('done', 0)}/{data.get('total', 0)})."
         )
-        if not status:
+        if not status and not cancel:
             print("Progress: slm embedder calibration-status")

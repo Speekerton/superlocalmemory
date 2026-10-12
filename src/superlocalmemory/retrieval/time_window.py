@@ -33,6 +33,7 @@ __all__ = [
     "parse_window",
     "in_window",
     "infer_window_from_query",
+    "HUB_CORRECTED_DOOR",
     "has_primary_evidence",
     "semantic_floor_on_channel_scale",
     "windowed_candidates",
@@ -211,16 +212,28 @@ def semantic_floor_on_channel_scale(min_semantic: float) -> float:
     return (min_semantic + 1.0) / 2.0
 
 
+#: 4.1.25: a memory whose cosine stands this far above its own hub baseline
+#: (``retrieval/hub_baseline``) has meaning evidence even under the raw floor.
+#: Measured on the answerability harness: paraphrases with no shared word reach
+#: 0.106-0.164 against raw cosines of 0.55-0.59. The floor only decides what
+#: the cross-encoder and the answer-support gate get to see; the gate decides
+#: whether recall answers.
+HUB_CORRECTED_DOOR = 0.10
+
+
 def has_primary_evidence(channel_scores: Mapping[str, float] | None,
-                         min_semantic: float, min_media: float = 0.30) -> bool:
+                         min_semantic: float, min_media: float = 0.30, *,
+                         hub_corrected: float | None = None) -> bool:
     """The evidence floor's test (``RetrievalEngine._apply_evidence_floor``):
-    meaning at or above the raw cosine ``min_semantic``, or any keyword, entity or
-    time evidence, or a picture match at or above ``min_media``. Associative
+    meaning at or above the raw cosine ``min_semantic``, or ``hub_corrected``
+    at or above ``HUB_CORRECTED_DOOR``, or any keyword, entity or time
+    evidence, or a picture match at or above ``min_media``. Associative
     channels (Hopfield, spreading activation) do not count.
     """
     cs = channel_scores or {}
     return (
         cs.get("semantic", 0.0) >= semantic_floor_on_channel_scale(min_semantic)
+        or (hub_corrected is not None and hub_corrected >= HUB_CORRECTED_DOOR)
         or cs.get("bm25", 0.0) > 0.0
         or cs.get("entity_graph", 0.0) > 0.0
         or cs.get("temporal", 0.0) > 0.0

@@ -135,6 +135,41 @@ _ADDS_ONLY_ANNOTATIONS = ToolAnnotations(
 )
 
 
+#: Keyword search needs no model: never warming up. Present so every recall
+#: door carries the same envelope (warming_up, status_note).
+_SEARCH_READY = {"warming_up": False, "status_note": ""}
+
+
+def _search_tiers(query: str, items: list[dict], *, filtered: bool) -> tuple[list[dict], dict]:
+    """``search``'s tiers: rows the question's words support first, then at most
+    three related ones; an explicit kind or tag filter keeps every row."""
+    rows, info = _tiered_rows(query, items, filtered=filtered)
+    return rows, {**info, **_SEARCH_READY}
+
+
+def _tiered_rows(query: str, items: list[dict], *, filtered: bool) -> tuple[list[dict], dict]:
+    from superlocalmemory.retrieval import support_tiers as st
+    from superlocalmemory.retrieval.support_gate import lexical_support
+
+    supported = [{**i, "tier": st.SUPPORTED} for i in items
+                 if lexical_support(query, str(i.get("content", "")))]
+    others = [{**i, "tier": st.RELATED} for i in items
+              if not lexical_support(query, str(i.get("content", "")))]
+    if filtered:
+        return supported + others, {"tier": st.SUPPORTED if supported else st.RELATED}
+    if supported:
+        return supported + others[:st.RELATED_MAX], {"tier": st.SUPPORTED}
+    if others:
+        return others[:st.RELATED_MAX], {"tier": st.RELATED,
+                                         "abstention_note": st.RELATED_NOTE}
+    return [], {"tier": st.NONE, "abstention_note": SEARCH_NO_MATCH}
+
+
+#: ``search`` matches words only; with no match it says that, not that the
+#: memory does not exist (only recall, warm, measures that).
+SEARCH_NO_MATCH = "No stored memory matches those words."
+
+
 def register_core_tools(server, get_engine: Callable) -> None:
     """Register the 13 core MCP tools on *server*."""
 
@@ -544,8 +579,29 @@ def register_core_tools(server, get_engine: Callable) -> None:
         tags: "str | list[str]" = "",
         tags_match: str = "all",
         project_strict: bool = False,
+        show_weak: bool = False,
+        include_related: bool = False,
+        depth: int = 1,
+        max_tokens: int = 0,
     ) -> dict:
         """Search memories through hybrid retrieval, RRF fusion, and reranking.
+
+        When nothing in memory supports the question, recall returns NO results
+        and ``abstention_note`` says so in plain words ("That isn't in
+        SuperLocalMemory."). Do not invent an answer then. Pass
+        ``depth``: 0 glance (ids, tier, one-line previews -- cheapest), 1 recall
+        (full facts, the default), 2 context (+ source memory, same-session
+        neighbours, facts about the same entities, the correction that replaced
+        it). Start at 0 or 1; drill into one result with ``expand``.
+        ``max_tokens`` caps the returned results; it is never exceeded.
+        If ``warming_up`` is true, tell the user SuperLocalMemory is still
+        warming up and to retry shortly; do not conclude the memory is absent.
+        ``include_related=true`` to see up to three close memories when the
+        question is real but not answered exactly ("I don't have this exactly
+        -- here are the closest memories."), each labelled ``tier: related``.
+        "That isn't in SuperLocalMemory." means stop: do not invent. Pass
+        ``show_weak=true`` to see the closest weak matches anyway; each is
+        labelled ``weak: true``.
 
         Fast local retrieval (six channels + reranker) returns in ~1-2s. This
         tool does NOT run an internal LLM reformulation round — YOU (the calling
@@ -634,6 +690,12 @@ def register_core_tools(server, get_engine: Callable) -> None:
             _kind = resolve_kind(kind)
         except InvalidKind as exc:
             return {"success": False, "code": "INVALID_KIND", "retryable": False,
+                    "error": str(exc)}
+        from superlocalmemory.core.recall_layers import parse_depth, parse_max_tokens
+        try:
+            depth, max_tokens = parse_depth(depth), parse_max_tokens(max_tokens) or 0
+        except (TypeError, ValueError) as exc:
+            return {"success": False, "code": "INVALID_LAYERS", "retryable": False,
                     "error": str(exc)}
         # 4.1.20 (R5): an unreadable window is refused, not passed on to run
         # unfiltered — the same check and code as the CLI and HTTP.
@@ -738,6 +800,11 @@ def register_core_tools(server, get_engine: Callable) -> None:
                     **({"tags_match": tags_match.strip()}
                        if (tags_match or "").strip().lower() == "any" else {}),
                     **({"budget_s": _budget_s} if _budget_s is not None else {}),
+                    # 4.1.25: only when asked, so every other call is unchanged.
+                    **({"show_weak": True} if show_weak else {}),
+                    **({"include_related": True} if include_related else {}),
+                    **({"depth": int(depth)} if int(depth) != 1 else {}),
+                    **({"max_tokens": int(max_tokens)} if max_tokens else {}),
                 )
 
             result = await asyncio.to_thread(
@@ -786,8 +853,14 @@ def register_core_tools(server, get_engine: Callable) -> None:
     @admits(OperationKind.RECALL)
     async def search(query: str, limit: int = CANONICAL_RECALL_LIMIT, kind: str = "",
                      profile_id: str = "", tags: "str | list[str]" = "",
-                     tags_match: str = "all") -> dict:
+                     tags_match: str = "all", depth: int = 1,
+                     max_tokens: int = 0) -> dict:
         """Full-text search across memories using FTS5 with BM25 ranking.
+
+        4.1.25: each result carries a ``tier`` -- ``supported`` when the
+        question's words support it, ``related`` (at most three) otherwise --
+        and ``abstention_note`` says so when none is supported. ``depth`` and
+        ``max_tokens`` work as in ``recall`` (0 glance, 1 full, 2 context).
 
         ``kind`` (4.1.19 WP8) keeps only results whose kind — the same nine
         values ``remember``'s ``kind`` parameter takes — equals this value,
@@ -843,7 +916,16 @@ def register_core_tools(server, get_engine: Callable) -> None:
                     "stub": bool(getattr(f, "non_answer", False)),
                     **kind_fields(f, display_min_confidence=_display_min_confidence),
                 })
-            result = {"success": True, "results": items, "count": len(items)}
+            items, tier_info = _search_tiers(query, items, filtered=bool(parsed_kind or _tags))
+            from superlocalmemory.core import recall_layers
+            _depth = recall_layers.parse_depth(depth)
+            items, layers = recall_layers.shape(
+                items, _depth, recall_layers.parse_max_tokens(max_tokens),
+                context_of=lambda item: recall_layers.context_for(
+                    engine._db, pid, str(item.get("fact_id", "")),
+                    visible=lambda facts: visible_facts(engine._db, pid, facts)))
+            result = {"success": True, "results": items, "count": len(items), **tier_info,
+                      **({"layers": layers} if _depth != 1 or max_tokens else {})}
             # 4.1.19 L2-13/M2: told, never a silent short answer, when the
             # kind filter's windowed fetch hit its hard cap before `limit`
             # was filled and the store was not exhausted.
@@ -923,6 +1005,10 @@ def register_core_tools(server, get_engine: Callable) -> None:
         except Exception as exc:
             logger.exception("fetch failed")
             return {"success": False, "error": str(exc)}
+
+    from superlocalmemory.mcp.tools_expand import register_expand_tool
+
+    register_expand_tool(server, get_engine)
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
     @admits(OperationKind.RECALL)

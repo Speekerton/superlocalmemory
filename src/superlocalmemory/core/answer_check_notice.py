@@ -41,7 +41,8 @@ def answered_line(result_get: Any, confidence: float) -> str:
     """The line for a checked, supported answer: by a rule, or by the model."""
     identity = result_get("calibration_id", None)
     if isinstance(identity, str) and identity.endswith(
-        ("+explicit-approver-v1", "+requested-slot-v1")
+        ("+explicit-approver-v1", "+requested-slot-v1",
+         "+explicit-approver-v2", "+requested-slot-v2")
     ):
         return (
             "Answer check: answer stated explicitly in your memories "

@@ -42,12 +42,11 @@ def cloud_tag(model: str) -> bool:
 
 def _show(host, model, timeout):
     """Ollama's model metadata. Carries no memory text, so it runs in-process."""
-    import httpx
+    from superlocalmemory.core.outbound_http import post_json
 
-    with httpx.Client(timeout=timeout, trust_env=False, follow_redirects=False) as client:
-        response = client.post(host.rstrip('/') + '/api/show', json={'model': model})
-        response.raise_for_status()
-        return response.json()
+    response = post_json(host.rstrip('/') + '/api/show', {'model': model}, timeout=timeout)
+    response.raise_for_status()
+    return response.json()
 
 
 def _remote(data) -> bool:
@@ -85,8 +84,7 @@ def _ollama_request(host, model, content, *, timeout):
 
 
 def _post(host, model, content, timeout):
-    import httpx
-
+    from superlocalmemory.core.outbound_http import post_json
     from superlocalmemory.storage.memory_kinds import MemoryKind
 
     if not loopback_host(host) or cloud_tag(model):
@@ -98,10 +96,10 @@ def _post(host, model, content, timeout):
                              'Classify the memory. Return only {"kind": "choice"}. '
                              'Choices: ' + choices},
                             {'role': 'user', 'content': content[:4000]}]}
-    with httpx.Client(timeout=timeout, trust_env=False, follow_redirects=False) as client:
-        response = client.post(host.rstrip('/') + '/api/chat', json=payload)
-        response.raise_for_status()
-        return json.loads(response.json()['message']['content'])
+    # Through the outbound gate: the memory text is screened like any other exit.
+    response = post_json(host.rstrip('/') + '/api/chat', payload, timeout=timeout)
+    response.raise_for_status()
+    return json.loads(response.json()['message']['content'])
 
 
 class LocalDescriptionKinds:

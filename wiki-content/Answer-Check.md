@@ -76,8 +76,10 @@ credential, which it sends automatically.
 On Apple Silicon, the first-run setup wizard offers to install the
 on-device option for you (defaults to yes; once it passes its check, the
 answer check is on). Elsewhere, it points you to the same settings page for
-the hosted option. An unattended setup (`slm setup --auto`, CI, no
-terminal) skips that download unless `SLM_INSTALL_LAYA=1` is set.
+the hosted option. It is on by default: an unattended setup (`slm setup
+--auto`, CI, no terminal) installs it too, and the first command after an
+upgrade offers it the same way. Opt out with `SLM_SKIP_LAYA=1` or
+`slm setup --no-laya`; a no is remembered.
 
 The on-device model loads when the daemon starts, or the moment you switch
 the check on — never inside a one-shot CLI command.

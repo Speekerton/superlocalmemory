@@ -8,7 +8,7 @@ from typing import Any
 
 
 def text_semantic_floor(embedder: Any, default: float) -> float:
-    from superlocalmemory.core.embedding_recipe import TASK_SUFFIX
+    from superlocalmemory.core.embedding_recipe import TASK_SUFFIXES
     from superlocalmemory.infra.data_root import state_path
     from superlocalmemory.retrieval.embedding_calibration import NOMIC_BOOTSTRAP_FLOOR, floor_for
     from superlocalmemory.runtimes.media_models import EG2_REPO, text_min_semantic_for
@@ -28,7 +28,7 @@ def text_semantic_floor(embedder: Any, default: float) -> float:
         measured = floor_for(Path(root), signature)
         if measured is not None:
             return measured
-    if name.endswith(TASK_SUFFIX):
+    if name.endswith(TASK_SUFFIXES):
         return NOMIC_BOOTSTRAP_FLOOR if default == 0.60 else default
     if name == EG2_REPO:
         return default  # an unmeasured model constant cannot override store policy

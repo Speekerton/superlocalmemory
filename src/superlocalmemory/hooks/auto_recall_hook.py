@@ -183,6 +183,9 @@ def _fallback_recall(query: str, limit: int, session_id: str) -> list[dict] | No
         params = urllib.parse.urlencode({
             "q": query, "limit": limit, "session_id": session_id or "",
             ANSWER_CHECK_PARAM: ANSWER_CHECK_SKIP,
+            # 4.1.25: a hook injects a glance (one-line previews); the agent
+            # asks recall or expand for more.
+            "depth": "0",
         })
         data = daemon_request("GET", f"/recall?{params}", timeout_seconds=5.0)
         if not isinstance(data, dict):
@@ -238,6 +241,16 @@ def _format_envelope(results: list[dict], response: dict | None = None) -> dict:
         return {}
 
 
+def _switched_off() -> bool:
+    """``auto_recall.on_every_prompt`` (or auto-recall as a whole) is off."""
+    try:
+        from superlocalmemory.hooks import rules_engine
+
+        return not rules_engine.load().per_prompt_recall_on()
+    except Exception:  # fail open
+        return False
+
+
 def main() -> int:
     try:
         raw = sys.stdin.read()
@@ -266,7 +279,7 @@ def main() -> int:
         sys.stdout.write("{}")
         return 0
 
-    if _is_ack(prompt):
+    if _is_ack(prompt) or _switched_off():
         sys.stdout.write("{}")
         return 0
 

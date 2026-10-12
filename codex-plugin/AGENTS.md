@@ -32,6 +32,8 @@ Call `session_init(project_path, query, max_results, max_age_days)` **once** at 
 - **Empty / low results** — broaden the query, try `search`, or fall back to `list_recent`. Never fabricate a memory.
 - **Refine on low confidence** — if `no_confident_match` is `true` (or `answer_confidence` is low / `abstained` is `true`), rewrite the query into 1–3 more specific sub-queries (split multi-hop questions; try entity names, synonyms, or broader phrasing) and call `recall` again before concluding nothing was found. SLM answers from this machine in about 1–2 s, with no server-side LLM round — unless the user turned on the online answer check, which adds one request to that service per recall. You, the calling model, drive refinement.
 - **Abstained means do not answer from these** — if `abstained` is `true`, the returned memories do not answer the question: say you don't have it, or ask. Never present them as the answer. `answer_confidence` is a measurement, not a guarantee. `abstention_reason: "judged_insufficient"` means candidates were found but none answers; `"evidence_floor"`/`"no_candidates"` means nothing was found. `abstained: false` does not mean the answer was checked: `answerability` says `supported`, `unsupported` or `unjudged`.
+- **Tiers** — every recall has a `tier`: `supported` (use it), `related` ("I don't have this exactly — here are the closest memories."; MCP `recall` shows them only with `include_related=true`; never present them as the answer) or `none`: "That isn't in SuperLocalMemory." means stop and do not invent. `warming_up: true` with `status_note` means SLM is still warming up: tell the user to try again in a few minutes, never that the memory is absent.
+- **Recall in layers** — `depth=0` (ids, tier, one-line previews), `1` (full facts, default), `2` (+ source memory, session neighbours, same-entity facts, the correction that replaced it). `max_tokens` caps the results and is never exceeded. Drill into one result with `expand(memory_id, depth=2, max_tokens)`.
 - **Scores rank, they do not measure** — a result's `score` orders memories for this query. It is not a probability; never quote it as a percentage or compare it across releases. Only `abstained`, `answerability` and `answer_confidence` speak to whether the memories answer the question.
 - **Pictures and pages come back as results** — a result from a saved picture or PDF page carries a `media` block (`media_id`, `kind` of `image` or `page`, `thumbnail_uri`, `page`, `citation`). Look at the thumbnail (`get_media`) before saying what a picture shows; cite the page for a PDF.
 - **Incomplete is not empty** — if `channel_status` shows `error`, `timeout`, `no_embedding` or `warming` for a channel, the answer is incomplete; say so instead of reporting "no memories found".
@@ -106,11 +108,11 @@ When the SLM MCP server is unavailable, use these CLI equivalents:
 
 ---
 
-## Tool reference (core profile — 18 tools)
+## Tool reference (core profile — 19 tools)
 
 > The MCP config ships only `SLM_AGENT_ID=codex` — no `SLM_MCP_PROFILE` — so
 > it falls back to the same no-profile default every install gets: the
-> 57-tool `full` surface. That is the 18 core tools below **plus** mesh
+> 58-tool `full` surface. That is the 18 core tools below **plus** mesh
 > coordination (9: `mesh_summary`, `mesh_peers`, `mesh_send`, `mesh_inbox`,
 > `mesh_wait`, `mesh_state`, `mesh_lock`, `mesh_events`, `mesh_status`), portable-evidence
 > tools (5: `get_brain_evidence_status`, `record_agent_experience`,
@@ -123,11 +125,11 @@ When the SLM MCP server is unavailable, use these CLI equivalents:
 > `run_maintenance`, `consolidate_cognitive`, `get_soft_prompts`, `set_mode`,
 > `log_tool_event`, `get_assertions`, `reinforce_assertion`,
 > `contradict_assertion`, `evolve_skill`, `skill_health`, `skill_lineage`).
-> Set `SLM_MCP_PROFILE=code` yourself for the narrower 38-tool `code` surface,
+> Set `SLM_MCP_PROFILE=code` yourself for the narrower 39-tool `code` surface,
 > which trades mesh and administration tools for 6 code-graph tools
 > (`build_code_graph`, `get_blast_radius`, `query_graph`,
 > `semantic_search_code`, `get_review_context`, `detect_changes`). Use
-> `power` (69 tools) for governance and audit tools. While pictures and documents
+> `power` (70 tools) for governance and audit tools. While pictures and documents
 > are on, `full` and `power` also list 5 picture tools (`remember_media`,
 > `get_media`, `remember_document`, `media_status`, `media_upload_link`). The tool set is read when the
 > MCP server starts; `switch_profile` changes the active memory profile, not the
@@ -136,9 +138,10 @@ When the SLM MCP server is unavailable, use these CLI equivalents:
 | Tool               | Signature (key params)                                                                       | Notes                                  |
 |--------------------|----------------------------------------------------------------------------------------------|----------------------------------------|
 | `remember`         | `content, tags="", project="", importance=5, session_id="", scope=None, shared_with="", kind="", replaces=None, profile_id=""` | Store atomic fact. `scope` opt-in (personal default). `replaces` retires an earlier memory. See slm-remember, slm-scope. |
-| `recall`           | `query, limit=20, session_id="", fast=None, include_global=None, include_shared=None, window="", project="", saved_by="", about="", kind="", prefer_project="", tags="", tags_match="all", as_of=None, profile_id=""` | Multi-channel retrieval. Scope flags off by default. See slm-recall, slm-scope. |
+| `recall`           | `query, limit=20, session_id="", fast=None, include_global=None, include_shared=None, window="", project="", saved_by="", about="", kind="", prefer_project="", tags="", tags_match="all", as_of=None, profile_id="", show_weak=False, include_related=False, depth=1, max_tokens=0` | Multi-channel retrieval. Scope flags off by default. See slm-recall, slm-scope. |
 | `search`           | `query, limit=20, kind="", tags="", tags_match="all", profile_id=""`                         | FTS5 BM25 keyword search               |
 | `fetch`            | `fact_ids, profile_id=""`                                                                    | Full detail for comma-separated or listed fact ids |
+| `expand`           | `memory_id, depth=2, max_tokens=0, profile_id=""`                                             | Drill into one recall result: source memory, session neighbours, same-entity facts, correction |
 | `list_recent`      | `limit=20, kind="", tags="", tags_match="all", profile_id=""`                                | Newest memories first                  |
 | `update_memory`    | `fact_id, content, agent_id, profile_id=""`                                                  | Propose a reviewed correction; the old text stays current until applied |
 | `forget`           | `dry_run=True`                                                                               | Decay cycle over the profile (not a delete); always dry_run first |
@@ -171,7 +174,7 @@ When the SLM MCP server is unavailable, use these CLI equivalents:
 | slm-governance | Roles, retention and lifecycle, audit, GDPR |
 | slm-mesh | Cross-session peer coordination (full/power/mesh tool sets and the default) |
 | slm-bot-memory | Sharing one computer with other bots: what isolates and what does not |
-| slm-getting-started-bot | First session on a headless bot host (the 18-tool core set) |
+| slm-getting-started-bot | First session on a headless bot host (the 19-tool core set) |
 | slm-media | Pictures, PDFs and folders: save, find, limits, privacy, upload links, `slm media`, `slm sources` |
 | slm-web-access | Connecting web apps: Connected apps switches, upload links, what a web app can call |
 

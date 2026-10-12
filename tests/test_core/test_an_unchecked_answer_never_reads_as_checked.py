@@ -160,8 +160,11 @@ def test_the_reorder_branch_out_of_budget_sends_nothing_and_keeps_the_order() ->
                                                     profile_id="p")) for i in range(4)]
     response = SimpleNamespace(results=list(results))
     engine = SimpleNamespace(_sufficiency_judge=judge)
-    out = run_answer_check(engine, "q", response, recall_started=time.monotonic() - 10.0,
-                           profile_id="p")
+    from superlocalmemory.retrieval.answer_check_status import ANSWER_CHECK_HARD_CEILING_S
+
+    # 4.1.25: the check has its own budget; only past the hard ceiling is it skipped.
+    late = time.monotonic() - ANSWER_CHECK_HARD_CEILING_S - 1.0
+    out = run_answer_check(engine, "q", response, recall_started=late, profile_id="p")
     assert (out.status, out.detail) == ("skipped", "budget")
     assert judge.asked == 0 and response.results == results
 

@@ -23,6 +23,8 @@ Call `session_init(project_path, query)` ONCE per fresh session before any recal
 - Phrase as concepts; pass the real session_id (it does not narrow results). Narrow with `project`, `saved_by`, `about`, `kind`, `tags`, `window`, `as_of` instead of extra words. Never fabricate.
 - If `abstained` is `true`, the returned memories do not answer the question — say so, or ask; never present them as the answer. `abstained: false` is not proof the answer was checked: read `answerability`. `answer_confidence` is a measurement, not a guarantee.
 - If `channel_status` shows `error`, `timeout`, `no_embedding` or `warming`, the answer is incomplete, not empty.
+- `tier`: `supported` (use it), `related` ("I don't have this exactly"; closest memories only with `include_related=true`, never the answer) or `none`: "That isn't in SuperLocalMemory." means stop, do not invent. `warming_up: true` means tell the user SLM is still warming up and to try again in a few minutes.
+- Recall in layers: `depth=0` glance, `1` full (default), `2` with context; `max_tokens` is never exceeded. Drill into one result with `expand(memory_id)`.
 
 - Scores rank results; they are not probabilities. A result from a saved picture or PDF page has a `media` block: look at the thumbnail (`get_media`) before saying what it shows, and cite the page.
 

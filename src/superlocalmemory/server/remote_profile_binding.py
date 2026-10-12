@@ -90,7 +90,7 @@ SCOPED_WRITE_TOOLS: frozenset[str] = frozenset({"remember", "remember_media", "r
 ROUTED_TOOLS: frozenset[str] = frozenset({
     "recall", "remember", "list_corrections", "review_correction",
     # 4.1.21: everything else a remote agent uses on its own profile.
-    "search", "fetch", "list_recent", "prestage_context", "recall_trace",
+    "search", "fetch", "expand", "list_recent", "prestage_context", "recall_trace",
     "session_init", "close_session", "observe", "update_memory", "delete_memory",
     "core_memory", "get_status", "health", "memory_used", "get_memory_summary",
     "get_lifecycle_status", "get_retention_stats", "get_soft_prompts",
@@ -127,12 +127,14 @@ NEUTRAL_ARGUMENTS: frozenset[str] = frozenset({
     # ack: message ids a web app received; the broker acknowledges only the caller's own mail.
     "ack",
     "about", "action", "agent_id", "as_of", "assertion_id", "case_id", "category",
-    "ccr_id", "content", "context", "correction", "duration_ms", "event_type",
+    "ccr_id", "content", "context", "correction", "depth", "duration_ms", "event_type",
     "event_valid_until", "expected_version", "fact_id", "fact_ids", "fast", "feedback",
     "filters",
-    "finalize", "idempotency_key", "importance", "include_history", "include_unknown",
+    "finalize", "idempotency_key", "importance", "include_history", "include_related",
+    "include_unknown",
     "input_summary", "items", "key", "kind", "known_as_of", "limit", "max_age_days",
-    "max_results", "memory_ids", "message", "metadata", "min_confidence", "mode", "name",
+    "max_results", "max_tokens", "memory_id", "memory_ids", "message", "metadata",
+    "min_confidence", "mode", "name",
     "new_name", "note", "offset", "outcome",
     "output_summary", "pattern_id", "pattern_type", "payload", "prefer_project", "project",
     "project_strict",
@@ -140,7 +142,8 @@ NEUTRAL_ARGUMENTS: frozenset[str] = frozenset({
     # report_id is an idempotency key, hashed with the routed profile by outcome_events;
     # it cannot select a stored report or another workspace.
     "reply_to", "report_id", "reversible", "run_id",
-    "saved_by", "session_date", "session_id", "skill_name", "tags", "tags_match", "target",
+    "saved_by", "session_date", "session_id", "show_weak", "skill_name", "tags", "tags_match",
+    "target",
     "timeout_s", "to", "tool_name", "ttl_seconds", "valid_at", "value", "window",
 })
 

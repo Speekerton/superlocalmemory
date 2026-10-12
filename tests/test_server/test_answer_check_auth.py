@@ -29,6 +29,7 @@ from tests.test_server.test_answer_check_api import (  # noqa: F401 — fixtures
 TOKEN = "install-token-for-this-test-0123456789abcdef"
 
 MUTATIONS = (
+    ("POST", "/api/v3/answer-check/calibration/cancel", None),
     ("POST", "/api/v3/answer-check/calibration", {"model": "llama3.2:latest", "samples": 32}),
     ("POST", "/api/v3/answer-check/mode", {"mode": "off"}),
     ("POST", "/api/v3/answer-check/laya/setup", None),

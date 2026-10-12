@@ -155,11 +155,15 @@ def _do_recall_response(query: str, limit: int = _DEFAULT_LIMIT,
             queue.close()
 
     except Exception:
-        results = _fallback_recall(query, limit, session_id)
-        return {"results": results} if results is not None else None
+        return _fallback_response(query, limit, session_id)
 
 
 def _fallback_recall(query: str, limit: int, session_id: str) -> list[dict] | None:
+    data = _fallback_response(query, limit, session_id)
+    return data["results"] if data is not None else None
+
+
+def _fallback_response(query: str, limit: int, session_id: str) -> dict | None:
     """Fallback: ask the daemon's /recall directly if the queue path fails.
 
     Only through the identity-checked daemon client: the prompt the user just
@@ -191,7 +195,8 @@ def _fallback_recall(query: str, limit: int, session_id: str) -> list[dict] | No
         if not isinstance(data, dict):
             return None
         results = data.get("results", [])
-        return results if isinstance(results, list) else None
+        # The whole response: its tier and warming-up flag decide the injection.
+        return data if isinstance(results, list) else None
     except Exception:
         return None
 
@@ -206,7 +211,13 @@ def _format_envelope(results: list[dict], response: dict | None = None) -> dict:
     """
     try:
         from superlocalmemory.core.config import SLMConfig
-        from superlocalmemory.core.injection import InjectableMemory, render_context
+        from superlocalmemory.core.injection import (
+            InjectableMemory, render_context, response_injectable,
+        )
+        # Closest memories, an abstained recall, or a warming-up one inject
+        # nothing, not even a verdict line: only supported results go in.
+        if not response_injectable(response):
+            return {}
         cfg = SLMConfig.load().injection
         mode = _detect_mode()
         inj = [
@@ -218,6 +229,7 @@ def _format_envelope(results: list[dict], response: dict | None = None) -> dict:
                 access_count=int(r.get("access_count", 0) or 0),
                 source_type=str(r.get("source_type", "recall")),
                 source_id=str(r.get("source_id", "auto-recall-hook")),
+                support_tier=str(r.get("tier", "") or ""),
             )
             for r in results
         ]
@@ -228,6 +240,8 @@ def _format_envelope(results: list[dict], response: dict | None = None) -> dict:
             verdict_line = answer_check_line(response)
             if verdict_line:
                 wrapped = f"{verdict_line}\n\n{wrapped}" if wrapped else verdict_line
+        if not wrapped:
+            return {}
         return {
             "hookSpecificOutput": {
                 "hookEventName": "UserPromptSubmit",

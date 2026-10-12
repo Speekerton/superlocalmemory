@@ -102,11 +102,12 @@ def _injectable(pins, standing, relevant, max_results):
             seen.add(fact.fact_id)
     for result in relevant[:max_results]:
         if result.fact.fact_id not in seen:
-            memories.append(_item(result.fact, score=round(result.score, 3), source="recall"))
+            memories.append(_item(result.fact, score=round(result.score, 3), source="recall",
+                                  tier=getattr(result, "tier", "") or ""))
     return memories
 
 
-def _item(fact, *, pinned=False, source, score=0.0):
+def _item(fact, *, pinned=False, source, score=0.0, tier=""):
     return InjectableMemory(
         content=fact.content,
         score=score,
@@ -115,6 +116,7 @@ def _item(fact, *, pinned=False, source, score=0.0):
         access_count=getattr(fact, "access_count", 0) or 0,
         pinned=pinned,
         source_type=source,
+        support_tier=str(tier),
     )
 
 

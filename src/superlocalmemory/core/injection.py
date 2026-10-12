@@ -176,6 +176,47 @@ class InjectableMemory:
     is_core: bool = False
     source_type: str = ""
     source_id: str = ""
+    #: The answer-support label recall gave this memory ("supported", "weak",
+    #: "related"); "" when no support check ran (a context load, the gate off).
+    support_tier: str = ""
+
+
+#: The only support label that may enter an agent's context unasked.
+INJECTABLE_SUPPORT_TIER = "supported"
+#: Whole-response tiers that inject nothing: closest memories, or no answer.
+_BLOCKED_RESPONSE_TIERS = frozenset({"related", "none", "weak"})
+
+
+def supported_only(mems: list[InjectableMemory]) -> list[InjectableMemory]:
+    """Keep what the support stage labelled supported, or never labelled.
+
+    The one rule every auto-injected surface shares: a memory labelled weak or
+    related (the closest memories) is for an explicit ``recall``, never for an
+    agent's context. An unlabelled memory (pinned, standing, a context load)
+    was not judged against a question and passes.
+    """
+    return [m for m in mems
+            if not m.support_tier or m.support_tier == INJECTABLE_SUPPORT_TIER]
+
+
+def response_injectable(response) -> bool:
+    """Whether a whole recall response may inject anything unasked.
+
+    False while warming up (models still loading: nothing was checked) and for
+    a closest-memories or abstained answer. True for a supported answer and for
+    one the support stage never judged. ``response`` is a dict or an object.
+    """
+    if response is None:
+        return True
+
+    def read(name):
+        if isinstance(response, dict):
+            return response.get(name)
+        return getattr(response, name, None)
+
+    if read("warming_up"):
+        return False
+    return (read("tier") or read("support_tier") or "") not in _BLOCKED_RESPONSE_TIERS
 
 
 def _default_core_block_importance_min(cfg) -> float:
@@ -293,6 +334,7 @@ def clamp_to_budget(
                 is_core=m.is_core,
                 source_type=m.source_type,
                 source_id=m.source_id,
+                support_tier=m.support_tier,
             )
             t = estimate_tokens(m_clamped.content)
             if used + t > budget_tokens:
@@ -379,6 +421,8 @@ def render_context(
     4. Render: [Core Memory] section + [Relevant Memories] section
     5. Optional trust wrapper
     """
+    # Support gate first, in every mode: only supported memories are injected.
+    mems = supported_only(list(mems))
     if not mems:
         return ""
 

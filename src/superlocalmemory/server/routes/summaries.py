@@ -97,7 +97,7 @@ def _caller_day(target: str, tz_offset_minutes: int) -> str:
 
 
 @router.get("/api/summary")
-async def get_summary(request: Request, kind: str = "day", target: str = "",
+def get_summary(request: Request, kind: str = "day", target: str = "",
                       tz_offset_minutes: _Offset = 0):
     """Readable summary of memories: a day, a project, or one session (#113).
 
@@ -162,7 +162,7 @@ def _summary_payload(result, cfg) -> dict:
 
 
 @router.get("/api/summary/projects")
-async def get_summary_projects(request: Request):
+def get_summary_projects(request: Request):
     """Projects SuperLocalMemory has actually observed, for the summary picker.
 
     The dashboard is a browser tab with no working directory, so there is no
@@ -300,7 +300,7 @@ def _merge_project_rows(event_rows: list[dict], saved_rows: list[dict]) -> list[
 
 
 @router.get("/api/summary/sessions")
-async def get_summary_sessions(request: Request,
+def get_summary_sessions(request: Request,
                                limit: Annotated[int, Query(ge=1, le=100)] = 20):
     """Sessions with at least one visible memory, newest first, for the picker."""
     from superlocalmemory.summaries.sessions import list_recent_sessions

@@ -56,7 +56,7 @@ def _origin_is_loopback(origin: str) -> bool:
 
 
 @router.get("/internal/token")
-async def get_token(request: Request) -> JSONResponse:
+def get_token(request: Request) -> JSONResponse:
     """Return the install token for browser-based local dashboard use."""
     if _strict_mode():
         return JSONResponse(

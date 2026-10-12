@@ -276,7 +276,7 @@ def _remote_may_see(engine, view: str, row: dict, profile: str) -> bool:
 
 
 @router.get("/media/{media_id}/thumb")
-async def thumbnail(media_id: str, request: Request, profile_id: str = "", format: str = "",
+def thumbnail(media_id: str, request: Request, profile_id: str = "", format: str = "",
                     caller_view: str = ""):
     from superlocalmemory.access.rbac import Permission
     from superlocalmemory.media import open_media_store

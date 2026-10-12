@@ -212,7 +212,7 @@ def test_embedding_config_uses_the_running_daemon_config(tmp_path: Path, monkeyp
 
     monkeypatch.setattr(SLMConfig, "load", staticmethod(_disk_load_must_not_run))
 
-    body = asyncio.run(get_embedding_config(request))
+    body = get_embedding_config(request)
 
     assert body["provider"] == "openai"
     assert body["model_name"] == "qwen3-embedding"

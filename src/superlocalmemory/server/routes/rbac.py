@@ -243,13 +243,13 @@ async def logout(request: Request, response: Response):
 
 
 @router.get("/whoami")
-async def whoami(request: Request):
+def whoami(request: Request):
     _machine_guard(request)
     return principal_info(request)
 
 
 @router.get("/status")
-async def status(request: Request):
+def status(request: Request):
     _machine_guard(request)
     rbac = _engine(request)
     return {
@@ -262,7 +262,7 @@ async def status(request: Request):
 # -- user administration (MANAGE) --
 
 @router.get("/users")
-async def list_users(request: Request):
+def list_users(request: Request):
     _machine_guard(request)
     principal = require_manage(request)
     rbac = _engine(request)
@@ -378,7 +378,7 @@ async def delete_user(user_id: str, request: Request):
 # -- membership administration (MANAGE) --
 
 @router.get("/members")
-async def list_members(request: Request, profile_id: Optional[str] = None):
+def list_members(request: Request, profile_id: Optional[str] = None):
     _machine_guard(request)
     prof = profile_id or _active_profile()
     # MANAGE on the TARGET workspace, not merely the active one — otherwise an

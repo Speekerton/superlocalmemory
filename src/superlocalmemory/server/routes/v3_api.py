@@ -132,7 +132,7 @@ def _require_manage_for_profile(request: Request, profile: str) -> None:
 # ── Dashboard ────────────────────────────────────────────────
 
 @router.get("/dashboard")
-async def dashboard(request: Request):
+def dashboard(request: Request):
     """Dashboard summary: mode, memory count, health score, recent activity."""
     try:
         from superlocalmemory.core.config import SLMConfig
@@ -212,7 +212,7 @@ async def dashboard(request: Request):
 # ── Mode ─────────────────────────────────────────────────────
 
 @router.get("/mode")
-async def get_mode(request: Request):
+def get_mode(request: Request):
     """Get current mode, provider, model — single source of truth for UI."""
     try:
         from superlocalmemory.core.config import SLMConfig
@@ -661,7 +661,7 @@ async def set_full_config(request: Request):
 # ── V3.4.24: Embedding Configuration ────────────────────────────────
 
 @router.get("/embedding/config")
-async def get_embedding_config(request: Request):
+def get_embedding_config(request: Request):
     """Return current embedding configuration."""
     try:
         from superlocalmemory.core.config import SLMConfig
@@ -844,7 +844,7 @@ async def set_embedding_config(request: Request):
 
 
 @router.get("/scope/config")
-async def get_scope_config(request: Request):
+def get_scope_config(request: Request):
     """Return runtime multi-scope defaults used by daemon writes and recalls."""
     try:
         from superlocalmemory.core.config import SLMConfig
@@ -947,7 +947,7 @@ async def test_embedding_endpoint(request: Request):
 
 
 @router.get("/embed/ping")
-async def embed_ping(request: Request):
+def embed_ping(request: Request):
     """V3.5.9: Liveness probe for McpEmbedderProxy. Returns 200 when daemon
     embedder is ready so the proxy knows the daemon is reachable.
 
@@ -1143,7 +1143,7 @@ async def test_provider(request: Request):
 
 
 @router.get("/ollama/status")
-async def ollama_status():
+def ollama_status():
     """Check if Ollama is running and list available models."""
     try:
         import httpx
@@ -1163,7 +1163,7 @@ async def ollama_status():
 # ── Provider ─────────────────────────────────────────────────
 
 @router.get("/providers")
-async def list_providers():
+def list_providers():
     """List available LLM providers with presets."""
     try:
         from superlocalmemory.core.config import SLMConfig
@@ -1174,7 +1174,7 @@ async def list_providers():
 
 
 @router.get("/provider")
-async def get_provider():
+def get_provider():
     """Get current provider configuration (API key masked)."""
     try:
         from superlocalmemory.core.config import SLMConfig
@@ -1406,7 +1406,7 @@ def _record_learning_signals(query: str, results: list) -> None:
 # ── Trust Dashboard ──────────────────────────────────────────
 
 @router.get("/trust/dashboard")
-async def trust_dashboard(request: Request):
+def trust_dashboard(request: Request):
     """Trust overview: per-agent scores, alerts. Queries DB directly."""
     try:
         from superlocalmemory.core.config import SLMConfig
@@ -1458,7 +1458,7 @@ async def trust_dashboard(request: Request):
 # ── Math Health ──────────────────────────────────────────────
 
 @router.get("/math/health")
-async def math_health(request: Request):
+def math_health(request: Request):
     """Mathematical layer health: Fisher, sheaf, Langevin status. Queries DB directly."""
     try:
         # v3.6.12 (math-1): report CONFIG-DERIVED status, not a hardcoded
@@ -1500,7 +1500,7 @@ async def math_health(request: Request):
 # ── Auto-Capture / Auto-Recall Config ────────────────────────
 
 @router.get("/auto-capture/config")
-async def get_auto_capture_config():
+def get_auto_capture_config():
     """Get auto-capture configuration."""
     try:
         from superlocalmemory.hooks.rules_engine import RulesEngine
@@ -1531,7 +1531,7 @@ async def set_auto_capture_config(request: Request):
 
 
 @router.get("/auto-recall/config")
-async def get_auto_recall_config():
+def get_auto_recall_config():
     """Get auto-recall configuration."""
     try:
         from superlocalmemory.hooks.rules_engine import RulesEngine
@@ -1589,7 +1589,7 @@ def _runtime_config_snapshot(config) -> dict:
 
 
 @router.get("/runtime/config")
-async def get_runtime_config(request: Request):
+def get_runtime_config(request: Request):
     """User-facing runtime behaviour settings.
 
     Recall depth (top_k), reranker on/off (use_cross_encoder), and memory
@@ -1684,7 +1684,7 @@ async def set_runtime_config(request: Request):
 # ── IDE Status ───────────────────────────────────────────────
 
 @router.get("/ide/status")
-async def ide_status():
+def ide_status():
     """Get IDE connection status."""
     try:
         from superlocalmemory.hooks.ide_connector import IDEConnector
@@ -1718,7 +1718,7 @@ async def ide_connect(request: Request):
 # ── Active Memory (V3.1) ────────────────────────────────────
 
 @router.get("/learning/signals")
-async def learning_signals():
+def learning_signals():
     """Get zero-cost learning signal statistics."""
     try:
         from superlocalmemory.learning.signals import LearningSignals
@@ -1788,7 +1788,7 @@ async def run_consolidation(request: Request):
 
 
 @router.get("/hooks/status")
-async def hooks_status():
+def hooks_status():
     """Check if Claude Code hooks are installed."""
     try:
         from superlocalmemory.hooks.claude_code_hooks import check_status
@@ -1843,7 +1843,7 @@ def _save_auto_invoke_json(auto_invoke_data: dict) -> None:
 # ── 1. GET /api/v3/auto-invoke/config ─────────────────────────
 
 @router.get("/auto-invoke/config")
-async def get_auto_invoke_config(request: Request):
+def get_auto_invoke_config(request: Request):
     """Get current auto-invoke configuration."""
     try:
         from superlocalmemory.core.config import AutoInvokeConfig
@@ -1906,7 +1906,7 @@ async def set_auto_invoke_config(request: Request):
 # ── 3. GET /api/v3/associations ───────────────────────────────
 
 @router.get("/associations")
-async def get_associations(
+def get_associations(
     request: Request,
     limit: int = 50,
     type: str = "",
@@ -1982,7 +1982,7 @@ async def get_associations(
 # ── 4. GET /api/v3/associations/stats ─────────────────────────
 
 @router.get("/associations/stats")
-async def get_association_stats(request: Request, profile: str = ""):
+def get_association_stats(request: Request, profile: str = ""):
     """Get association graph statistics."""
     pid = _resolve_profile(request, profile)
     try:
@@ -2086,7 +2086,7 @@ async def get_association_stats(request: Request, profile: str = ""):
 # ── 5. GET /api/v3/consolidation/status ───────────────────────
 
 @router.get("/consolidation/status")
-async def get_consolidation_status(request: Request, profile: str = ""):
+def get_consolidation_status(request: Request, profile: str = ""):
     """Get consolidation status and last run results."""
     pid = _resolve_profile(request, profile)
     try:
@@ -2232,7 +2232,7 @@ async def trigger_consolidation(request: Request):
 # ── 7. GET /api/v3/core-memory ────────────────────────────────
 
 @router.get("/core-memory")
-async def get_core_memory(request: Request, profile: str = ""):
+def get_core_memory(request: Request, profile: str = ""):
     """Get all Core Memory blocks for a profile."""
     pid = _resolve_profile(request, profile)
     try:
@@ -2364,7 +2364,7 @@ async def update_core_memory_block(block_id: str, request: Request):
 # ── 9. GET /api/v3/vector-store/status ────────────────────────
 
 @router.get("/vector-store/status")
-async def get_vector_store_status(request: Request, profile: str = ""):
+def get_vector_store_status(request: Request, profile: str = ""):
     """Get VectorStore health and statistics."""
     pid = _resolve_profile(request, profile)
     try:
@@ -2426,7 +2426,7 @@ async def get_vector_store_status(request: Request, profile: str = ""):
 # ── 1a. GET /api/v3/forgetting/stats ────────────────────────
 
 @router.get("/forgetting/stats")
-async def forgetting_stats(request: Request, profile: str = ""):
+def forgetting_stats(request: Request, profile: str = ""):
     """Get memory retention zone distribution."""
     pid = _resolve_profile(request, profile)
     try:
@@ -2558,7 +2558,7 @@ async def run_forgetting(request: Request):
 # ── 1c. GET /api/v3/quantization/stats ──────────────────────
 
 @router.get("/quantization/stats")
-async def quantization_stats(request: Request, profile: str = ""):
+def quantization_stats(request: Request, profile: str = ""):
     """Get embedding quantization tier distribution."""
     pid = _resolve_profile(request, profile)
     try:
@@ -2621,7 +2621,7 @@ async def quantization_stats(request: Request, profile: str = ""):
 # ── 1d. GET /api/v3/ccq/blocks ──────────────────────────────
 
 @router.get("/ccq/blocks")
-async def ccq_blocks(request: Request, profile: str = "", limit: int = 50):
+def ccq_blocks(request: Request, profile: str = "", limit: int = 50):
     """Get CCQ consolidated blocks."""
     pid = _resolve_profile(request, profile)
     try:
@@ -2681,7 +2681,7 @@ async def ccq_blocks(request: Request, profile: str = "", limit: int = 50):
 # ── 1e. GET /api/v3/soft-prompts ─────────────────────────────
 
 @router.get("/soft-prompts")
-async def get_soft_prompts(request: Request, profile: str = ""):
+def get_soft_prompts(request: Request, profile: str = ""):
     """Get active soft prompt templates."""
     pid = _resolve_profile(request, profile)
     try:
@@ -2734,7 +2734,7 @@ async def get_soft_prompts(request: Request, profile: str = ""):
 # ── 1f. GET /api/v3/health/processes ─────────────────────────
 
 @router.get("/health/processes")
-async def process_health(request: Request):
+def process_health(request: Request):
     """Get SLM process health status."""
     _resolve_profile(request)
     try:
@@ -2782,7 +2782,7 @@ async def process_health(request: Request):
 # ── v3.4.1: Graph Communities ──────────────────────────────────
 
 @router.get("/graph/communities")
-async def get_graph_communities(request: Request, profile: str = ""):
+def get_graph_communities(request: Request, profile: str = ""):
     """Get community assignments with TF-IDF labels, entities, and colors.
 
     v3.4.1: Uses TF-IDF labels from config table (computed by GraphAnalyzer
@@ -2942,7 +2942,7 @@ async def run_community_detection(request: Request):
 
 
 @router.get("/v33/overview")
-async def v33_overview(request: Request, profile: str = ""):
+def v33_overview(request: Request, profile: str = ""):
     """Get SLM 3.3 feature overview -- all new capabilities at a glance."""
     pid = _resolve_profile(request, profile)
     try:
@@ -3076,7 +3076,7 @@ async def v33_overview(request: Request, profile: str = ""):
 # ── MCP Profiles ─────────────────────────────────────────────
 
 @router.get("/mcp/profiles")
-async def get_mcp_profiles(request: Request):
+def get_mcp_profiles(request: Request):
     """MCP profile summary: current profile, all profiles with tool counts and names.
 
     Reads only the env var SLM_MCP_PROFILE and the pure-data profiles module.

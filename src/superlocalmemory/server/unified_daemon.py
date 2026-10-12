@@ -2079,6 +2079,38 @@ def _start_embedder_warmup(engine: object) -> "threading.Thread | None":
     return thread
 
 
+#: Worker threads the web server may use for plain ``def`` routes at once. The
+#: default (40) is shared with every other thread hand-off in the process, and a
+#: burst of slow panes plus background work could use them all up, leaving the
+#: next request waiting for a thread no matter how cheap it is.
+REQUEST_THREADS = 256
+
+
+def _keep_request_threads_available() -> None:
+    """Raise the worker-thread budget for routes so a busy daemon still answers a new request."""
+    try:
+        import anyio.to_thread
+
+        limiter = anyio.to_thread.current_default_thread_limiter()
+        if limiter.total_tokens < REQUEST_THREADS:
+            limiter.total_tokens = REQUEST_THREADS
+    except Exception as exc:  # pragma: no cover - the default budget still works
+        logger.debug("request thread budget not raised: %s", exc)
+
+
+def _warm_dashboard_summaries() -> None:
+    """Prepare slow summaries in the background so the first visit to a pane is instant."""
+    def work() -> None:
+        try:
+            from superlocalmemory.server.routes.compliance import warm_audit_integrity
+
+            warm_audit_integrity()
+        except Exception as exc:  # pragma: no cover - warming is best effort
+            logger.debug("dashboard summaries not warmed: %s", exc)
+
+    threading.Thread(target=work, name="slm-dashboard-warm", daemon=True).start()
+
+
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     """Initialize engine, workers, and optional services on startup."""
@@ -2088,6 +2120,8 @@ async def lifespan(application: FastAPI):
     # write racing its shutdown could not resurrect it. This run is entitled to
     # one.
     _open_enrichment_pool()
+    _keep_request_threads_available()
+    _warm_dashboard_summaries()
 
     engine = None
     config = None
@@ -4761,7 +4795,7 @@ def _register_dashboard_routes(application: FastAPI) -> None:
     # bridge the 3-mode config system to the existing settings page.
 
     @application.get("/api/v3/auto")
-    async def v3_auto_detect():
+    def v3_auto_detect():
         """Auto-detect available providers from environment."""
         import os as _os
         providers = []
@@ -4791,7 +4825,7 @@ def _register_dashboard_routes(application: FastAPI) -> None:
         return {"providers": providers}
 
     @application.get("/", response_class=HTMLResponse)
-    async def root():
+    def root():
         index_path = UI_DIR / "index.html"
         if not index_path.exists():
             return (
@@ -4830,7 +4864,7 @@ def _register_dashboard_routes(application: FastAPI) -> None:
             return index_path.read_text(encoding="utf-8").replace("__SLM_VERSION__", _SLM_VERSION)
 
     @application.get("/favicon.ico", include_in_schema=False)
-    async def favicon():
+    def favicon():
         """Serve the packaged SVG icon for browsers that request favicon.ico."""
         return RedirectResponse(url="/static/favicon.svg", status_code=307)
 
@@ -6188,7 +6222,7 @@ def _register_daemon_routes(application: FastAPI) -> None:
         }
 
     @application.get("/api/v3/components")
-    async def components():
+    def components():
         """Component / dependency health (v3.8.2).
 
         Read-only snapshot from the central registry (core.component_registry)
@@ -6244,7 +6278,7 @@ def _register_daemon_routes(application: FastAPI) -> None:
     # ------------------------------------------------------------------
 
     @application.get("/operations/failed")
-    async def list_failed_operations_endpoint(
+    def list_failed_operations_endpoint(
         request: Request,
         profile: str = None,
     ):

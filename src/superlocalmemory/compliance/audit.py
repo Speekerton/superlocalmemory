@@ -446,15 +446,22 @@ class AuditChain:
         and six fields only, metadata NOT covered), ``failed_at`` (entry id or
         None) and ``reason``.
         """
+        return self.verify_loaded(self.load_rows())
+
+    def load_rows(self) -> list[dict]:
+        """Every entry, oldest first (what a full walk of the chain reads)."""
         conn = self._get_conn()
         try:
-            rows = [dict(r) for r in conn.execute(
+            return [dict(r) for r in conn.execute(
                 "SELECT id, timestamp, operation, agent_id, profile_id, "
                 "content_hash, prev_hash, event_hash, metadata, hash_version "
                 "FROM audit_chain ORDER BY id"
             ).fetchall()]
         finally:
             self._release_conn(conn)
+
+    def verify_loaded(self, rows: list[dict]) -> dict[str, Any]:
+        """The :meth:`verify_report` answer for entries already read."""
         legacy = sum(1 for r in rows if r.get("hash_version", 1) == 1)
         covered = sum(1 for r in rows if r.get("hash_version") == HASH_VERSION)
         report: dict[str, Any] = {
@@ -474,6 +481,15 @@ class AuditChain:
         without it, deleting the tail together with the anchor would verify as
         intact (PR 248 review, finding 4). An in-memory chain has no anchor.
         """
+        return self._anchor_failure_at(
+            len(rows),
+            lambda position: (rows[position]["id"], rows[position]["event_hash"]),
+            bool(rows),
+        )
+
+    def _anchor_failure_at(self, total: int, entry_at, has_rows: bool,
+                           ) -> Optional[tuple[Optional[int], str]]:
+        """The anchor judgement, given the entry count and a way to read entry N."""
         anchor, problem = self._anchor_state()
         if anchor is None:
             conn = self._get_conn()
@@ -481,33 +497,41 @@ class AuditChain:
                 recorded = conn.execute("SELECT 1 FROM audit_anchor_state").fetchone()
             finally:
                 self._release_conn(conn)
-            if problem and (rows or recorded):
+            if problem and (has_rows or recorded):
                 return None, f"no anchor ({problem}): truncation cannot be checked"
             return None
         count = int(anchor.get("count", 0))
-        if len(rows) < count:
-            return None, f"truncated: the anchor records {count} entries, found {len(rows)}"
-        if count > 0 and rows[count - 1]["event_hash"] != anchor.get("head"):
-            return rows[count - 1]["id"], "the entry the anchor records as the head was replaced"
+        if total < count:
+            return None, f"truncated: the anchor records {count} entries, found {total}"
+        if count > 0:
+            entry_id, entry_hash = entry_at(count - 1)
+            if entry_hash != anchor.get("head"):
+                return entry_id, "the entry the anchor records as the head was replaced"
         return None
 
     @staticmethod
     def _link_failure(rows: list[dict]) -> Optional[tuple[Optional[int], str]]:
-        expected_prev = _GENESIS_HASH
-        seen_v2 = False
+        return AuditChain._link_walk(rows, _GENESIS_HASH, False)[0]
+
+    @staticmethod
+    def _link_walk(rows: list[dict], expected_prev: str, seen_v2: bool,
+                   ) -> tuple[Optional[tuple[Optional[int], str]], str, bool]:
+        """Check ``rows`` from a known start; returns ``(failure, last hash, seen v2)``."""
         for row in rows:
             version = row.get("hash_version", 1)
             if version not in (1, HASH_VERSION):
-                return row["id"], "unsupported hash version"
+                return (row["id"], "unsupported hash version"), expected_prev, seen_v2
             if version < 2 and seen_v2:
-                return row["id"], "a version-1 entry follows a version-2 entry (downgrade)"
+                return ((row["id"], "a version-1 entry follows a version-2 entry (downgrade)"),
+                        expected_prev, seen_v2)
             seen_v2 = seen_v2 or version >= 2
             if row["prev_hash"] != expected_prev:
-                return row["id"], "the link to the previous entry is broken"
+                return (row["id"], "the link to the previous entry is broken"), expected_prev, seen_v2
             if _entry_hash(row) != row["event_hash"]:
-                return row["id"], "the entry's fields do not match its hash"
+                return ((row["id"], "the entry's fields do not match its hash"),
+                        expected_prev, seen_v2)
             expected_prev = row["event_hash"]
-        return None
+        return None, expected_prev, seen_v2
 
     def get_stats(self) -> dict[str, int]:
         """Get audit statistics (event counts by operation type).

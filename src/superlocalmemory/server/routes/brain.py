@@ -1740,7 +1740,7 @@ async def get_brain_evolution_timeseries(
 
 @router.get("/learning/stats",
             dependencies=[Depends(require_install_token)])
-async def learning_stats_deprecated(
+def learning_stats_deprecated(
     request: Request, profile_id: str | None = None,
 ) -> dict:
     profile_id = _authorized_profile(request, profile_id)
@@ -1754,7 +1754,7 @@ async def learning_stats_deprecated(
 
 @router.get("/patterns",
             dependencies=[Depends(require_install_token)])
-async def patterns_deprecated(
+def patterns_deprecated(
     request: Request, profile_id: str | None = None,
 ) -> dict:
     profile_id = _authorized_profile(request, profile_id)
@@ -1767,7 +1767,7 @@ async def patterns_deprecated(
 
 @router.get("/bounded-loops/evidence",
             dependencies=[Depends(require_install_token)])
-async def bounded_loops_evidence(
+def bounded_loops_evidence(
     request: Request, profile_id: str | None = None, limit: int = 20,
 ) -> dict:
     """Terminal Bounded Loops runs this profile has observed.
@@ -1875,7 +1875,7 @@ async def bounded_loops_evidence(
 
 @router.get("/behavioral",
             dependencies=[Depends(require_install_token)])
-async def behavioral_deprecated(
+def behavioral_deprecated(
     request: Request, profile_id: str | None = None,
 ) -> dict:
     profile_id = _authorized_profile(request, profile_id)

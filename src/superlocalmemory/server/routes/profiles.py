@@ -86,7 +86,7 @@ def _visible_profile_ids(request: Request) -> set[str] | None:
 
 
 @router.get("/api/profiles")
-async def list_profiles(request: Request):
+def list_profiles(request: Request):
     """List available memory profiles (synced from SQLite + profiles.json)."""
     try:
         visible = _visible_profile_ids(request)

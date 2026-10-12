@@ -19,11 +19,22 @@
     root_moved: 'The folder has moved.',
   };
   var REMOTE_SENTENCE = 'Turn remote access off first, then connect the folder. ' +
-    'Remote tools could read the notes while it is on.';
+    'While it is on, a connected web app could read the notes in this folder.';
+  var WEB_ACCESS_PANE = '#apps-pane'; // Connected apps: where Web access is turned off
 
   function F() { return window.odFeatures; }
   function el(tag, cls, text) { return F().el(tag, cls, text); }
   function note(host, text) { host.appendChild(el('p', 'muted', text)); }
+
+  // The remote-access refusal: said once (it replaces whatever the box held, so a second
+  // click cannot stack a second copy), with the way to the place that turns it off.
+  function remoteNotice(box) {
+    box.textContent = '';
+    box.appendChild(el('span', null, REMOTE_SENTENCE + ' '));
+    box.appendChild(F().button('Open Web access settings', 'btn sm', function () {
+      window.location.hash = WEB_ACCESS_PANE;
+    }));
+  }
 
   function stateText(s) {
     if (s.state === 'paused') return 'Paused because remote access is on.';
@@ -202,8 +213,9 @@
       F().api('POST', BASE + '/' + p.source_id + '/confirm').then(function (res) {
         if (res.ok) { ctx.preview.textContent = ''; return load(ctx); }
         var code = res.data && res.data.detail && res.data.detail.code;
-        msg.textContent = code === 'remote_access_on' ? REMOTE_SENTENCE
-          : res.status === 404 && !code ? 'Not available in this build.' : F().failText(res, 'Could not connect the folder.');
+        if (code === 'remote_access_on') return remoteNotice(msg);
+        msg.textContent = res.status === 404 && !code ? 'Not available in this build.'
+          : F().failText(res, 'Could not connect the folder.');
       });
     });
   }
@@ -223,8 +235,12 @@
     var path = ctx.input.value.trim();
     ctx.preview.textContent = '';
     if (!path) return note(ctx.preview, 'Type the path of a folder first.');
+    var mine = ctx.checkSeq = (ctx.checkSeq || 0) + 1;
     F().api('POST', BASE, { path: path }).then(function (res) {
+      if (mine !== ctx.checkSeq) return; // a newer click owns the box
+      ctx.preview.textContent = '';
       if (res.status === 404) return note(ctx.preview, 'Not available in this build.');
+      if (errCode(res) === 'remote_access_on') return remoteNotice(ctx.preview);
       if (!res.ok) return note(ctx.preview, F().failText(res, 'That folder cannot be used.'));
       showPreview(ctx, res.data);
     });
@@ -239,7 +255,10 @@
 
   function chooseFolder(ctx) {
     ctx.preview.textContent = '';
+    var mine = ctx.pickSeq = (ctx.pickSeq || 0) + 1;
     F().api('POST', BASE + '/pick-folder').then(function (res) {
+      if (mine !== ctx.pickSeq) return; // a newer click owns the box
+      ctx.preview.textContent = '';
       if (res.ok) {
         if (res.data && res.data.path) useFolder(ctx, String(res.data.path));
         return;
@@ -249,8 +268,8 @@
         ctx.chooseBtn = null;
         return;
       }
-      note(ctx.preview, errCode(res) === 'remote_access_on' ? REMOTE_SENTENCE
-        : F().failText(res, 'Could not open the folder picker.'));
+      if (errCode(res) === 'remote_access_on') return remoteNotice(ctx.preview);
+      note(ctx.preview, F().failText(res, 'Could not open the folder picker.'));
     });
   }
 

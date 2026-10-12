@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 
 from superlocalmemory.infra.data_root import DynamicStatePath
 from superlocalmemory.server.route_mutations import authorize_route_mutation
-from superlocalmemory.storage.memory_write import memory_write
+from superlocalmemory.storage.memory_write import memory_read, memory_write
 
 from .export_delivery import export_response
 from .helpers import DB_PATH, get_active_profile, get_engine_lazy
@@ -58,7 +58,7 @@ def _require_manage(request) -> None:
 
 
 @router.get("/api/compliance/status")
-async def compliance_status(request: Request):
+def compliance_status(request: Request):
     """Get compliance engine status for active profile."""
     # This returns which operations ran and what categories of memory exist.
     # That is operational metadata about someone's store; it had no gate at all.
@@ -94,9 +94,7 @@ async def compliance_status(request: Request):
         # list_rules() is a write at the constructor level — use memory_write().
         retention_policies = []
         try:
-            with memory_write(DB_PATH) as conn:
-                engine = RetentionEngine(conn)
-                retention_policies = engine.list_rules(profile)
+            retention_policies = _retention_rules(profile)
         except Exception as exc:
             logger.debug("retention engine: %s", exc)
 
@@ -121,8 +119,32 @@ async def compliance_status(request: Request):
         return {"available": False, "error": "Internal server error"}
 
 
+def _retention_rules(profile: str) -> list:
+    """Rules for one workspace. Reading them does not take the database write lock.
+
+    Only a store whose rules table is missing or old needs a writer (the engine
+    creates and migrates it); every later look is a plain read, so this screen
+    never waits behind a background job that holds the writer.
+    """
+    with memory_read(DB_PATH) as conn:
+        rules = RetentionEngine.peek_rules(conn, profile)
+    if rules is not None:
+        return rules
+    with memory_write(DB_PATH) as conn:
+        return RetentionEngine(conn).list_rules(profile)
+
+
+def warm_audit_integrity() -> None:
+    """Check the audit trail once at start, so the first visit to the pane is instant."""
+    if not COMPLIANCE_AVAILABLE:
+        return
+    from superlocalmemory.compliance.audit_verify_cache import warm
+
+    warm(AuditChain(str(AUDIT_DB)))
+
+
 @router.get("/api/compliance/audit")
-async def query_audit_trail(
+def query_audit_trail(
     request: Request,
     limit: int = Query(default=50, ge=1, le=500),
     event_type: Optional[str] = Query(default=None),
@@ -159,7 +181,7 @@ async def query_audit_trail(
             limit=limit, offset=offset,
         )]
         matching = audit.count(profile_id=scope, operation=event_type, start_date=since)
-        integrity = integrity_summary(audit)
+        integrity = integrity_summary(audit, cached=True)
         return {
             "available": True, "events": events, "total": matching,
             "returned": len(events), "offset": offset,
@@ -514,7 +536,7 @@ async def gdpr_erase_entity(request: Request, data: dict = {}):
 # ── Erasure Receipts — list + cryptographic verify ───────────────────────────
 
 @router.get("/api/compliance/receipts")
-async def list_erasure_receipts(
+def list_erasure_receipts(
     request: Request,
     limit: int = Query(default=50, ge=1, le=200),
 ):
@@ -558,7 +580,7 @@ async def list_erasure_receipts(
 
 
 @router.get("/api/compliance/receipts/{erasure_id}/verify")
-async def verify_erasure_receipt(request: Request, erasure_id: str):
+def verify_erasure_receipt(request: Request, erasure_id: str):
     """Cryptographically verify an erasure receipt's audit hash.
 
     Returns ``{verified: bool}`` — True means the stored hash matches a

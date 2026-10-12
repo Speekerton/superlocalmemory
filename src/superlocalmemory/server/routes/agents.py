@@ -46,7 +46,7 @@ def _registry_path():
 
 
 @router.get("/api/agents")
-async def get_agents(
+def get_agents(
     request: Request,
     protocol: Optional[str] = None,
     limit: int = Query(50, ge=1, le=200),
@@ -67,7 +67,7 @@ async def get_agents(
 
 
 @router.get("/api/agents/stats")
-async def get_agent_stats(request: Request):
+def get_agent_stats(request: Request):
     """Get agent registry statistics."""
     if not REGISTRY_AVAILABLE:
         return {"total_agents": 0, "message": "Agent registry not available"}
@@ -80,7 +80,7 @@ async def get_agent_stats(request: Request):
 
 
 @router.get("/api/agents/memory-activity")
-async def get_agent_memory_activity(
+def get_agent_memory_activity(
     request: Request,
     limit: int = Query(20, ge=1, le=100),
 ):
@@ -247,7 +247,7 @@ def _fingerprint(actor: str | None) -> str:
 
 
 @router.get("/api/trust/stats")
-async def get_trust_stats(request: Request):
+def get_trust_stats(request: Request):
     """Get trust scoring statistics.
 
     Queries trust_scores and trust_signals tables directly (no engine needed).
@@ -322,7 +322,7 @@ async def get_trust_stats(request: Request):
 
 
 @router.get("/api/trust/signals/{agent_id}")
-async def get_agent_trust_signals(
+def get_agent_trust_signals(
     request: Request, agent_id: str,
     limit: int = Query(50, ge=1, le=200),
 ):

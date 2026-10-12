@@ -42,7 +42,7 @@ class ConfigUpdateRequest(BaseModel):
 
 
 @router.get("/config")
-async def get_config() -> dict[str, Any]:
+def get_config() -> dict[str, Any]:
     """Return current optimize config as JSON."""
     try:
         from superlocalmemory.optimize.config import get_shared_store
@@ -81,7 +81,7 @@ async def put_config(body: ConfigUpdateRequest) -> dict[str, Any]:
 
 
 @router.get("/status")
-async def get_status() -> dict[str, Any]:
+def get_status() -> dict[str, Any]:
     """Concise enabled/disabled summary of each optimize sub-feature (M3).
 
     REST-convention companion to `slm optimize status` (which reads config
@@ -112,7 +112,7 @@ async def get_status() -> dict[str, Any]:
 
 
 @router.get("/savings")
-async def get_savings() -> dict[str, Any]:
+def get_savings() -> dict[str, Any]:
     """Return savings estimates from live metrics + CacheDB.
 
     Field names match INTERFACE-CONTRACT §5 exactly.
@@ -153,7 +153,7 @@ async def get_savings() -> dict[str, Any]:
 
 
 @router.get("/stats")
-async def get_stats() -> dict[str, Any]:
+def get_stats() -> dict[str, Any]:
     """Return raw metrics snapshot as JSON."""
     try:
         from superlocalmemory.optimize.metrics.counters import get_metrics

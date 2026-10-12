@@ -53,6 +53,34 @@ WHERE type='table' AND name='atomic_facts'
 """
 
 
+def _read_rules(db: sqlite3.Connection, profile_id: str) -> list[dict[str, Any]]:
+    rows = db.execute(
+        "SELECT id, rule_name, days, description, framework, action, "
+        "applies_to, created_at FROM retention_rules "
+        "WHERE profile_id = ? ORDER BY id",
+        (profile_id,),
+    ).fetchall()
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        try:
+            applies = json.loads(r[6]) if r[6] else {}
+        except (ValueError, TypeError):
+            applies = {}
+        out.append({
+            "id": r[0],
+            "name": r[1],
+            "rule_name": r[1],          # legacy alias
+            "retention_days": r[2],
+            "days": r[2],               # legacy alias
+            "description": r[3],
+            "framework": r[4],
+            "action": r[5],
+            "applies_to": applies,
+            "created_at": r[7],
+        })
+    return out
+
+
 class RetentionEngine:
     """Named retention rules for compliance (GDPR, HIPAA, custom).
 
@@ -171,31 +199,21 @@ class RetentionEngine:
 
     def get_rules(self, profile_id: str) -> list[dict[str, Any]]:
         """Get all retention rules for a profile (full GDPR shape)."""
-        rows = self._db.execute(
-            "SELECT id, rule_name, days, description, framework, action, "
-            "applies_to, created_at FROM retention_rules "
-            "WHERE profile_id = ? ORDER BY id",
-            (profile_id,),
-        ).fetchall()
-        out: list[dict[str, Any]] = []
-        for r in rows:
-            try:
-                applies = json.loads(r[6]) if r[6] else {}
-            except (ValueError, TypeError):
-                applies = {}
-            out.append({
-                "id": r[0],
-                "name": r[1],
-                "rule_name": r[1],          # legacy alias
-                "retention_days": r[2],
-                "days": r[2],               # legacy alias
-                "description": r[3],
-                "framework": r[4],
-                "action": r[5],
-                "applies_to": applies,
-                "created_at": r[7],
-            })
-        return out
+        return _read_rules(self._db, profile_id)
+
+    @staticmethod
+    def peek_rules(db: sqlite3.Connection, profile_id: str) -> list[dict[str, Any]] | None:
+        """Rules for a profile from a READ-ONLY connection, creating and changing nothing.
+
+        ``None`` means the table is missing or older than the current layout, so
+        only a writer can answer (the constructor creates and migrates it). A
+        screen that just lists the rules takes this path and never needs the
+        database write lock.
+        """
+        columns = {r[1] for r in db.execute("PRAGMA table_info(retention_rules)").fetchall()}
+        if not {"framework", "action", "applies_to"} <= columns:
+            return None
+        return _read_rules(db, profile_id)
 
     # ------------------------------------------------------------------
     # GDPR-model API (used by the compliance route + dashboard)

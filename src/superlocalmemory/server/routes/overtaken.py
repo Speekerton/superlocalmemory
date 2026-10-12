@@ -37,7 +37,7 @@ def overtaken_for(engine: Any, profile_id: str, limit: int = 100) -> list[dict]:
 
 
 @router.get("/api/overtaken-corrections")
-async def list_overtaken(request: Request, limit: int = 100, profile_id: str = ""):
+def list_overtaken(request: Request, limit: int = 100, profile_id: str = ""):
     from superlocalmemory.server.routes import memories as m
 
     try:

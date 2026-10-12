@@ -80,10 +80,20 @@ def present_event(event: dict) -> dict:
     }
 
 
-def integrity_summary(chain: Any) -> dict[str, Any]:
-    """``{verified, label, report}`` for the badge; never optimistic on error."""
+def integrity_summary(chain: Any, *, cached: bool = False) -> dict[str, Any]:
+    """``{verified, label, report}`` for the badge; never optimistic on error.
+
+    ``cached`` answers a screen that asks again and again from the last complete
+    walk plus the entries added since (see ``compliance.audit_verify_cache``);
+    the default is the full walk.
+    """
     try:
-        report = chain.verify_report()
+        if cached:
+            from superlocalmemory.compliance.audit_verify_cache import cached_report
+
+            report = cached_report(chain)
+        else:
+            report = chain.verify_report()
     except Exception:  # noqa: BLE001 - an unrun check is not a passed one
         return {"verified": False, "report": None,
                 "label": "Integrity not checked: the audit trail could not be read"}

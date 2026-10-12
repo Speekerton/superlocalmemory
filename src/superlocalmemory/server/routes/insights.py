@@ -360,7 +360,7 @@ ALLOWED_ACTIONS: dict[str, Callable] = {
 # ── Endpoint ──────────────────────────────────────────────────────
 
 @router.get("/{action_name}")
-async def insight_action(
+def insight_action(
     action_name: str,
     profile: str = "",
     limit: int = Query(default=50, ge=1, le=200),

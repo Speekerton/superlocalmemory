@@ -115,6 +115,52 @@ describe('Suggestions', () => {
     });
 });
 
+describe('remote access is on', () => {
+    const refusal = { status: 409, json: { detail: { code: 'remote_access_on', message: 'x' } } };
+    const sentences = h => (h.host.textContent.match(/Turn remote access off first/g) || []).length;
+
+    it('says it once however many times Choose folder is clicked, and says why', async () => {
+        const h = setup({ pick: refusal });
+        await h.open();
+        const choose = h.button('Choose folder');
+        for (let i = 0; i < 4; i++) choose.click();
+        for (let i = 0; i < 6; i++) await flushPromises();
+        assert.equal(sentences(h), 1);
+        assert.match(h.host.textContent, /web app could read the notes/);
+        await h.click(h.button('Choose folder'));
+        assert.equal(sentences(h), 1);
+    });
+
+    it('offers a button that opens Connected apps, where Web access is turned off', async () => {
+        const h = setup({ pick: refusal });
+        await h.open();
+        await h.click(h.button('Choose folder'));
+        await h.click(h.button('Open Web access settings'));
+        assert.equal(h.window.location.hash, '#apps-pane');
+    });
+
+    it('the typed-path route says it once too', async () => {
+        const h = setup();
+        h.calls.length = 0;
+        await h.open();
+        h.host.querySelector('input[type=text]').value = '/x';
+        h.window.fetch = h.window.fetch; // routes below answer the check
+        const g = makeEnv([
+            ['GET', '/api/v3/sources', () => ({ json: { sources: [] } })],
+            ['GET', SUGG, () => ({ json: { suggestions: [] } })],
+            ['POST', '/api/v3/sources', () => refusal],
+        ], { modules: ['od-features.js', 'od-sources.js'] });
+        const host = g.document.getElementById('pane');
+        g.window.odRenderSources(host); await flushPromises(); await flushPromises();
+        host.querySelector('input[type=text]').value = '/x';
+        const check = Array.from(host.querySelectorAll('button')).find(b => b.textContent === 'Check folder');
+        for (let i = 0; i < 3; i++) check.click();
+        for (let i = 0; i < 6; i++) await flushPromises();
+        assert.equal((host.textContent.match(/Turn remote access off first/g) || []).length, 1);
+        assert.ok(Array.from(host.querySelectorAll('button')).some(b => b.textContent === 'Open Web access settings'));
+    });
+});
+
 describe('source', () => {
     it('uses textContent only', () => {
         const js = readFileSync(new URL('../../src/superlocalmemory/ui/js/od-sources.js', import.meta.url), 'utf8');

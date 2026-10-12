@@ -45,7 +45,7 @@ def _parse_range(range_str: str) -> str | None:
 
 
 @router.get("/")
-async def get_timeline(
+def get_timeline(
     range: str = "7d",
     group_by: str = "category",
     limit: int = Query(default=1000, ge=1, le=2000),

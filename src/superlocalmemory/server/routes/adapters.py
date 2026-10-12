@@ -71,7 +71,7 @@ _PATH_FIELDS = ("watch_dir", "mbox_path", "ics_path")
 
 
 @router.get("/api/adapters")
-async def list_adapters_api(request: Request):
+def list_adapters_api(request: Request):
     """List all adapters with their enabled/running status.
 
     Any reader gets the cards. Configured paths are local filesystem details,

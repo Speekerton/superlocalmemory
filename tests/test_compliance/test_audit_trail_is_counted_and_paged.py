@@ -62,11 +62,11 @@ async def test_the_audit_route_reports_the_matching_total_and_whether_more_remai
     monkeypatch.setattr(write_identity, "require_http_mutation_actor", lambda *a, **k: None)
     request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(daemon_descriptor=None)))
 
-    body = await compliance.query_audit_trail(
+    body = compliance.query_audit_trail(
         request, limit=50, event_type=None, since=None, offset=150)
 
     assert body["total"] == 200 and body["returned"] == 50 and body["offset"] == 150
     assert body["has_more"] is False
-    body = await compliance.query_audit_trail(
+    body = compliance.query_audit_trail(
         request, limit=50, event_type=None, since=None, offset=0)
     assert body["has_more"] is True

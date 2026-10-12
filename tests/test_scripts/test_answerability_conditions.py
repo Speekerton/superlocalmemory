@@ -78,3 +78,24 @@ def test_gate_off_sets_and_clears_the_switch(cond):
     with cond.gate_off():
         assert os.environ["SLM_RECALL_NO_SUPPORT_GATE"] == "1"
     assert "SLM_RECALL_NO_SUPPORT_GATE" not in os.environ
+
+
+def test_each_question_is_asked_gate_off_then_gated_back_to_back(monkeypatch):
+    """Whole-suite passes drift (every recall reinforces what it returns), so a
+    memory at rank five in one pass sat at six in the next and read as a loss."""
+    ev = _load("answerability_eval")
+    questions = [("real", {"qid": f"r{i}", "question": f"q{i}", "expected": ["k"]})
+                 for i in range(3)]
+    monkeypatch.setattr(ev, "_questions", lambda suite: questions)
+    seen = []
+
+    class _Engine:
+        _retrieval_engine = SimpleNamespace()
+
+        def recall(self, question, **kw):
+            seen.append((question, os.environ.get("SLM_RECALL_NO_SUPPORT_GATE") == "1"))
+            return SimpleNamespace(results=[], support_tier="none", warming_up=False)
+
+    out = ev.measure_conditions(_Engine(), "frozen", {}, ["warm"], log=lambda m: None)
+    assert seen == [(f"q{i}", off) for i in range(3) for off in (True, False)]
+    assert out["warm"]["gated"]["real_n"] == 3 and out["warm"]["real_lost"] == []

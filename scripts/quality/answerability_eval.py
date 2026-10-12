@@ -345,32 +345,35 @@ def _load_conditions_module():
     return module
 
 
-def _ask(engine, suite: str, memory_to_key: dict) -> list[dict]:
-    """The suite once, as it stands: what each question returned."""
-    rows = []
-    for set_name, q in _questions(suite):
-        response = engine.recall(q["question"], limit=RECALL_LIMIT, fast=True)
-        keys = [memory_to_key.get(r.fact.memory_id or "", "?") for r in response.results]
-        rows.append({
-            "qid": q["qid"], "set": set_name, "result_count": len(response.results),
-            "abstained": len(response.results) == 0,
-            "rank": None if q["expected"] == "abstain" else _hit_rank(keys, q["expected"]),
-            "tier": getattr(response, "support_tier", ""),
-            "warming_up": bool(getattr(response, "warming_up", False)),
-        })
-    return rows
+def _ask_one(engine, set_name: str, q: dict, memory_to_key: dict) -> dict:
+    response = engine.recall(q["question"], limit=RECALL_LIMIT, fast=True)
+    keys = [memory_to_key.get(r.fact.memory_id or "", "?") for r in response.results]
+    return {
+        "qid": q["qid"], "set": set_name, "result_count": len(response.results),
+        "abstained": len(response.results) == 0,
+        "rank": None if q["expected"] == "abstain" else _hit_rank(keys, q["expected"]),
+        "tier": getattr(response, "support_tier", ""),
+        "warming_up": bool(getattr(response, "warming_up", False)),
+    }
 
 
 def measure_conditions(engine, suite: str, memory_to_key: dict, names: list[str],
                        log=print) -> dict:
-    """The merge rule: each condition gated against gate-off (conditions module)."""
+    """The merge rule: each condition gated against gate-off (conditions module).
+
+    Each question is asked gate-off and then gated, back to back: in two
+    whole-suite passes every recall in between reinforces what it returned,
+    and a memory at rank five in one pass sat at six in the other.
+    """
     cond = _load_conditions_module()
     out = {}
     for name in names:
+        gated, before = [], []
         with cond.condition(engine, name):
-            gated = _ask(engine, suite, memory_to_key)
-            with cond.gate_off():
-                before = _ask(engine, suite, memory_to_key)
+            for set_name, q in _questions(suite):
+                with cond.gate_off():
+                    before.append(_ask_one(engine, set_name, q, memory_to_key))
+                gated.append(_ask_one(engine, set_name, q, memory_to_key))
         out[name] = {**cond.compare(gated, before),
                      "warming_up": sum(r["warming_up"] for r in gated)}
         log(f"condition {name}: {json.dumps(out[name], sort_keys=True)}")

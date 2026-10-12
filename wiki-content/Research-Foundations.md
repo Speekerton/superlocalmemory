@@ -4,11 +4,11 @@ SuperLocalMemory is built on four arXiv papers and a set of mathematical layers 
 
 ## The four papers
 
-They are listed newest first.
+All four are by Varun Pratap Bhardwaj; the governed-memory paper has two further authors. They are listed newest first.
 
 | arXiv | Title | What it covers | Where it shows up in the product |
 |---|---|---|---|
-| [2608.08253](https://arxiv.org/abs/2608.08253) | SuperLocalMemory: The Governed Memory Operating System for AI Agents | Multi-scope isolation, role-based access, verified erasure, hash-chained audit and bi-temporal recall, with the measured cost of the governed write path | [Governance](Governance), [Security, Company Mode and Teams](Security-Company-Mode-and-Teams), [Profiles](Profiles) |
+| [2608.08253](https://arxiv.org/abs/2608.08253) | SuperLocalMemory: The Governed Memory Operating System for AI Agents (with Garima Singh and Arun Pratap Bhardwaj) | Multi-scope isolation, role-based access, verified erasure, hash-chained audit and bi-temporal recall, with the measured cost of the governed write path | [Governance](Governance), [Security, Company Mode and Teams](Security-Company-Mode-and-Teams), [Profiles](Profiles) |
 | [2604.04514](https://arxiv.org/abs/2604.04514) | SuperLocalMemory: The Living Brain | Biologically inspired forgetting, cognitive quantization, multi-channel retrieval without a language model | [Living Brain](Living-Brain) |
 | [2603.14588](https://arxiv.org/abs/2603.14588) | SuperLocalMemory: Information-Geometric Foundations for Zero-LLM Enterprise Agent Memory | Fisher-information retrieval, Langevin lifecycle, sheaf contradiction detection, and the LoCoMo results below | [How Recall Works](How-Recall-Works), this page |
 | [2603.02240](https://arxiv.org/abs/2603.02240) | SuperLocalMemory: Privacy-Preserving Multi-Agent Memory with Bayesian Trust Defense Against Memory Poisoning | Per-agent Bayesian trust scores and defence against poisoned writes | [Governance](Governance), [Multi-Agent Memory](Multi-Agent-Memory) |

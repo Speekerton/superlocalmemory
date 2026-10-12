@@ -118,4 +118,4 @@ SuperLocalMemory does not process Protected Health Information (PHI) by default.
 SuperLocalMemory does not provide BAA (Business Associate Agreement) coverage. Consult your compliance team before storing PHI.
 
 ---
-*Part of [Qualixar](https://qualixar.com)*
+*Part of [Qualixar](https://qualixar.com) | Created by [Varun Pratap Bhardwaj](https://varunpratap.com)*

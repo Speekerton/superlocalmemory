@@ -42,7 +42,14 @@ PIN_KEY = "caller_workspace"
 _MAX_BOUND_SESSIONS = 10_000
 _SESSION_HEADER = b"x-slm-user-session"
 _SESSION_COOKIE = "slm_session"
-_REQUEST_STATE: contextvars.ContextVar[Any] = contextvars.ContextVar("slm_workspace_state", default=None)
+_OWNER_COOKIE = "slm_mcp_workspace"
+_OWNER_KEY = "mcp_owner_workspace"
+_OWNER_BINDING: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "slm_mcp_owner_binding", default="",
+)
+_REQUEST_STATE: contextvars.ContextVar[Any] = contextvars.ContextVar(
+    "slm_workspace_state", default=None,
+)
 
 
 @dataclass(frozen=True)
@@ -132,12 +139,58 @@ def _first_readable(rbac: Any, user_id: str, preferred: str) -> str | None:
     return None
 
 
+def _owner_binding(scope: dict, app_state: Any) -> str:
+    """A personal HTTP client's workspace choice; this is never authentication."""
+    import re
+    from http.cookies import SimpleCookie
+    from secrets import token_urlsafe
+
+    from superlocalmemory.server.forwarded_guard import has_forwarding_header
+    from superlocalmemory.server.remote_access import is_trusted_local_peer
+
+    if not is_trusted_local_peer(scope) or has_forwarding_header(scope.get("headers")):
+        return ""
+
+    if session_token_from_scope(scope):
+        return ""
+    rbac = getattr(app_state, "rbac", None)
+    if rbac is not None and rbac.require_login():
+        return ""
+    headers = dict(scope.get("headers") or ())
+    binding = headers.get(b"x-slm-workspace-binding", b"").decode("latin-1")
+    if not binding:
+        jar = SimpleCookie()
+        jar.load(headers.get(b"cookie", b"").decode("latin-1"))
+        cookie = jar.get(_OWNER_COOKIE)
+        binding = cookie.value if cookie is not None else ""
+    if binding and not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", binding):
+        binding = ""
+    if not binding and str(scope.get("path", "")).startswith("/mcp"):
+        binding = token_urlsafe(32)
+    return binding if len(binding) <= 128 else ""
+
+
+def current_owner_workspace_binding() -> str:
+    """Forward routing to nested daemon calls without granting any permission."""
+    return _OWNER_BINDING.get()
+
+
 def resolve_caller_workspace(scope: dict, app_state: Any) -> CallerWorkspace:
     """The workspace this request acts on when it names none."""
     daemon = daemon_workspace(app_state)
     rbac = getattr(app_state, "rbac", None)
     token = session_token_from_scope(scope)
-    if rbac is None or not token:
+    if not token:
+        binding = _owner_binding(scope, app_state)
+        if binding:
+            scope.setdefault("state", {})[_OWNER_KEY] = binding
+            store = session_workspaces(app_state)
+            key = "owner:" + binding
+            chosen = store.get(key) or daemon
+            store.bind(key, chosen)
+            return CallerWorkspace(chosen, bound=True)
+        return CallerWorkspace(daemon, bound=False)
+    if rbac is None:
         return CallerWorkspace(daemon, bound=False)
     user = rbac.resolve_session(token)
     if not user:
@@ -189,6 +242,19 @@ def switch_http_workspace(profile_id: str) -> bool:
         return False
     token = presented_session()
     rbac = getattr(state, "rbac", None)
+    binding = current_owner_workspace_binding()
+    if binding and not token:
+        # Only personal mode produces this binding; recheck policy at switch.
+        if rbac is not None and rbac.require_login():
+            raise PermissionError("Sign in with a viewer role or higher to switch workspace.")
+        engine = getattr(state, "engine", None)
+        db = getattr(engine, "_db", None)
+        rows = (db.execute("SELECT 1 FROM profiles WHERE profile_id = ?", (profile_id,))
+                if db else [])
+        if not rows:
+            raise ValueError("The target workspace does not exist.")
+        session_workspaces(state).bind("owner:" + binding, profile_id)
+        return True
     user = rbac.resolve_session(token) if rbac is not None and token else None
     if user is None or not rbac.has_permission(user["user_id"], profile_id, Permission.READ):
         raise PermissionError("A viewer role or higher on the target workspace is required.")
@@ -219,10 +285,21 @@ class CallerWorkspaceMiddleware:
             return
         scope.setdefault("state", {})[PIN_KEY] = pin
         state_token = _REQUEST_STATE.set(self._app_state)
+        binding = scope.get("state", {}).get(_OWNER_KEY, "")
+        owner_token = _OWNER_BINDING.set(binding)
+
+        async def send_with_binding(message):
+            if binding and message.get("type") == "http.response.start":
+                message = {**message, "headers": list(message.get("headers", []))}
+                cookie = f"{_OWNER_COOKIE}={binding}; Path=/mcp; HttpOnly; SameSite=Strict"
+                message["headers"].append((b"set-cookie", cookie.encode("latin-1")))
+            await send(message)
+
         try:
             with pin_request_workspace(pin):
-                await self._app(scope, receive, send)
+                await self._app(scope, receive, send_with_binding)
         finally:
+            _OWNER_BINDING.reset(owner_token)
             _REQUEST_STATE.reset(state_token)
 
 

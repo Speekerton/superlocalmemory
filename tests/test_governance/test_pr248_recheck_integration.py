@@ -1,4 +1,4 @@
-"""PR 248 recheck probes (integrity tests of workspace permissions). Permanent regression integration coverage."""
+"""Permanent PR 248 integration probes for workspace permissions."""
 
 # ruff: noqa: F811
 from __future__ import annotations
@@ -297,7 +297,8 @@ async def main():
     from superlocalmemory.storage.models import AtomicFact, MemoryRecord
     m = MemoryRecord(profile_id="sales", content="SALES-SECRET-PROBE")
     eng._db.store_memory(m)
-    eng._db.store_fact(AtomicFact(memory_id=m.memory_id, profile_id="sales", content="SALES-SECRET-PROBE"))
+    eng._db.store_fact(AtomicFact(memory_id=m.memory_id, profile_id="sales",
+                                 content="SALES-SECRET-PROBE"))
     bind_session(sys.argv[2])  # viewer_a: viewer of default only
     try:
         res = await srvmod.server.read_resource("slm://recent")

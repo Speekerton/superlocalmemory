@@ -724,6 +724,11 @@ def daemon_request(
         user_session = presented_session()
         if user_session:
             headers["X-SLM-User-Session"] = user_session
+        from superlocalmemory.server.caller_workspace import current_owner_workspace_binding
+
+        owner_binding = current_owner_workspace_binding()
+        if owner_binding:
+            headers["X-SLM-Workspace-Binding"] = owner_binding
         # The connection's agent name (SLM_AGENT_ID, or an /mcp/<agent> name
         # vouched by the capability; a bare URL name is only a claim). The
         # daemon believes it only alongside the capability (L-15).

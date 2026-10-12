@@ -1,6 +1,6 @@
 # Copyright (c) 2026 Varun Pratap Bhardwaj / Qualixar
 # Licensed under AGPL-3.0-or-later
-"""Read-only local extraction model guidance; never silently switch models."""
+"""Guidance on which extraction model to use. It only reads; it recommends and never changes models on its own."""
 
 from __future__ import annotations
 

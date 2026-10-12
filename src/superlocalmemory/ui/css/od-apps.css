@@ -118,6 +118,15 @@
 .apps-conn-row, .apps-row { display: flex; align-items: center; gap: 16px; padding: 16px 24px; border-top: 1px solid var(--border); }
 .apps-conn-rows > .apps-conn-row:first-child, .apps-rows > .apps-row:first-child { border-top: 0; }
 .apps-row-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+[data-local-apps] > .card-head { flex-wrap: wrap; }
+.apps-local-row { flex-wrap: wrap; gap: 8px; padding: 12px 0; }
+.apps-local-row strong { min-width: 0; overflow-wrap: anywhere; }
+.apps-local-row button { margin-left: auto; }
+.apps-local-counts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.apps-local-setup { display: grid; gap: 12px; min-width: 0; }
+.apps-local-setup label { display: grid; gap: 6px; min-width: 0; }
+.apps-local-setup select { width: 100%; max-width: 100%; min-width: 0; }
+.apps-local-setup button { justify-self: start; }
 .apps-conn-row .apps-row-main { gap: 2px; }
 .apps-row-desc { font-size: 13px; color: var(--fg-2); }
 .apps-row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; flex: none; }

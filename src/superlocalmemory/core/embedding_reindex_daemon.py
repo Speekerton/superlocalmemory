@@ -146,6 +146,7 @@ def health_payload(app_state: Any) -> dict | None:
     payload = {k: view[k] for k in ("job_id", "kind", "state", "done", "total", "eta_seconds",
                                     "from", "to", "error")}
     payload["notice"] = getattr(runner, "notice", None)
+    payload["queued_reason"] = view.get("queued_reason")
     return payload
 
 

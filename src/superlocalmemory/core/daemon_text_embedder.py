@@ -65,6 +65,7 @@ class DaemonTextEmbedder:
         self._lock = threading.Lock()
         self._ping_at = float("-inf")
         self._ok, self._warm, self._loaded_once, self._closed = False, False, False, False
+        self._space_matches = False
         self._unreachable = False  # the last ping got no answer at all (daemon down, not loading)
 
     @property
@@ -88,12 +89,22 @@ class DaemonTextEmbedder:
         data = _owned_daemon_request("GET", _PING_PATH, None, 2.0)
         self._unreachable = not isinstance(data, dict)
         info = data.get("embedder") if isinstance(data, dict) and data.get("ok") is True else None
-        ok = (isinstance(info, dict) and info.get("available") is True
-              and info.get("model") == self.model_name and info.get("dimension") == self.dimension)
+        self._space_matches = bool(
+            isinstance(info, dict) and info.get("model") == self.model_name
+            and info.get("dimension") == self.dimension)
+        ok = self._space_matches and info.get("available") is True
         self._ok = bool(ok)
         self._warm = bool(ok and info.get("warm"))
         if self._warm:
             self._loaded_once = True
+
+    @property
+    def is_compatible(self) -> bool:
+        """The owned daemon serves this vector space, even while its model loads."""
+        if self._closed:
+            return False
+        self._refresh()
+        return self._space_matches
 
     @property
     def is_available(self) -> bool:

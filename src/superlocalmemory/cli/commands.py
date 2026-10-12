@@ -599,7 +599,9 @@ def cmd_session(args: Namespace) -> None:
     so a shell hook (e.g. Claude session-start / /quit) can call it directly.
     """
     from superlocalmemory.cli.daemon import (
-        daemon_request, ensure_daemon, is_daemon_running,
+        daemon_request,
+        ensure_daemon,
+        is_daemon_running,
     )
 
     action = getattr(args, "session_command", None)
@@ -622,7 +624,8 @@ def cmd_session(args: Namespace) -> None:
             print(f"Session opened — warmed {resp.get('warmed', 0)} memories "
                   f"(query: {resp.get('query', '')})")
         else:
-            print("Session open failed (daemon unreachable?)")
+            print("Session open failed (daemon unreachable?)", file=sys.stderr)
+            raise SystemExit(1)
         return
 
     # close
@@ -633,7 +636,8 @@ def cmd_session(args: Namespace) -> None:
         print(f"Session closed: {sid} — "
               f"{resp.get('summary_events_created', 0)} summary event(s) created")
     else:
-        print("Session close failed (daemon unreachable?)")
+        print("Session close failed (daemon unreachable?)", file=sys.stderr)
+        raise SystemExit(1)
 
 
 def _cmd_upgrade_hosts(args: Namespace) -> None:
@@ -1879,7 +1883,11 @@ def cmd_remember(args: Namespace) -> None:
 
     try:
         from superlocalmemory.cli.daemon import (
-            DaemonUnprocessable, daemon_request, ensure_daemon, is_daemon_running,
+            DaemonServerError,
+            DaemonUnprocessable,
+            daemon_request,
+            ensure_daemon,
+            is_daemon_running,
         )
         kind = (getattr(args, "kind", "") or "").strip()
         if kind:
@@ -1923,20 +1931,24 @@ def cmd_remember(args: Namespace) -> None:
         }
         # A 422 is a refusal of this request, printed as such, not "daemon
         # unavailable" (an idempotency conflict never heals by retrying).
-        extra = {"preserve_unprocessable": True}
+        extra = {"preserve_unprocessable": True, "preserve_server_error": sync_mode}
         if replaces is not None:
             body["replaces"] = replaces
         body["idempotency_key"] = _cli_remember_idempotency_key(body)
         try:
-            result = daemon_request("POST", path, body, timeout_seconds=30, **extra)
-        except DaemonUnprocessable as exc:
+            result = daemon_request("POST", path, body,
+                                    timeout_seconds=300 if sync_mode else 30, **extra)
+        except (DaemonUnprocessable, DaemonServerError) as exc:
             if use_json:
                 from superlocalmemory.cli.json_output import json_print
                 json_print("remember", error={"code": exc.code, "message": exc.message})
             else:
                 print(exc.message, file=sys.stderr)
-            sys.exit(2)
+            sys.exit(1 if isinstance(exc, DaemonServerError) else 2)
         if result and "fact_ids" in result:
+            if sync_mode:
+                from superlocalmemory.cli.save_completion import require_completed_receipt
+                require_completed_receipt(result, use_json)
             if use_json:
                 from superlocalmemory.cli.json_output import json_print
                 json_print("remember", data=result)
@@ -2935,7 +2947,7 @@ _COMMAND_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
     ("Run SLM (daemon & dashboard)", [
         ("serve", "Start/stop the background daemon"),
         ("restart", "Restart the daemon (applies restart-only settings)"),
-        ("dashboard", "Open the web dashboard (localhost:8765)"),
+        ("dashboard", "Open the web dashboard on the configured daemon port"),
         ("mcp", "Start the MCP server (used by IDEs)"),
         ("remote", "Let other computers use this SLM over HTTPS with revocable keys"),
         ("warmup", "Pre-load models so the first recall is fast"),
@@ -3577,6 +3589,15 @@ def cmd_doctor(args: Namespace) -> None:
             _check("Failed saves", "WARN", f"could not read the failed-save counts: {_fs_exc}",
                    "Run `slm ops status`")
 
+    if db_path.exists():
+        try:
+            from superlocalmemory.cli.doctor_quantization import qjl_finding
+
+            _check("QJL sketches", *qjl_finding(db_path))
+        except Exception as exc:  # noqa: BLE001 - report unavailable diagnostics
+            _check("QJL sketches", "WARN", f"could not inspect QJL sketches: {exc}",
+                   "Run `slm quantize --dry-run --json`")
+
     # 11. PEP 668 advisory (only for the system Python; a venv is exempt)
     #     and whether this Python can load SQLite extensions at all.
     try:
@@ -3877,6 +3898,9 @@ def cmd_doctor(args: Namespace) -> None:
             f"could not be measured: {_mh_exc}",
         )
 
+    from superlocalmemory.cli.doctor_mcp import connected_apps_finding
+    _check("Connected MCP apps", *connected_apps_finding())
+
     refile_data = None
     if getattr(args, "refile_hidden", False):
         from superlocalmemory.cli.doctor_refile import run_refile
@@ -4074,7 +4098,11 @@ def cmd_mcp(_args: Namespace) -> None:
             kill_orphan,
         )
         _reaper_cfg = ReaperConfig(orphan_age_threshold_hours=0.0)
-        for _orphan in find_orphans(_reaper_cfg):
+        _orphans = (
+            [] if os.environ.get("SLM_DISABLE_WARMUP_SIDE_EFFECTS") == "1"
+            else find_orphans(_reaper_cfg)
+        )
+        for _orphan in _orphans:
             # A unified daemon is expected to be detached from the launching
             # shell and can therefore have PPID 1.  The MCP reaper must never
             # treat that healthy shared daemon as an orphaned stdio server.
@@ -4271,9 +4299,10 @@ def cmd_dashboard(args: Namespace) -> None:
     ensures the daemon is running and opens the browser. It does NOT
     start a separate server (saves ~500MB RAM from duplicate engine).
     """
-    from superlocalmemory.cli.daemon import ensure_daemon, _get_port
+    from superlocalmemory.cli.daemon import ensure_daemon
+    from superlocalmemory.cli.deployment import runtime_port
 
-    port = getattr(args, "port", None) or _get_port()
+    port = getattr(args, "port", None) or runtime_port()
 
     print("  SuperLocalMemory V4 — Web Dashboard")
     print(f"  Starting daemon if needed...")
@@ -5100,6 +5129,8 @@ def cmd_decay(args: Namespace) -> None:
 
 def cmd_quantize(args: Namespace) -> None:
     """Run EAP embedding quantization cycle."""
+    from dataclasses import replace
+
     from superlocalmemory.core.admission import gate_cli_mutation
     from superlocalmemory.core.operation_request import OperationKind
     gate_cli_mutation(OperationKind.CONSOLIDATE)
@@ -5126,7 +5157,8 @@ def cmd_quantize(args: Namespace) -> None:
         from superlocalmemory.math.qjl import QJLEncoder
 
         ebbinghaus = EbbinghausCurve(config.forgetting)
-        polar = PolarQuantEncoder(config.quantization.polar)
+        polar = PolarQuantEncoder(replace(config.quantization.polar,
+                                          dimension=config.embedding.dimension))
         qjl = QJLEncoder(config.quantization.qjl)
         qstore = QuantizedEmbeddingStore(
             engine._db, polar, qjl, config.quantization,
@@ -5157,6 +5189,11 @@ def cmd_quantize(args: Namespace) -> None:
     print(f"  Upgrades:    {result.get('upgrades', 0)}")
     print(f"  Skipped:     {result.get('skipped', 0)}")
     print(f"  Errors:      {result.get('errors', 0)}")
+
+    print(f"  QJL repair needed: {result.get('repair_needed', 0)}")
+    print(f"  QJL repaired:      {result.get('repaired', 0)}")
+    print(f"  QJL repair errors: {result.get('repair_errors', 0)}")
+    print(f"  Need re-embedding: {result.get('unrecoverable', 0)}")
 
 
 def cmd_consolidate(args: Namespace) -> None:

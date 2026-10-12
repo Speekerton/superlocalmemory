@@ -147,10 +147,25 @@ def is_latin(text: str) -> bool:
     return True
 
 
+#: Everyday words of the other languages people write questions in (German,
+#: French, Spanish, Portuguese, Italian, Dutch): never "rare" -- a question
+#: does not name a specific thing by asking "wann" or "quando".
+_OTHER_LANGUAGE_COMMON = frozenset("""
+wann wie was wer wo warum welche welcher welches ist sind die der das den dem des
+ein eine einer und oder nicht mit von für auf aus bei nach über unter wird werden
+quand comment quoi qui où pourquoi quel quelle est sont les une des et ou pas avec
+pour dans sur par cuando como qué quien quién donde dónde por cual cuál los las del
+una con para sobre quando como onde porque qual são uma com por sobre não mais
+quale dove perché sono gli della delle wanneer hoe waarom welke zijn het een met
+voor niet ook naar
+""".split())
+
+
 def _known_word(piece: str, vocab: frozenset[str] | None) -> bool:
     from superlocalmemory.encoding.common_words import is_common_word
 
-    return (vocab is not None and piece in vocab) or is_common_word(piece)
+    return ((vocab is not None and piece in vocab) or is_common_word(piece)
+            or piece in _OTHER_LANGUAGE_COMMON)
 
 
 def rare_terms(terms: Sequence[str], vocab: frozenset[str] | None) -> list[str]:
@@ -302,6 +317,12 @@ def build(
         "rare_miss": _r(rare_miss(rare, content)),
         "subject_coverage": _r(_subject_coverage(terms, content)),
     }
+
+
+def subject_coverage(terms: Sequence[str], content: str) -> float:
+    """Share of the question's subject words (character pairs in an unspaced
+    script) this content holds; 1.0 when the question has none."""
+    return _subject_coverage(terms, content)
 
 
 def _subject_coverage(terms: Sequence[str], content: str) -> float:

@@ -356,6 +356,8 @@ def _fallback(engine: Any, call: RecallCall, app_state: Any) -> dict:
             profile=call.profile_id or snapshot.profile_id,
             profile_generation=snapshot.generation,
             facets=call.facets,
+            show_weak=call.show_weak,
+            include_related=call.include_related,
         )
 
 

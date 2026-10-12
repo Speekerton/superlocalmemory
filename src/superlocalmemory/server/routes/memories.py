@@ -1100,11 +1100,16 @@ async def search_memories(request: Request, body: SearchRequest):
                    fact_type as category, created_at{kind_select}
             FROM atomic_facts WHERE profile_id = ? AND {sql[0]}{kind_clause}
             ORDER BY {sql[2]}, confidence DESC LIMIT ?
-        """, (active_profile, *sql[1], *kind_params, *sql[3], body.limit)).fetchall()
+        """, (active_profile, *sql[1], *kind_params, *sql[3],
+              body.limit * 3)).fetchall()  # over-fetch: the tiers below filter
         conn.close()
-        if not apply_kind_filter:  # 4.1.25: only what the question's words support
-            from superlocalmemory.server.recall_fallback import supported_rows
-            rows = supported_rows(body.query, rows)
+        _tier, _note = "", ""
+        if not apply_kind_filter:  # 4.1.25: the same tiers as the daemon's fallback
+            from superlocalmemory.server.recall_fallback import _tiered
+            rows, _tier, _note = _tiered(body.query, rows, body.show_weak, True)
+            for row in rows:
+                row["tier"] = row.pop("_tier", "")
+        rows = rows[:body.limit]
 
         if has_kind_columns:
             from superlocalmemory.core.kind_query import engine_display_min_confidence
@@ -1130,6 +1135,8 @@ async def search_memories(request: Request, body: SearchRequest):
             "answerability_reason": "unavailable" if results else "no_results",
             "abstention_reason": None if results else "no_candidates",
             "no_confident_match": False,
+            **({"tier": _tier} if _tier else {}),
+            **({"abstention_note": _note} if _note else {}),
         }
 
     except Exception:

@@ -179,8 +179,11 @@ def lexical_support(query: str, content: str) -> bool:
     if not terms:
         return False
     rare = ef.rare_terms(terms, ef.model_vocabulary())
-    return (ef.rare_miss(rare, content) == 0.0
-            and ef.keyword_coverage(terms, content) >= LEXICAL_MIN_COVERAGE)
+    if any(ef.unspaced(t) for t in terms):  # character pairs, not whole terms
+        coverage = ef.subject_coverage(terms, content)
+    else:
+        coverage = ef.keyword_coverage(terms, content)
+    return ef.rare_miss(rare, content) == 0.0 and coverage >= LEXICAL_MIN_COVERAGE
 
 
 __all__ = ["ABSTAIN_NOTE", "Assessment", "LEXICAL_MIN_COVERAGE", "REASON_NO_RESULTS",

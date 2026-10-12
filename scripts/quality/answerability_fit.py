@@ -126,6 +126,47 @@ def imputations(train: list[dict]) -> dict:
     }
 
 
+VECTORLESS_MARGIN = 0.10
+_VECTORLESS_GRID = [round(0.02 * i, 2) for i in range(26)]  # 0.00 .. 0.50
+
+
+def _keyword_only_answers(train: list[dict], recipe, value: float, threshold_logit: float,
+                          coef: np.ndarray, b: float) -> bool:
+    """Would any TRAINING nonsense question answer on keywords alone (no cosine,
+    no cross-encoder; with and without the question profile)?"""
+    from dataclasses import replace
+
+    from superlocalmemory.retrieval import support_gate
+    from superlocalmemory.retrieval.support_recipe import FEATURES
+
+    trial = replace(recipe, hub_corrected_unmeasured=value)
+    for r in train:
+        if r["set"] != "nonsense":
+            continue
+        for profile in (r["query_evidence"].get("nonsense_similarity"), None):
+            qe = {**r["query_evidence"], "nonsense_similarity": profile}
+            for c in r.get("candidates", ()):
+                if not c.get("bm25_raw"):
+                    continue
+                ev = {**c, "cosine": None, "hub_corrected": None, "ce_raw": None}
+                f = support_gate.features(ev, qe, trial)
+                if float(np.array([f[n] for n in FEATURES]) @ coef + b) >= threshold_logit:
+                    return True
+    return False
+
+
+def unmeasured_hub(train: list[dict], recipe, coef: np.ndarray, b: float,
+                   threshold_logit: float) -> float:
+    """``hub_corrected_unmeasured``: the largest grid value at which no training
+    nonsense question answers on keywords alone, minus ``VECTORLESS_MARGIN``."""
+    safe = None
+    for value in _VECTORLESS_GRID:
+        if _keyword_only_answers(train, recipe, value, threshold_logit, coef, b):
+            break
+        safe = value
+    return round(max(0.0, (safe or 0.0) - VECTORLESS_MARGIN), 2)
+
+
 # -- the fit -------------------------------------------------------------------------
 
 def _bounded_logistic(X: np.ndarray, y: np.ndarray, w: np.ndarray, names) -> tuple:
@@ -299,9 +340,10 @@ def main(argv: list[str] | None = None) -> int:
     recipe = replace(sr.ACTIVE, **imputations(train))
     coef, b = fit(train, recipe)
     chosen = choose_threshold(held, recipe, coef, b)
+    unmeasured = unmeasured_hub(train, recipe, coef, b, chosen["logit"])
     report = {
         "split": SPLIT_VERSION, "train": len(train), "held_out": len(held),
-        "imputations": imputations(train),
+        "imputations": {**imputations(train), "hub_corrected_unmeasured": unmeasured},
         "weights": {n: round(float(c), 4) for n, c in zip(sr.FEATURES, coef)},
         "intercept": round(b, 4), "threshold": chosen,
         "held_out_table": table(held, recipe, coef, b, chosen["logit"]),

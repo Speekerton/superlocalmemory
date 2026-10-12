@@ -65,6 +65,11 @@ class SupportRecipe:
     #: Hub baseline assumed for a memory that has none yet: high, so a store
     #: still filling in errs toward abstaining.
     hub_missing_baseline: float
+    #: Hub-corrected cosine assumed when there is no vector measurement at all
+    #: (a keyword-only recall: the model not loaded, or a memory without a
+    #: vector). Chosen on the training split: the largest value at which no
+    #: training nonsense question answers on keywords alone, minus 0.10.
+    hub_corrected_unmeasured: float
     nonsense_similarity_missing: float
     #: Logit shift when the on-device answer check judged the set insufficient.
     laya_unsupported: float
@@ -104,6 +109,7 @@ ANSWER_SUPPORT_V1 = SupportRecipe(
     ce_clip=(-12.0, 10.0),
     ce_missing=-6.38,
     hub_missing_baseline=0.59,
+    hub_corrected_unmeasured=0.1,  # last safe training value 0.20, minus 0.10
     nonsense_similarity_missing=0.39,
     laya_unsupported=-1.5,  # prior: Laya is not available where the harness runs
     metadata_bonus=0.5,     # prior: tags and projects are optional evidence

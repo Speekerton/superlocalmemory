@@ -79,7 +79,8 @@ def features(evidence: Mapping[str, Any], query_evidence: Mapping[str, Any],
     hub = _num(evidence.get("hub_corrected"))
     if hub is None:
         cos = _num(evidence.get("cosine"))
-        hub = (cos if cos is not None else 0.0) - recipe.hub_missing_baseline
+        hub = (cos - recipe.hub_missing_baseline if cos is not None
+               else recipe.hub_corrected_unmeasured)
     ce = _num(evidence.get("ce_raw"))
     if ce is None or not query_evidence.get("latin_script", True):
         ce = recipe.ce_missing

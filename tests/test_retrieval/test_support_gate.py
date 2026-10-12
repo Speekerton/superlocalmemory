@@ -20,7 +20,7 @@ RECIPE = sr.SupportRecipe(
              "log_bm25": 0.1, "entity_hit": 0.5, "oov_phrase": -1.0, "rare_miss": -5.0,
              "nonsense_similarity": -20.0},
     intercept=3.0, threshold=0.5, ce_clip=(-12.0, 10.0), ce_missing=-4.0,
-    hub_missing_baseline=0.6, nonsense_similarity_missing=0.40,
+    hub_missing_baseline=0.6, hub_corrected_unmeasured=0.12, nonsense_similarity_missing=0.40,
     laya_unsupported=-2.0, metadata_bonus=0.5, fitted_on="hand-written",
 )
 QE = {"latin_script": True, "oov_phrase": False, "nonsense_similarity": 0.33}
@@ -60,8 +60,10 @@ def test_missing_hub_baseline_and_query_profile_are_imputed_conservatively() -> 
                     RECIPE)
     assert f["hub_corrected"] == pytest.approx(0.8 - 0.6)
     assert f["nonsense_similarity"] == pytest.approx(0.40)
+    # No vector at all (a keyword-only recall, the model not loaded): neither
+    # rewarded nor written off -- the recipe's own value for "unmeasured".
     no_vector = sg.features(_ev(hub_corrected=None, cosine=None), QE, RECIPE)
-    assert no_vector["hub_corrected"] == pytest.approx(-0.6)
+    assert no_vector["hub_corrected"] == pytest.approx(RECIPE.hub_corrected_unmeasured)
     assert set(sg.imputed(_ev(hub_corrected=None), {})) >= {"hub_corrected",
                                                              "nonsense_similarity"}
 

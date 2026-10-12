@@ -8,8 +8,6 @@ value the run added must be gone and nothing may count as a user edit.
 
 import sqlite3
 
-import pytest
-
 from superlocalmemory.storage import schema
 from superlocalmemory.storage.database import DatabaseManager
 from superlocalmemory.storage.models import AtomicFact, CanonicalEntity, MemoryRecord

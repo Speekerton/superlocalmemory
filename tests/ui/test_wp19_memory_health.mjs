@@ -48,22 +48,67 @@ test('progress is in plain words, with Pause while running and the store check i
   assert.deepEqual(JSON.parse(post.body), { action: 'pause', run_id: 'r1' });
 });
 
-test('a paused run offers Resume; a finished run with changes offers one Undo', async () => {
-  const paused = await mount(() => ({ enrichment: { run_id: 'r1', status: 'paused', processed: 3, total: 12 }, repairs: [] }));
+test('a paused run offers Resume; the most recent changing run gets the one Undo', async () => {
+  const paused = await mount(() => ({ enrichment: { run_id: 'r1', status: 'paused', processed: 3, total: 12 }, runs: [] }));
   assert.deepEqual(buttons(paused.card), ['Resume']);
-  const done = await mount(() => ({ enrichment: { run_id: 'r2', status: 'completed', processed: 12, total: 12, changed: 9, updated_at: '2026-10-12T10:00:00+00:00' }, repairs: [] }));
-  assert.deepEqual(buttons(done.card), ['Undo last improvement']);
+  const done = await mount(() => ({
+    enrichment: { run_id: 'r2', status: 'completed', processed: 12, total: 12, changed: 9 },
+    runs: [
+      { run_id: 'h9', kind: 'repair', status: 'undone', changed: 4, label: 'search sketches' },
+      { run_id: 'r2', kind: 'improvement', status: 'completed', changed: 9, label: 'memory descriptions' },
+    ],
+  }));
+  assert.deepEqual(buttons(done.card), ['Undo the last change (9 memory descriptions)']);
+  done.card.querySelector('button').click();
+  for (let i = 0; i < 6; i += 1) await tick();
+  const post = done.calls.find((c) => c.method === 'POST');
+  assert.deepEqual(JSON.parse(post.body), { action: 'undo', run_id: 'r2' });
 });
 
-test('a repair that needs a decision gets exactly one plain-language Fix button', async () => {
+test('repairs that delete or move things are suggestions with exactly one Fix button each', async () => {
   const f = await mount(() => ({
     enrichment: { status: 'completed', processed: 12, total: 12, changed: 0 },
-    repairs: [{ run_id: 'h1', action: 'entity-links', status: 'completed', found: 60, fixed: 25, created_at: '2026-10-12T10:00:00+00:00' }],
+    suggestions: [{ action: 'entity-links', found: 35, label: 'entity links' }],
+    runs: [],
   }));
-  assert.match(f.card.textContent, /Found 60 entity links; fixed 25 automatically/);
-  assert.deepEqual(buttons(f.card), ['Fix 35 entity links', 'Undo last improvement']);
-  [...f.card.querySelectorAll('button')].find((b) => b.textContent.startsWith('Fix')).click();
+  assert.match(f.card.textContent, /35 entity links can be fixed/);
+  assert.deepEqual(buttons(f.card), ['Fix 35 entity links']);
+  f.card.querySelector('button').click();
   for (let i = 0; i < 6; i += 1) await tick();
   const post = f.calls.find((c) => c.method === 'POST');
   assert.deepEqual(JSON.parse(post.body), { action: 'repair', repair: 'entity-links' });
+});
+
+test('states are plain language and never name an exception', async () => {
+  const f = await mount(() => ({
+    state: 'Some improvements are waiting and will be tried again.',
+    enrichment: { status: 'running', processed: 1, total: 2, last_error: 'OperationalError' },
+    repairs: [{ run_id: 'e1', action: 'qjl-sketches', status: 'error', error: 'RuntimeError' }],
+    runs: [],
+  }));
+  assert.match(f.card.textContent, /Some improvements are waiting and will be tried again\./);
+  assert.doesNotMatch(f.card.textContent, /Error/);
+  const idle = await mount(() => ({ enrichment: { status: 'unavailable' }, runs: [] }));
+  assert.match(idle.card.textContent, /Not available on this machine\./);
+});
+
+test('a refusal shows the service reason, not a generic error', async () => {
+  const dom = new JSDOM('<div id="health"></div>', { runScripts: 'outside-only' });
+  dom.window.slmFetch = (path, init) => {
+    if (init && init.method === 'POST') {
+      return Promise.resolve(new Response(JSON.stringify({ detail: 'That run was already undone.' }), { status: 422 }));
+    }
+    return Promise.resolve(new Response(JSON.stringify({
+      enrichment: { status: 'completed', changed: 3 },
+      runs: [{ run_id: 'r1', status: 'completed', changed: 3, label: 'memory descriptions' }],
+    }), { status: 200 }));
+  };
+  dom.window.setInterval = () => 0;
+  dom.window.eval(SCRIPT);
+  dom.window.odMountMemoryHealth(dom.window.document.getElementById('health'));
+  for (let i = 0; i < 6; i += 1) await tick();
+  const card = dom.window.document.getElementById('memory-health-card');
+  card.querySelector('button').click();
+  for (let i = 0; i < 12; i += 1) await tick();
+  assert.match(card.textContent, /That run was already undone\./);
 });

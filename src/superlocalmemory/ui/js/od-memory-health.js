@@ -13,6 +13,17 @@
     if (text !== undefined) node.textContent = text;
     return node;
   }
+  var STATES = {
+    waiting_for_idle: 'Waiting for your computer to be idle.',
+    queued: 'Waiting for your computer to be idle.',
+    running: 'Improving your memories in the background.',
+    paused: 'Paused. Your memories still work.',
+    completed: 'Up to date. Checked again while your computer is idle.',
+    undone: 'The last improvement was undone. Your memories still work.',
+    unavailable: 'Not available on this machine.'
+  };
+  var notice = '';
+
   function call(method, payload) {
     var fetcher = window.slmFetch || window.fetch;
     return fetcher((method === 'POST' ? '/api/memory-health/action' : '/api/memory-health'), {
@@ -21,8 +32,13 @@
       headers: { 'Content-Type': 'application/json' },
       body: payload ? JSON.stringify(payload) : undefined
     }).then(function (r) {
-      if (!r.ok) throw new Error('Memory health is temporarily unavailable.');
-      return r.json();
+      if (r.ok) return r.json();
+      // A refusal carries the service's own plain reason ("That run was
+      // already undone."); anything else gets one generic sentence.
+      return r.json().catch(function () { return {}; }).then(function (body) {
+        var reason = body && typeof body.detail === 'string' ? body.detail : '';
+        throw new Error(reason || 'Memory health is temporarily unavailable.');
+      });
     });
   }
   function button(parent, label, action) {
@@ -34,10 +50,9 @@
       mutationBusy = true;
       requestNumber += 1;
       node.disabled = true;
-      call('POST', action).then(refresh).catch(function (error) {
-        var message = el('p', error.message);
-        message.setAttribute('role', 'alert');
-        parent.appendChild(message);
+      notice = '';
+      call('POST', action).catch(function (error) {
+        notice = error.message;
       }).finally(function () { mutationBusy = false; refresh(); });
     });
     parent.appendChild(node);
@@ -49,44 +64,33 @@
     var status = run.status || 'waiting_for_idle';
     mounted.appendChild(el('p', 'Improving your memories: ' + (run.processed || 0) +
                            ' of ' + (run.total || 0)));
-    var words = {
-      completed: 'Your memories have been checked. They will be checked again while idle.',
-      paused: 'Improvements are paused. Your memories still work.',
-      undone: 'These improvements were undone. Your memories still work.',
-      waiting_for_idle: 'Improvements continue when you are not using your memories.',
-      running: 'Descriptions are being improved automatically in the background.',
-      queued: 'Improvements will start when you are not using your memories.'
-    };
-    mounted.appendChild(el('p', words[status] || 'Your memories still work.'));
-    if (run.last_error) {
-      mounted.appendChild(el('p', 'Some improvements are waiting: ' + run.last_error));
-    }
+    // Plain sentences only: exception names stay in the service log.
+    mounted.appendChild(el('p', data.state || STATES[status] || 'Your memories still work.'));
     if (run.run_id && status === 'paused') {
       button(mounted, 'Resume', { action: 'resume', run_id: run.run_id });
     } else if (run.run_id && (status === 'queued' || status === 'running')) {
       button(mounted, 'Pause', { action: 'pause', run_id: run.run_id });
     }
-    var repairs = data.repairs || [];
-    var names = { 'entity-links': 'entity links', 'qjl-sketches': 'search sketches',
-                  'refile-hidden': 'hidden memories' };
-    repairs.forEach(function (repair) {
-      mounted.appendChild(el('p', 'Found ' + repair.found + ' ' +
-                             (names[repair.action] || 'issues') + '; fixed ' +
-                             repair.fixed + ' automatically.'));
-      if (repair.status !== 'undone' && repair.found > repair.fixed) {
-        button(mounted, 'Fix ' + (repair.found - repair.fixed) + ' ' +
-               (names[repair.action] || 'issues'), { action: 'repair', repair: repair.action });
-      }
-      if (repair.error) mounted.appendChild(el('p', repair.error));
+    // Repairs that delete or move things never run on their own: one Fix each.
+    (data.suggestions || []).forEach(function (item) {
+      mounted.appendChild(el('p', item.found + ' ' + item.label +
+                             ' can be fixed. Nothing changes until you choose to.'));
+      button(mounted, 'Fix ' + item.found + ' ' + item.label,
+             { action: 'repair', repair: item.action });
     });
-    var lastRepair = repairs.find(function (repair) {
-      return repair.fixed > 0 && repair.status !== 'undone';
-    });
-    var newerRepair = lastRepair && (!run.changed ||
-      Date.parse(lastRepair.created_at) > Date.parse(run.updated_at));
-    var undoRun = newerRepair ? lastRepair.run_id :
-      (status !== 'undone' && run.changed > 0 ? run.run_id : null);
-    if (undoRun) button(mounted, 'Undo last improvement', { action: 'undo', run_id: undoRun });
+    if ((data.repairs || []).some(function (r) { return r.status === 'error'; })) {
+      mounted.appendChild(el('p', 'Some repairs are waiting and will be tried again.'));
+    }
+    var latest = (data.runs || []).find(function (r) { return r.status !== 'undone'; });
+    if (latest) {
+      button(mounted, 'Undo the last change (' + latest.changed + ' ' + latest.label + ')',
+             { action: 'undo', run_id: latest.run_id });
+    }
+    if (notice) {
+      var message = el('p', notice);
+      message.setAttribute('role', 'alert');
+      mounted.appendChild(message);
+    }
   }
   function refresh() {
     if (!mounted || !mounted.isConnected || activeRead || mutationBusy) return;

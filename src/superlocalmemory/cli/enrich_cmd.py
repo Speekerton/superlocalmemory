@@ -1,40 +1,134 @@
 # Copyright (c) 2026 Varun Pratap Bhardwaj / Qualixar
 # Licensed under AGPL-3.0-or-later
-"""Power-user control of the default automatic background improvements."""
+"""Power-user control of the default automatic background improvements.
+
+Plain sentences in plain output; ``--json`` for machines. A refusal from the
+memory service is printed as the service's own reason (WP-19 review L1).
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
+import sys
 
-from superlocalmemory.cli.daemon import daemon_request
+from superlocalmemory.cli.daemon import DaemonUnprocessable, daemon_request
+
+FIXES = ('entity-links', 'refile-hidden')
+NOT_RUNNING = 'Your memory service did not answer. Start it with: slm serve'
 
 
 def register_enrich_parser(sub):
     parser = sub.add_parser(
-        'enrich', help='Automatic memory improvements: status, pause, resume, undo')
+        'enrich', help='Automatic memory improvements: status, pause, resume, undo, fix')
     actions = parser.add_subparsers(dest='enrich_action', required=True)
-    for action in ('status', 'pause', 'resume', 'undo'):
+    for action in ('status', 'pause', 'resume', 'undo', 'fix'):
         command = actions.add_parser(action)
-        if action != 'status':
+        if action in ('pause', 'resume'):
             command.add_argument('run_id')
+        elif action == 'undo':
+            command.add_argument('run_id', nargs='?', default='',
+                                 help='Defaults to the most recent run that changed something')
+        elif action == 'fix':
+            command.add_argument('repair', choices=FIXES)
+        if action in ('undo', 'fix'):
+            command.add_argument('--yes', action='store_true',
+                                 help='Confirm without asking (needed when not interactive)')
         command.add_argument('--json', action='store_true', default=argparse.SUPPRESS)
+
+
+def _fail(message, code=1):
+    print(message, file=sys.stderr)
+    sys.exit(code)
+
+
+def _request(method, path, body=None):
+    try:
+        result = daemon_request(method, path, body, preserve_unprocessable=True)
+    except DaemonUnprocessable as exc:
+        _fail(exc.message)
+    if not isinstance(result, dict):
+        _fail(NOT_RUNNING)
+    return result
+
+
+def _confirmed(args, question):
+    if getattr(args, 'yes', False):
+        return True
+    try:
+        interactive = sys.stdin.isatty() and sys.stdout.isatty()
+    except (AttributeError, ValueError):
+        interactive = False
+    if not interactive:
+        _fail('This changes your memories. Run again with --yes to confirm.', 2)
+    try:
+        return input(f'{question} [y/N] ').strip().lower() in ('y', 'yes')
+    except EOFError:
+        return False
+
+
+def _latest_changing_run(status):
+    return next((r for r in status.get('runs') or [] if r.get('status') != 'undone'), None)
+
+
+def _print_status(result):
+    print(result.get('summary', ''))
+    print(f"Status: {result.get('state', '')}")
+    for item in result.get('suggestions') or []:
+        print(f"Can be fixed: {item['found']} {item['label']} "
+              f"(slm enrich fix {item['action']})")
+    runs = result.get('runs') or []
+    if runs:
+        print('Runs that changed something (newest first):')
+    for run in runs:
+        undone = '  (undone)' if run.get('status') == 'undone' else ''
+        print(f"  {run['run_id']}  {(run.get('created_at') or '')[:16].replace('T', ' ')}  "
+              f"{run.get('changed', 0)} {run.get('label', '')}{undone}")
+
+
+def _undo(args):
+    run_id = args.run_id
+    if not run_id:
+        latest = _latest_changing_run(_request('GET', '/api/memory-health'))
+        if latest is None:
+            _fail('There is nothing to undo.')
+        run_id = latest['run_id']
+        question = (f"Undo run {run_id} ({latest.get('changed', 0)} "
+                    f"{latest.get('label', 'changes')})?")
+    else:
+        question = f'Undo run {run_id}?'
+    if not _confirmed(args, question):
+        _fail('Nothing was changed.', 1)
+    result = _request('POST', '/api/memory-health/action', {'action': 'undo', 'run_id': run_id})
+    kept = result.get('conflicts') or 0
+    text = f"Undone: {result.get('restored', 0)} changes restored."
+    return result, text + (f' {kept} kept because they were changed since.' if kept else '')
+
+
+def _fix(args):
+    if not _confirmed(args, f'Fix {args.repair.replace("-", " ")} now? You can undo it later.'):
+        _fail('Nothing was changed.', 1)
+    result = _request('POST', '/api/memory-health/action',
+                      {'action': 'repair', 'repair': args.repair})
+    return result, (f"Fixed {result.get('fixed', 0)} of {result.get('found', 0)}. "
+                    f"Undo with: slm enrich undo {result.get('run_id', '')}".rstrip())
 
 
 def cmd_enrich(args):
     action = args.enrich_action
-    result = (daemon_request('GET', '/api/memory-health') if action == 'status' else
-              daemon_request('POST', '/api/memory-health/action',
-                             {'action': action, 'run_id': args.run_id}, preserve_conflict=True))
-    if not isinstance(result, dict):
-        raise RuntimeError('Your memory service did not answer.')
+    if action == 'status':
+        result, text = _request('GET', '/api/memory-health'), None
+    elif action == 'undo':
+        result, text = _undo(args)
+    elif action == 'fix':
+        result, text = _fix(args)
+    else:
+        result = _request('POST', '/api/memory-health/action',
+                          {'action': action, 'run_id': args.run_id})
+        text = 'Paused. Your memories still work.' if action == 'pause' else 'Resumed.'
     if getattr(args, 'json', False):
         print(json.dumps(result))
-    elif action == 'status':
-        run = result['enrichment']
-        print(result['summary'])
-        print(f"Status: {run['status']}")
-        if run.get('last_error'):
-            print(f"Waiting after: {run['last_error']}")
+    elif text is None:
+        _print_status(result)
     else:
-        print(json.dumps(result))
+        print(text)

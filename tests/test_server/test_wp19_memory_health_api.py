@@ -37,3 +37,29 @@ def test_cli_and_dashboard_share_pause_action(monkeypatch):
         assert response.status_code == 200
         assert response.json()['status'] == 'paused'
         paused.assert_called_once_with('synthetic-run')
+
+
+def test_undoing_twice_answers_422_with_a_plain_reason(monkeypatch, tmp_path):
+    from superlocalmemory.core.health_repairs import repair_action
+    from tests.test_core.test_wp19_health_repairs import store as make_store
+
+    monkeypatch.setattr(memory_health, 'require_permission', lambda *a, **k: None)
+    monkeypatch.setattr(memory_health.write_identity, 'require_write_actor',
+                        lambda *a, **k: 'owner')
+    fixture = make_store.__wrapped__(tmp_path)
+    engine = next(fixture)
+    try:
+        run_id = repair_action(engine, 'refile-hidden', dry_run=False)['run_id']
+        app = FastAPI()
+        app.include_router(memory_health.router)
+        app.state.engine = engine
+        with TestClient(app) as session:
+            body = {'action': 'undo', 'run_id': run_id}
+            assert session.post('/api/memory-health/action', json=body).status_code == 200
+            again = session.post('/api/memory-health/action', json=body)
+            assert again.status_code == 422
+            assert again.json()['detail'] == 'That run was already undone.'
+            listed = session.get('/api/memory-health').json()
+            assert listed['runs'][0]['run_id'] == run_id
+    finally:
+        fixture.close()

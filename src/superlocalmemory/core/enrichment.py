@@ -29,7 +29,9 @@ def status(db):
                           "ORDER BY rowid DESC LIMIT 1", ('enrichment',))
         return dict(rows[0]) if rows else {'status': 'waiting_for_idle', 'processed': 0, 'total': 0}
     except Exception as exc:
-        return {'status': 'unavailable', 'error': type(exc).__name__, 'processed': 0, 'total': 0}
+        # Logged, never shown: the card and CLI speak plain language (review L1).
+        logger.debug('Memory improvements status unavailable (%s)', type(exc).__name__)
+        return {'status': 'unavailable', 'processed': 0, 'total': 0}
 
 
 class EnrichmentRunner:
@@ -102,8 +104,10 @@ class EnrichmentRunner:
     def undo(self, run_id):
         with self.db.transaction():
             rows = self.db.execute('SELECT status FROM enrichment_runs WHERE run_id=?', (run_id,))
-            if not rows or rows[0]['status'] == 'undone':
-                raise ValueError('Unknown or already undone improvement run')
+            if not rows:
+                raise ValueError('That run was not found.')
+            if rows[0]['status'] == 'undone':
+                raise ValueError('That run was already undone.')
             result = ledger.undo_changes(self.db, run_id)
             self.db.execute("UPDATE enrichment_runs SET status='undone',updated_at=? "
                             "WHERE run_id=?",
@@ -167,8 +171,10 @@ class EnrichmentRunner:
                             (now(), run['run_id']))
 
     def _checkpoint(self, run_id, rowid, changed):
+        # A batch that got through clears an earlier transient error.
         self.db.execute("UPDATE enrichment_runs SET cursor_rowid=?,processed=processed+1,"
-                        "changed=changed+?,status='running',updated_at=? WHERE run_id=?",
+                        "changed=changed+?,status='running',last_error=NULL,updated_at=? "
+                        "WHERE run_id=?",
                         (rowid, changed, now(), run_id))
 
     def _kind(self, fact):

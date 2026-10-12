@@ -281,6 +281,15 @@ class CallerWorkspaceMiddleware:
             pin = await asyncio.to_thread(resolve_caller_workspace, scope, self._app_state)
         except Exception:  # noqa: BLE001 - unreadable roles: the gates answer 503
             logger.warning("caller workspace could not be resolved", exc_info=True)
+            if str(scope.get("path", "")).startswith("/mcp"):
+                from starlette.responses import JSONResponse
+
+                response = JSONResponse(
+                    {"error": "Workspace resolution temporarily unavailable",
+                     "code": "WORKSPACE_UNAVAILABLE", "retryable": True}, status_code=503,
+                )
+                await response(scope, receive, send)
+                return
             await self._app(scope, receive, send)
             return
         scope.setdefault("state", {})[PIN_KEY] = pin

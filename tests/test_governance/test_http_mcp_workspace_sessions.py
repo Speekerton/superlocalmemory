@@ -201,3 +201,59 @@ def test_context_pool_recall_forwards_the_pinned_workspace(monkeypatch):
     with pin_request_workspace(CallerWorkspace("sales", bound=True)):
         _pool_adapter.pool_recall("session context")
     assert captured["profile_id"] == "sales"
+
+
+def test_mcp_workspace_resolution_error_never_reaches_a_resource(store, monkeypatch):
+    from types import SimpleNamespace
+
+    from superlocalmemory.core.caller_session import CallerSessionASGI
+    from superlocalmemory.mcp.http_transport import SLMFastMCP
+    from superlocalmemory.server.caller_workspace import CallerWorkspaceMiddleware
+
+    rbac, ids = store
+    rbac.set_require_login(True)
+    reached = []
+    probe = SLMFastMCP("workspace resolution failure")
+
+    @probe.resource("slm://private")
+    async def private_resource() -> str:
+        reached.append("read")
+        return "must never be read without a workspace pin"
+
+    mcp_app = probe.streamable_http_app(
+        streamable_http_path="/", stateless_http=True, json_response=True
+    )
+
+    @asynccontextmanager
+    async def lifespan(_):
+        async with mcp_app.router.lifespan_context(mcp_app):
+            yield
+
+    app = FastAPI(lifespan=lifespan)
+    app.state.rbac = rbac
+    app.state.engine = SimpleNamespace(profile_id="default")
+    app.add_middleware(CallerWorkspaceMiddleware, app_state=app.state)
+    app.mount("/mcp", CallerSessionASGI(mcp_app))
+
+    def broken(*args):
+        raise OSError("workspace lookup temporarily unavailable")
+
+    monkeypatch.setattr("superlocalmemory.server.caller_workspace.resolve_caller_workspace", broken)
+    with TestClient(app, base_url="http://127.0.0.1:9911") as client:
+        response = client.post(
+            "/mcp/",
+            headers={
+                "Accept": "application/json, text/event-stream",
+                "Content-Type": "application/json",
+                "MCP-Protocol-Version": "2025-06-18",
+                "X-SLM-User-Session": rbac.create_session(ids["viewer_a"]),
+            },
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "resources/read",
+                "params": {"uri": "slm://private"},
+            },
+        )
+    assert response.status_code == 503
+    assert reached == []

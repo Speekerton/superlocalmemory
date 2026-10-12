@@ -6,6 +6,10 @@ grouped overview with the topics `modes`, `config` and `self-heal`.
 
 Most commands talk to a background daemon and start it if it is not running.
 
+On Windows, output that goes to a pipe or a file is written as UTF-8, so
+`slm ... > out.txt` keeps stored memories intact instead of failing on
+characters the console code page cannot hold. A terminal keeps its own encoding.
+
 ---
 
 ## Setup & Configuration
@@ -53,7 +57,7 @@ Get or set the operating mode.
 
 ```bash
 slm mode          # Show current mode
-slm mode a        # Local Guardian: no language model, nothing leaves the device
+slm mode a        # Local Guardian: memories are saved and recalled without a language model; nothing leaves this device
 slm mode b        # A model on this machine (Ollama by default, any local server works)
 slm mode c        # Your own endpoint, or a cloud provider (key required for cloud)
 slm mode b --json
@@ -107,7 +111,7 @@ slm connect cursor --dry-run
 | `--dry-run` | Show what would be written without changing anything |
 | `--here` | Write config for the current project instead of globally |
 | `--transport stdio\|http\|http-mcp-remote` | MCP transport written into the IDE config (default `stdio`). `http` needs the daemon; `http-mcp-remote` is a stdio bridge for clients that only speak stdio |
-| `--port N` | Daemon port for the http transports (default 8765) |
+| `--port N` | Daemon port for the http transports (default: the configured port, 8765 unless you changed it) |
 | `--verify` | After writing, probe the daemon to confirm an `http` transport is reachable |
 | `--profile NAME` | Write `SLM_MCP_PROFILE` into the MCP server block (see [MCP Profiles](profiles.md)) |
 | `--cross-platform`, `--disable NAME` | Use the cross-platform adapter orchestrator, or disable one adapter by name |
@@ -184,7 +188,8 @@ slm recall "staging database" --known-as-of 2026-01-01T00:00:00+00:00
 | `--as-of TIME` | | Recall pinned to an ISO 8601 snapshot |
 | `--known-as-of TIME` | | Only facts SLM knew by that time |
 | `--valid-at TIME` | | Only facts valid at that time |
-| `--include-unknown` | off | Include facts saved before 4.0.2, which have no recorded time, in strict time travel |
+| `--include-unknown` | off | Include facts with no recorded time in the strict `--known-as-of` and `--valid-at` filters |
+| `--show-weak` | off | When nothing in memory supports the question, show the closest weak matches instead of nothing (see below) |
 | `--include-global` / `--no-global` | off | Include or exclude global-scope facts |
 | `--include-shared` / `--no-shared` | off | Include or exclude facts shared with this profile |
 | `--fast` | | Guarantee the fast path |
@@ -193,15 +198,22 @@ slm recall "staging database" --known-as-of 2026-01-01T00:00:00+00:00
 A time filter that cannot be read stops the command before any search and says
 what format it expected.
 
-When [Answer check](answer-check.md) is turned on, output gets one extra line,
+When nothing in memory supports the question, recall returns no results and
+prints `Nothing in memory supports this question.` Add `--show-weak` to see the
+closest matches anyway: the note is printed first, followed by the weak matches
+(in `--json` each carries `weak: true`). A search that found no candidates at
+all prints `Nothing in memory matched this question.` instead. Memories you
+pinned always show, and a recall you narrowed on purpose (a project, kind, tag,
+person or agent filter, or a time filter) keeps its results. See [Recall](recall.md#when-nothing-supports-the-question).
+
+When [Answer check](answer-check.md) has a verdict, output gets one extra line,
 for example `Answer check: none of these memories answers the question
 (confidence 0.18). Say you don't have it, or ask — don't present these as the
-answer.` Results themselves are unchanged; the line is added, never a filter.
-`slm trace` prints the same line. When a check is set up but did not judge this
-recall (it was busy or still warming), the output says so. After a
+answer.` `slm trace` prints the same line. When a check is set up but did not
+judge this recall (it was busy or still warming), the output says so. After a
 recall that could not search everywhere, it prints `Incomplete search: ...`
-naming the channels that were skipped. An empty result prints `No confident
-match.` or `No matching memories found.`
+naming the channels that were skipped. An empty result prints one of the
+messages above, `No confident match.` or `No matching memories found.`
 
 ### `slm forget "query" [options]`
 
@@ -426,18 +438,19 @@ Sources are read-only: SLM mirrors Markdown, text, canvas files, PDFs and PNG, J
 
 ### `slm migrate`
 
-Migrate a V2 database to the current schema (one-shot; no `--dry-run`).
+Migrate a database from the older storage layout to the current schema. It is a
+one-shot command with no `--dry-run`.
 
 ```bash
 slm migrate                # Run migration
-slm migrate --rollback     # Legacy V2 migrator rollback only
+slm migrate --rollback     # Roll back this legacy migrator only
 ```
 
 The migrator spans file copies, SQLite commits and a symlink, so it is not
 transactional end to end. Verify a complete offline backup (`slm serve stop`
-first, include WAL/SHM files and `lance/` if present) before migrating. See
-[Migration from V2](migration-from-v2.md). `slm migrate --rollback` is only for
-that legacy migrator; `slm db migrate` below is forward-only.
+first, include WAL/SHM files and `lance/` if present) before migrating.
+`slm migrate --rollback` is only for this migrator; `slm db migrate` below is
+forward-only.
 
 ---
 
@@ -519,6 +532,18 @@ those memories may lack entities or graph links) and fails at 50 or more. Its fi
 line names the commands to run: `slm ops list`, then `slm ops resolve <id> --action
 retry` or `--action cancel`.
 
+Four rows describe the health of your memories themselves (the same state as the dashboard's
+**Memory health** card):
+
+| Row | What it reports |
+|-----|-----------------|
+| `Memory answer-ability` | How many memories can be found by asking a question, how many only by matching words, how many are missing from the search index, and how many are hidden by forgetting although they are scored to keep. Fails below 90% findable (fix: `slm restart`), warns otherwise |
+| `Memory description` | How much of the store has tags, a confirmed, model-written or guessed kind, observation and event dates, and entities, plus the state of the background improvement (waiting for idle, running, paused, up to date). Warns, with `slm enrich status` as the fix, when some work is waiting to be retried |
+| `Memory repairs` | One row per repair that is ready and waiting for you, for example entity links or saves that did not finish. Nothing changes until you run the fix it names: `slm enrich fix <repair>` |
+| `Failed saves` | The dead-letter count described above |
+
+`slm doctor --json` carries the same figures under `memory_health`.
+
 ### `slm warmup`
 
 Load the embedding model (about 500 MB to download the first time) and confirm
@@ -527,7 +552,7 @@ to wait for a starting daemon (default 120; 0 checks once).
 
 ### `slm dashboard`
 
-Open the local web dashboard. `--port N` (default 8765).
+Open the local web dashboard. `--port N` picks the port; the default is the one this install is configured for (8765 unless you changed it).
 
 ```bash
 slm dashboard
@@ -573,19 +598,25 @@ when `SLM_REQUIRE_CREDENTIALS=1`. It tightens the token file to owner-only first
 and refuses to print a key owned by another account. The key opens write access:
 do not paste it into chat or a log. See [Auth write gate](auth-write-gate.md).
 
-### `slm team status` and `slm team policy`
+### `slm team status|policy|admin|reset-password`
 
-Company-mode login policy, from the terminal of the computer that runs SLM.
+Company-mode login policy and owner recovery, from the terminal of the computer
+that runs SLM.
 
 ```bash
 slm team status                       # Require login: on|off. Users: N.
 slm team policy --require-login on    # every user signs in
 slm team policy --require-login off   # the machine owner is the user again
+slm team admin alice                  # make an account an administrator of the active workspace
+slm team admin alice --profile work   # ...or of a named workspace
+slm team reset-password alice         # prompts twice; --password-stdin reads it from standard input
 ```
 
-Both take `--json`. They use a private capability file only the user running SLM
-can read, so a workspace's owner can never be locked out. See
-[Company mode](company-mode.md).
+All four take `--json`. They use a private capability file only the user running
+SLM can read, so a workspace's owner can never be locked out: even with every
+administrator unable to sign in, the owner can make an account an administrator
+again or set a new password (at least 8 characters; the account's old sessions
+are signed out). See [Company mode](company-mode.md).
 
 ### `slm disable [--reason "..."]` and `slm enable`
 
@@ -656,8 +687,9 @@ Contract v2:
 ```
 
 The full response also carries `query_id`, `no_confident_match`, `abstained`,
-`answerability`, `channel_status`, `incomplete_channels`, `project_scope` and
-`tag_scope`; see [Recall](recall.md#reading-the-json).
+`abstention_reason`, `abstention_note`, `support`, `answerability`,
+`channel_status`, `incomplete_channels`, `project_scope` and `tag_scope`; see
+[Recall](recall.md#reading-the-json).
 `answer_check_status` reports what happened to the [answer
 check](answer-check.md): `judged`, `off`, `skipped`, `busy`, `warming` or
 `unavailable`. `reranker_status` names the step that produced the final order
@@ -867,6 +899,52 @@ printed to stderr before execution and included as `data.plan` in the final JSON
 
 ---
 
+## Memory health
+
+SLM improves how well it describes your older memories while your computer is
+idle, and offers repairs that need your say-so. `slm enrich` is the terminal
+view of the dashboard's **Memory health** card. Everything here goes through the
+running service; if it is not running the command says so and points at `slm
+serve`.
+
+### `slm enrich status|pause|resume|undo|fix`
+
+```bash
+slm enrich status                       # progress, repairs waiting for you, runs that changed something
+slm enrich pause <run_id>               # stop the background improvement; memories keep working
+slm enrich resume <run_id>
+slm enrich undo                         # undo the most recent run that changed something (asks first)
+slm enrich undo <run_id> --yes
+slm enrich fix entity-links             # a repair that needs your say-so (asks first)
+slm enrich fix refile-hidden
+slm enrich fix repair-saves --yes       # cannot be undone; a safety copy is taken first
+slm enrich fix entity-links --include-undone
+```
+
+| Command | What it does |
+|---------|--------------|
+| `status` | Prints the progress line, the state, each repair that is waiting (`Can be fixed: ... (slm enrich fix <repair>)`) and the runs that changed something, newest first, with their ids |
+| `pause <run_id>`, `resume <run_id>` | Pause or resume the background improvement run. Nothing else is affected. The run id is `enrichment.run_id` in `slm enrich status --json` |
+| `undo [run_id]` | Puts back what a run changed. With no id, the most recent run that changed something and can be undone. Changes you made yourself since are kept and counted |
+| `fix <repair>` | Applies one repair now. `<repair>` is `entity-links`, `refile-hidden` or `repair-saves` |
+
+`undo` and `fix` ask before they change anything; when there is no terminal they
+refuse unless you pass `--yes`. `--include-undone` on `fix` applies items again
+that an earlier, undone repair had touched; without it they stay left alone.
+`repair-saves` is the one repair with no undo, so its prompt says so. Every
+action takes `--json`.
+
+### `slm ops repair-saves [--apply]`
+
+Re-files saves that were dead-lettered on another memory. A plain run is a dry
+run that lists what would change and writes nothing; `--apply` backs up
+`memory.db` first and then repairs. It reads and writes the data folder directly,
+so it works with the service stopped; a running service enriches the re-filed
+saves on its next pass. `--json` for structured output. `slm enrich fix
+repair-saves` is the same repair behind the shared safety copy.
+
+---
+
 ## Data and Evidence
 
 ### `slm evidence export|verify|import|rebuild`
@@ -904,7 +982,11 @@ for a new computer; `decrypt <file> [-o OUT] [--recovery-key-stdin] [--force]`
 turns a downloaded backup into a plain `.db` file;
 `restore-safety-copy [--id POINT]` puts back the safety copy a failed dashboard
 restore kept, with the service stopped; `clear-recovery-needed` lets the service
-start again after you repaired the stores yourself. See [Cloud
+start again after you repaired the stores yourself. Every command takes `--json`.
+A restore takes a safety copy before it replaces anything, and if the restore
+fails it puts that copy back and prints a plain recovery message; the commands
+above are the way out if even that rollback fails. Local backups include the
+picture and PDF originals as well as the databases. See [Cloud
 backup](cloud-backup.md).
 
 ### `slm gdpr status|export|erase|verify`
@@ -923,8 +1005,15 @@ file appears only when it is complete. Embeddings and other binary columns are
 left out unless you pass `--include-embeddings` (they are written as base64).
 The file lists what it left out and why under `export_manifest`.
 `erase` removes a whole profile and cannot be undone; it needs both `--profile`
-and `--yes`. `verify` checks an erasure receipt and exits 0 when it is intact,
-1 when tampered, 2 when not found. See [Compliance](compliance.md).
+and `--yes`. It removes the derived copies as well as the memories: queued saves,
+the request journal, the recall queue, caches, compression originals, the vector
+index and its history, graph entity nodes, picture mirrors and prompt text kept
+in logs. Anything it could not remove is listed under `remains` with the step
+that retries it; with `--json` an incomplete erasure reports `success: false` and
+the command exits 1, so a pipeline cannot mistake it for done. Backups that still
+hold the profile are listed as obligations, and a restore replays the erasures
+again. `verify` checks an erasure receipt and exits 0 when it is intact, 1 when
+tampered, 2 when not found. See [Compliance](compliance.md).
 
 ### `slm benchmark`
 
@@ -1085,10 +1174,12 @@ slm embedder rollback
 ```
 
 `switch` also takes `--endpoint` (an OpenAI-compatible URL), `--no-wait`
-(return once queued) and `--json`. `--provider` is `sentence-transformers`,
-`ollama`, `openai` or `slm-media`; the default is the current one.
+(return once queued), `--task-prefixes` (use the model's retrieval task prompts,
+staged in as a separate swap) and `--json`. `--provider` is
+`sentence-transformers`, `ollama`, `openai` or `slm-media`; the default is the
+current one.
 
-### `slm embedder upgrade` (preview)
+### `slm embedder upgrade`
 
 ```bash
 slm embedder upgrade           # shows the plan and asks; --yes skips the question, --no-wait returns once queued
@@ -1101,6 +1192,28 @@ Moves existing memories onto the same on-device model that reads pictures, in th
 background, with recall working throughout and one-click rollback. It is opt-in
 and never starts on its own; the same action is the **Upgrade memory engine**
 card in Settings. If it cannot run, the command prints the reason.
+
+### `slm embedder calibrate|calibration-status|calibration-cancel`
+
+Measures the [answer check](answer-check.md) and the embedding model's evidence
+floor on your own store, in the background inside the running service. It is the
+terminal twin of the **Calibrate on my store** button in Settings → Answer check.
+
+```bash
+slm embedder calibrate                       # 32 sampled memories, llama3.2:latest
+slm embedder calibrate --model gemma3:4b --samples 48
+slm embedder calibration-status              # Calibration: running — Building local labels (4/48).
+slm embedder calibration-cancel              # stop; the previous settings stay
+```
+
+`--model` is `llama3.2:latest` (default) or `gemma3:4b`, an Ollama model you have
+installed; it writes the questions and labels, and every question, label and
+memory stays on this computer. `--samples` is 32 to 64 sampled memories. The
+on-device answer check must already be running and warm, and the embedding
+provider and any reranker must be local, otherwise the command refuses with the
+reason. A new calibration replaces the old one only when the run finishes and its
+result passes the service's checks; a cancelled or failed run keeps what you had. All three take
+`--json`; progress is also visible in the dashboard.
 
 ### `slm db integrity [--pages] [--json]`
 
@@ -1153,9 +1266,9 @@ removes no memory you have.
 
 ### `slm db repair-entities [--apply] [--undo RUN_ID] --root ROOT`
 
-Undoes wrong entity links left by the entity rules before 4.1.25, which merged
-different names by fuzzy similarity and saved timestamps, hashes, paths and status
-words as names. Without `--apply` it only reads and prints counts: aliases to
+Undoes wrong entity links that older entity rules left behind: different names
+merged by fuzzy similarity, and timestamps, hashes, paths and status words saved
+as names. Without `--apply` it only reads and prints counts: aliases to
 remove or relabel, facts to relink, facts left with no entity, entities to
 create, junk entities to remove, edges to remove and temporal events to repoint,
 plus the entities losing the most aliases and a few examples (names only).
@@ -1203,9 +1316,10 @@ also removes unverified files; use it for a leaked store.
 
 ### `slm db restore-points`, `slm db restore`, `slm db prepare-downgrade`
 
-The dashboard's **Updates & restore** card from a terminal. `slm db
-restore-points` lists the copies of your memories you can go back to. `slm db
-restore <point_id>` goes back to one, applied when SLM next starts; `--cancel`
+`slm db restore-points` lists the copies of your memories you can go back to.
+`slm db restore <point_id>` goes back to one: after you confirm it stops the
+service, restores and starts it again (if the service cannot be stopped, the
+restore is recorded and runs at the next start); `--cancel`
 cancels one that has not run, `--no-reimport` skips re-adding memories saved
 after the point, and `--yes` skips the prompt. `slm db prepare-downgrade` gets
 your memories ready to run on the previous SLM version (`--cancel` undoes it).
@@ -1224,9 +1338,11 @@ slm db migrate --dry-run   # Preview what would change (no writes)
 slm db migrate             # Apply pending migrations
 ```
 
-### `slm ops list|resolve|status`
+### `slm ops list|resolve|status|repair-saves`
 
-Inspect and resolve failed, stuck or degraded operations.
+Inspect and resolve failed, stuck or degraded operations. `status` prints a
+quick failure count and writer stall overview; `repair-saves` is described under
+[Memory health](#memory-health).
 
 ```bash
 slm ops list --profile work --json

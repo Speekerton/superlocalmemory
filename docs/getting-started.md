@@ -215,7 +215,6 @@ For the full parameter set, see [CLI Reference → Bounded Loops](cli-reference.
 | Switch modes or providers | [Configuration](configuration.md) |
 | Learn all CLI commands | [CLI Reference](cli-reference.md) |
 | Something is not working | [Troubleshooting](troubleshooting.md) |
-| Migrate from V2 | [Migration from V2](migration-from-v2.md) |
 | Understand how it works | [Architecture](ARCHITECTURE.md) |
 | Use SLM from a Python framework | [Framework Adapters](framework-adapters.md) |
 

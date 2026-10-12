@@ -139,6 +139,37 @@ def undo_changes(db, run_id):
     return {'restored': restored, 'conflicts': conflicts}
 
 
+def remap_entity_ids(conn, profile_id, mapping):
+    """Follow a profile fold's entity merge (old id -> surviving id) in the ledger.
+
+    The fold rewrites every moved fact's ``canonical_entities_json`` the same
+    way, so without this an undo reads the merge as a later user edit and
+    keeps the run's entities (WP-19 review M3). Runs inside the fold's own
+    transaction, on its raw connection.
+    """
+    if not mapping:
+        return
+    rows = conn.execute(
+        'SELECT change_id,before_json,after_json FROM enrichment_changes '
+        "WHERE profile_id=? AND target_table='atomic_facts' "
+        "AND field='canonical_entities_json'", (profile_id,)).fetchall()
+    for change_id, before, after in rows:
+        conn.execute('UPDATE enrichment_changes SET before_json=?,after_json=? WHERE change_id=?',
+                     (_remapped(before, mapping), _remapped(after, mapping), change_id))
+
+
+def _remapped(stored, mapping):
+    value = loads(stored)
+    try:
+        ids = json.loads(value) if isinstance(value, str) else None
+    except ValueError:
+        ids = None
+    if not isinstance(ids, list):
+        return stored
+    # Exactly the fold's own rewrite (profile_fold._repoint_json): map, de-duplicate.
+    return dumps(json.dumps(list(dict.fromkeys(mapping.get(i, i) for i in ids))))
+
+
 def dumps(value):
     return json.dumps(value, default=lambda v: {'_binary': base64.b64encode(v).decode('ascii')})
 

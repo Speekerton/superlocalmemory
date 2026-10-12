@@ -281,6 +281,10 @@ def _merge_entities(conn: Any, tables: set[str], source: str, target: str) -> li
             "last_seen = MAX(last_seen, COALESCE((SELECT last_seen FROM canonical_entities "
             "WHERE entity_id = ?), last_seen)) WHERE entity_id = ?", (old, old, old, new))
         conn.execute("DELETE FROM canonical_entities WHERE entity_id = ?", (old,))
+    if "enrichment_changes" in tables:  # keep moved improvement runs exactly undoable
+        from superlocalmemory.storage.enrichment_ledger import remap_entity_ids
+
+        remap_entity_ids(conn, source, {old: new for old, new in pairs})
     return [old for old, _new in pairs]
 
 

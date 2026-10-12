@@ -23,6 +23,11 @@
 
 <img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/docs/assets/gifs/recall-tiers.gif" alt="Recall in the dashboard: a real question gets its answer; a gibberish question gets 'That isn't in SuperLocalMemory.'; a real question memory cannot answer exactly gets the closest memories, labelled" width="820">
 
+
+### Watch the four-minute product film
+
+[![Watch the SuperLocalMemory product film: Claude Code and Codex sharing one memory](https://img.youtube.com/vi/pyAu_vaIYZQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=pyAu_vaIYZQ)
+
 </div>
 
 **Agents forget everything between sessions. The usual fix — a vector store with a save button — makes it worse:** it always returns *something*, even when nothing it holds answers the question, and your agent builds on it. This is a memory **brain**, not a bucket: it understands what was saved (who, what, when, which project), keeps it true over time, governs who may see it, and refuses to bluff. Four arXiv papers describe how it works.
@@ -251,7 +256,7 @@ Recorded on a test install with fictional memories. [The four-minute product fil
 
 ## Architecture
 
-<img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/docs/assets/slm-architecture.png" alt="SuperLocalMemory architecture: agents and apps reach one daemon on your computer through MCP, the CLI, the REST API and optional Web access; recall runs channels, fusion and reranking, the answer-support gate with three tiers, the on-device answer check and layered output; saves are admission-checked and redacted; SQLite is canonical with LanceDB and CozoDB copies and a separate store for pictures; Memory health and consolidation run in the background; roles, audit and erasure govern every call; SLM-Mesh connects agents" width="900">
+<img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/docs/assets/slm-architecture.png" alt="SuperLocalMemory architecture: local harnesses, web bots and your code reach one SLM service on your computer through four doors (MCP, CLI, REST and dashboard, Web access); SLM-Mesh lets local agents and web bots talk to each other; inside, recall runs hybrid channels, fusion, the answer gate with three tiers, the Laya or Jev answer check and layered output; saves pass admission, redaction and understanding; the living brain runs Memory health, consolidation, daily learning and bounded loops; storage is SQLite with verified LanceDB and CozoDB copies, pictures and documents, the knowledge graph, the audit chain and encrypted backup; governance applies to every call" width="900">
 
 The free local core is complete on its own; Web access is optional. [Architecture in detail](https://github.com/qualixar/superlocalmemory/blob/main/docs/ARCHITECTURE.md)
 

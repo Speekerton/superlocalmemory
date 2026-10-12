@@ -1,3 +1,241 @@
-<svg id="my-svg" width="100%" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="max-width: 1082.19px; background-color: transparent;" viewBox="-5 -393 1082.1875 786" role="graphics-document document" aria-roledescription="block"><style>#my-svg{font-size:16px;fill:#333;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#my-svg .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#my-svg .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#my-svg .error-icon{fill:hsl(220.5882352941, 100%, 98.3333333333%);}#my-svg .error-text{fill:rgb(8.5000000002, 5.7500000001, 0);stroke:rgb(8.5000000002, 5.7500000001, 0);}#my-svg .edge-thickness-normal{stroke-width:1px;}#my-svg .edge-thickness-thick{stroke-width:3.5px;}#my-svg .edge-pattern-solid{stroke-dasharray:0;}#my-svg .edge-thickness-invisible{stroke-width:0;fill:none;}#my-svg .edge-pattern-dashed{stroke-dasharray:3;}#my-svg .edge-pattern-dotted{stroke-dasharray:2;}#my-svg .marker{fill:#8A8FA8;stroke:#8A8FA8;}#my-svg .marker.cross{stroke:#8A8FA8;}#my-svg svg{font-size:16px;}#my-svg p{margin:0;}#my-svg .label{color:#333;}#my-svg .cluster-label text{fill:rgb(8.5000000002, 5.7500000001, 0);}#my-svg .cluster-label span,#my-svg p{color:rgb(8.5000000002, 5.7500000001, 0);}#my-svg .label text,#my-svg span,#my-svg p{fill:#333;color:#333;}#my-svg .node rect,#my-svg .node circle,#my-svg .node ellipse,#my-svg .node polygon,#my-svg .node path{fill:#fff4dd;stroke:hsl(40.5882352941, 60%, 83.3333333333%);stroke-width:1px;}#my-svg .flowchart-label text{text-anchor:middle;}#my-svg .node .label{text-align:center;}#my-svg .node.clickable{cursor:pointer;}#my-svg .arrowheadPath{fill:#0b0b0b;}#my-svg .edgePath .path{stroke:#8A8FA8;stroke-width:2.0px;}#my-svg .flowchart-link{stroke:#8A8FA8;fill:none;}#my-svg .edgeLabel{background-color:hsl(-79.4117647059, 100%, 93.3333333333%);text-align:center;}#my-svg .edgeLabel p{margin:0;padding:0;display:inline;}#my-svg .edgeLabel rect{opacity:0.5;background-color:hsl(-79.4117647059, 100%, 93.3333333333%);fill:hsl(-79.4117647059, 100%, 93.3333333333%);}#my-svg .labelBkg{background-color:hsl(-79.4117647059, 100%, 93.3333333333%);}#my-svg .node .cluster{fill:rgba(246.4999999998, 249.2499999999, 255, 0.5);stroke:rgba(207.3999999999, 218.9499999999, 243.1, 0.2);box-shadow:rgba(50, 50, 93, 0.25) 0px 13px 27px -5px,rgba(0, 0, 0, 0.3) 0px 8px 16px -8px;stroke-width:1px;}#my-svg .cluster text{fill:rgb(8.5000000002, 5.7500000001, 0);}#my-svg .cluster span,#my-svg p{color:rgb(8.5000000002, 5.7500000001, 0);}#my-svg div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-size:12px;background:hsl(220.5882352941, 100%, 98.3333333333%);border:1px solid hsl(220.5882352941, 60%, 88.3333333333%);border-radius:2px;pointer-events:none;z-index:100;}#my-svg .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#333;}#my-svg .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#my-svg .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#my-svg .node .neo-node{stroke:hsl(40.5882352941, 60%, 83.3333333333%);}#my-svg [data-look="neo"].node rect,#my-svg [data-look="neo"].cluster rect,#my-svg [data-look="neo"].node polygon{stroke:url(#my-svg-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#my-svg [data-look="neo"].node path{stroke:url(#my-svg-gradient);stroke-width:1px;}#my-svg [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#my-svg [data-look="neo"].node .neo-line path{stroke:hsl(40.5882352941, 60%, 83.3333333333%);filter:none;}#my-svg [data-look="neo"].node circle{stroke:url(#my-svg-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#my-svg [data-look="neo"].node circle .state-start{fill:#000000;}#my-svg [data-look="neo"].icon-shape .icon{fill:url(#my-svg-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#my-svg [data-look="neo"].icon-shape .icon-neo path{stroke:url(#my-svg-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#my-svg :root{--mermaid-font-family:"trebuchet ms",verdana,arial,sans-serif;}#my-svg .lab&gt;*{fill:#E8E9F5!important;stroke:#B9BCD6!important;color:#1F2340!important;}#my-svg .lab span{fill:#E8E9F5!important;stroke:#B9BCD6!important;color:#1F2340!important;}#my-svg .lab tspan{fill:#1F2340!important;}#my-svg .host&gt;*{fill:#D5D8EE!important;stroke:#8D93C4!important;color:#1F2340!important;}#my-svg .host span{fill:#D5D8EE!important;stroke:#8D93C4!important;color:#1F2340!important;}#my-svg .host tspan{fill:#1F2340!important;}#my-svg .door&gt;*{fill:#C4C8F2!important;stroke:#7D84D1!important;color:#1F2340!important;}#my-svg .door span{fill:#C4C8F2!important;stroke:#7D84D1!important;color:#1F2340!important;}#my-svg .door tspan{fill:#1F2340!important;}#my-svg .dm&gt;*{fill:#AEB3EA!important;stroke:#6068C4!important;color:#1F2340!important;}#my-svg .dm span{fill:#AEB3EA!important;stroke:#6068C4!important;color:#1F2340!important;}#my-svg .dm tspan{fill:#1F2340!important;}#my-svg .step&gt;*{fill:#DDD3F6!important;stroke:#9A86D8!important;color:#1F2340!important;}#my-svg .step span{fill:#DDD3F6!important;stroke:#9A86D8!important;color:#1F2340!important;}#my-svg .step tspan{fill:#1F2340!important;}#my-svg .gate&gt;*{fill:#FBD9A8!important;stroke:#D9822B!important;color:#1F2340!important;}#my-svg .gate span{fill:#FBD9A8!important;stroke:#D9822B!important;color:#1F2340!important;}#my-svg .gate tspan{fill:#1F2340!important;}#my-svg .store&gt;*{fill:#BCD8EE!important;stroke:#5D93BE!important;color:#1F2340!important;}#my-svg .store span{fill:#BCD8EE!important;stroke:#5D93BE!important;color:#1F2340!important;}#my-svg .store tspan{fill:#1F2340!important;}#my-svg .bg&gt;*{fill:#E7CFF2!important;stroke:#A66FC8!important;color:#1F2340!important;}#my-svg .bg span{fill:#E7CFF2!important;stroke:#A66FC8!important;color:#1F2340!important;}#my-svg .bg tspan{fill:#1F2340!important;}#my-svg .gov&gt;*{fill:#F6C6D3!important;stroke:#C2476B!important;color:#1F2340!important;}#my-svg .gov span{fill:#F6C6D3!important;stroke:#C2476B!important;color:#1F2340!important;}#my-svg .gov tspan{fill:#1F2340!important;}#my-svg .mesh&gt;*{fill:#D3D7E4!important;stroke:#7E869F!important;color:#1F2340!important;}#my-svg .mesh span{fill:#D3D7E4!important;stroke:#7E869F!important;color:#1F2340!important;}#my-svg .mesh tspan{fill:#1F2340!important;}</style><g/><marker id="my-svg_block-pointEnd" class="marker block" viewBox="0 0 10 10" refX="6" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"/></marker><marker id="my-svg_block-pointStart" class="marker block" viewBox="0 0 10 10" refX="4.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 0 5 L 10 10 L 10 0 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"/></marker><marker id="my-svg_block-circleEnd" class="marker block" viewBox="0 0 10 10" refX="11" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"/></marker><marker id="my-svg_block-circleStart" class="marker block" viewBox="0 0 10 10" refX="-1" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"/></marker><marker id="my-svg_block-crossEnd" class="marker cross block" viewBox="0 0 11 11" refX="12" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"/></marker><marker id="my-svg_block-crossStart" class="marker cross block" viewBox="0 0 11 11" refX="-1" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"/></marker><g class="block"><g class="node default lab flowchart-label" id="my-svg-L1" transform="translate(86.015625, -336)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.015625" y="-52" width="172.03125" height="104"/><g class="label" style="" transform="translate(-35.390625, -12)"><rect/><foreignObject width="70.78125" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>1 · Agents</p></span></div></foreignObject></g></g><g class="node default host flowchart-label" id="my-svg-H1" transform="translate(356.0625, -336)"><rect class="basic label-container" style="" rx="0" ry="0" x="-176.03125" y="-52" width="352.0625" height="104"/><g class="label" style="" transform="translate(-107.9140625, -36)"><rect/><foreignObject width="215.828125" height="72"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>Claude Code · Codex · Copilot<br />Antigravity · Hermes · Cursor<br />any MCP harness</p></span></div></foreignObject></g></g><g class="node default host flowchart-label" id="my-svg-H2" transform="translate(626.109375, -336)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.015625" y="-52" width="172.03125" height="104"/><g class="label" style="" transform="translate(-40.3828125, -36)"><rect/><foreignObject width="80.765625" height="72"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>Your code<br />Python SDK<br />adapters</p></span></div></foreignObject></g></g><g class="node default host flowchart-label" id="my-svg-H3" transform="translate(896.15625, -336)"><rect class="basic label-container" style="" rx="0" ry="0" x="-176.03125" y="-52" width="352.0625" height="104"/><g class="label" style="" transform="translate(-105.7734375, -24)"><rect/><foreignObject width="211.546875" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>ChatGPT · Claude on the web<br />Grok Bot · Muse · Composio</p></span></div></foreignObject></g></g><g class="node default lab flowchart-label" id="my-svg-L2" transform="translate(86.015625, -224)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.015625" y="-52" width="172.03125" height="104"/><g class="label" style="" transform="translate(-31.796875, -12)"><rect/><foreignObject width="63.59375" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>2 · Doors</p></span></div></foreignObject></g></g><g class="node default door flowchart-label" id="my-svg-D1" transform="translate(266.046875, -224)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.015625" y="-52" width="172.03125" height="104"/><g class="label" style="" transform="translate(-44.1875, -24)"><rect/><foreignObject width="88.375" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>MCP<br />stdio · HTTP</p></span></div></foreignObject></g></g><g class="node default door flowchart-label" id="my-svg-D2" transform="translate(446.078125, -224)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.015625" y="-52" width="172.03125" height="104"/><g class="label" style="" transform="translate(-12.2421875, -24)"><rect/><foreignObject width="24.484375" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>CLI<br />slm</p></span></div></foreignObject></g></g><g class="node default door flowchart-label" id="my-svg-D3" transform="translate(626.109375, -224)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.015625" y="-52" width="172.03125" height="104"/><g class="label" style="" transform="translate(-36.7890625, -24)"><rect/><foreignObject width="73.578125" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>REST API<br />dashboard</p></span></div></foreignObject></g></g><g class="node default door flowchart-label" id="my-svg-D4" transform="translate(896.15625, -224)"><rect class="basic label-container" style="" rx="0" ry="0" x="-176.03125" y="-52" width="352.0625" height="104"/><g class="label" style="" transform="translate(-104.25, -24)"><rect/><foreignObject width="208.5" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>Web access connector<br />outbound link · signed grants</p></span></div></foreignObject></g></g><g class="node default lab flowchart-label" id="my-svg-L3" transform="translate(86.015625, -112)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.015625" y="-52" width="172.03125" height="104"/><g class="label" style="" transform="translate(-40.734375, -12)"><rect/><foreignObject width="81.46875" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>3 · Daemon</p></span></div></foreignObject></g></g><g class="node default dm flowchart-label" id="my-svg-DM" transform="translate(626.109375, -112)"><rect class="basic label-container" style="" rx="0" ry="0" x="-446.078125" y="-52" width="892.15625" height="104"/><g class="label" style="" transform="translate(-318.28125, -12)"><rect/><foreignObject width="636.5625" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>SLM daemon on your computer: recall, save, background work, governance on every call</p></span></div></foreignObject></g></g><g class="node default lab flowchart-label" id="my-svg-L4" transform="translate(86.015625, 0)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.015625" y="-52" width="172.03125" height="104"/><g class="label" style="" transform="translate(-37.734375, -12)"><rect/><foreignObject width="75.46875" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>4a · Recall</p></span></div></foreignObject></g></g><g class="node default step flowchart-label" id="my-svg-R1" transform="translate(266.046875, 0)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.015625" y="-52" width="172.03125" height="104"/><g class="label" style="" transform="translate(-70.1484375, -48)"><rect/><foreignObject width="140.296875" height="96"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>Channels<br />semantic · keyword<br />graph · temporal<br />Hopfield · pictures</p></span></div></foreignObject></g></g><g class="node default step flowchart-label" id="my-svg-R2" transform="translate(446.078125, 0)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.015625" y="-52" width="172.03125" height="104"/><g class="label" style="" transform="translate(-30.6640625, -36)"><rect/><foreignObject width="61.328125" height="72"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>Fusion<br />and<br />reranker</p></span></div></foreignObject></g></g><g class="node default gate flowchart-label" id="my-svg-R3" transform="translate(626.109375, 0)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.015625" y="-52" width="172.03125" height="104"/><g class="label" style="" transform="translate(-67.3125, -48)"><rect/><foreignObject width="134.625" height="96"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>Answer-support<br />gate: supported ·<br />closest memories ·<br />not in memory</p></span></div></foreignObject></g></g><g class="node default gate flowchart-label" id="my-svg-R4" transform="translate(806.140625, 0)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.015625" y="-52" width="172.03125" height="104"/><g class="label" style="" transform="translate(-53.7578125, -36)"><rect/><foreignObject width="107.515625" height="72"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>Answer check<br />Laya on-device<br />Jev optional</p></span></div></foreignObject></g></g><g class="node default step flowchart-label" id="my-svg-R5" transform="translate(986.171875, 0)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.015625" y="-52" width="172.03125" height="104"/><g class="label" style="" transform="translate(-68.1796875, -36)"><rect/><foreignObject width="136.359375" height="72"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>Layered output<br />depth 0–2 · expand<br />max_tokens</p></span></div></foreignObject></g></g><g class="node default lab flowchart-label" id="my-svg-L5" transform="translate(86.015625, 112)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.015625" y="-52" width="172.03125" height="104"/><g class="label" style="" transform="translate(-32.7421875, -12)"><rect/><foreignObject width="65.484375" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>4b · Save</p></span></div></foreignObject></g></g><g class="node default step flowchart-label" id="my-svg-W1" transform="translate(356.0625, 112)"><rect class="basic label-container" style="" rx="0" ry="0" x="-176.03125" y="-52" width="352.0625" height="104"/><g class="label" style="" transform="translate(-58.625, -24)"><rect/><foreignObject width="117.25" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>Admission check<br />and receipt</p></span></div></foreignObject></g></g><g class="node default step flowchart-label" id="my-svg-W2" transform="translate(626.109375, 112)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.015625" y="-52" width="172.03125" height="104"/><g class="label" style="" transform="translate(-52.671875, -24)"><rect/><foreignObject width="105.34375" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>Redaction<br />and role check</p></span></div></foreignObject></g></g><g class="node default step flowchart-label" id="my-svg-W3" transform="translate(896.15625, 112)"><rect class="basic label-container" style="" rx="0" ry="0" x="-176.03125" y="-52" width="352.0625" height="104"/><g class="label" style="" transform="translate(-69.359375, -24)"><rect/><foreignObject width="138.71875" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>Facts checked<br />against your source</p></span></div></foreignObject></g></g><g class="node default lab flowchart-label" id="my-svg-L6" transform="translate(86.015625, 224)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.015625" y="-52" width="172.03125" height="104"/><g class="label" style="" transform="translate(-38.9609375, -12)"><rect/><foreignObject width="77.921875" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>5 · Storage</p></span></div></foreignObject></g></g><g class="node default store flowchart-label" id="my-svg-S1" transform="translate(356.0625, 224)"><rect class="basic label-container" style="" rx="0" ry="0" x="-176.03125" y="-52" width="352.0625" height="104"/><g class="label" style="" transform="translate(-67.1875, -24)"><rect/><foreignObject width="134.375" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>SQLite + sqlite-vec<br />canonical memory</p></span></div></foreignObject></g></g><g class="node default store flowchart-label" id="my-svg-S2" transform="translate(716.125, 224)"><rect class="basic label-container" style="" rx="0" ry="0" x="-176.03125" y="-52" width="352.0625" height="104"/><g class="label" style="" transform="translate(-76.1015625, -36)"><rect/><foreignObject width="152.203125" height="72"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>LanceDB · CozoDB<br />serve only when they<br />match SQLite</p></span></div></foreignObject></g></g><g class="node default store flowchart-label" id="my-svg-S3" transform="translate(986.171875, 224)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.015625" y="-52" width="172.03125" height="104"/><g class="label" style="" transform="translate(-75.2109375, -24)"><rect/><foreignObject width="150.421875" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>Pictures · documents<br />media.db · originals</p></span></div></foreignObject></g></g><g class="node default lab flowchart-label" id="my-svg-L7" transform="translate(86.015625, 336)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.015625" y="-52" width="172.03125" height="104"/><g class="label" style="" transform="translate(-36.8359375, -12)"><rect/><foreignObject width="73.671875" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>6 · Around</p></span></div></foreignObject></g></g><g class="node default bg flowchart-label" id="my-svg-B1" transform="translate(266.046875, 336)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.015625" y="-52" width="172.03125" height="104"/><g class="label" style="" transform="translate(-75.3359375, -24)"><rect/><foreignObject width="150.671875" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>Memory health<br />add-only · Fix · Undo</p></span></div></foreignObject></g></g><g class="node default bg flowchart-label" id="my-svg-B2" transform="translate(446.078125, 336)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.015625" y="-52" width="172.03125" height="104"/><g class="label" style="" transform="translate(-82.015625, -24)"><rect/><foreignObject width="164.03125" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>Backfill · consolidation<br />retention</p></span></div></foreignObject></g></g><g class="node default gov flowchart-label" id="my-svg-G1" transform="translate(626.109375, 336)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.015625" y="-52" width="172.03125" height="104"/><g class="label" style="" transform="translate(-80.3828125, -24)"><rect/><foreignObject width="160.765625" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>Roles · company mode<br />profiles · scopes</p></span></div></foreignObject></g></g><g class="node default gov flowchart-label" id="my-svg-G2" transform="translate(806.140625, 336)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.015625" y="-52" width="172.03125" height="104"/><g class="label" style="" transform="translate(-70.0859375, -24)"><rect/><foreignObject width="140.171875" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>Audit chain · GDPR<br />erasure incl. copies</p></span></div></foreignObject></g></g><g class="node default mesh flowchart-label" id="my-svg-M1" transform="translate(986.171875, 336)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.015625" y="-52" width="172.03125" height="104"/><g class="label" style="" transform="translate(-45.1796875, -36)"><rect/><foreignObject width="90.359375" height="72"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table-cell; white-space: nowrap; line-height: 1.5;"><span class="nodeLabel"><p>SLM-Mesh<br />peers · locks<br />messages</p></span></div></foreignObject></g></g><path d="M352.063,0L352.729,0C353.396,0,354.729,0,355.396,0C356.063,0,356.063,0,356.063,0L356.063,0" id="my-svg-1-R1-R2" class="edge-thickness-normal edge-pattern-solid flowchart-link LS-a1 LE-b1" marker-end="url(#my-svg_block-pointEnd)"/><path d="M532.094,0L532.76,0C533.427,0,534.76,0,535.427,0C536.094,0,536.094,0,536.094,0L536.094,0" id="my-svg-1-R2-R3" class="edge-thickness-normal edge-pattern-solid flowchart-link LS-a1 LE-b1" marker-end="url(#my-svg_block-pointEnd)"/><path d="M712.125,0L712.792,0C713.458,0,714.792,0,715.458,0C716.125,0,716.125,0,716.125,0L716.125,0" id="my-svg-1-R3-R4" class="edge-thickness-normal edge-pattern-solid flowchart-link LS-a1 LE-b1" marker-end="url(#my-svg_block-pointEnd)"/><path d="M892.156,0L892.823,0C893.49,0,894.823,0,895.49,0C896.156,0,896.156,0,896.156,0L896.156,0" id="my-svg-1-R4-R5" class="edge-thickness-normal edge-pattern-solid flowchart-link LS-a1 LE-b1" marker-end="url(#my-svg_block-pointEnd)"/></g><style>foreignObject { overflow: visible !important; }
-foreignObject div, foreignObject span, .label, .nodeLabel { font-family: Arial, Helvetica, sans-serif !important; color: #1F2340 !important; font-size: 15px; white-space: nowrap; }
-</style></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1080" width="1600" height="1080" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">SuperLocalMemory architecture</title>
+  <desc id="d">Agents and web bots reach one SuperLocalMemory service on your computer through MCP, the CLI, the REST API and the dashboard, or optional Web access. Inside, recall runs hybrid channels, fusion and reranking, the answer-support gate with three tiers, the Laya or Jev answer check and layered output; saves pass admission, redaction and enrichment; a living brain runs Memory health, consolidation, learning and bounded loops. SQLite is canonical, with verified LanceDB and CozoDB copies, a picture and document store, the knowledge graph and the audit chain. SLM-Mesh connects local agents and web bots. Governance applies to every call.</desc>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4c3fb0"/></marker>
+    <marker id="am" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker>
+    <linearGradient id="core" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f6f3ff"/><stop offset="1" stop-color="#eee8ff"/></linearGradient>
+    <linearGradient id="gate" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff4dc"/><stop offset="1" stop-color="#ffe9b8"/></linearGradient>
+    <filter id="sh" x="-5%" y="-5%" width="110%" height="115%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#2a2160" flood-opacity="0.10"/></filter>
+  </defs>
+
+  <!-- canvas -->
+  <rect x="0" y="0" width="1600" height="1080" rx="28" fill="#ffffff"/>
+  <rect x="1" y="1" width="1598" height="1078" rx="28" fill="none" stroke="#e4e0f5" stroke-width="2"/>
+
+  <!-- title -->
+  <text x="48" y="62" font-size="30" font-weight="800" fill="#1f1a4d">SuperLocalMemory</text>
+  <text x="356" y="62" font-size="22" font-weight="500" fill="#5b5491">the governed memory brain for AI agents</text>
+  <text x="1552" y="62" font-size="16" font-weight="600" fill="#7a74a8" text-anchor="end">Runs on your computer · Mode A makes no model-provider call</text>
+
+  <!-- SLM-Mesh band -->
+  <rect x="48" y="92" width="1504" height="62" rx="16" fill="#f3ecff" stroke="#c9b5fb" stroke-width="1.5"/>
+  <text x="72" y="130" font-size="19" font-weight="800" fill="#5b21b6">SLM-Mesh</text>
+  <text x="176" y="130" font-size="17" fill="#4c1d95">Local agents and web bots talk to each other — messages, waits, locks and shared state, across machines and across the internet. Messages arrive as data, never instructions.</text>
+
+  <!-- column: agents -->
+  <text x="48" y="196" font-size="15" font-weight="800" fill="#7a74a8" letter-spacing="1.5">YOUR AGENTS AND BOTS</text>
+  <g filter="url(#sh)">
+    <rect x="48" y="210" width="300" height="196" rx="16" fill="#ffffff" stroke="#d9d4f0"/>
+    <text x="68" y="242" font-size="17" font-weight="800" fill="#1f1a4d">Harnesses on your computer</text>
+    <text x="68" y="272" font-size="15" fill="#3d3770">Claude Code · Codex · Cursor</text>
+    <text x="68" y="296" font-size="15" fill="#3d3770">GitHub Copilot · Antigravity</text>
+    <text x="68" y="320" font-size="15" fill="#3d3770">Hermes · Windsurf · Zed · JetBrains</text>
+    <text x="68" y="344" font-size="15" fill="#3d3770">Gemini CLI · Claude Desktop · more</text>
+    <text x="68" y="380" font-size="14" font-weight="600" fill="#6d28d9">Any harness that speaks MCP</text>
+    <text x="68" y="398" font-size="14" font-weight="600" fill="#6d28d9">or can run a command</text>
+
+    <rect x="48" y="424" width="300" height="140" rx="16" fill="#ffffff" stroke="#d9d4f0"/>
+    <text x="68" y="456" font-size="17" font-weight="800" fill="#1f1a4d">Bots on the web</text>
+    <text x="68" y="486" font-size="15" fill="#3d3770">ChatGPT · Claude on the web</text>
+    <text x="68" y="510" font-size="15" fill="#3d3770">Grok Bot · Muse · Composio</text>
+    <text x="68" y="544" font-size="14" font-weight="600" fill="#6d28d9">Only the apps you allow</text>
+
+    <rect x="48" y="582" width="300" height="140" rx="16" fill="#ffffff" stroke="#d9d4f0"/>
+    <text x="68" y="614" font-size="17" font-weight="800" fill="#1f1a4d">Your code</text>
+    <text x="68" y="644" font-size="15" fill="#3d3770">LangGraph · LangChain · LlamaIndex</text>
+    <text x="68" y="668" font-size="15" fill="#3d3770">CrewAI · AutoGen · Semantic Kernel</text>
+    <text x="68" y="692" font-size="15" fill="#3d3770">Google ADK · OpenAI Agents · SDK</text>
+  </g>
+
+  <!-- mesh connectors -->
+  <path d="M336 156 V206" stroke="#7c3aed" stroke-width="2.5" stroke-dasharray="6 6" fill="none" marker-start="url(#am)" marker-end="url(#am)"/>
+  <path d="M921 156 V178" stroke="#7c3aed" stroke-width="2.5" fill="none" marker-end="url(#am)"/>
+  
+
+  <!-- column: doors -->
+  <text x="384" y="196" font-size="15" font-weight="800" fill="#7a74a8" letter-spacing="1.5">FOUR DOORS</text>
+  <g filter="url(#sh)">
+    <rect x="384" y="210" width="196" height="84" rx="14" fill="#ece9ff" stroke="#c8c1f3"/>
+    <text x="402" y="242" font-size="17" font-weight="800" fill="#1f1a4d">MCP server</text>
+    <text x="402" y="268" font-size="14" fill="#3d3770">stdio or HTTP · 110 tools</text>
+    <text x="402" y="286" font-size="14" fill="#3d3770">profiles from 9 to 110</text>
+
+    <rect x="384" y="306" width="196" height="84" rx="14" fill="#ece9ff" stroke="#c8c1f3"/>
+    <text x="402" y="338" font-size="17" font-weight="800" fill="#1f1a4d">CLI · slm</text>
+    <text x="402" y="364" font-size="14" fill="#3d3770">remember · recall · enrich</text>
+    <text x="402" y="382" font-size="14" fill="#3d3770">doctor · gdpr · loop</text>
+
+    <rect x="384" y="402" width="196" height="84" rx="14" fill="#ece9ff" stroke="#c8c1f3"/>
+    <text x="402" y="434" font-size="17" font-weight="800" fill="#1f1a4d">REST + dashboard</text>
+    <text x="402" y="460" font-size="14" fill="#3d3770">graph · health · answer</text>
+    <text x="402" y="478" font-size="14" fill="#3d3770">check · governance</text>
+
+    <rect x="384" y="498" width="196" height="108" rx="14" fill="#ece9ff" stroke="#c8c1f3"/>
+    <text x="402" y="530" font-size="17" font-weight="800" fill="#1f1a4d">Web access</text>
+    <text x="402" y="556" font-size="14" fill="#3d3770">sign-in per app · read or</text>
+    <text x="402" y="574" font-size="14" fill="#3d3770">save · outbound link, no</text>
+    <text x="402" y="592" font-size="14" fill="#3d3770">open port · optional</text>
+  </g>
+  <!-- agent -> door arrows -->
+  <path d="M348 300 H380" stroke="#4c3fb0" stroke-width="2.5" marker-end="url(#a)"/>
+  <path d="M348 500 C 364 500, 364 552, 380 552" stroke="#4c3fb0" stroke-width="2.5" fill="none" marker-end="url(#a)"/>
+  <path d="M348 652 C 368 652, 362 444, 380 444" stroke="#4c3fb0" stroke-width="2.5" fill="none" marker-end="url(#a)"/>
+
+  <!-- core service -->
+  <rect x="616" y="182" width="610" height="660" rx="22" fill="url(#core)" stroke="#b9adf0" stroke-width="2" filter="url(#sh)"/>
+  <text x="640" y="218" font-size="20" font-weight="800" fill="#1f1a4d">The SLM service on your computer</text>
+  <text x="640" y="242" font-size="14" fill="#5b5491">one process, every agent · governance checked on every call</text>
+  <path d="M580 400 H612" stroke="#4c3fb0" stroke-width="3" marker-end="url(#a)"/>
+
+  <!-- recall -->
+  <text x="640" y="280" font-size="14" font-weight="800" fill="#4c3fb0" letter-spacing="1.5">RECALL</text>
+  <g font-size="13">
+    <rect x="640" y="292" width="132" height="104" rx="12" fill="#ffffff" stroke="#cfc7f2"/>
+    <text x="652" y="316" font-size="15" font-weight="800" fill="#1f1a4d">Hybrid search</text>
+    <text x="652" y="338" fill="#3d3770">semantic · BM25</text>
+    <text x="652" y="356" fill="#3d3770">graph · temporal</text>
+    <text x="652" y="374" fill="#3d3770">Hopfield · spread</text>
+    <text x="652" y="390" fill="#3d3770">pictures</text>
+
+    <rect x="790" y="292" width="112" height="104" rx="12" fill="#ffffff" stroke="#cfc7f2"/>
+    <text x="802" y="316" font-size="15" font-weight="800" fill="#1f1a4d">Fusion</text>
+    <text x="802" y="338" fill="#3d3770">rank fusion</text>
+    <text x="802" y="356" fill="#3d3770">cross-encoder</text>
+    <text x="802" y="374" fill="#3d3770">reranking</text>
+
+    <rect x="920" y="292" width="140" height="104" rx="12" fill="url(#gate)" stroke="#f0b443" stroke-width="1.5"/>
+    <text x="932" y="316" font-size="15" font-weight="800" fill="#7a3d00">Answer gate</text>
+    <text x="932" y="338" fill="#7a3d00">does any memory</text>
+    <text x="932" y="356" fill="#7a3d00">support the</text>
+    <text x="932" y="374" fill="#7a3d00">question?</text>
+
+    <rect x="1078" y="292" width="128" height="104" rx="12" fill="url(#gate)" stroke="#f0b443" stroke-width="1.5"/>
+    <text x="1090" y="316" font-size="15" font-weight="800" fill="#7a3d00">Answer check</text>
+    <text x="1090" y="338" fill="#7a3d00">Laya on your Mac</text>
+    <text x="1090" y="356" fill="#7a3d00">or Jev online</text>
+    <text x="1090" y="374" fill="#7a3d00">(your consent)</text>
+  </g>
+  <path d="M772 344 H786" stroke="#4c3fb0" stroke-width="2.5" marker-end="url(#a)"/>
+  <path d="M902 344 H916" stroke="#4c3fb0" stroke-width="2.5" marker-end="url(#a)"/>
+  <path d="M1060 344 H1074" stroke="#4c3fb0" stroke-width="2.5" marker-end="url(#a)"/>
+
+  <!-- tiers + layered output -->
+  <g font-size="13">
+    <rect x="640" y="410" width="182" height="40" rx="20" fill="#e9f7ee" stroke="#86c99c"/>
+    <text x="731" y="435" text-anchor="middle" font-weight="700" fill="#14532d">Supported answer</text>
+    <rect x="832" y="410" width="182" height="40" rx="20" fill="#eef1fb" stroke="#a7b3e3"/>
+    <text x="923" y="435" text-anchor="middle" font-weight="700" fill="#1e2a6b">Closest memories</text>
+    <rect x="1024" y="410" width="182" height="40" rx="20" fill="#fdecef" stroke="#f0a3b4"/>
+    <text x="1115" y="435" text-anchor="middle" font-weight="700" fill="#881337">"Not in memory"</text>
+    <rect x="640" y="460" width="566" height="40" rx="12" fill="#ffffff" stroke="#cfc7f2"/>
+    <text x="923" y="486" text-anchor="middle" fill="#3d3770"><tspan font-weight="800" fill="#1f1a4d">Layered output</tspan>  ·  depth 0 glance · 1 facts · 2 context  ·  max_tokens cap  ·  expand one result</text>
+  </g>
+
+  <!-- save -->
+  <text x="640" y="540" font-size="14" font-weight="800" fill="#4c3fb0" letter-spacing="1.5">SAVE</text>
+  <g font-size="13">
+    <rect x="640" y="552" width="132" height="70" rx="12" fill="#ffffff" stroke="#cfc7f2"/>
+    <text x="652" y="576" font-size="15" font-weight="800" fill="#1f1a4d">Admission</text>
+    <text x="652" y="598" fill="#3d3770">check + receipt</text>
+    <rect x="790" y="552" width="112" height="70" rx="12" fill="#ffffff" stroke="#cfc7f2"/>
+    <text x="802" y="576" font-size="15" font-weight="800" fill="#1f1a4d">Redaction</text>
+    <text x="802" y="598" fill="#3d3770">secrets out</text>
+    <rect x="920" y="552" width="140" height="70" rx="12" fill="#ffffff" stroke="#cfc7f2"/>
+    <text x="932" y="576" font-size="15" font-weight="800" fill="#1f1a4d">Understand</text>
+    <text x="932" y="598" fill="#3d3770">who · when · kind</text>
+    <rect x="1078" y="552" width="128" height="70" rx="12" fill="#ffffff" stroke="#cfc7f2"/>
+    <text x="1090" y="576" font-size="15" font-weight="800" fill="#1f1a4d">Durable write</text>
+    <text x="1090" y="598" fill="#3d3770">queued, retried</text>
+  </g>
+  <path d="M772 587 H786" stroke="#4c3fb0" stroke-width="2.5" marker-end="url(#a)"/>
+  <path d="M902 587 H916" stroke="#4c3fb0" stroke-width="2.5" marker-end="url(#a)"/>
+  <path d="M1060 587 H1074" stroke="#4c3fb0" stroke-width="2.5" marker-end="url(#a)"/>
+
+  <!-- living brain -->
+  <text x="640" y="662" font-size="14" font-weight="800" fill="#4c3fb0" letter-spacing="1.5">THE LIVING BRAIN · IN THE BACKGROUND</text>
+  <g font-size="13">
+    <rect x="640" y="674" width="132" height="148" rx="12" fill="#faf5ff" stroke="#d8c4f7"/>
+    <text x="652" y="698" font-size="15" font-weight="800" fill="#1f1a4d">Memory health</text>
+    <text x="652" y="720" fill="#3d3770">describes older</text>
+    <text x="652" y="738" fill="#3d3770">memories, adds</text>
+    <text x="652" y="756" fill="#3d3770">only · Fix and</text>
+    <text x="652" y="774" fill="#3d3770">Undo</text>
+    <rect x="790" y="674" width="112" height="148" rx="12" fill="#faf5ff" stroke="#d8c4f7"/>
+    <text x="802" y="698" font-size="15" font-weight="800" fill="#1f1a4d">Consolidate</text>
+    <text x="802" y="720" fill="#3d3770">summaries</text>
+    <text x="802" y="738" fill="#3d3770">forgetting</text>
+    <text x="802" y="756" fill="#3d3770">curves</text>
+    <rect x="920" y="674" width="140" height="148" rx="12" fill="#faf5ff" stroke="#d8c4f7"/>
+    <text x="932" y="698" font-size="15" font-weight="800" fill="#1f1a4d">Learns daily</text>
+    <text x="932" y="720" fill="#3d3770">from outcomes</text>
+    <text x="932" y="738" fill="#3d3770">soft prompts</text>
+    <text x="932" y="756" fill="#3d3770">skill evolution</text>
+    <text x="932" y="774" fill="#3d3770">guarded ranker</text>
+    <rect x="1078" y="674" width="128" height="148" rx="12" fill="#faf5ff" stroke="#d8c4f7"/>
+    <text x="1090" y="698" font-size="15" font-weight="800" fill="#1f1a4d">Bounded loops</text>
+    <text x="1090" y="720" fill="#3d3770">done only when</text>
+    <text x="1090" y="738" fill="#3d3770">a gate passes</text>
+    <text x="1090" y="756" fill="#3d3770">graphs via</text>
+    <text x="1090" y="774" fill="#3d3770">Bounded Loops</text>
+  </g>
+
+  <!-- storage -->
+  <text x="1262" y="196" font-size="15" font-weight="800" fill="#7a74a8" letter-spacing="1.5">ON YOUR DISK</text>
+  <path d="M1226 460 H1258" stroke="#4c3fb0" stroke-width="3" marker-start="url(#a)" marker-end="url(#a)"/>
+  <g filter="url(#sh)" font-size="14">
+    <rect x="1262" y="210" width="290" height="112" rx="16" fill="#edf1fa" stroke="#b9c5e6"/>
+    <text x="1282" y="242" font-size="17" font-weight="800" fill="#1e2a4f">SQLite + sqlite-vec</text>
+    <text x="1282" y="268" fill="#334166">the one source of truth</text>
+    <text x="1282" y="290" fill="#334166">bi-temporal facts · 9 memory kinds</text>
+    <text x="1282" y="310" fill="#334166">receipts for every write</text>
+
+    <rect x="1262" y="334" width="290" height="88" rx="16" fill="#edf1fa" stroke="#b9c5e6"/>
+    <text x="1282" y="366" font-size="17" font-weight="800" fill="#1e2a4f">LanceDB · CozoDB</text>
+    <text x="1282" y="392" fill="#334166">fast copies that serve only once</text>
+    <text x="1282" y="410" fill="#334166">they match SQLite</text>
+
+    <rect x="1262" y="434" width="290" height="110" rx="16" fill="#edf1fa" stroke="#b9c5e6"/>
+    <text x="1282" y="466" font-size="17" font-weight="800" fill="#1e2a4f">Pictures and documents</text>
+    <text x="1282" y="492" fill="#334166">picture model + OCR on device</text>
+    <text x="1282" y="512" fill="#334166">document index · health check</text>
+    <text x="1282" y="532" fill="#334166">every answer cites its page</text>
+
+    <rect x="1262" y="556" width="290" height="88" rx="16" fill="#edf1fa" stroke="#b9c5e6"/>
+    <text x="1282" y="588" font-size="17" font-weight="800" fill="#1e2a4f">Knowledge graph</text>
+    <text x="1282" y="614" fill="#334166">people · projects · tools · code</text>
+    <text x="1282" y="632" fill="#334166">timelines and contradictions</text>
+
+    <rect x="1262" y="656" width="290" height="88" rx="16" fill="#edf1fa" stroke="#b9c5e6"/>
+    <text x="1282" y="688" font-size="17" font-weight="800" fill="#1e2a4f">Audit chain</text>
+    <text x="1282" y="714" fill="#334166">hash-chained · tamper-evident</text>
+    <text x="1282" y="732" fill="#334166">erasure receipts</text>
+
+    <rect x="1262" y="756" width="290" height="86" rx="16" fill="#edf1fa" stroke="#b9c5e6"/>
+    <text x="1282" y="788" font-size="17" font-weight="800" fill="#1e2a4f">Encrypted backup</text>
+    <text x="1282" y="814" fill="#334166">GitHub or Google Drive · restore</text>
+    <text x="1282" y="832" fill="#334166">points · safety copy on restore</text>
+  </g>
+
+  <!-- governance band -->
+  <rect x="48" y="872" width="1504" height="118" rx="18" fill="#fff0f3" stroke="#f3b3c2" stroke-width="1.5"/>
+  <text x="72" y="908" font-size="19" font-weight="800" fill="#9f1239">Governance on every call</text>
+  <g font-size="15" fill="#7f1d3a">
+    <text x="72" y="944">Roles per workspace</text>
+    <text x="72" y="968">admin · member · viewer</text>
+    <text x="318" y="944">Company mode</text>
+    <text x="318" y="968">every action has a person</text>
+    <text x="562" y="944">Scopes</text>
+    <text x="562" y="968">personal · shared · global</text>
+    <text x="806" y="944">GDPR export and erasure</text>
+    <text x="806" y="968">reaches every derived copy</text>
+    <text x="1078" y="944">Hash-chained audit</text>
+    <text x="1078" y="968">retention · EU AI Act report</text>
+    <text x="1322" y="944">Privacy by default</text>
+    <text x="1322" y="968">nothing leaves unless you choose</text>
+  </g>
+
+  <!-- footer -->
+  <text x="48" y="1036" font-size="15" fill="#7a74a8">Built on four arXiv papers: information-geometric retrieval · biologically inspired forgetting · Bayesian trust against memory poisoning · governed memory</text>
+  <text x="1552" y="1036" font-size="15" font-weight="700" fill="#5b5491" text-anchor="end">qualixar.com · AI Reliability Engineering</text>
+</svg>

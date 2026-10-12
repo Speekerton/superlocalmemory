@@ -2,9 +2,8 @@
 
 The architecture image and the dashboard GIFs in `README.md` are generated, not drawn.
 
-**Architecture.** `docs/assets/slm-architecture.mmd` is a Mermaid block diagram. `build-architecture.sh`
-renders the PNG and SVG next to it with `mmdc` (edit `pp.json` for your Chrome path). The text colour
-is forced by `mmdc.css` because block diagrams ignore Mermaid's own text styling.
+**Architecture.** `docs/assets/slm-architecture.svg` is the hand-drawn source. `build-architecture.sh`
+renders the PNG next to it at 2x with headless Chrome and ImageMagick (set `CHROME` if Chrome lives elsewhere).
 
 **GIFs.** Each `record-*.mjs` drives the dashboard with `playwright-core`, takes timed screenshots and
 builds a 960-pixel GIF with `ffmpeg` (palettegen and paletteuse). The scripts refuse to run against the

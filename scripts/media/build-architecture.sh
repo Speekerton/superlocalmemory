@@ -1,7 +1,11 @@
-#!/usr/bin/env bash
-# Rebuild docs/assets/slm-architecture.{png,svg} from slm-architecture.mmd.
-# Needs mmdc (npm i -g @mermaid-js/mermaid-cli) and a Chrome; edit pp.json for its path.
-set -euo pipefail
+#!/bin/sh
+# Rebuild docs/assets/slm-architecture.png from the hand-drawn slm-architecture.svg.
+# Needs Google Chrome (headless) and ImageMagick.
+set -e
 cd "$(dirname "$0")/../.."
-mmdc -i docs/assets/slm-architecture.mmd -o docs/assets/slm-architecture.png -p scripts/media/pp.json -b transparent -s 2 -C scripts/media/mmdc.css
-mmdc -i docs/assets/slm-architecture.mmd -o docs/assets/slm-architecture.svg -p scripts/media/pp.json -b transparent -C scripts/media/mmdc.css
+CHROME="${CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
+TMP="$(mktemp -d)"
+"$CHROME" --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=2 \
+  --window-size=1600,1080 --screenshot="$TMP/arch.png" "file://$PWD/docs/assets/slm-architecture.svg"
+magick "$TMP/arch.png" -strip -define png:compression-level=9 docs/assets/slm-architecture.png
+rm -rf "$TMP"

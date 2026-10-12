@@ -6,7 +6,7 @@ A high-level overview of how SuperLocalMemory stores, organizes, and retrieves y
 
 ![SuperLocalMemory architecture: agents and apps reach one daemon through MCP, the CLI, the REST API and the optional Web access connector; recall runs channels, fusion and reranking, the answer-support gate, the answer check and layered output; saves are admission-checked; SQLite is canonical with LanceDB and CozoDB projections and a store for pictures and documents; Memory health, backfill and consolidation run in the background; roles, audit and erasure govern every call; SLM-Mesh connects agents and allowed web apps](assets/slm-architecture.png)
 
-The diagram is generated from `docs/assets/slm-architecture.mmd`. The sections below are the reference for each row.
+The diagram source is `docs/assets/slm-architecture.svg`. The sections below are the reference for each row.
 
 ## Local core and optional Web access
 

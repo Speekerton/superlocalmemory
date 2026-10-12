@@ -147,3 +147,15 @@ def test_cli_recall_sends_show_weak_and_prints_the_note(capsys) -> None:
     assert "show_weak" not in paths[0] and "show_weak=true" in paths[1]
     out = capsys.readouterr().out
     assert out.count(note) == 2 and "[weak] rcpt ok" in out
+
+
+def test_the_daemons_deadline_bounds_the_answer_check() -> None:
+    from superlocalmemory.retrieval import answer_check_status as acs
+    from superlocalmemory.server.recall_core import RecallCall, _engine_call
+
+    seen: list = []
+    engine = SimpleNamespace(recall=lambda q, **kw: seen.append(acs._CALLER_DEADLINE.get()))
+    base = dict(query="q", limit=5, session_id="s", agent_id="a", fast=True)
+    _engine_call(engine, RecallCall(**base, answer_deadline=123.0))
+    _engine_call(engine, RecallCall(**base))
+    assert seen == [123.0, None]

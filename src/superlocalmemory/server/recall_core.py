@@ -24,9 +24,11 @@ event loop does not cross ``run_in_executor``.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import math
 import os
+import time
 from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Any
@@ -120,6 +122,9 @@ class RecallCall:
     include_evidence: bool = False
     #: 4.1.25: the weak matches of a recall that abstains, labelled ``weak``.
     show_weak: bool = False
+    #: 4.1.25: the monotonic instant the daemon stops waiting for the engine;
+    #: the answer check, which has its own budget, never runs past it.
+    answer_deadline: float | None = None
 
 
 def effective_budget_s(call: RecallCall) -> float:
@@ -151,11 +156,13 @@ def _engine_call(engine: Any, call: RecallCall) -> Any:
     """``engine.recall`` with the call's arguments, on the executor thread."""
     from superlocalmemory.core import answer_check_history as history
     from superlocalmemory.core.answer_check_scope import skip_answer_check
+    from superlocalmemory.retrieval.answer_check_status import caller_deadline
 
     with (
         skip_answer_check() if call.skip_answer_check else nullcontext(),
         history.origin(call.origin) if call.origin else nullcontext(),
         _visibility_for(engine, call),
+        caller_deadline(call.answer_deadline),
     ):
         return engine.recall(
             call.query,
@@ -280,6 +287,9 @@ async def _run_admitted(engine, call, app_state, runtime, snapshot,
             except asyncio.TimeoutError:
                 return await _bounded_fallback(
                     engine, call, app_state, public_deadline, snapshot, hold, runtime)
+        # The engine thread reads monotonic time; the loop's clock may differ.
+        call = dataclasses.replace(call, answer_deadline=time.monotonic() + max(
+            0.0, worker_deadline - loop.time()))
         future = submit(loop, hold, runtime, app_state, engine, _engine_call, engine, call)
         response = await wait_until(future, worker_deadline)
         if response is None:

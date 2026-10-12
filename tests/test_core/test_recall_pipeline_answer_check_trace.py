@@ -163,7 +163,8 @@ def test_details_on_each_skip_branch() -> None:
     with skip_answer_check():
         assert run_answer_check(engine, "q", full).detail == acs.DETAIL_NOT_A_QUESTION
     assert run_answer_check(engine, "q", RecallResponse()).detail == acs.DETAIL_NO_RESULTS
-    out = run_answer_check(engine, "q", full, recall_started=time.monotonic() - 10)
+    late = time.monotonic() - acs.ANSWER_CHECK_HARD_CEILING_S - 1
+    out = run_answer_check(engine, "q", full, recall_started=late)
     assert out.detail == acs.DETAIL_BUDGET and out.status == acs.STATUS_SKIPPED
     shared = RecallResponse(results=[RetrievalResult(
         fact=AtomicFact(fact_id="f", content="m", confidence=0.8, profile_id="other"),

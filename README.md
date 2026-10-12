@@ -133,7 +133,7 @@ SLM is part of Qualixar's AI Reliability Engineering work: agent memory that is 
 | Editor plugins | Claude Code, Codex, VS Code / Copilot, Antigravity, Hermes. Each ships 16 skills, 4 sub-agents and session hooks; the npm package carries every plugin folder | [Plugins](docs/plugins.md), [IDE setup](docs/ide-setup.md), [Hermes](docs/hermes.md) |
 | Any other agent | The universal agent rules: one file that teaches any agent when to recall, what to save and how to keep memory clean. Paste it into `AGENTS.md`, `CLAUDE.md`, `.cursorrules` or the agent's system prompt | [Universal agent rules](plugin-src/rules/AGENTS.md) |
 | `slm connect <ide>` | Writes the MCP config for 11 editors and apps, including Cursor, Windsurf, Zed, JetBrains, Gemini CLI and Claude Desktop; `slm connect claude-code` points you to the plugin | [IDE setup](docs/ide-setup.md) |
-| MCP | stdio (`slm mcp`) or HTTP at `http://127.0.0.1:8765/mcp/`; profiles from 9 to 109 tools | [MCP tools](docs/mcp-tools.md) |
+| MCP | stdio (`slm mcp`) or HTTP at `http://127.0.0.1:8765/mcp/`; profiles from 9 to 110 tools | [MCP tools](docs/mcp-tools.md) |
 | Framework adapters | LangGraph, LangChain, LlamaIndex, CrewAI, AutoGen, Semantic Kernel, Microsoft Agent Framework, Google ADK, OpenAI Agents | [Framework adapters](docs/framework-adapters.md) |
 | Python SDK and HTTP API | `MemoryEngine` in your code; the local REST API | [API reference](docs/api-reference.md) |
 | Auto-capture hooks | `slm hooks install` for Claude Code, `--agent codex` for Codex | [Auto-memory](docs/auto-memory.md) |
@@ -174,8 +174,8 @@ See the `slm-bot-memory` skill (ships with this plugin) for the full model, incl
 should never be stored on a computer shared with other bots (secrets, keys, other people's
 personal data).
 
-**Tools:** this plugin sets `SLM_MCP_PROFILE=core` — 18 tools (`remember`, `recall`, `search`,
-session lifecycle, compression/cache, corrections) — deliberately smaller than the 57-tool
+**Tools:** this plugin sets `SLM_MCP_PROFILE=core` — 19 tools (`remember`, `recall`, `search`,
+session lifecycle, compression/cache, corrections) — deliberately smaller than the 58-tool
 default profile every other host gets, so a shared computer is not listing tool descriptions
 for tiers it will not use.
 
@@ -333,12 +333,12 @@ Pick how many tools your agent sees with `SLM_MCP_PROFILE`.
 
 | Profile | Tools | For |
 |---|---:|---|
-| `core` | 18 | Remember, recall, sessions, optimize, correction review |
-| `code` | 38 | Core plus code graph, memory kinds, Brain evidence, profile switching, bounded loops |
+| `core` | 19 | Remember, recall, sessions, optimize, correction review |
+| `code` | 39 | Core plus code graph, memory kinds, Brain evidence, profile switching, bounded loops |
 | `mesh` | 9 | SLM-Mesh coordination only |
-| `full` (and unset) | 57 | Memory, kinds, Brain, optimize, skill evolution, mesh, loops, views and summaries (62 with pictures and documents on) |
-| `power` | 69 | Full plus administration, lifecycle and diagnostics (74 with pictures and documents on) |
-| `whole` | 109 | Every registered tool |
+| `full` (and unset) | 58 | Memory, kinds, Brain, optimize, skill evolution, mesh, loops, views and summaries (63 with pictures and documents on) |
+| `power` | 70 | Full plus administration, lifecycle and diagnostics (75 with pictures and documents on) |
+| `whole` | 110 | Every registered tool |
 
 ```json
 { "mcpServers": { "superlocalmemory": { "type": "http", "url": "http://127.0.0.1:8765/mcp/" } } }

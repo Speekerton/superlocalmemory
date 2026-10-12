@@ -106,11 +106,11 @@ When the SLM MCP server is unavailable, use these CLI equivalents:
 
 ---
 
-## Tool reference (core profile — 18 tools)
+## Tool reference (core profile — 19 tools)
 
 > The MCP config ships only `SLM_AGENT_ID=codex` — no `SLM_MCP_PROFILE` — so
 > it falls back to the same no-profile default every install gets: the
-> 57-tool `full` surface. That is the 18 core tools below **plus** mesh
+> 58-tool `full` surface. That is the 18 core tools below **plus** mesh
 > coordination (9: `mesh_summary`, `mesh_peers`, `mesh_send`, `mesh_inbox`,
 > `mesh_wait`, `mesh_state`, `mesh_lock`, `mesh_events`, `mesh_status`), portable-evidence
 > tools (5: `get_brain_evidence_status`, `record_agent_experience`,
@@ -123,11 +123,11 @@ When the SLM MCP server is unavailable, use these CLI equivalents:
 > `run_maintenance`, `consolidate_cognitive`, `get_soft_prompts`, `set_mode`,
 > `log_tool_event`, `get_assertions`, `reinforce_assertion`,
 > `contradict_assertion`, `evolve_skill`, `skill_health`, `skill_lineage`).
-> Set `SLM_MCP_PROFILE=code` yourself for the narrower 38-tool `code` surface,
+> Set `SLM_MCP_PROFILE=code` yourself for the narrower 39-tool `code` surface,
 > which trades mesh and administration tools for 6 code-graph tools
 > (`build_code_graph`, `get_blast_radius`, `query_graph`,
 > `semantic_search_code`, `get_review_context`, `detect_changes`). Use
-> `power` (69 tools) for governance and audit tools. While pictures and documents
+> `power` (70 tools) for governance and audit tools. While pictures and documents
 > are on, `full` and `power` also list 5 picture tools (`remember_media`,
 > `get_media`, `remember_document`, `media_status`, `media_upload_link`). The tool set is read when the
 > MCP server starts; `switch_profile` changes the active memory profile, not the
@@ -139,6 +139,7 @@ When the SLM MCP server is unavailable, use these CLI equivalents:
 | `recall`           | `query, limit=20, session_id="", fast=None, include_global=None, include_shared=None, window="", project="", saved_by="", about="", kind="", prefer_project="", tags="", tags_match="all", as_of=None, profile_id=""` | Multi-channel retrieval. Scope flags off by default. See slm-recall, slm-scope. |
 | `search`           | `query, limit=20, kind="", tags="", tags_match="all", profile_id=""`                         | FTS5 BM25 keyword search               |
 | `fetch`            | `fact_ids, profile_id=""`                                                                    | Full detail for comma-separated or listed fact ids |
+| `expand`           | `memory_id, depth=2, max_tokens=0, profile_id=""`                                             | Drill into one recall result: source memory, session neighbours, same-entity facts, correction |
 | `list_recent`      | `limit=20, kind="", tags="", tags_match="all", profile_id=""`                                | Newest memories first                  |
 | `update_memory`    | `fact_id, content, agent_id, profile_id=""`                                                  | Propose a reviewed correction; the old text stays current until applied |
 | `forget`           | `dry_run=True`                                                                               | Decay cycle over the profile (not a delete); always dry_run first |
@@ -171,7 +172,7 @@ When the SLM MCP server is unavailable, use these CLI equivalents:
 | slm-governance | Roles, retention and lifecycle, audit, GDPR |
 | slm-mesh | Cross-session peer coordination (full/power/mesh tool sets and the default) |
 | slm-bot-memory | Sharing one computer with other bots: what isolates and what does not |
-| slm-getting-started-bot | First session on a headless bot host (the 18-tool core set) |
+| slm-getting-started-bot | First session on a headless bot host (the 19-tool core set) |
 | slm-media | Pictures, PDFs and folders: save, find, limits, privacy, upload links, `slm media`, `slm sources` |
 | slm-web-access | Connecting web apps: Connected apps switches, upload links, what a web app can call |
 

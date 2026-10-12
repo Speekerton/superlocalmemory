@@ -2966,6 +2966,7 @@ _COMMAND_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
     ]),
     ("Health & self-healing", [
         ("doctor", "Full pre-flight check (add --fix to auto-repair)"),
+        ("enrich", "Memory health: describe older memories, suggest and fix repairs, undo"),
         ("health", "Quick math/retrieval layer status"),
         ("ops", "List/resolve stuck, dead-lettered, or degraded operations (admin)"),
         ("diagnostics", "Export a local diagnostics bundle"),

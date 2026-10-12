@@ -256,7 +256,7 @@ def test_every_dashboard_settings_surface_exposes_embedding_config_failure() -> 
     root = Path(__file__).parents[1]
     for relative_path in (
         "src/superlocalmemory/ui/js/auto-settings.js",
-        "src/superlocalmemory/ui/js/od-settings.js",
+        "src/superlocalmemory/ui/js/od-settings-models.js",
     ):
         source = (root / relative_path).read_text(encoding="utf-8")
         assert "Embedding configuration unavailable" in source, relative_path

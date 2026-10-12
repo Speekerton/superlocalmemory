@@ -203,6 +203,23 @@ def _spaced_script(term: str) -> bool:
     return not any(lo <= ord(ch) <= hi for ch in term for lo, hi in _UNSPACED)
 
 
+#: Most character pairs judged for a question in an unspaced script.
+MAX_PAIRS = 6
+
+
+def unspaced(term: str) -> bool:
+    """A term in a script written without spaces (Chinese, Japanese, Thai)."""
+    return not _spaced_script(term)
+
+
+def _pairs(term: str) -> list[str]:
+    letters = "".join(ch for ch in term if ch.isalnum())
+    seen: dict[str, None] = {}
+    for i in range(len(letters) - 1):
+        seen.setdefault(letters[i:i + 2], None)
+    return list(seen)
+
+
 #: Most subject words judged per question (each is one keyword-index lookup).
 MAX_COUNTABLE = 12
 
@@ -211,8 +228,15 @@ def countable_terms(terms: Sequence[str]) -> list[str]:
     """The question terms judged for ``orphan_share``: terms of three or more
     characters, in a script written with spaces, that name a subject rather
     than frame the question."""
-    return [t for t in terms if len(t) >= _RARE_MIN_LEN and t not in _FRAME_WORDS
-            and _spaced_script(t)][:MAX_COUNTABLE]
+    out: list[str] = []
+    for t in terms:
+        if not _spaced_script(t):
+            # The keyword index sees a whole run as one term, so a run is
+            # judged by its character pairs (looked up as substrings).
+            out.extend(p for p in _pairs(t)[:MAX_PAIRS] if p not in out)
+        elif len(t) >= _RARE_MIN_LEN and t not in _FRAME_WORDS:
+            out.append(t)
+    return out[:MAX_COUNTABLE]
 
 
 def orphan_share(countable: Sequence[str], in_store: set[str]) -> float | None:
@@ -282,7 +306,14 @@ def build(
 
 def _subject_coverage(terms: Sequence[str], content: str) -> float:
     subject = countable_terms(terms)
-    return keyword_coverage(subject, content) if subject else 1.0
+    if not subject:
+        return 1.0
+    pairs = [t for t in subject if unspaced(t)]
+    words = [t for t in subject if not unspaced(t)]
+    have = sum(1 for p in pairs if p in content)
+    if words:
+        have += keyword_coverage(words, content) * len(words)
+    return have / len(subject)
 
 
 def model_vocabulary() -> frozenset[str] | None:

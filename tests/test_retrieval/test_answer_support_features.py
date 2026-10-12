@@ -238,11 +238,11 @@ def test_orphan_terms_are_question_words_no_stored_memory_contains() -> None:
     assert countable == ["release", "notes", "mention", "moon"]
     assert ef.orphan_share(countable, {"release", "notes", "mention"}) == pytest.approx(0.25)
     assert ef.orphan_share([], set()) is None
-    # Question-frame words are not judged, nor text in a script written without
-    # spaces (a Chinese or Japanese question is one "term" to the keyword index).
+    # Question-frame words are not judged; text in a script written without
+    # spaces is judged by its character pairs (see the unspaced tests below).
     assert ef.countable_terms(ef.query_terms("How long did it take?")) == []
-    assert ef.countable_terms(["läuft", "日志保留多久", "ステージング", "डेटाबेस", "бвг"]) == [
-        "läuft", "डेटाबेस", "бвг"]
+    assert ef.countable_terms(["läuft", "日志保留", "डेटाबेस", "бвг"]) == [
+        "läuft", "日志", "志保", "保留", "डेटाबेस", "бвг"]
 
 
 def test_attach_reports_the_orphan_share_from_the_store() -> None:
@@ -294,8 +294,10 @@ def test_subject_coverage_counts_only_the_words_that_name_a_subject() -> None:
     out = ef.build(query=long_q, terms=ef.query_terms(long_q), query_vector=None, fact=fact,
                    channel_scores={})
     assert out["subject_coverage"] == pytest.approx(0.5)
-    jp = "日志保留多久？"
+    jp = "日志保留多久？"  # judged on character pairs: none are in this memory
     assert ef.build(query=jp, terms=ef.query_terms(jp), query_vector=None, fact=fact,
+                    channel_scores={})["subject_coverage"] == 0.0
+    assert ef.build(query="??", terms=[], query_vector=None, fact=fact,
                     channel_scores={})["subject_coverage"] == 1.0
 
 
@@ -318,3 +320,32 @@ def test_a_recall_with_a_question_vector_embeds_the_probes_once(monkeypatch) -> 
 def test_at_most_twelve_words_are_looked_up_as_orphans() -> None:
     words = [f"word{i}x" for i in range(30)]
     assert len(ef.countable_terms(words)) == ef.MAX_COUNTABLE == 12
+
+
+def test_unspaced_scripts_are_judged_on_character_pairs() -> None:
+    terms = ef.query_terms("日志保留多久？")
+    assert ef.countable_terms(terms) == ["日志", "志保", "保留", "留多", "多久"]
+    fact = SimpleNamespace(content="我们的日志保留三十天。", embedding=None,
+                           canonical_entities=[], entities=[])
+    out = ef.build(query="日志保留多久？", terms=terms, query_vector=None, fact=fact,
+                   channel_scores={})
+    assert out["subject_coverage"] == pytest.approx(3 / 5)
+
+
+def test_terms_in_store_finds_character_pairs_by_substring(tmp_path) -> None:
+    import sqlite3
+
+    from superlocalmemory.retrieval.engine import RetrievalEngine
+
+    conn = sqlite3.connect(tmp_path / "m.db")
+    conn.executescript("""
+        CREATE TABLE atomic_facts (fact_id TEXT, profile_id TEXT, content TEXT);
+        CREATE VIRTUAL TABLE atomic_facts_fts USING fts5(fact_id UNINDEXED, content,
+            content='atomic_facts', content_rowid='rowid');
+        INSERT INTO atomic_facts VALUES ('f1', 'p', '我们的日志保留三十天。');
+        INSERT INTO atomic_facts_fts (rowid, fact_id, content)
+            SELECT rowid, fact_id, content FROM atomic_facts;
+    """)
+    eng = RetrievalEngine.__new__(RetrievalEngine)
+    eng._db = SimpleNamespace(execute=lambda sql, params=(): conn.execute(sql, params).fetchall())
+    assert eng._terms_in_store(["日志", "多久", "ケブ"], "p") == {"日志"}

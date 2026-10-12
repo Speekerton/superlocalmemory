@@ -808,14 +808,26 @@ class RetrievalEngine:
             terms_in_store=lambda terms: self._terms_in_store(terms, profile_id),
         )
 
+    def _pairs_in_store(self, pairs: list[str], profile_id: str) -> set[str]:
+        """Character pairs of an unspaced script some memory contains (one scan:
+        the keyword index holds whole runs, never their pairs)."""
+        cols = ", ".join(f"MAX(instr(content, ?{i + 1}) > 0)" for i in range(len(pairs)))
+        rows = self._db.execute(
+            f"SELECT {cols} FROM atomic_facts WHERE profile_id = ?{len(pairs) + 1}",
+            (*pairs, profile_id))
+        hits = tuple(rows[0]) if rows else ()
+        return {p for p, hit in zip(pairs, hits) if hit}
+
     def _terms_in_store(self, terms: list[str], profile_id: str) -> set[str]:
         """The terms some stored memory of this profile contains, in any
         inflection the shipped word list knows (a base form of four or more
         letters is matched as a prefix). One indexed keyword lookup per term."""
         from superlocalmemory.encoding.common_words import _bases
+        from superlocalmemory.retrieval.evidence_features import unspaced
 
-        found: set[str] = set()
-        for term in terms:
+        pairs = [t for t in terms if unspaced(t)]
+        found: set[str] = self._pairs_in_store(pairs, profile_id) if pairs else set()
+        for term in (t for t in terms if not unspaced(t)):
             variants = ['"' + term.replace('"', "") + '"'] + [
                 '"' + b + '"*' for b in _bases(term)[1:] if len(b) >= 4 and b.isalpha()]
             row = self._db.execute(

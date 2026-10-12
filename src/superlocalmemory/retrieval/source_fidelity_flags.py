@@ -23,13 +23,18 @@ logger = logging.getLogger(__name__)
 
 def _unverified(db: Any, profile_id: str, fact_ids: list[str]) -> dict[str, str]:
     marks = ",".join("?" for _ in fact_ids)
-    rows = db.execute(
+    rows = list(db.execute(
         "SELECT f.fact_id, f.profile_id, f.content, f.observation_date, "
-        "m.content AS source, m.speaker, m.role FROM atomic_facts f "
-        "JOIN memories m ON m.memory_id = f.memory_id "
+        "m.content AS source, m.profile_id AS source_profile, m.speaker, m.role "
+        "FROM atomic_facts f LEFT JOIN memories m ON m.memory_id = f.memory_id "
         f"WHERE f.fact_id IN ({marks})",
         tuple(fact_ids),
-    )
+    ))
+    if {str(dict(r)["fact_id"]) for r in rows} != set(fact_ids):
+        raise LookupError("candidate identity unavailable")
+    if any(not dict(r)["source"] or dict(r)["source_profile"] != dict(r)["profile_id"]
+           for r in rows):
+        raise LookupError("owning source unavailable")
     released = {
         (str(dict(r)["profile_id"]), str(dict(r)["object_id"])) for r in db.execute(
             "SELECT profile_id,object_id FROM derivation_lineage "

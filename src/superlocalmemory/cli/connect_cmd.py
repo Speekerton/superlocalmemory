@@ -77,6 +77,8 @@ def _connect_one(args, ide):
         transport=getattr(args, "transport", "stdio"),
         daemon_port=getattr(args, "daemon_port", 8765),
     )
+    # The requested host is the fallback name for output and diagnostics.
+    result = {"ide": ide, **result}
     if (
         getattr(args, "verify", False)
         and not result.get("error")

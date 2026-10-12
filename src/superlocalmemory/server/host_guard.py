@@ -104,10 +104,11 @@ def _header(scope: dict[str, Any], key: bytes) -> str | None:
 
 
 def listener_host_allowed(scope: dict[str, Any]) -> bool:
-    """A loopback listener never serves a Host from outside loopback.
+    """A loopback listener serves its aliases and explicitly configured names.
 
-    Explicit LAN/domain allowlists belong to listeners actually bound for
-    network access; a wildcard must not weaken a loopback-only daemon.
+    A same-machine reverse proxy may preserve its public Host. Only a finite
+    configured name permits that deployment; wildcards must not weaken the
+    loopback-only daemon. Caller authentication and proxy demotion are separate.
     """
     from superlocalmemory.server.loopback import is_loopback
 
@@ -115,7 +116,9 @@ def listener_host_allowed(scope: dict[str, Any]) -> bool:
     server = scope.get("server") or ("", 0)
     if is_loopback(server[0]) and raw and raw.strip():
         name = _host_name(raw)
-        return is_loopback(name) or name.endswith(".localhost")
+        finite_hosts = {entry for entry in _configured_hosts() if "*" not in entry}
+        return (is_loopback(name) or name.endswith(".localhost")
+                or name in finite_hosts)
     return host_allowed(raw)
 
 

@@ -63,7 +63,9 @@ class PressurePause:
         self.available: float | None = None
 
     def block(self, worker_pid: int | None = None) -> None:
-        self.footprint = max(self.footprint, footprint_mb(worker_pid))
+        measured = footprint_mb(worker_pid)
+        if measured > 0:  # the latest reading; a worker already gone keeps the last one
+            self.footprint = measured
         self.available = available_mb()
         headroom = "unknown" if self.available is None else f"{self.available:.0f} MB"
         self.reason = (f"Embedding worker paused for memory pressure ({headroom} available, "
@@ -78,8 +80,8 @@ class PressurePause:
         if monotonic() < self.retry_at:
             return False
         self.available = available_mb()
-        if self.available is None or self.available < self.recovery_mb:
-            return False
+        if self.available is not None and self.available < self.recovery_mb:
+            return False  # an unreadable gauge allows the start, as the load check does
         self.reason = None
         return True
 
@@ -87,11 +89,22 @@ class PressurePause:
     def recovery_mb(self) -> float:
         return max(load_floor_mb(), self.footprint + RESERVE_MB) + RECOVERY_MARGIN_MB
 
+    def _message(self, retry_in: float) -> str:
+        free = "unknown" if self.available is None else f"{self.available:.0f} MB"
+        when = (f"next check in {math.ceil(retry_in)} s" if retry_in > 0
+                else "it checks again on the next request")
+        return (f"Embedding worker paused for memory pressure: {free} free now, "
+                f"{self.recovery_mb:.0f} MB needed to resume; {when}.")
+
     def snapshot(self) -> dict[str, Any]:
-        return {"state": "memory_pressure" if self.reason else "ready", "reason": self.reason,
+        paused = self.reason is not None
+        if paused:
+            self.available = available_mb()  # a fresh reading, not the one from the pause
+        retry_in = max(0.0, self.retry_at - monotonic()) if paused else 0.0
+        return {"state": "memory_pressure" if paused else "ready",
+                "reason": self._message(retry_in) if paused else None,
                 "footprint_mb": round(self.footprint, 1), "available_mb": self.available,
-                "recovery_mb": round(self.recovery_mb, 1),
-                "retry_in_s": round(max(0.0, self.retry_at - monotonic()), 1) if self.reason else 0}
+                "recovery_mb": round(self.recovery_mb, 1), "retry_in_s": round(retry_in, 1)}
 
 
 def guard_for(service: Any) -> PressurePause:

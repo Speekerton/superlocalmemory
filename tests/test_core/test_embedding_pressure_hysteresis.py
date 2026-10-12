@@ -96,7 +96,7 @@ def test_unknown_footprint_keeps_full_load_floor(lane, monkeypatch):
     assert not enough_memory(worker_pid=1234)
 
 
-def test_unknown_headroom_cannot_restart_a_paused_worker(lane, monkeypatch):
+def test_unreadable_headroom_lets_a_paused_worker_start_like_the_load_check(lane, monkeypatch):
     from superlocalmemory.core import embedding_memory
 
     service, _spawner, _memory = lane
@@ -104,5 +104,38 @@ def test_unknown_headroom_cannot_restart_a_paused_worker(lane, monkeypatch):
     guard.block()
     monkeypatch.setattr(embedding_memory, "monotonic", lambda: guard.retry_at + 1)
     monkeypatch.setattr(embedding_memory, "available_mb", lambda: None)
-    assert not guard.may_start()
-    assert guard.snapshot()["state"] == "memory_pressure"
+    assert embedding_memory.enough_memory() is True
+    assert guard.may_start()
+    assert guard.snapshot()["state"] == "ready"
+
+
+def test_footprint_follows_the_latest_measurement_not_a_lifetime_maximum(monkeypatch):
+    from superlocalmemory.core.embedding_memory import PressurePause
+
+    guard = PressurePause()
+    sizes = iter([3000.0, 1400.0, 0.0])
+    monkeypatch.setattr(proc_memory, "process_memory_mb", lambda _pid: next(sizes))
+    guard.block(1)
+    assert guard.footprint == 3000.0
+    guard.block(1)
+    assert guard.footprint == 1400.0  # a smaller model replaced the large one
+    guard.block(1)
+    assert guard.footprint == 1400.0  # unmeasurable (worker gone): keep the last reading
+
+
+def test_the_pause_message_says_how_much_is_needed_and_when_it_retries(lane, monkeypatch):
+    from superlocalmemory.core import embedding_memory
+
+    service, _spawner, memory = lane
+    guard = service._pressure_pause
+    memory[0] = 0.2
+    guard.block()
+    memory[0] = 1.5  # moved on since the pause began
+    snap = guard.snapshot()
+    text = snap["reason"]
+    assert f"{guard.recovery_mb:.0f} MB" in text
+    assert "1536 MB" in text  # the fresh reading, not the one taken at the pause
+    assert "60 s" in text
+    assert snap["available_mb"] == pytest.approx(1536.0)
+    monkeypatch.setattr(embedding_memory, "monotonic", lambda: guard.retry_at + 5)
+    assert "again" in guard.snapshot()["reason"]

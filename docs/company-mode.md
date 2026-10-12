@@ -142,6 +142,12 @@ SLM's own data folder can never be named. A connected web app cannot change,
 delete, pin or replace a memory it is not allowed to see; it is answered as if
 the memory did not exist.
 
+Maintenance follows the same rule. Memory health's report and its Fix, Undo, pause
+and resume need `MANAGE` on the workspace, restoring a backup and anything that
+replaces the whole store need `MANAGE` on every workspace, and skill evolution keeps
+each workspace's skills, approvals and backups apart, so approving a skill in one
+workspace changes nothing in another.
+
 In strict mode (`SLM_REQUIRE_CREDENTIALS=1`) the dashboard is not handed the SLM
 key; print it with `slm token show` and paste it once. See
 [auth-write-gate.md](auth-write-gate.md).

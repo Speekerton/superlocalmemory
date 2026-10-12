@@ -43,6 +43,13 @@ The login gate controls whether the dashboard and API require authenticated sess
 | `require_login = false` | Loopback caller is trusted as owner. No authentication enforced. | Personal single-user installs |
 | `require_login = true` | Reading and saving memories needs a signed-in user. The machine owner can still manage users and settings without signing in. | Team and enterprise deployments, and Macs shared by several user accounts |
 
+With login required, every state-changing route asks for a role, and the check
+runs before the request body is read, so a refusal is always 401 (sign in) or 403
+(your role does not allow it), never 422 or 500. Once users are enrolled, the
+install token or an API key alone no longer administers the workspace: that needs a
+signed-in admin, or `slm team` run on the SLM computer by the user who runs SLM
+([Company mode](company-mode.md)).
+
 Personal installs ship with `require_login = false`. No default credentials are
 included. Enterprise installs (set via the installer or `slm reconfigure`) ship
 with `require_login = true`.
@@ -145,9 +152,9 @@ a change is refused if the trail cannot record it), and sign-in (successful,
 failed or throttled) and sign-out. Entries name the acting account, the
 affected account and workspace, old and new role; never a password or token.
 
-Since 4.1.25 each entry's hash covers every stored field, its details included,
-so editing any of them breaks the chain. Entries written before 4.1.25 are
-checked for order and core fields only, and the dashboard says so. The chain is
+Each entry's hash covers every stored field, its details included, so editing
+any of them breaks the chain. Entries written by an older release are checked for
+order and core fields only, and the dashboard says so. The chain is
 plain SHA-256 with an external count-and-head anchor: it detects edits and
 truncation, but someone able to rewrite both files could recompute it.
 
@@ -171,6 +178,13 @@ slm diagnostics export /tmp/audit-report.json
 - Install token: the install token (used by the dashboard and IDE configs)
   is stored in memory only and scoped to loopback addresses in company mode.
   Rotate it with `slm rotate-token`.
+- Skill evolution is per workspace: candidates, approvals, backups and
+  quarantine are kept apart for each workspace, an approval applies to the
+  workspace it was made in, and a setting that spans the whole installation needs
+  authority over every workspace ([Skill evolution](skill-evolution.md)).
+- Memory health actions (pause, resume, Fix, Undo) need `MANAGE`; reading its
+  report is store-wide maintenance information, so it needs `MANAGE` too
+  ([Memory health](memory-health.md)).
 - Shared Macs: in a personal install the local service trusts every program on
   the computer, including programs run by another user account. On a Mac shared
   by several accounts, turn on company mode. See

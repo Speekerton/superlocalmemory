@@ -32,6 +32,42 @@ slm gdpr export --profile <name> --output export.json   # subject access / porta
 slm gdpr erase --profile <name> --dry-run              # preview; --yes erases the profile irreversibly
 ```
 
+### What an erasure removes, and what it says it did
+
+Erasing a profile (`slm gdpr erase`, or the dashboard's erase button) does not stop at
+`memory.db`. SLM checks the bytes of the data folder after an erasure and removes the
+profile from every place that kept a copy of what the person wrote:
+
+- the relational rows, the full-text index (including free pages, so deleted words are not
+  readable from the file) and the vector index itself, with the Lance history and the
+  graph store's entity nodes;
+- saves still waiting in the queue (`pending.db`) and the encrypted request journal that
+  records each accepted save, including the instruction to write one again;
+- the per-prompt recall queue and the memories it recalled, event previews, and the running
+  service's in-memory copies;
+- the MCP cache and the reversible originals kept by compression, and the derived
+  caches that were built from redacted text;
+- the write receipts, the workspace's entry in `profiles.json`, and the free pages of the
+  learning and brain-cache databases;
+- the prompt text two logs kept, and an erased picture's stored original and backup mirror
+  (erasing a memory erases its picture).
+
+The result says exactly what happened. `slm gdpr erase --json` reports `success: false` for an
+incomplete erasure and lists what was removed and what remains with the step
+that retries it; the dashboard shows the same list, and the stored receipt is written after every
+step, so it cannot read COMPLETE over a failed sweep. Erasing one memory or one person's mentions
+(a targeted erasure) follows the same rules.
+
+Backups are the one place an erasure cannot rewrite, because the copy would stop matching its
+checksums and would no longer restore. Each backup that holds the profile is recorded as an
+**erasure obligation**. The obligation is replayed on every restore (a restore re-applies
+targeted erasures as well as profile ones), reported as outstanding, and ends only when the
+backup is deleted or re-read and found clean, never by age. A backup SLM cannot read is an
+obligation too, because not being able to look is not the same as there being nothing to find.
+Stores a scale-engine promotion keeps for rollback are treated the same way. Copies SLM does not
+control, such as files you exported, cloud backups already uploaded, or another computer's data
+folder, are yours to remove.
+
 What the two exports carry for pictures and documents:
 
 - `slm gdpr export` (and the dashboard's compliance export) adds a `media`
@@ -70,7 +106,7 @@ and leaves out:
 - The memory data export (`GET /api/export`, formats `json`, `jsonl`, `csv`) follows
   the same rule for embeddings and sends the file only once it is complete.
 
-A complete erasure claim requires proof that deletion propagates through:
+For your own assessment, a complete erasure claim requires proof that deletion propagates through:
 
 - relational facts and raw evidence;
 - FTS, graph, temporal, vector, cache, and optional backend projections;

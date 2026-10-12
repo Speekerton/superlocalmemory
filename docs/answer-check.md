@@ -1,6 +1,6 @@
 # Answer Check
 
-Lets your memory say "I don't have that" instead of guessing.
+Lets your memory say "That isn't in SuperLocalMemory." instead of guessing.
 
 ---
 
@@ -12,10 +12,18 @@ results and decides whether they actually answer your question — not just
 whether they're related to it.
 
 Relevance and "does this answer it" are different questions. A memory can be
-the closest match SLM has and still not answer what you asked — recall still
-returns it (nothing is ever hidden), but the response now says, honestly,
-whether that top result is likely to be an answer or just the nearest thing
-on file. That distinction is the core of AI Reliability Engineering: an
+the closest match SLM has and still not answer what you asked. The check gives
+the response an honest signal about whether the top result is likely to be an
+answer or just the nearest thing on file.
+
+It is the second of two layers. The first is the answer-support decision every
+recall already makes on its own, with no model: it scores each memory on several
+signals and puts the recall in one of three tiers (supported, closest memories,
+or "That isn't in SuperLocalMemory."; see [Recall](recall.md#when-memory-cannot-answer)).
+That decision is good at rejecting nonsense and weak at questions that sound on-topic
+but have no answer in memory. The answer check, a small model reading the question and
+the top results together, is aimed at that second case, and its verdict is one input
+to the decision: when it judges the results insufficient it lowers their support. That distinction is the core of AI Reliability Engineering: an
 agent that knows the difference between "found something related" and
 "found the answer" fails safely instead of confidently making things up.
 
@@ -125,14 +133,11 @@ Open **Settings → Answer check**. You'll see:
 The dashboard's System card also shows an **Answer check** line summarizing
 which option is active and whether it's ready.
 
-If you're on a Mac with Apple Silicon and haven't set anything up yet, the
-first-run setup wizard offers to install the on-device option for you
-(Step 4d). It defaults to yes, and once the install passes its check the
-answer check is on — say no and you can always do it later from the
-dashboard. On any other machine, the wizard points you to the online option
-instead.
-
-On Apple Silicon the answer check is on by default. An unattended setup
+On a Mac with Apple Silicon the on-device check is installed by default, in
+Mode A and Mode B alike (it is independent of the operating mode, and adds no
+outbound call). The first-run setup wizard asks (Step 4d) with yes as the default,
+and once the install passes its check the answer check is on. On any other
+machine, the wizard points you to the online option instead. An unattended setup
 (`slm setup --auto`, CI, or any run without a terminal) installs it too, and
 the first command after an upgrade offers it the same way: it asks in a
 terminal, and without one it starts the install in the background (logged to
@@ -185,8 +190,9 @@ something to say:
 - If the check hasn't run (it's off, or it's still starting up), there's no
   extra line at all — recall behaves exactly as it always has.
 
-The memories themselves are never removed or hidden because of this check.
-It adds a signal; it doesn't filter your results. The instructions shipped
+The verdict is not a filter on its own: it feeds the answer-support decision,
+which is what determines whether recall returns results, closest memories or
+nothing. The instructions shipped
 for Claude Code, Codex, Cursor, Copilot, Antigravity, and Hermes all tell
 the connected assistant the same thing: if the check says a set of memories
 doesn't answer the question, say so, or ask — never present it as the
@@ -255,8 +261,8 @@ A canonical recall response adds:
 
 | Field | Meaning |
 |---|---|
-| `abstained` | `true` when the top results are judged not to answer the question, or when nothing confident enough was found at all |
-| `abstention_reason` | `judged_insufficient` — memories were found, but none of them answer it. `evidence_floor` or `no_candidates` — nothing confident was found in the first place (unrelated to this feature; see [Retrieval Score Contract](retrieval-score-contract.md)) |
+| `abstained` | `true` when no memory supports the question: the support decision found nothing strong enough, the check judged the results insufficient, or nothing confident was found at all |
+| `abstention_reason` | `unsupported` — the answer-support decision. `judged_insufficient` — the check judged that none of the results answer it. `evidence_floor` or `no_candidates` — nothing confident was found in the first place (see [Retrieval Score Contract](retrieval-score-contract.md)) |
 | `answer_confidence` | How confident the check is that the top results answer the question, `0.0`–`1.0` |
 | `calibration_status` | Whether that confidence number has been measured against known-answerable and known-unanswerable questions, or is unmeasured |
 | `calibration_id` | Which backend and setup produced the verdict — useful for support, not meant to be parsed |
@@ -265,8 +271,10 @@ A canonical recall response adds:
 | `local_reranker_status` | What the local reranker reported before that reorder, if any. Empty when nothing replaced it |
 | `score_contract_version` | Unchanged at `"2"` — see [Retrieval Score Contract](retrieval-score-contract.md) |
 
-Results are **never removed** because of an abstention. `abstained` and
-`abstention_reason` are a signal for the caller to act on, not a filter.
+What an abstention returns follows the tier: no results for "That isn't in
+SuperLocalMemory." (pinned memories excepted), up to three labelled closest memories
+when the caller asked for them with `include_related`, or the weak matches when the
+caller passed `show_weak`. See [Recall](recall.md#when-memory-cannot-answer).
 
 Every recall response carries `answer_check_status`, whether or not the
 check is configured:
@@ -333,6 +341,17 @@ The Answer Check tab's history has its own keys, in `config.json` under
 | `answer_check_history` | `true` (default) \| `false` | Keep the Answer Check tab's history (outcomes and timings only) |
 | `answer_check_history_days` | `1`–`365`, default `30` | Days the history is kept |
 | `answer_check_history_max_rows` | `1,000`–`10,000`, default `10,000` | Most checks kept per profile. A data export always carries every one of them |
+
+### Calibrating on your own store
+
+The on-device check ships with a threshold measured on a reference set. **Calibrate on my
+store** in Settings → Answer check (or `slm embedder calibrate`, see the
+[CLI reference](cli-reference.md#slm-embedder-calibratecalibration-statuscalibration-cancel))
+re-measures it on a sample of your own memories in the background, with visible progress
+and a cancel button. Everything stays on this computer: a local Ollama model writes the
+questions and labels. A new calibration replaces the old one only when the run finishes
+and does not do worse than the current one on held-out decisions; a cancelled or failed run
+keeps what you had.
 
 The provider key itself is never written to any of these files; it lives in
 its own owner-only store, separate from the rest of your configuration.

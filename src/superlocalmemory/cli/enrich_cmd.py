@@ -11,7 +11,8 @@ from superlocalmemory.cli.daemon import daemon_request
 
 
 def register_enrich_parser(sub):
-    parser = sub.add_parser('enrich', help='Automatic memory improvements: status, pause, resume, undo')
+    parser = sub.add_parser(
+        'enrich', help='Automatic memory improvements: status, pause, resume, undo')
     actions = parser.add_subparsers(dest='enrich_action', required=True)
     for action in ('status', 'pause', 'resume', 'undo'):
         command = actions.add_parser(action)

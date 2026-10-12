@@ -52,7 +52,8 @@ def parent_labels(db, memory: dict) -> dict:
 
 def fact_description(fact, memory: dict) -> dict:
     record = MemoryRecord(memory_id=fact.memory_id, profile_id=fact.profile_id,
-                          content=memory['content'], session_date=memory.get('session_date') or fact.created_at,
+                          content=memory['content'],
+                          session_date=memory.get('session_date') or fact.created_at,
                           created_at=memory['created_at'])
     dates = temporal_fields(fact, record, TemporalParser(fact.created_at))
     return {

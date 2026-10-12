@@ -35,7 +35,8 @@ def coverage(db):
                          "json_extract(metadata_json,'$.tags') NOT IN ('','[]') THEN 1 ELSE 0 END)"
                          ' AS tags, '
                          "SUM(CASE WHEN json_valid(metadata_json) AND "
-                         "json_extract(metadata_json,'$.project') NOT IN ('','[]') THEN 1 ELSE 0 END)"
+                         "json_extract(metadata_json,'$.project') NOT IN ('','[]') "
+                         "THEN 1 ELSE 0 END)"
                          ' AS project FROM memories')[0]
     out.update(memories=parents['n'], tags=parents['tags'] or 0, project=parents['project'] or 0)
     return out

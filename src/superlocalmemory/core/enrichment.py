@@ -104,7 +104,8 @@ class EnrichmentRunner:
             if not rows or rows[0]['status'] == 'undone':
                 raise ValueError('Unknown or already undone improvement run')
             result = ledger.undo_changes(self.db, run_id)
-            self.db.execute("UPDATE enrichment_runs SET status='undone',updated_at=? WHERE run_id=?",
+            self.db.execute("UPDATE enrichment_runs SET status='undone',updated_at=? "
+                            "WHERE run_id=?",
                             (now(), run_id))
         return result
 
@@ -160,7 +161,8 @@ class EnrichmentRunner:
         remaining = self.db.execute('SELECT 1 FROM atomic_facts WHERE rowid>? AND rowid<=? LIMIT 1',
                                     (status(self.db).get('cursor_rowid', 0), run['upper_rowid']))
         if not remaining:
-            self.db.execute("UPDATE enrichment_runs SET status='completed',updated_at=? WHERE run_id=?",
+            self.db.execute("UPDATE enrichment_runs SET status='completed',updated_at=? "
+                            "WHERE run_id=?",
                             (now(), run['run_id']))
 
     def _checkpoint(self, run_id, rowid, changed):
@@ -199,8 +201,8 @@ class EnrichmentRunner:
 
     def _apply(self, run_id, fact, description, labels, assignment):
         changed = 0
-        add = lambda table, target, field, value, **kw: ledger.add(
-            self.db, run_id, fact.profile_id, table, target, field, value, **kw)
+        def add(table, target, field, value, **kw):
+            return ledger.add(self.db, run_id, fact.profile_id, table, target, field, value, **kw)
         for field, value in description.items():
             if field == 'entities_json':
                 value = json.dumps(list(dict.fromkeys([*fact.entities, *value])))
@@ -208,7 +210,8 @@ class EnrichmentRunner:
                            replace_guess=field == 'entities_json')
         for field, value in labels.items():
             changed += add('memories', fact.memory_id, field, value)
-        current = dict(self.db.execute('SELECT * FROM atomic_facts WHERE fact_id=? AND profile_id=?',
+        current = dict(self.db.execute(
+            'SELECT * FROM atomic_facts WHERE fact_id=? AND profile_id=?',
                                         (fact.fact_id, fact.profile_id))[0])
         start = current['referenced_date'] or current['observation_date'] or current['created_at']
         changed += add('atomic_facts', fact.fact_id, 'valid_from', start)

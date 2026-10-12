@@ -4578,13 +4578,13 @@ def _register_dashboard_routes(application: FastAPI) -> None:
     from superlocalmemory.server.routes.data_io import router as data_io_router
     from superlocalmemory.server.routes.events import router as events_router
     from superlocalmemory.server.routes.memories import router as memories_router
+    from superlocalmemory.server.routes.memory_health import router as memory_health_router
     from superlocalmemory.server.routes.profiles import router as profiles_router
     from superlocalmemory.server.routes.stats import router as stats_router
     from superlocalmemory.server.routes.v3_api import router as v3_router
     from superlocalmemory.server.routes.ws import manager as ws_manager
     from superlocalmemory.server.routes.ws import router as ws_router
 
-    from superlocalmemory.server.routes.memory_health import router as memory_health_router
     application.include_router(memory_health_router)
     application.include_router(memories_router)
     application.include_router(stats_router)

@@ -95,7 +95,6 @@ def content_passes_admission(content: str) -> bool:
 
     from superlocalmemory.core.injection import is_low_quality
     from superlocalmemory.encoding.entropy_gate import EntropyGate
-
     from superlocalmemory.encoding.non_answer import is_stub
 
     return is_stub(content) or (not is_low_quality(content) and EntropyGate().should_pass(content))

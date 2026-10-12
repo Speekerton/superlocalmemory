@@ -62,7 +62,9 @@ def _refile(engine, dry_run, idle):
         with db.transaction():
             retention = [dict(r) for r in db.execute(
                 'SELECT * FROM fact_retention WHERE fact_id=?', (fact_id,))]
-            if not retention or retention[0]['lifecycle_zone'] not in ('archive', 'forgotten')                     or retention[0]['retention_score'] <= 0.8:
+            if (not retention
+                    or retention[0]['lifecycle_zone'] not in ('archive', 'forgotten')
+                    or retention[0]['retention_score'] <= 0.8):
                 continue
             facts = [dict(r) for r in db.execute('SELECT * FROM atomic_facts WHERE fact_id=?',
                                                 (fact_id,))]
@@ -134,7 +136,8 @@ def _entities(engine, dry_run, idle):
     from superlocalmemory.storage.entity_link_repair_apply import apply
 
     db = engine._db
-    with closing(sqlite3.connect(f'{Path(db.db_path).absolute().as_uri()}?mode=ro', uri=True)) as conn:
+    uri = f'{Path(db.db_path).absolute().as_uri()}?mode=ro'
+    with closing(sqlite3.connect(uri, uri=True)) as conn:
         proposed = plan(conn)
         found = sum(len(p.facts) + len(p.aliases) + len(p.junk) for p in proposed.profiles)
     if dry_run or not found or not idle():

@@ -180,6 +180,8 @@ from superlocalmemory.storage.migrations import (
 )
 from superlocalmemory.storage.migrations import (
     M058_recall_fact_cover as _M058,
+)
+from superlocalmemory.storage.migrations import (
     M059_memory_description as _M059,
 )
 

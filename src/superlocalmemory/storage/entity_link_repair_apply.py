@@ -284,7 +284,8 @@ def apply(db_path: str | Path, *, max_changes: int | None = None,
         with get_write_lock(Path(db_path)):
             conn.execute("BEGIN IMMEDIATE")
             try:
-                if version is not None and conn.execute('PRAGMA data_version').fetchone()[0] != version:
+                now_version = conn.execute('PRAGMA data_version').fetchone()[0]
+                if version is not None and now_version != version:
                     conn.execute('ROLLBACK')
                     return {'changed': False, 'skipped': 'store changed', 'run_id': ''}
                 if idle is not None and not idle():

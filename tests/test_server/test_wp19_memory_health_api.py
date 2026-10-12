@@ -27,7 +27,8 @@ def test_health_read_obeys_manage_permission(monkeypatch):
 
 def test_cli_and_dashboard_share_pause_action(monkeypatch):
     monkeypatch.setattr(memory_health, 'require_permission', lambda *a, **k: None)
-    monkeypatch.setattr(memory_health.write_identity, 'require_write_actor', lambda *a, **k: 'owner')
+    monkeypatch.setattr(memory_health.write_identity, 'require_write_actor',
+                        lambda *a, **k: 'owner')
     paused = Mock(return_value={'status': 'paused'})
     monkeypatch.setattr(memory_health.EnrichmentRunner, 'pause', paused)
     with client(monkeypatch) as session:

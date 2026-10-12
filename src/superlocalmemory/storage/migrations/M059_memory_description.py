@@ -12,7 +12,8 @@ DOWNGRADE_FLOOR = 51
 DDL = '''-- M059 adds non_answer and the enrichment runs/changes ledger.
 CREATE TABLE IF NOT EXISTS enrichment_runs (
     run_id TEXT PRIMARY KEY, enrichment_version TEXT NOT NULL,
-    action TEXT NOT NULL DEFAULT 'enrichment', status TEXT NOT NULL, cursor_rowid INTEGER NOT NULL DEFAULT 0,
+    action TEXT NOT NULL DEFAULT 'enrichment', status TEXT NOT NULL,
+    cursor_rowid INTEGER NOT NULL DEFAULT 0,
     upper_rowid INTEGER NOT NULL, total INTEGER NOT NULL,
     processed INTEGER NOT NULL DEFAULT 0, changed INTEGER NOT NULL DEFAULT 0,
     errors INTEGER NOT NULL DEFAULT 0, last_error TEXT,

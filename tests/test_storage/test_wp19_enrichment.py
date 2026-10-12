@@ -26,7 +26,8 @@ def legacy_store(tmp_path):
         db.store_memory(MemoryRecord(memory_id=f'm{i}', content=text, metadata=metadata,
                                     created_at='2026-04-01T10:00:00+00:00'))
         db.store_fact(AtomicFact(fact_id=f'f{i}', memory_id=f'm{i}', content=text,
-                                memory_kind='fact', memory_kind_source='caller' if i == 0 else 'rules'))
+                                memory_kind='fact',
+                                memory_kind_source='caller' if i == 0 else 'rules'))
     db.execute('UPDATE atomic_facts SET observation_date=NULL,valid_from=NULL,non_answer=0')
     db.execute('UPDATE fact_temporal_validity SET valid_from=NULL')
     yield db
@@ -54,7 +55,8 @@ def test_coverage_rises_provenance_is_complete_and_undo_is_exact(legacy_store):
     rows = [dict(r) for r in db.execute('SELECT * FROM atomic_facts')]
     assert all(r['observation_date'] and r['valid_from'] for r in rows)
     assert all(json.loads(r['canonical_entities_json']) for r in rows if not r['non_answer'])
-    parents = [json.loads(r['metadata_json']) for r in db.execute('SELECT metadata_json FROM memories')]
+    parents = [json.loads(r['metadata_json'])
+               for r in db.execute('SELECT metadata_json FROM memories')]
     assert all(p.get('tags') and p.get('project') for p in parents[:-1])
     assert rows[0]['memory_kind_source'] == 'caller'
     assert parents[0] == {'tags': ['owner'], 'project': 'OwnerProject'}

@@ -23,7 +23,8 @@ def test_stubs_are_saved_and_only_explicitly_listed(tmp_path, text):
         assert db.get_fact(fact.fact_id) is not None
         assert db.get_all_facts('default') == []
         assert db.search_facts_fts('session OR receipt', 'default') == []
-        assert [f.fact_id for f in db.get_all_facts('default', include_non_answer=True)] == [fact.fact_id]
+        listed = db.get_all_facts('default', include_non_answer=True)
+        assert [f.fact_id for f in listed] == [fact.fact_id]
     finally:
         db.close()
 

@@ -682,7 +682,7 @@ def dispatch(args: Namespace) -> None:
         # V3.3 commands
         "decay": cmd_decay,
         "quantize": cmd_quantize,
-        "enrich": __import__("superlocalmemory.cli.enrich_cmd", fromlist=["cmd_enrich"]).cmd_enrich,
+        "enrich": cmd_enrich,
         "consolidate": cmd_consolidate,
         "soft-prompts": cmd_soft_prompts,
         "reap": cmd_reap,
@@ -3898,7 +3898,8 @@ def cmd_doctor(args: Namespace) -> None:
                f"model {_cov.get('kind_model', 0)}, guessed {_cov.get('kind_guessed', 0)}; "
                f"dates {_cov.get('observation_dates', 0)}/{_cov.get('facts', 0)}, "
                f"event dates {_cov.get('event_dates', 0)}, valid from {_cov.get('valid_from', 0)}; "
-               f"entities {_cov.get('entities', 0)}; improvements {_run.get('status', 'unavailable')}",
+               f"entities {_cov.get('entities', 0)}; "
+               f"improvements {_run.get('status', 'unavailable')}",
                fix="slm enrich status" if _run.get("last_error") else "")
         _detail = " ".join(describe(_h))
         if _h.healthy:
@@ -5139,6 +5140,13 @@ def cmd_decay(args: Namespace) -> None:
     print(f"  Archive:      {result.get('archive', 0)}")
     print(f"  Forgotten:    {result.get('forgotten', 0)}")
     print(f"  Transitions:  {result.get('transitions', 0)}")
+
+
+def cmd_enrich(args: Namespace) -> None:
+    """slm enrich: the automatic background improvements (cli/enrich_cmd.py)."""
+    from superlocalmemory.cli.enrich_cmd import cmd_enrich as _run
+
+    _run(args)
 
 
 def cmd_quantize(args: Namespace) -> None:

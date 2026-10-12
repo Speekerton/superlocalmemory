@@ -95,7 +95,9 @@ class MemoryHealthService:
         if engine is None or getattr(engine, '_db', None) is None:
             return False
         runtime = getattr(self.state, 'profile_runtime', None)
-        lease = runtime.operation_nowait() if runtime and hasattr(runtime, 'operation_nowait')             else contextlib.nullcontext(True)
+        lease = (runtime.operation_nowait()
+                 if runtime and hasattr(runtime, 'operation_nowait')
+                 else contextlib.nullcontext(True))
         try:
             from superlocalmemory.core.ram_lock import ram_reservation
             with lease as admitted:

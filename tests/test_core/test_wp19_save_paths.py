@@ -27,7 +27,8 @@ def test_surface_has_immediate_description_and_durable_event_time(tmp_path, surf
     try:
         writer = build_immediate_admission_handler(db, profile_id='default')
         request = IngestionRequest(
-            idempotency_key='synthetic-key', profile_id='default', source_type=source_type, trusted_actor_id='synthetic-actor',
+            idempotency_key='synthetic-key', profile_id='default', source_type=source_type,
+            trusted_actor_id='synthetic-actor',
             content='Zephyr is our project. PostgreSQL stores the records. #database',
             session_date='2026-04-01',
         )

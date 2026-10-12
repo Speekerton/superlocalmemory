@@ -5,7 +5,7 @@ All notable changes to SuperLocalMemory will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.2.0] — Recall that says "nothing supports this", memory that looks after itself, pictures and documents
+## [4.2.0] — Recall that says "That isn't in SuperLocalMemory", memory that looks after itself, pictures and documents
 
 This release changes what recall does when memory cannot answer, adds a Memory
 health service that improves older memories without touching what you wrote,
@@ -15,29 +15,50 @@ memory, and an update that changes the store takes a restore point first.
 
 ### Recall quality
 
-- **Recall says so when nothing supports the question.** A question that no
-  memory answers now returns no results and the plain sentence "Nothing in
-  memory supports this question." Before this, a nonsense question could still
-  return the nearest memories. Each remembered fact is scored on several
-  signals together (meaning, keywords, names, rare terms, how the question is
-  phrased, and how often the memory matches everything), and recall answers only
-  when at least one memory is strong enough. Pinned memories are still returned.
-- **`slm recall --show-weak`** (the `show_weak` option on the MCP recall tool,
-  the REST API and the dashboard) returns the closest weak matches when nothing
-  supports the question, each marked weak and with the same sentence on top.
+- **Recall says so when nothing supports the question.** Every recall now comes back
+  in one of three tiers. *Supported*: at least one memory is strong enough evidence.
+  *Closest memories*: nothing supports it, but the question is a real one and a few
+  memories are close, so you see up to three, labelled, under "I don't have this
+  exactly — here are the closest memories." *Not in memory*: a nonsense question, or
+  nothing close, returns no results and the sentence "That isn't in
+  SuperLocalMemory." Before this, a nonsense question could still return the nearest
+  memories. Each memory is scored on several signals together (meaning, keywords,
+  names, rare terms, how the question is phrased, and how often the memory matches
+  everything); pinned memories are always returned. The command line and the
+  dashboard show the closest memories by default; over MCP and the REST API an agent
+  gets them when it asks (`include_related`). It is far better at rejecting nonsense
+  than at spotting an on-topic question memory has no answer to, which is what the
+  answer check is for ([Recall](docs/recall.md#when-memory-cannot-answer)).
+- **`slm recall --show-weak`** (the `show_weak` option on the MCP recall tool, the
+  REST API and the dashboard's "Show closest matches") returns the closest weak
+  matches when nothing supports the question, each marked weak, with the same
+  sentence on top.
+- **A recall that runs before SLM is ready says so.** For a few minutes after a start
+  the models, probes and memory graph are still loading. Recall then shows the
+  keyword finds it has (up to five) under "SuperLocalMemory is still warming up —
+  results may be incomplete", and never says the memory is empty. The response
+  carries `warming_up` and `status_note` for agents.
+- **Layered recall.** `depth` 0 returns ids, the tier and a one-line preview; 1 (the
+  default) the full facts; 2 adds the source memory, up to three neighbours from the
+  same session, up to three facts about the same entities and the correction that
+  replaced it. `max_tokens` is a hard cap that is never exceeded, a new `expand`
+  tool drills into one result, and every injected context block is capped too.
+  `slm recall --depth 2 --max-tokens 1500`.
 - **A recall that matches by keyword alone is no longer written off**, and the
   keyword fallback serves only memories that cover the words you asked with.
   Questions are also rewritten into base forms and known aliases for the keyword
   search; the check that decides whether a memory answers always reads your
   original words, so a rewrite can never make nonsense answer.
-- **The on-device answer check (Laya) is the default where it is supported.**
-  On an Apple Silicon Mac, setup offers it with "yes" as the default and the
-  `auto` setting uses it once it is installed and has passed its own check; it
-  does not depend on the mode, so Mode A and Mode B both run it entirely on
-  your computer. Unattended installs skip the download unless
-  `SLM_INSTALL_LAYA=1`. The check has its own time budget, so a slow check can
-  no longer eat the recall ceiling. The online option (Jev) stays off until you
-  choose it and tick its consent.
+- **The on-device answer check (Laya) is installed by default where it can run.** On
+  an Apple Silicon Mac, setup installs it (about 1.1 GB) without asking in unattended
+  runs, and the first command after an upgrade offers it the same way: it asks in a
+  terminal and starts a background install without one. It is independent of the
+  operating mode, so Mode A and Mode B both run it entirely on your computer. Opt out
+  with `slm setup --no-laya` or `SLM_SKIP_LAYA=1`; answering no once is remembered. It is
+  never installed on other hardware, over an install you already have, or when you chose
+  Off or the online check. The check has its own time budget, so a slow check can no
+  longer eat the recall ceiling. The online option (Jev) stays off until you choose it
+  and tick its consent.
 - **Local checks are calibrated in the background**, with visible progress and a
   cancel button, and a new calibration is rejected if it does worse than the
   current one on held-out questions.
@@ -76,9 +97,10 @@ memory, and an update that changes the store takes a restore point first.
 
 - **A Memory health card** in the dashboard shows what SLM can improve in older
   memories and what it is doing about it. A background worker runs only when the
-  computer is idle and **only adds**: it fills in missing event dates, entities
-  and kinds, writes a short description for older memories, and never edits the
-  text you saved. It stops when you are working and when memory is tight.
+  computer is idle and **only adds**: it fills in missing observation and event
+  dates, names of people and tools, tags, a project and a kind on older memories,
+  and never edits the text you saved or replaces a value you set. It stops when you
+  are working and when memory is tight ([Memory health](docs/memory-health.md)).
 - **Stubs are marked, not hidden.** A memory that is only a label and an id
   (for example a session receipt) carries a **stub** badge in lists and counts.
   Only recall leaves stubs out of its answers.
@@ -174,8 +196,11 @@ memory, and an update that changes the store takes a restore point first.
 - **Connected apps shows which apps are connected right now**: live MCP
   processes by host with a count, a flag on apps still running older SLM code,
   and a reconnect. Connect, doctor, repair and restart are buttons.
-- **Answer Check** tab, Settings → Answer check with a test for each option, and
-  the Memory health card described above.
+- **Search says why it found nothing.** The Memories search shows the tier's sentence
+  ("That isn't in SuperLocalMemory.", the closest memories, or the warming-up note)
+  instead of an empty list, and has a **Show closest matches** switch.
+- **Answer Check** tab, Settings → Answer check with a test for each option and
+  **Calibrate on my store**, and the Memory health card described above.
 - Memory guards read real memory use on macOS (physical footprint); the
   resident size under-reported up to 15 times on a busy Mac.
 

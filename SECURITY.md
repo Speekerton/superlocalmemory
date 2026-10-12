@@ -1,6 +1,6 @@
 # Security Policy
 
-## SuperLocalMemory V4 Security
+## SuperLocalMemory Security
 
 ### Supported Versions
 
@@ -156,14 +156,27 @@ Only install models from sources you trust. A malicious checkpoint can execute
 code under your user account at load time regardless of these mitigations.
 
 #### Backup and credential-at-rest caveats
-- Production backups are independent per-file `sqlite3.backup()` snapshots via
-  `BackupManager` (not a coherent cross-store epoch); companion failures are
-  non-critical. The coherent `BackupCoordinator` exists as a primitive but is
-  not wired to production/routes. Dashboard Export is `memory.db`-only gz.
-- Legacy backup destination follows process `umask`, not source-file modes;
-  place backups on an encrypted/private volume and verify `0600`/`0700`.
-- Stop the daemon (`slm serve stop`) before offline whole-root copy/restore
-  so WAL/SHM checkpoint; include sidecars and `lance/` if present.
+- Three things are called backup. Scheduled local backups copy each store with
+  `sqlite3.backup()` into `backups/`, one file at a time, so they are not a single
+  point-in-time epoch across stores. Recovery points are whole-store copies built by
+  the coordinator (every store, the picture and PDF originals and a manifest), which
+  can be verified before an export or a restore; the dashboard export is one such
+  archive. Restore points are the copies SLM takes before an update.
+- A restore is all or nothing: the store is held so no daemon can write part-way,
+  everything the restore may change is copied first, and a failure puts those files
+  back. If even that fails, `slm backup restore-safety-copy` brings back the safety copy
+  taken after the service stopped. Restores and exports never carry accounts, sessions
+  or the sign-in policy, so a restore cannot undo a removed user or turn company mode off.
+- An erasure cannot rewrite a backup. Each backup that holds an erased profile is
+  recorded as an obligation, replayed on every restore, and ends only when the backup is
+  deleted or re-read clean. Copies outside SLM's control (exports you made, cloud backups
+  already uploaded) are yours to remove.
+- Local backup files are not encrypted and follow the process `umask`, not the
+  source-file modes; place the data folder and its backups on an encrypted volume and
+  verify `0600`/`0700`. Cloud backups are encrypted on this computer before upload
+  (AES-256-GCM); pictures, PDFs and `media.db` are never uploaded.
+- Stop the daemon (`slm serve stop`) before an offline whole-folder copy or restore so
+  the write-ahead log checkpoints; include `-wal`/`-shm` sidecars and `lance/` if present.
 - Credentials: OS keychain preferred (macOS Keychain / Windows Credential
   Locker / Linux Secret Service); fallback is owner-only plaintext
   `~/.superlocalmemory/.credentials.json` (`0600`, `0700` parent, atomic
@@ -176,19 +189,20 @@ code under your user account at load time regardless of these mitigations.
   (`.feedback-hash-key`, 32 bytes). Read-only data root falls back to a
   process-local key, losing cross-restart grouping.
 
-#### Migrations (V4.0.0)
-- `M038_learning_feedback_channel` (eager) and `M039_scene_fact_members`
-  (deferred, after engine tables exist) are automatically applied at startup;
+#### Migrations
+- Schema migrations are additive and apply automatically at startup, in order;
   no manual `slm db migrate` is normally required. `slm db migrate` is
-  forward-only (`status`/`--dry-run`/apply) — no rollback. Downgrade requires
-  a verified pre-upgrade complete backup (stop daemon, whole-root copy).
+  forward-only (`--status`, `--dry-run`, apply), with no rollback, and SLM refuses
+  to run against a database written by a newer build. An update that changes the
+  store first takes a verified restore point; going back means restoring it
+  (`slm db restore`) or a verified complete backup (stop the daemon, whole-folder copy).
 
 #### Compliance
 - GDPR Article 15 (right to access): full data export
-- GDPR Article 17 (right to erasure): complete erasure including learning data
+- GDPR Article 17 (right to erasure): erasure across the stores and derived copies SLM controls, with a result that says what remains; backups carry an erasure obligation (see above)
 - EU AI Act data sovereignty: assess the configured deployment and egress path;
   Mode A's local core alone is not a legal or network-locality guarantee
-- Tamper-proof audit trail with SHA-256 hash chain
+- Tamper-evident audit trail with a SHA-256 hash chain
 - Bounded / content-free diagnostics export: `slm diagnostics export`
 
 ### Dependencies

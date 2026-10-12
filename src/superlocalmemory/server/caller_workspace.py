@@ -44,8 +44,12 @@ _SESSION_HEADER = b"x-slm-user-session"
 _SESSION_COOKIE = "slm_session"
 _OWNER_COOKIE = "slm_mcp_workspace"
 _OWNER_KEY = "mcp_owner_workspace"
+_OWNER_PRESENTED_KEY = "mcp_owner_binding_presented"
 _OWNER_BINDING: contextvars.ContextVar[str] = contextvars.ContextVar(
     "slm_mcp_owner_binding", default="",
+)
+_OWNER_PRESENTED: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "slm_mcp_owner_binding_presented", default=False,
 )
 _REQUEST_STATE: contextvars.ContextVar[Any] = contextvars.ContextVar(
     "slm_workspace_state", default=None,
@@ -158,6 +162,12 @@ def _owner_binding(scope: dict, app_state: Any) -> str:
         return ""
     headers = dict(scope.get("headers") or ())
     binding = headers.get(b"x-slm-workspace-binding", b"").decode("latin-1")
+    # Stateful MCP clients already return the transport-issued session ID,
+    # including fetch-based clients without cookie jars. Keep its namespace
+    # distinct and forward the derived binding through nested daemon calls.
+    transport_session = headers.get(b"mcp-session-id", b"").decode("latin-1")
+    if not binding and re.fullmatch(r"[A-Za-z0-9_-]{16,128}", transport_session):
+        binding = hashlib.sha256(("mcp:" + transport_session).encode()).hexdigest()
     if not binding:
         jar = SimpleCookie()
         jar.load(headers.get(b"cookie", b"").decode("latin-1"))
@@ -165,6 +175,7 @@ def _owner_binding(scope: dict, app_state: Any) -> str:
         binding = cookie.value if cookie is not None else ""
     if binding and not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", binding):
         binding = ""
+    scope.setdefault("state", {})[_OWNER_PRESENTED_KEY] = bool(binding)
     if not binding and str(scope.get("path", "")).startswith("/mcp"):
         binding = token_urlsafe(32)
     return binding if len(binding) <= 128 else ""
@@ -244,6 +255,13 @@ def switch_http_workspace(profile_id: str) -> bool:
     rbac = getattr(state, "rbac", None)
     binding = current_owner_workspace_binding()
     if binding and not token:
+        if not _OWNER_PRESENTED.get():
+            raise ValueError(
+                "This HTTP transport cannot identify a persistent connection. "
+                "Use Mcp-Session-Id on a stateful transport, retain the workspace "
+                "cookie, send a stable X-SLM-Workspace-Binding, or pass profile_id "
+                "on each call. The workspace was not switched."
+            )
         # Only personal mode produces this binding; recheck policy at switch.
         if rbac is not None and rbac.require_login():
             raise PermissionError("Sign in with a viewer role or higher to switch workspace.")
@@ -296,6 +314,9 @@ class CallerWorkspaceMiddleware:
         state_token = _REQUEST_STATE.set(self._app_state)
         binding = scope.get("state", {}).get(_OWNER_KEY, "")
         owner_token = _OWNER_BINDING.set(binding)
+        presented_token = _OWNER_PRESENTED.set(
+            scope.get("state", {}).get(_OWNER_PRESENTED_KEY, False)
+        )
 
         async def send_with_binding(message):
             if binding and message.get("type") == "http.response.start":
@@ -308,6 +329,7 @@ class CallerWorkspaceMiddleware:
             with pin_request_workspace(pin):
                 await self._app(scope, receive, send_with_binding)
         finally:
+            _OWNER_PRESENTED.reset(presented_token)
             _OWNER_BINDING.reset(owner_token)
             _REQUEST_STATE.reset(state_token)
 

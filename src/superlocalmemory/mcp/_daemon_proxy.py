@@ -188,16 +188,20 @@ class DaemonPoolProxy:
         # Sent only when asked — explicitly, or from inside
         # ``skip_answer_check()`` — so every other query string is unchanged.
         from superlocalmemory.core.answer_check_scope import (
+            ANSWER_CHECK_CONTEXT,
             ANSWER_CHECK_PARAM,
             ANSWER_CHECK_SKIP,
             answer_check_skipped,
+            in_context_load,
         )
         # ``answer_check`` is True (ask as usual), False (skip), or one of the
         # daemon's request words — the bounded-loop gate sends "no_reorder":
         # it needs the verdict, never the reorder, and pays for one per lap.
         from superlocalmemory.retrieval.answer_check_status import REQUEST_NO_REORDER
 
-        if answer_check is False or answer_check_skipped() or (
+        if in_context_load():
+            _params[ANSWER_CHECK_PARAM] = ANSWER_CHECK_CONTEXT
+        elif answer_check is False or answer_check_skipped() or (
                 isinstance(answer_check, str) and answer_check == ANSWER_CHECK_SKIP):
             _params[ANSWER_CHECK_PARAM] = ANSWER_CHECK_SKIP
         elif answer_check == REQUEST_NO_REORDER:

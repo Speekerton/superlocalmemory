@@ -454,7 +454,7 @@ def register_active_tools(server, get_engine: Callable) -> None:
                 one). The active profile is not moved.
         """
         try:
-            from superlocalmemory.core.answer_check_scope import skip_answer_check
+            from superlocalmemory.core.answer_check_scope import context_load
             from superlocalmemory.hooks.rules_engine import RulesEngine
             from superlocalmemory.mcp._pool_adapter import pool_recall
             from superlocalmemory.mcp._recall_metadata import forward_recall_metadata
@@ -512,7 +512,7 @@ def register_active_tools(server, get_engine: Callable) -> None:
                 # project path and the top memories are never sent to the
                 # online check and never billed. ``to_thread`` carries the
                 # marker; the proxy turns it into ``answer_check=skip``.
-                with skip_answer_check():
+                with context_load():
                     response = await asyncio.to_thread(
                         pool_recall, search_query, limit=max_results, fast=None,
                         **_project_kwargs,

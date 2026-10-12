@@ -124,6 +124,8 @@ class RecallCall:
     show_weak: bool = False
     #: 4.1.25: up to three close memories of a real question, labelled related.
     include_related: bool = False
+    #: 4.1.25: a context load, not a question: no answer-support gate.
+    context_load: bool = False
     #: 4.1.25: the monotonic instant the daemon stops waiting for the engine;
     #: the answer check, which has its own budget, never runs past it.
     answer_deadline: float | None = None
@@ -157,11 +159,12 @@ def _visibility_for(engine: Any, call: RecallCall) -> Any:
 def _engine_call(engine: Any, call: RecallCall) -> Any:
     """``engine.recall`` with the call's arguments, on the executor thread."""
     from superlocalmemory.core import answer_check_history as history
-    from superlocalmemory.core.answer_check_scope import skip_answer_check
+    from superlocalmemory.core.answer_check_scope import context_load, skip_answer_check
     from superlocalmemory.retrieval.answer_check_status import caller_deadline
 
     with (
         skip_answer_check() if call.skip_answer_check else nullcontext(),
+        context_load() if call.context_load else nullcontext(),
         history.origin(call.origin) if call.origin else nullcontext(),
         _visibility_for(engine, call),
         caller_deadline(call.answer_deadline),

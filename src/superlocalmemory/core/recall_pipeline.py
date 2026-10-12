@@ -1582,9 +1582,13 @@ def run_recall(
         play_sink, profile_id, response.results, _shown_before_judge,
     )
     from superlocalmemory.core import support_stage
+    from superlocalmemory.core.answer_check_scope import in_context_load
+    # A context load is not a question: it gets its memories, under the
+    # surface's token cap, instead of an abstention.
+    gated = support_stage.enabled(config) and not in_context_load()
     support = support_stage.assess(
         retrieval_engine, query, response, outcome.verdict, profile_id,
-        metadata=_metadata_reader(db)) if support_stage.enabled(config) else None
+        metadata=_metadata_reader(db)) if gated else None
     finalize_score_contract(
         response, verdict=outcome.verdict, support=support, show_weak=show_weak,
         include_related=include_related,

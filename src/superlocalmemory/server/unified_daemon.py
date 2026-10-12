@@ -5077,8 +5077,9 @@ def _register_daemon_routes(application: FastAPI) -> None:
     ):
         _update_activity()
         search_query = q or query  # Accept both ?q= and ?query= for compatibility
-        from superlocalmemory.core.answer_check_scope import wants_skip
+        from superlocalmemory.core.answer_check_scope import wants_context, wants_skip
         _skip_check = wants_skip(answer_check)
+        _context_load = wants_context(answer_check)
         _check_request = (answer_check or "").strip().lower()
         if not _skip_check and _check_request not in ("", "full", "no_reorder"):
             from starlette.responses import JSONResponse
@@ -5223,6 +5224,7 @@ def _register_daemon_routes(application: FastAPI) -> None:
             full=full, include_source=include_source,
             include_marker=bool(session_id), include_evidence=bool(evidence),
             show_weak=bool(show_weak), include_related=bool(include_related),
+            context_load=_context_load,
             budget_s=parse_budget_s(budget_s),
             caller_view=parse_view(caller_view),
         )

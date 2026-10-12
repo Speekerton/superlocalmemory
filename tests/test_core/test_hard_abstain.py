@@ -157,3 +157,10 @@ def test_run_recall_hard_abstains_and_show_weak_reaches_the_contract(monkeypatch
     assert plain.results == [] and plain.abstention_reason == "unsupported"
     shown = recall_pipeline.run_recall("zxqv plorth", "default", show_weak=True, **kwargs)
     assert [x.fact.fact_id for x in shown.results] == ["a", "b"] and shown.weak_shown
+
+
+def test_a_hard_abstain_keeps_what_the_answer_check_said() -> None:
+    r = finalize_score_contract(_response("a"), verdict=_verdict(True), support=_support(0.1))
+    assert r.results == []
+    assert r.calibration_status == "measured" and r.answer_confidence == 0.3
+    assert r.calibration_id == "laya@x"

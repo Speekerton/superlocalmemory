@@ -67,6 +67,9 @@ def finalize_score_contract(
     This ordering is NOT recomputed here. Re-sorting by ``score`` at this point
     would silently undo every ranking pass that ran before it.
     """
+    # Whether the answer check judged a non-empty set: read before the gate
+    # may empty it, so a hard abstain still reports what the check said.
+    judged = verdict is not None and bool(response.results)
     if support is not None:
         _apply_support(response, support, verdict, show_weak=show_weak,
                        keep_results=keep_results)
@@ -91,7 +94,7 @@ def finalize_score_contract(
         result.confidence_basis = "raw_semantic_evidence" if semantic is not None else "unmeasured"
 
     response.score_contract_version = "2"
-    if verdict is None or not response.results:
+    if not judged:
         response.calibration_status = "uncalibrated"
         response.calibration_id = None
         response.answer_confidence = None
@@ -100,8 +103,8 @@ def finalize_score_contract(
         # 4.1.18: a separate decision on whether the results answer the
         # question. The ranking score cannot make it — measured on a real store
         # it was the same for right answers, wrong ones and questions with no
-        # answer in memory. Results are never removed: abstention is a signal
-        # for the caller, and a caller that ignores it sees what it saw before.
+        # answer in memory. 4.1.25: the verdict alone removes nothing; it is
+        # one input to the answer-support gate, which decides below.
         response.calibration_status = verdict.calibration_status
         response.calibration_id = verdict.calibration_id
         response.answer_confidence = round(verdict.answer_confidence, 4)

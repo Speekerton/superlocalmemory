@@ -102,6 +102,8 @@ _EXACT: dict[str, Rule] = {
         "/maintenance/run",
         "/maintenance/compact",
         "/api/daemon/restart",
+        "/api/daemon/doctor",
+        "/api/daemon/repair",
         "/api/v3/components/heal",
         "/api/v3/ide/connect",
         "/api/v3/ollama/validate",
@@ -142,6 +144,7 @@ _EXACT: dict[str, Rule] = {
 
 #: Path prefixes, in order.
 _PREFIXES: tuple[tuple[str, Rule], ...] = (
+    ("/api/v3/local-apps/", _GLOBAL),
     ("/api/integrity/repair", _GLOBAL),
     ("/api/optimize", _GLOBAL),
     ("/api/v3/provider", _GLOBAL),

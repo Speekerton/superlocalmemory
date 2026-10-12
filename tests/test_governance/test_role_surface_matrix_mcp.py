@@ -127,7 +127,7 @@ def walk_report(store):
         env=env, capture_output=True, text=True, timeout=600,
     )
     line = next((ln for ln in done.stdout.splitlines() if ln.startswith("REPORT")), None)
-    assert line, done.stderr[-3000:]
+    assert line, {"returncode": done.returncode, "stderr": done.stderr[-3000:]}
     return json.loads(line[len("REPORT"):])
 
 

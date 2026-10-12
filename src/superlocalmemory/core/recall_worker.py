@@ -67,6 +67,7 @@ def _handle_recall(
     known_as_of: str | None = None,
     valid_at: str | None = None,
     include_unknown: bool = False,
+    show_weak: bool = False,
 ) -> dict:
     engine = _get_engine()
     # v3.6.15 multi-scope: None flags let engine.recall resolve the configured
@@ -80,6 +81,7 @@ def _handle_recall(
         known_as_of=known_as_of or None,
         valid_at=valid_at or None,
         include_unknown=include_unknown,
+        **({"show_weak": True} if show_weak else {}),
     )
 
     # Batch-fetch original memory text for all results. Retrieval already
@@ -366,6 +368,7 @@ def _worker_main() -> None:
                     known_as_of=req.get("known_as_of"),
                     valid_at=req.get("valid_at"),
                     include_unknown=bool(req.get("include_unknown", False)),
+                    show_weak=bool(req.get("show_weak", False)),
                 )
                 _respond(result)
             elif cmd == "store":

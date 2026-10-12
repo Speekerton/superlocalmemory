@@ -539,8 +539,15 @@ def register_core_tools(server, get_engine: Callable) -> None:
         tags: "str | list[str]" = "",
         tags_match: str = "all",
         project_strict: bool = False,
+        show_weak: bool = False,
     ) -> dict:
         """Search memories through hybrid retrieval, RRF fusion, and reranking.
+
+        When nothing in memory supports the question, recall returns NO results
+        and ``abstention_note`` says so in plain words ("Nothing in memory
+        supports this question."). Do not invent an answer then. Pass
+        ``show_weak=true`` to see the closest weak matches anyway; each is
+        labelled ``weak: true``.
 
         Fast local retrieval (six channels + reranker) returns in ~1-2s. This
         tool does NOT run an internal LLM reformulation round — YOU (the calling
@@ -733,6 +740,8 @@ def register_core_tools(server, get_engine: Callable) -> None:
                     **({"tags_match": tags_match.strip()}
                        if (tags_match or "").strip().lower() == "any" else {}),
                     **({"budget_s": _budget_s} if _budget_s is not None else {}),
+                    # 4.1.25: only when asked, so every other call is unchanged.
+                    **({"show_weak": True} if show_weak else {}),
                 )
 
             result = await asyncio.to_thread(

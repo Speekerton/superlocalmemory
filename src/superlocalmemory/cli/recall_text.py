@@ -56,10 +56,19 @@ def tag_line(result: dict) -> str:
     return ""
 
 
+def result_line(position: int, item: dict) -> str:
+    """One recalled memory; a weak match (shown on request) says so."""
+    score = item.get("score") or 0  # a present-but-null score prints as 0
+    weak = " [weak]" if item.get("weak") else ""
+    return f"  {position}. [{score:.2f}]{weak} {item.get('content', '')}"
+
+
 def empty_result_line(result: dict) -> str:
     """What to print when no memory came back."""
     if incomplete_line(result):
         return "Nothing found yet."
+    if result.get("abstention_note"):
+        return str(result["abstention_note"])
     if result.get("no_confident_match"):
         return "No confident match."
     return "No matching memories found."

@@ -118,6 +118,8 @@ class RecallCall:
     #: 4.1.25: add each result's evidence features and the question's own
     #: (``query_evidence``) to the envelope. Recall trace sets it.
     include_evidence: bool = False
+    #: 4.1.25: the weak matches of a recall that abstains, labelled ``weak``.
+    show_weak: bool = False
 
 
 def effective_budget_s(call: RecallCall) -> float:
@@ -172,6 +174,7 @@ def _engine_call(engine: Any, call: RecallCall) -> Any:
             # Only when given: an engine stand-in need not know these.
             **({"facets": call.facets} if call.facets is not None else {}),
             **({"answer_check": "no_reorder"} if call.no_reorder else {}),
+            **({"show_weak": True} if call.show_weak else {}),
         )
 
 

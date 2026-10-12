@@ -2141,6 +2141,8 @@ def cmd_recall(args: Namespace) -> None:
             known_as_of_qs = _strict_time_qs("known_as_of", "known_as_of")
             valid_at_qs = _strict_time_qs("valid_at", "valid_at")
             unknown_qs = "&include_unknown=true" if getattr(args, "include_unknown", False) else ""
+            if getattr(args, "show_weak", False):
+                unknown_qs += "&show_weak=true"
             facet_qs = "".join(
                 f"&{name}={quote(str(value).strip())}"
                 for name, value in (("project", getattr(args, "project", "")),
@@ -2171,6 +2173,7 @@ def cmd_recall(args: Namespace) -> None:
                     empty_result_line,
                     incomplete_line,
                     project_line,
+                    result_line,
                     tag_line,
                 )
                 incomplete = incomplete_line(result)
@@ -2187,9 +2190,10 @@ def cmd_recall(args: Namespace) -> None:
                 elapsed_ms = result.get('retrieval_time_ms') or 0
                 # Timing is diagnostics; stdout carries only the results.
                 logger.debug("recall completed via daemon (%.0fms)", elapsed_ms)
+                if result.get("abstention_note"):  # weak matches shown on request
+                    print(result["abstention_note"])
                 for i, r in enumerate(result["results"], 1):
-                    score = r.get('score') or 0
-                    print(f"  {i}. [{score:.2f}] {r['content']}")
+                    print(result_line(i, r))
                 for note in filter(None, (incomplete, project_line(result),
                                           _answer_check_line(result))):
                     print(f"\n{note}")

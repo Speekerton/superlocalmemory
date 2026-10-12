@@ -567,6 +567,11 @@ def main() -> None:
         help="Strict event-time boundary: return only facts valid at this ISO-8601 time.",
     )
     recall_p.add_argument(
+        "--show-weak", dest="show_weak", action="store_true",
+        help="When nothing in memory supports the question, show the closest weak "
+             "matches (labelled [weak]) instead of nothing.",
+    )
+    recall_p.add_argument(
         "--include-unknown", action="store_true",
         help="Include pre-4.0.2 facts with unknown temporal provenance in strict time-travel.",
     )

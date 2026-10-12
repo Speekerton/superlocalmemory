@@ -70,6 +70,7 @@ def add_backup_parser(sub: Any) -> None:
 def cmd_backup(args: argparse.Namespace) -> None:
     from superlocalmemory.infra.backup_crypto import BackupCryptoError
     from superlocalmemory.server.backup_restore_txn import RolledBack, StoreBusy
+    from superlocalmemory.server.backup_rollback import NotEnoughSpace
 
     handlers = {"status": _status, "recovery-key": _recovery_key, "decrypt": _decrypt,
                 "restore-safety-copy": _restore_safety_copy,
@@ -78,6 +79,8 @@ def cmd_backup(args: argparse.Namespace) -> None:
     try:
         handler(args)
     except (BackupCryptoError, FileExistsError, FileNotFoundError, ValueError) as exc:
+        _fail(args, str(exc))
+    except NotEnoughSpace as exc:
         _fail(args, str(exc))
     except StoreBusy:
         _fail(args, "SuperLocalMemory is running. Stop it with `slm serve stop`, then retry.")

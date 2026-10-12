@@ -212,6 +212,12 @@ def recovery_restore(request: Request, body: PointBody):
         raise HTTPException(422, "Type RESTORE to confirm replacing your stores.")
     _verify(body.id)
     root = _root()
+    from superlocalmemory.server.backup_rollback import NotEnoughSpace, check_free_space
+
+    try:
+        check_free_space(root)
+    except NotEnoughSpace as exc:
+        raise HTTPException(409, str(exc)) from None
 
     def reserve(status):
         if status.get("state") in IN_PROGRESS:

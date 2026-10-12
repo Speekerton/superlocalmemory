@@ -24,6 +24,54 @@ import time
 from pathlib import Path
 
 _SIDECARS = ("", "-wal", "-shm")
+#: A restore holds the safety point, this copy and the backup coordinator's own
+#: pre-restore snapshot at once: about three times the stores (PR 251 R2).
+_COPIES_AT_ONCE = 3
+_PREFIX = ".pre-restore-"
+
+
+class NotEnoughSpace(RuntimeError):
+    """The disk cannot hold what a restore needs; nothing was changed."""
+
+
+def _tree_bytes(path: Path) -> int:
+    if path.is_file():
+        return path.stat().st_size
+    if not path.is_dir():
+        return 0
+    return sum(p.stat().st_size for p in path.rglob("*") if p.is_file() and not p.is_symlink())
+
+
+def space_needed(root: Path) -> int:
+    from superlocalmemory.infra.backup import MANAGED_DATABASES
+
+    root = Path(root)
+    stores = sum(_tree_bytes(root / (s + x)) for s in MANAGED_DATABASES for x in _SIDECARS)
+    return _COPIES_AT_ONCE * (stores + _tree_bytes(root / "lance"))
+
+
+def check_free_space(root: Path) -> None:
+    """Refuse, in plain words, when the disk cannot hold a restore's copies."""
+    needed, free = space_needed(root), shutil.disk_usage(Path(root)).free
+    if free < needed:
+        mb = 1024 * 1024
+        raise NotEnoughSpace(
+            f"A restore needs about {needed // mb + 1} MB free on this disk and only "
+            f"{free // mb} MB are available, so nothing was changed. Free some space and "
+            "retry.")
+
+
+def sweep_stale(root: Path) -> None:
+    """Remove pre-restore copies left by an interrupted run, except kept ones."""
+    from superlocalmemory.server import recovery_marker
+
+    kept = {Path(c).name for c in recovery_marker.kept_copies(recovery_marker.read(root))}
+    backups = Path(root) / "backups"
+    if not backups.is_dir():
+        return
+    for folder in backups.glob(_PREFIX + "*"):
+        if folder.name not in kept and folder.is_dir() and not folder.is_symlink():
+            shutil.rmtree(folder, ignore_errors=True)
 
 
 def _settings_names() -> tuple[str, ...]:
@@ -56,19 +104,26 @@ class PreRestoreCopy:
         from superlocalmemory.infra.backup import MANAGED_DATABASES
 
         root = Path(root)
-        folder = root / "backups" / f".pre-restore-{time.time_ns()}"
+        folder = root / "backups" / f"{_PREFIX}{time.time_ns()}"
         folder.mkdir(parents=True, mode=0o700)
         copy = cls(root, folder)
-        names = [s + x for s in MANAGED_DATABASES for x in _SIDECARS] + list(_settings_names())
-        for name in names:
-            if (root / name).is_file():
-                shutil.copy2(root / name, folder / name)
-                copy.present.add(name)
-        if (root / "lance").is_dir():
-            shutil.copytree(root / "lance", folder / "lance", symlinks=True)
-            copy.present.add("lance")
-        copy.originals = _originals(root)
+        try:
+            copy._fill(MANAGED_DATABASES)
+        except BaseException:
+            copy.discard()  # a partial copy must never be left to fill the disk
+            raise
         return copy
+
+    def _fill(self, stores) -> None:
+        names = [s + x for s in stores for x in _SIDECARS] + list(_settings_names())
+        for name in names:
+            if (self.root / name).is_file():
+                shutil.copy2(self.root / name, self.folder / name)
+                self.present.add(name)
+        if (self.root / "lance").is_dir():
+            shutil.copytree(self.root / "lance", self.folder / "lance", symlinks=True)
+            self.present.add("lance")
+        self.originals = _originals(self.root)
 
     def roll_back(self) -> None:
         """Put every covered file back as it was. Settings first: they are smallest."""

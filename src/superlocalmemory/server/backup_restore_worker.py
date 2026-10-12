@@ -32,6 +32,7 @@ from superlocalmemory.server.backup_restore_txn import (
     restore_atomically,
     writer_lease,
 )
+from superlocalmemory.server.backup_rollback import NotEnoughSpace, check_free_space, sweep_stale
 from superlocalmemory.storage._durable_json import write_json_atomic
 
 logger = logging.getLogger(__name__)
@@ -88,6 +89,8 @@ def run(root: Path, point_id: str, pid: int) -> None:
     stopped = succeeded = False
     try:
         verify_point(root, point_id)
+        sweep_stale(root)
+        check_free_space(root)
         status.write("stopping")
         control(root, "stop")
         wait_stopped(pid)
@@ -107,10 +110,12 @@ def run(root: Path, point_id: str, pid: int) -> None:
         logger.exception("Backup recovery failed; the state before it was put back")
         status.write("failed", "Recovery could not finish, so nothing was changed: the "
                                "stores, settings and files are as they were before.")
-    except Exception:
+    except NotEnoughSpace as exc:
+        logger.error("Backup recovery refused: %s", exc)
+        status.write("failed", str(exc))
+    except Exception as exc:
         logger.exception("Backup recovery failed before anything was restored")
-        status.write("failed", "Recovery could not start, so nothing was changed. "
-                               "Retry when other activity has finished.")
+        status.write("failed", _not_started_message(exc))
     else:
         succeeded = True
         status.write("restarting")
@@ -124,6 +129,18 @@ def run(root: Path, point_id: str, pid: int) -> None:
         return
     if succeeded:
         status.write("complete", "Recovery backup restored and the daemon restarted.")
+
+
+def _not_started_message(exc: BaseException) -> str:
+    import errno
+
+    while exc is not None:
+        if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
+            return ("The disk is full, so the restore could not start and nothing was "
+                    "changed. Free some space and retry.")
+        exc = exc.__cause__ or exc.__context__
+    return ("Recovery could not start, so nothing was changed. "
+            "Retry when other activity has finished.")
 
 
 def _log_to_file(root: Path) -> None:

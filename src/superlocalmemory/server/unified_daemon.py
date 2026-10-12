@@ -2198,6 +2198,12 @@ async def lifespan(application: FastAPI):
         if _restore_busy:
             logger.error("Not starting: %s", _restore_busy)
             raise SystemExit(_restore_busy)
+        try:  # copies an interrupted restore left behind (never one it kept)
+            from superlocalmemory.server.backup_rollback import sweep_stale
+
+            sweep_stale(Path(_memory_db_for_config(_path_config)).parent)
+        except Exception as _sweep_exc:  # never block start-up on clean-up
+            logger.warning("could not remove stale restore copies: %s", _sweep_exc)
     try:
         from superlocalmemory.storage.backup import InsufficientDiskSpaceError
         from superlocalmemory.storage.migration_runner import apply_all

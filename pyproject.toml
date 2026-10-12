@@ -1,7 +1,7 @@
 [project]
 name = "superlocalmemory"
 version = "4.1.25"
-description = "Local-first agent memory with auditable hybrid retrieval"
+description = "The governed memory brain for AI agents: one local memory for Claude Code, Codex, Cursor, Copilot, ChatGPT and any MCP client"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE", "NOTICE"]
@@ -10,8 +10,9 @@ authors = [
     {name = "Varun Pratap Bhardwaj", email = "admin@superlocalmemory.com"},
 ]
 keywords = [
-    "ai-memory", "mcp-server", "local-first", "agent-memory",
-    "information-geometry", "privacy-first", "eu-ai-act",
+    "ai-memory", "agent-memory", "mcp-server", "mcp", "claude-code", "codex",
+    "cursor", "chatgpt", "rag", "knowledge-graph", "local-first", "privacy-first",
+    "gdpr", "eu-ai-act", "information-geometry", "multimodal-memory",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",

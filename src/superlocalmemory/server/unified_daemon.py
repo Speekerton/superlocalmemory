@@ -5859,9 +5859,8 @@ def _register_daemon_routes(application: FastAPI) -> None:
     async def run_maintenance_endpoint(body: dict, request: Request):
         _update_activity()
         engine = _get_engine_or_503()
-        from superlocalmemory.access.rbac import Permission
-        from superlocalmemory.server.rbac_enforce import require_permission
-        require_permission(request, Permission.WRITE, profile=engine._profile_id)
+        from superlocalmemory.server.rbac_enforce import require_global_manage
+        require_global_manage(request)
         from superlocalmemory.server.route_mutations import (
             authorize_route_mutation,
         )
@@ -5929,9 +5928,8 @@ def _register_daemon_routes(application: FastAPI) -> None:
     async def compact_vector_store_endpoint(request: Request):
         _update_activity()
         engine = _get_engine_or_503()
-        from superlocalmemory.access.rbac import Permission
-        from superlocalmemory.server.rbac_enforce import require_permission
-        require_permission(request, Permission.WRITE, profile=engine._profile_id)
+        from superlocalmemory.server.rbac_enforce import require_global_manage
+        require_global_manage(request)
         from superlocalmemory.server.route_mutations import (
             authorize_route_mutation,
         )

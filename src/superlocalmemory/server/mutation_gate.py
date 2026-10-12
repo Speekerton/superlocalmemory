@@ -99,6 +99,8 @@ _EXACT: dict[str, Rule] = {
     **{path: _GLOBAL for path in (
         "/api/rbac/policy",
         "/api/memory-kinds/settings",
+        "/maintenance/run",
+        "/maintenance/compact",
         "/api/daemon/restart",
         "/api/v3/components/heal",
         "/api/v3/ide/connect",
@@ -137,6 +139,7 @@ _EXACT: dict[str, Rule] = {
 
 #: Path prefixes, in order.
 _PREFIXES: tuple[tuple[str, Rule], ...] = (
+    ("/api/integrity/repair", _GLOBAL),
     ("/api/optimize", _GLOBAL),
     ("/api/v3/provider", _GLOBAL),
     ("/api/v3/embedding", _GLOBAL),

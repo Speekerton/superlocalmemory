@@ -48,7 +48,10 @@ def test_macos_uses_osascript_and_returns_the_path(env, fake, monkeypatch):
     r = client(env).post(PICK)
     assert r.status_code == 200 and r.json() == {"path": "/Users/me/Notes"}
     argv, timeout = fake.calls[0]
-    assert argv[0] == "osascript" and "choose folder" in argv[2] and timeout == 120
+    assert argv[0] == "osascript" and "choose folder" in argv[-1] and timeout == 120
+    # The daemon has no window: the dialog must bring itself to the front, or it
+    # opens behind everything and looks like nothing happened.
+    assert any("activateIgnoringOtherApps" in a for a in argv)
 
 
 def test_windows_uses_powershell(env, fake, monkeypatch):

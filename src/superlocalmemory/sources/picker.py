@@ -28,8 +28,16 @@ MAX_DIRS_VISITED = 200
 MAX_VAULTS = 20
 _SKIP = frozenset({"library", "node_modules", "appdata", "applications", "site-packages"})
 
-_MAC = ["osascript", "-e",
-        'POSIX path of (choose folder with prompt "Choose a folder for SuperLocalMemory")']
+# The daemon runs in the background with no window of its own, so a bare
+# ``choose folder`` opened behind every other window and looked like nothing
+# happened. osascript brings itself to the front first (AppKit, no Automation
+# permission needed), so the dialog is the window the person sees.
+_MAC = ["osascript",
+        "-e", 'use framework "AppKit"',
+        "-e", "use scripting additions",
+        "-e", "current application's NSApplication's sharedApplication()'s "
+              "activateIgnoringOtherApps:true",
+        "-e", 'POSIX path of (choose folder with prompt "Choose a folder for SuperLocalMemory")']
 _WINDOWS = ["powershell", "-NoProfile", "-STA", "-Command",
             "Add-Type -AssemblyName System.Windows.Forms; "
             "$d = New-Object System.Windows.Forms.FolderBrowserDialog; "

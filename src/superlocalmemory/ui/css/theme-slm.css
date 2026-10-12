@@ -142,7 +142,17 @@ img, svg { max-width: 100%; }
 .tbl td .btn.ghost:hover { transform: none; color: var(--violet-text); }
 .tbl td { max-width: 420px; }
 .tbl td:first-child { min-width: 220px; }
-.tbl th { white-space: normal; }
+/* Headers never squeeze to one letter per line; the first (text) column takes the
+   remaining width and wraps, the short columns keep a sensible minimum. */
+.tbl th { white-space: nowrap; }
+.tbl td:not(:first-child) { white-space: nowrap; }
+.tbl td .badge { white-space: nowrap; }
+.tbl th:nth-child(n+2), .tbl td:nth-child(n+2) { min-width: 84px; }
+#memories-pane .tbl th:nth-child(2), #memories-pane .tbl td:nth-child(2) { min-width: 140px; }
+#memories-pane .tbl th:nth-child(3), #memories-pane .tbl td:nth-child(3) { min-width: 96px; }
+#memories-pane .tbl th:nth-child(4), #memories-pane .tbl td:nth-child(4) { min-width: 108px; }
+#memories-pane .tbl th:nth-child(6), #memories-pane .tbl td:nth-child(6) { min-width: 104px; }
+.tabs .cnt[hidden] { display: none; }
 .tbl-wrap, .card > .tbl, .card-pad > .tbl { max-width: 100%; }
 .tbl { width: 100%; }
 
@@ -392,3 +402,7 @@ pre { max-width: 100%; overflow-x: auto; white-space: pre-wrap; overflow-wrap: a
    dynamic ones (counts, live status) stay. */
 .page-head:has(+ .pane-help) > p:not([id]) { display: none; }
 .tbl td.mono { white-space: nowrap; }
+
+/* Tables whose later columns hold sentences keep wrapping there. */
+.tbl td.wrap, .tbl td[data-wrap], #operations-pane .tbl td, #mcp-pane .tbl td, #botmsg-pane .tbl td, #skills-pane .tbl td, #health-pane .tbl td { white-space: normal; }
+@media (max-width: 1100px) { .tbl td:first-child { min-width: 180px; } }

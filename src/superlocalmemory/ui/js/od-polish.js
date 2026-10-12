@@ -68,6 +68,14 @@
     }
   }
 
+  // A tab count that has not loaded yet reads "…": hide it until it has a number.
+  function tidyCounts() {
+    document.querySelectorAll('.tab .cnt').forEach(function (c) {
+      var pending = (c.textContent || '').trim() === '\u2026';
+      if (pending !== c.hasAttribute('hidden')) { if (pending) c.setAttribute('hidden', ''); else c.removeAttribute('hidden'); }
+    });
+  }
+
   function sidebarMascot() {
     var foot = document.getElementById('od-sidebar-foot');
     if (!foot || document.querySelector('.sidebar-mascot')) return;
@@ -79,7 +87,7 @@
   }
 
   var pending = false;
-  function run() { pending = false; labelTables(); decorateEmpty(); sidebarMascot(); }
+  function run() { pending = false; labelTables(); decorateEmpty(); sidebarMascot(); tidyCounts(); }
   function schedule() { if (!pending) { pending = true; setTimeout(run, 150); } }
   function start() {
     run();

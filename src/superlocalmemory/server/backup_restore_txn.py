@@ -88,16 +88,6 @@ def writer_lease(root: Path, wait_s: float = _LEASE_WAIT_S) -> Iterator[None]:
             lock.__exit__(None, None, None)
 
 
-def _alive(pid) -> bool:
-    try:
-        os.kill(int(pid), 0)
-    except (ProcessLookupError, ValueError, TypeError):
-        return False
-    except PermissionError:
-        return True
-    return True
-
-
 RECOVERY_NEEDED = recovery_marker.NAME
 CLEAR_COMMAND = recovery_marker.CLEAR_COMMAND
 
@@ -135,7 +125,8 @@ def start_refusal(root: Path) -> tuple[str, str] | None:
         status = read_json(Path(root) / OUTCOME_NAME) or {}
     except Exception:  # noqa: BLE001 - an unreadable note never blocks start-up
         return None
-    if status.get("state") in ("stopping", "restoring") and _alive(status.get("worker_pid")):
+    if status.get("state") in ("stopping", "restoring") and recovery_marker.writer_alive(
+            status, require_identity=True):
         return recovery_marker.RUNNING, ("A dashboard restore is replacing the memory store; "
                                          "start again when it finishes.")
     return None
@@ -214,7 +205,7 @@ def log_path(root: Path) -> Path:
 def _dead(status: dict, mtime: float | None) -> bool:
     pid = status.get("worker_pid")
     if pid is not None:
-        return not _alive(pid)
+        return not recovery_marker.writer_alive(status, require_identity=True)
     return mtime is not None and time.time() - mtime > _STALE_S
 
 

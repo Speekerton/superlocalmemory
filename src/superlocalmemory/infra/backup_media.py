@@ -126,7 +126,7 @@ def _needs_copy(src: Path, dest: Path) -> bool:
 
 
 def pending_bytes(slm_dir: Path, backup_dir: Path) -> int:
-    """Bytes ``sync_originals`` would copy now: originals missing from the mirror or of another size.
+    """Bytes ``sync_originals`` would copy now: originals missing from the mirror or resized.
 
     Read-only; the free-space check of a restore uses it to count what the safety point's own
     sync writes before the point copies the whole mirror.

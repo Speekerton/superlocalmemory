@@ -65,7 +65,10 @@ def test_a_worker_that_never_started_changed_nothing(api, tmp_path):
 
 
 def test_a_live_worker_still_blocks_a_second_restore(api, tmp_path):
-    write_status(tmp_path, state="restoring", id="0123456789abcdef", worker_pid=os.getpid())
+    from superlocalmemory.server import recovery_marker
+
+    write_status(tmp_path, state="restoring", id="0123456789abcdef", worker_pid=os.getpid(),
+                 worker_identity=recovery_marker.identity(os.getpid()))
     assert api.get("/api/backup/recovery/status").json()["state"] == "restoring"
     response = api.post("/api/backup/recovery/restore",
                         json={"id": "0123456789abcdef", "confirm": "RESTORE"})
@@ -76,6 +79,7 @@ def test_the_queued_status_records_the_worker(api, tmp_path):
     api.post("/api/backup/recovery/restore", json={"id": "0123456789abcdef", "confirm": "RESTORE"})
     status = json.loads((tmp_path / "backup-recovery-outcome.json").read_text())
     assert status["worker_pid"] == os.getpid()
+    assert isinstance(status["worker_identity"], dict)
 
 
 def test_the_worker_output_goes_to_a_log_file(tmp_path, monkeypatch):

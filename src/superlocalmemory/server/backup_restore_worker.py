@@ -24,6 +24,7 @@ import sys
 import time
 from pathlib import Path
 
+from superlocalmemory.server import recovery_marker
 from superlocalmemory.server.backup_bundle import create_point, verify_point
 from superlocalmemory.server.backup_restore_txn import (
     RECOVER_COMMAND,
@@ -67,7 +68,8 @@ class _Outcome:
 
     def __init__(self, root: Path, point_id: str) -> None:
         self.path = Path(root) / "backup-recovery-outcome.json"
-        self.base = {"id": point_id, "worker_pid": os.getpid()}
+        self.base = {"id": point_id, "worker_pid": os.getpid(),
+                     "worker_identity": recovery_marker.identity(os.getpid())}
         self.safety_id: str | None = None
 
     def write(self, state: str, message: str | None = None) -> None:

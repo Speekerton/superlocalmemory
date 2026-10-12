@@ -85,10 +85,12 @@ def test_the_writer_lease_is_held_for_the_whole_restore(tmp_path, worker, monkey
 
 
 def test_a_daemon_start_is_refused_while_a_restore_runs(tmp_path):
+    from superlocalmemory.server import recovery_marker
     from superlocalmemory.server.backup_restore_txn import restore_in_progress
 
     path = tmp_path / "backup-recovery-outcome.json"
-    path.write_text(json.dumps({"state": "restoring", "worker_pid": os.getpid()}))
+    path.write_text(json.dumps({"state": "restoring", "worker_pid": os.getpid(),
+                                "worker_identity": recovery_marker.identity(os.getpid())}))
     assert "restore" in restore_in_progress(tmp_path)
     path.write_text(json.dumps({"state": "complete", "worker_pid": os.getpid()}))
     assert restore_in_progress(tmp_path) is None

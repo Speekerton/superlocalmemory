@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.background import BackgroundTask
 
 from superlocalmemory.server import backup_bundle as bundles
+from superlocalmemory.server import recovery_marker
 from superlocalmemory.server.backup_restore_txn import IN_PROGRESS, log_path, settle
 from superlocalmemory.server.config_file import update_config
 from superlocalmemory.storage._durable_json import read_json, write_json_atomic
@@ -236,6 +237,7 @@ def recovery_restore(request: Request, body: PointBody):
 
     def record(status):
         status.setdefault("worker_pid", worker)
+        status.setdefault("worker_identity", recovery_marker.identity(worker))
 
     update_config(_outcome_path(root), record)
     return {

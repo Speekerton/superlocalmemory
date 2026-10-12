@@ -54,7 +54,7 @@ def begin(root: Path, safety_id: str | None) -> dict | None:
     previous = read(root)
     pid = os.getpid()
     write_json_atomic(_path(root), {
-        "phase": "writing", "worker_pid": pid, "worker_identity": _identity(pid),
+        "phase": "writing", "worker_pid": pid, "worker_identity": identity(pid),
         "safety_id": safety_id, "previous": previous, "at": _now()})
     return previous
 
@@ -104,7 +104,7 @@ def clear(root: Path) -> bool:
     return True
 
 
-def _identity(pid: int) -> dict:
+def identity(pid: int) -> dict:
     """What tells this process apart from a later one given the same pid."""
     from superlocalmemory.infra.process_identity import process_start_token_for
 
@@ -128,22 +128,25 @@ def _alive(pid) -> bool:
     return True
 
 
-def _writer_alive(marker: dict) -> bool:
-    """The writer named in the marker is still running: same pid AND same process.
+def writer_alive(record: dict, *, require_identity: bool = False) -> bool:
+    """The worker named in ``record`` is still running: same pid AND same process.
 
     After a crash or reboot a pid can belong to another process (PR 251 S1),
-    so the start identity recorded with it must match too. A marker written
-    before identities were recorded falls back to the pid.
+    so the start identity recorded with it must match too. A recovery marker
+    written before identities were recorded falls back to the pid. The outcome
+    file passes ``require_identity=True``: without a recorded identity (an older
+    build wrote it) the pid cannot be confirmed, so it reads as not running and
+    a start is never wedged on someone else's process.
     """
-    pid = marker.get("worker_pid")
+    pid = record.get("worker_pid")
     if not _alive(pid):
         return False
-    recorded = marker.get("worker_identity")
+    recorded = record.get("worker_identity")
     if not isinstance(recorded, dict):
-        return True
+        return not require_identity
     from superlocalmemory.infra.process_identity import compare_start_tokens
 
-    now = _identity(int(pid))
+    now = identity(int(pid))
     same = compare_start_tokens(recorded.get("token"), now.get("token"))
     if same is not None:
         return same
@@ -168,7 +171,7 @@ def state(root: Path) -> tuple[str, str] | None:
     marker = read(root)
     if marker is None:
         return None
-    if marker.get("phase") == "writing" and _writer_alive(marker):
+    if marker.get("phase") == "writing" and writer_alive(marker):
         return RUNNING, ("A restore is replacing the memory store; start again when it "
                          f"finishes. If no restore is running, run `{RECOVER_COMMAND}`.")
     return RECOVERY, _recovery_message(marker)

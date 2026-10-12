@@ -42,6 +42,9 @@ from typing import Any, Optional, Union
 logger = logging.getLogger(__name__)
 
 _GENESIS_HASH = "genesis"
+# This database is audit-owned. Its header records that anchoring has ever
+# occurred, independently of the marker table and even of the retained rows.
+_ANCHOR_SCHEMA_VERSION = 1
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS audit_chain (
@@ -211,7 +214,9 @@ class AuditChain:
         conn.execute("BEGIN IMMEDIATE")
         try:
             recorded = conn.execute("SELECT 1 FROM audit_anchor_state").fetchone()
-            if recorded:
+            anchored_schema = conn.execute("PRAGMA user_version").fetchone()[0]
+            if recorded or anchored_schema >= _ANCHOR_SCHEMA_VERSION:
+                self._record_anchor_created(conn)
                 conn.commit()
                 return
             anchor, problem = self._anchor_state()
@@ -231,6 +236,10 @@ class AuditChain:
 
     @staticmethod
     def _record_anchor_created(conn: sqlite3.Connection) -> None:
+        # Dropping audit_anchor_state cannot turn an anchored store into a
+        # legacy one. Restore its table marker on reopen without re-anchoring.
+        if conn.execute("PRAGMA user_version").fetchone()[0] < _ANCHOR_SCHEMA_VERSION:
+            conn.execute(f"PRAGMA user_version = {_ANCHOR_SCHEMA_VERSION}")
         conn.execute("INSERT OR IGNORE INTO audit_anchor_state VALUES (1, ?)",
                      (datetime.now(timezone.utc).isoformat(),))
 

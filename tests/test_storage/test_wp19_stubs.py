@@ -34,3 +34,15 @@ def test_short_meaningful_facts_remain_answer_material(tmp_path):
     assert not is_stub('I prefer tea.')
     assert not is_stub('Zephyr uses PostgreSQL.')
     assert not is_stub('The session ended with a decision to use PostgreSQL.')
+
+
+@pytest.mark.parametrize('text', ['[]', '{}', '[ ]', '()', '[{}]', ' {} ', '[],[]'])
+def test_empty_structures_are_rejected_at_admission(text):
+    """Review L3: empty-structure content never reaches durable ingestion."""
+    from superlocalmemory.core.engine_ingestion import content_passes_admission
+    assert content_passes_admission(text) is False
+
+
+def test_session_boilerplate_is_still_admitted_as_a_durable_stub():
+    from superlocalmemory.core.engine_ingestion import content_passes_admission
+    assert content_passes_admission('session ended 2026-10-12 11:28') is True

@@ -13,6 +13,11 @@ _RECEIPT = re.compile(r'^(?:(?:receipt|operation|session|fact|memory|run)[ _-]?i
                       r'|receipt\s*:\s*)[a-z0-9_-]{8,}[.!]?$', re.I)
 
 
+def is_empty_structure(text: str) -> bool:
+    """Only brackets, braces and separators: nothing to remember at all."""
+    return bool(_EMPTY.fullmatch(text or ''))
+
+
 def is_stub(text: str) -> bool:
     value = (text or '').strip()
     return bool(value and (_EMPTY.fullmatch(value) or _SESSION.fullmatch(value)

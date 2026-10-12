@@ -14,6 +14,45 @@ from superlocalmemory.core.recall_gate import background_work, in_flight
 logger = logging.getLogger(__name__)
 
 
+class _OnDeviceKinds:
+    """The user's kind settings, minus any backend that sends text off the device.
+
+    Turning kinds off still turns them off. A Jev choice (memory text leaves the
+    machine, even with consent) becomes the rules here: background improvement
+    only ever uses the rules, the local Laya judge or a loopback Ollama.
+    """
+
+    def __init__(self, live):
+        self._live = live
+
+    def __getattr__(self, name):
+        value = getattr(self._live, name)
+        if name == 'backend' and isinstance(value, str) and value.strip().lower() == 'jev':
+            return 'rules'
+        if name == 'jev_consent':
+            return False
+        return value
+
+
+def local_kind_classifier(engine):
+    """A kind classifier for idle re-labelling that never calls a hosted model."""
+    from superlocalmemory.core.memory_kind_wiring import (
+        LiveKindConfig,
+        engine_mode,
+        live_judge,
+        llm_available,
+    )
+    from superlocalmemory.encoding.memory_kind_classifier import KindClassifier
+
+    # The LLM branch hands off to LocalDescriptionKinds, which asks only an
+    # Ollama on a loopback address and otherwise keeps the rules' answer.
+    return KindClassifier(config=_OnDeviceKinds(LiveKindConfig(engine)),
+                          mode=engine_mode(engine),
+                          judge_supplier=lambda: live_judge(engine),
+                          llm_available=llm_available(engine),
+                          llm_supplier=lambda: getattr(engine, '_llm', None))
+
+
 class MemoryHealthService:
     name = 'memory-health'
 
@@ -73,19 +112,8 @@ class MemoryHealthService:
             return False
 
     def _improve(self, engine):
-        # This classifier can only ask the already-running local judge or local
-        # Ollama. The user's optional hosted-kind backend is never invoked here.
-        from superlocalmemory.core.memory_kind_config import MemoryKindConfig
-        from superlocalmemory.core.memory_kind_wiring import live_judge
-        from superlocalmemory.encoding.local_description_kinds import LocalDescriptionKinds
-        from superlocalmemory.encoding.memory_kind_classifier import KindClassifier
-        from superlocalmemory.storage.models import Mode
-
-        delegate = KindClassifier(config=MemoryKindConfig(backend='laya'), mode=Mode.A,
-                                  judge_supplier=lambda: live_judge(engine), llm_available=False)
-        classifier = LocalDescriptionKinds(delegate=delegate,
-                                           llm_supplier=lambda: getattr(engine, '_llm', None))
-        runner = EnrichmentRunner(engine._db, idle=self.can_work, classifier=classifier)
+        runner = EnrichmentRunner(engine._db, idle=self.can_work,
+                                  classifier=local_kind_classifier(engine))
         runner.run_batch(limit=25)
         if self.can_work():
             from superlocalmemory.core.health_repairs import run_safe_repairs

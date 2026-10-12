@@ -110,3 +110,17 @@ def test_legacy_store_coverage_rises_and_undo_restores_exactly(legacy):
 
     runner.undo(result['run_id'])
     assert _snapshot(db) == before_rows
+
+
+def test_doctor_report_reads_coverage_without_writing(legacy, tmp_path):
+    from superlocalmemory.core.metadata_health import from_path
+    db = legacy
+    before = _snapshot(db)
+    report = from_path(db.db_path)
+    assert report['coverage']['facts'] == N
+    assert report['coverage']['kind_guessed'] > report['coverage']['kind_confirmed']
+    assert report['enrichment']['status'] == 'waiting_for_idle'
+    assert report['summary'].startswith('Improving your memories: 0 of')
+    assert _snapshot(db) == before
+    missing = from_path(tmp_path / 'absent' / 'memory.db')
+    assert missing['enrichment']['status'] == 'unavailable'

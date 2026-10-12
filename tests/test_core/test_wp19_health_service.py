@@ -50,3 +50,26 @@ def test_health_service_respects_background_pause_and_ram_refusal(monkeypatch):
     assert not service.tick()
     batch.assert_not_called()
     assert service.health()['detail']
+
+
+def _engine(backend, *, enabled=True, mode=None, llm=None):
+    from superlocalmemory.core.memory_kind_config import MemoryKindConfig
+    from superlocalmemory.storage.models import Mode
+    cfg = SimpleNamespace(memory_kinds=MemoryKindConfig(enabled=enabled, backend=backend,
+                                                        jev_consent=True),
+                          mode=mode or Mode.A)
+    jev = SimpleNamespace(backend='jev')
+    return SimpleNamespace(_config=cfg, _llm=llm,
+                           _retrieval_engine=SimpleNamespace(_sufficiency_judge=jev))
+
+
+def test_background_relabelling_never_uses_an_off_device_backend():
+    from superlocalmemory.encoding.memory_kind_classifier import KindBackend, resolve_kind_backend
+    from superlocalmemory.server.memory_health_service import local_kind_classifier
+    from superlocalmemory.storage.models import Mode
+    classifier = local_kind_classifier(_engine('jev'))
+    backend = resolve_kind_backend(classifier._config, Mode.A,
+                                   SimpleNamespace(backend='jev'), False)
+    assert backend is KindBackend.RULES
+    off = local_kind_classifier(_engine('auto', enabled=False))
+    assert resolve_kind_backend(off._config, Mode.A, None, False) is KindBackend.OFF

@@ -24,6 +24,22 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Generator, NoReturn
 
+from superlocalmemory.storage import erasure_derived, projection_outbox, store_signature
+from superlocalmemory.storage.correction_cases import SAVED_SUCCESSOR_PARAMS, SAVED_SUCCESSOR_SQL
+from superlocalmemory.storage.embedding_codec import (
+    decode_embedding,
+    decode_float_vector,
+    encode_embedding,
+    encode_float_vector,
+)
+from superlocalmemory.storage.event_time import valid_from as _event_start
+from superlocalmemory.storage.erasure_visibility import (
+    aggregate_erasure_clause_for_db,
+    erasure_clause,
+    has_tombstones,
+    memory_erasure_clause_for_db,
+)
+from superlocalmemory.storage.memory_kinds import KIND_COLUMNS
 from superlocalmemory.storage.models import (
     AtomicFact,
     CanonicalEntity,
@@ -40,18 +56,8 @@ from superlocalmemory.storage.models import (
     TemporalEvent,
     TrustScore,
 )
-from superlocalmemory.storage.embedding_codec import (
-    decode_embedding,
-    decode_float_vector,
-    encode_embedding,
-    encode_float_vector,
-)
-from superlocalmemory.storage.write_lock import get_write_lock
 from superlocalmemory.storage.read_connection import read_only_snapshot
-from superlocalmemory.storage import projection_outbox
-from superlocalmemory.storage.memory_kinds import KIND_COLUMNS
-from superlocalmemory.storage.correction_cases import SAVED_SUCCESSOR_PARAMS, SAVED_SUCCESSOR_SQL
-from superlocalmemory.storage import store_signature
+from superlocalmemory.storage.write_lock import get_write_lock
 
 logger = logging.getLogger(__name__)
 
@@ -329,9 +335,17 @@ def _compose_visible_clause(
     *,
     has_archive: bool,
     has_quarantine: bool,
+    has_non_answer: bool = False,
+    exclude_non_answer: bool = False,
     include_quarantined: bool = False,
+    has_erasure: bool = False,
 ) -> str:
     """Build the AND-clause from what the store actually has.
+
+    ``exclude_non_answer`` is opt-in and only for RECALL ANSWER paths: a stored
+    stub (operational receipt, session boilerplate) is still a memory every
+    list, count, export and the dashboard shows -- flagged -- but never an
+    answer (WP-19).
 
     Split out from ``DatabaseManager.visible_fact_clause`` so that callers
     holding a bare ``sqlite3.Connection`` produce a byte-identical predicate
@@ -343,6 +357,10 @@ def _compose_visible_clause(
         clause += f" AND COALESCE({table}archive_status, 'live') != 'archived'"
     if not include_quarantined and has_quarantine:
         clause += f" AND COALESCE({table}quarantined, 0) = 0"
+    if has_non_answer and exclude_non_answer:
+        clause += f" AND COALESCE({table}non_answer, 0) = 0"
+    if has_erasure:
+        clause += erasure_clause(prefix)
     return clause
 
 
@@ -376,11 +394,52 @@ def _compose_current_clause(prefix: str, *, has_temporal: bool) -> str:
     )
 
 
+def _column_name(row: object) -> str:
+    """PRAGMA row -> column name, whatever row_factory the caller set.
+
+    Not paranoia: ``server/routes/memories.py`` -- the first caller and the
+    route that was leaking -- sets ``row_factory = dict_factory``, so a
+    positional ``row[1]`` raises KeyError there, and the except below would
+    have swallowed it into "no such column" and silently dropped the filter.
+    That is the same shape of failure this function exists to close.
+    """
+    if isinstance(row, dict):
+        return str(row.get("name", ""))
+    try:
+        return str(row["name"])          # sqlite3.Row
+    except (TypeError, IndexError, KeyError):
+        pass
+    try:
+        return str(row[1])               # plain tuple
+    except (TypeError, IndexError, KeyError):
+        return ""
+
+
+def _connection_has_column(conn: sqlite3.Connection, column: str) -> bool:
+    try:
+        rows = list(conn.execute("PRAGMA table_info(atomic_facts)"))
+    except sqlite3.Error:
+        return False
+    return any(_column_name(r) == column for r in rows)
+
+
+def stub_flag_sql_for_connection(conn: sqlite3.Connection, prefix: str = "") -> str:
+    """SELECT expression for "is this memory a stored stub" (0 when unknown).
+
+    Lists and the dashboard show stubs, flagged; only recall excludes them.
+    """
+    table = f"{prefix}." if prefix else ""
+    if _connection_has_column(conn, "non_answer"):
+        return f"COALESCE({table}non_answer, 0)"
+    return "0"
+
+
 def visible_fact_clause_for_connection(
     conn: sqlite3.Connection,
     prefix: str = "",
     *,
     include_quarantined: bool = False,
+    exclude_non_answer: bool = False,
 ) -> str:
     """``visible_fact_clause`` for a caller that hand-rolls its SQL.
 
@@ -405,37 +464,16 @@ def visible_fact_clause_for_connection(
     were not. The test that matters calls the surface and inspects what it
     served -- tests/test_server/test_a_listed_memory_belongs_to_its_profile.py
     """
-    def _column_name(row: object) -> str:
-        """PRAGMA row -> column name, whatever row_factory the caller set.
-
-        Not paranoia: ``server/routes/memories.py`` -- the first caller and the
-        route that was leaking -- sets ``row_factory = dict_factory``, so a
-        positional ``row[1]`` raises KeyError there, and the except below would
-        have swallowed it into "no such column" and silently dropped the filter.
-        That is the same shape of failure this function exists to close.
-        """
-        if isinstance(row, dict):
-            return str(row.get("name", ""))
-        try:
-            return str(row["name"])          # sqlite3.Row
-        except (TypeError, IndexError, KeyError):
-            pass
-        try:
-            return str(row[1])               # plain tuple
-        except (TypeError, IndexError, KeyError):
-            return ""
-
     def _has(column: str) -> bool:
-        try:
-            rows = list(conn.execute("PRAGMA table_info(atomic_facts)"))
-        except sqlite3.Error:
-            return False
-        return any(_column_name(r) == column for r in rows)
+        return _connection_has_column(conn, column)
 
     return _compose_visible_clause(
         prefix,
         has_archive=_has("archive_status"),
         has_quarantine=_has("quarantined"),
+        has_non_answer=exclude_non_answer and _has("non_answer"),
+        exclude_non_answer=exclude_non_answer,
+        has_erasure=has_tombstones(conn),
         include_quarantined=include_quarantined,
     )
 
@@ -445,6 +483,7 @@ def current_fact_clause_for_connection(
     prefix: str = "",
     *,
     include_quarantined: bool = False,
+    exclude_non_answer: bool = False,
 ) -> str:
     """``current_fact_clause`` for a caller that hand-rolls its SQL.
 
@@ -465,6 +504,7 @@ def current_fact_clause_for_connection(
         has_temporal = False
     return visible_fact_clause_for_connection(
         conn, prefix, include_quarantined=include_quarantined,
+        exclude_non_answer=exclude_non_answer,
     ) + _compose_current_clause(prefix, has_temporal=has_temporal)
 
 
@@ -1023,7 +1063,11 @@ class DatabaseManager:
                 # timestamp from ``created_at``; this retry is the earliest
                 # trustworthy observation that the anchor was missing.
                 if self.get_temporal_validity(canonical_id, fact.profile_id) is None:
-                    self.store_temporal_validity(canonical_id, fact.profile_id)
+                    canonical = self.get_fact(canonical_id, fact.profile_id)
+                    self.store_temporal_validity(
+                        canonical_id, fact.profile_id,
+                        valid_from=_event_start(canonical or fact), fill_only=True,
+                    )
                 # Re-storing known content is the natural moment to notice a
                 # projection that was never written — an upgraded store whose
                 # graph predates the migration reaches this branch, not the
@@ -1069,7 +1113,8 @@ class DatabaseManager:
             # Every fact written after 4.0.2 has an explicit transaction-time
             # anchor. Absence deliberately represents pre-4.0.2
             # ``legacy_unknown``; never backfill it from ``created_at``.
-            self.store_temporal_validity(fact.fact_id, fact.profile_id)
+            self.store_temporal_validity(fact.fact_id, fact.profile_id,
+                                         valid_from=_event_start(fact), fill_only=True)
             # Which facts name an entity is answered from an index; every
             # write path lands here, so this keeps it complete
             # (storage/entity_index.py).
@@ -1139,6 +1184,7 @@ class DatabaseManager:
             emotional_arousal=d.get("emotional_arousal", 0.0),
             signal_type=SignalType(d["signal_type"]) if d.get("signal_type") else SignalType.FACTUAL,
             pinned=bool(d.get("pinned", 0)),
+            non_answer=bool(d.get("non_answer") or 0),
             scope=d.get("scope", "personal"),
             shared_with=_jl(d.get("shared_with"), None),
             # 4.1.19 (M052): absent on a row the migration has not reached —
@@ -1207,7 +1253,8 @@ class DatabaseManager:
             _FACT_INSERT_SQL_WITH_KIND if use_kind else _FACT_INSERT_SQL_LEGACY,
             tuple(params),
         )
-        self.store_temporal_validity(fact.fact_id, fact.profile_id)
+        self.store_temporal_validity(fact.fact_id, fact.profile_id,
+                                         valid_from=_event_start(fact), fill_only=True)
         from superlocalmemory.storage.entity_index import record_fact_entities
 
         record_fact_entities(
@@ -1361,8 +1408,20 @@ class DatabaseManager:
             self._temporal_table_present = True
         return present
 
+    def _has_projection_tombstones_table(self) -> bool:
+        """Cache only schema presence; re-probe absent tables after migrations."""
+        if getattr(self, "_tombstone_table_present", False):
+            return True
+        present = bool(self.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='projection_tombstones'"
+        ))
+        if present:
+            self._tombstone_table_present = True
+        return present
+
     def current_fact_clause(
         self, prefix: str = "", *, include_quarantined: bool = False,
+        exclude_non_answer: bool = False,
     ) -> str:
         """``visible_fact_clause`` PLUS "and the store still believes it".
 
@@ -1374,16 +1433,21 @@ class DatabaseManager:
         """
         return self.visible_fact_clause(
             prefix, include_quarantined=include_quarantined,
+            exclude_non_answer=exclude_non_answer,
         ) + _compose_current_clause(
             prefix, has_temporal=self._has_temporal_validity_table(),
         )
 
     def visible_fact_clause(
         self, prefix: str = "", *, include_quarantined: bool = False,
+        exclude_non_answer: bool = False,
     ) -> str:
         """AND-clause excluding rows no caller should be shown as a memory.
 
-        Two exclusions, one definition: soft-deleted (``archive_status``) and
+        Erasure intent always wins, including for include_quarantined callers.
+        Membership is evaluated by SQLite on every read and is never cached.
+
+        Two other exclusions, one definition: soft-deleted (``archive_status``) and
         withheld (``quarantined``). Both are presence-guarded, because each
         column arrives with a migration and may be absent on a store the engine
         has not opened.
@@ -1407,9 +1471,17 @@ class DatabaseManager:
 
         ``include_quarantined=True`` is for repair, erasure and export — paths
         that must reach a withheld row to act on it.
+
+        ``exclude_non_answer=True`` is for the recall answer paths only (see
+        ``_compose_visible_clause``); everything else lists stubs, flagged.
         """
+        from superlocalmemory.encoding.non_answer import has_marker
+
         return _compose_visible_clause(
             prefix,
+            has_non_answer=exclude_non_answer and has_marker(self),
+            exclude_non_answer=exclude_non_answer,
+            has_erasure=self._has_projection_tombstones_table(),
             has_archive=self._has_archive_status(),
             has_quarantine=self._has_quarantine_column(),
             include_quarantined=include_quarantined,
@@ -1818,6 +1890,17 @@ class DatabaseManager:
             for r in rows
         ]
 
+    def is_memory_erasing(self, memory_id: str, profile_id: str) -> bool:
+        """Whether an erasure fence blocks this source, including a deleted parent."""
+        clause = memory_erasure_clause_for_db(self, "source")
+        if not clause:
+            return False
+        rows = self.execute(
+            "SELECT 1 FROM (SELECT ? AS memory_id, ? AS profile_id) AS source "
+            f"WHERE 1=1{clause}", (memory_id, profile_id),
+        )
+        return not rows
+
     def get_memory_content_batch(
         self, memory_ids: list[str], profile_id: str,
         include_global: bool = False, include_shared: bool = False,
@@ -1835,9 +1918,10 @@ class DatabaseManager:
         where, sparams = _scope_where(
             profile_id, include_global=include_global, include_shared=include_shared,
         )
+        erasure = memory_erasure_clause_for_db(self)
         rows = self.execute(
             f"SELECT memory_id, content FROM memories "
-            f"WHERE memory_id IN ({ph}) AND {where}",
+            f"WHERE memory_id IN ({ph}) AND {where}{erasure}",
             (*unique_ids, *sparams),
         )
         return {dict(r)["memory_id"]: dict(r)["content"] for r in rows}
@@ -1854,7 +1938,8 @@ class DatabaseManager:
             include_shared=include_shared,
         )
         rows = self.execute(
-            f"SELECT * FROM atomic_facts WHERE memory_id = ? AND {where} "
+            f"SELECT * FROM atomic_facts WHERE memory_id = ? AND {where}"
+            f"{self.visible_fact_clause()} "
             "ORDER BY confidence DESC",
             (memory_id, *params),
         )
@@ -2125,6 +2210,7 @@ class DatabaseManager:
         include_shared: bool = False,
         *,
         include_quarantined: bool = False,
+        exclude_non_answer: bool = False,
     ) -> list[AtomicFact]:
         """Get multiple facts by their IDs, scoped to a profile.
 
@@ -2161,10 +2247,12 @@ class DatabaseManager:
             include_shared=include_shared,
         )
         placeholders = ",".join("?" for _ in fact_ids)
+        visible = self.visible_fact_clause(include_quarantined=include_quarantined,
+                                           exclude_non_answer=exclude_non_answer)
         rows = self.execute(
             f"SELECT * FROM atomic_facts WHERE fact_id IN ({placeholders}) "
             f"AND {where}"
-            f"{self.visible_fact_clause(include_quarantined=include_quarantined)} "
+            f"{visible} "
             "ORDER BY created_at DESC",
             (*fact_ids, *params),
         )
@@ -2176,6 +2264,7 @@ class DatabaseManager:
         include_shared: bool = False,
         *,
         include_quarantined: bool = False,
+        exclude_non_answer: bool = False,
     ) -> set[str]:
         """Which of *fact_ids* this profile may see. Same rule, no hydration.
 
@@ -2205,7 +2294,8 @@ class DatabaseManager:
             include_global=include_global,
             include_shared=include_shared,
         )
-        visible = self.visible_fact_clause(include_quarantined=include_quarantined)
+        visible = self.visible_fact_clause(include_quarantined=include_quarantined,
+                                           exclude_non_answer=exclude_non_answer)
         unique = list(dict.fromkeys(fact_ids))
         allowed: set[str] = set()
         # Well inside SQLITE_MAX_VARIABLE_NUMBER once the scope parameters are
@@ -2238,6 +2328,10 @@ class DatabaseManager:
         self, entity_id: str, profile_id: str,
     ) -> list[EntityProfile]:
         """All profile entries for an entity within a profile scope."""
+        # Not summary-fenced here: the only caller (retrieval/profile_channel)
+        # uses fact ids, which it passes through filter_authorized_results, so a
+        # mixed profile still yields its retained facts. Summary TEXT is fenced
+        # at the entity routes.
         rows = self.execute(
             "SELECT * FROM entity_profiles WHERE entity_id = ? AND profile_id = ? "
             "ORDER BY last_updated DESC",
@@ -2287,20 +2381,28 @@ class DatabaseManager:
 
     def get_all_scenes(self, profile_id: str) -> list[MemoryScene]:
         """All scenes for a profile, newest first."""
+        erasure = aggregate_erasure_clause_for_db(self, "memory_scenes")
         rows = self.execute(
-            "SELECT * FROM memory_scenes WHERE profile_id = ? "
+            f"SELECT * FROM memory_scenes WHERE profile_id = ?{erasure} "
             "ORDER BY last_updated DESC",
             (profile_id,),
         )
         return [self._row_to_scene(r) for r in rows]
 
     def get_scenes_for_fact(
-        self, fact_id: str, profile_id: str,
+        self, fact_id: str, profile_id: str, *, include_erasing: bool = False,
     ) -> list[MemoryScene]:
-        """All scenes whose fact_ids JSON array contains *fact_id*."""
+        """All scenes whose fact_ids JSON array contains *fact_id*.
+
+        Scenes naming a fact whose erasure has started are withheld from
+        readers. ``include_erasing`` is for the erasure/mutation path itself,
+        which must still find the scene in order to remove the fact from it.
+        """
+        erasure = "" if include_erasing else aggregate_erasure_clause_for_db(
+            self, "memory_scenes")
         rows = self.execute(
             "SELECT * FROM memory_scenes WHERE profile_id = ? "
-            "AND fact_ids_json LIKE ? ORDER BY last_updated DESC",
+            f"AND fact_ids_json LIKE ?{erasure} ORDER BY last_updated DESC",
             (profile_id, f'%"{fact_id}"%'),
         )
         return [self._row_to_scene(r) for r in rows]
@@ -2323,8 +2425,9 @@ class DatabaseManager:
         params: list[str] = []
         for fid in fact_ids:
             params.extend((profile_id, f'%"{fid}"%'))
+        erasure = aggregate_erasure_clause_for_db(self, "memory_scenes")
         rows = self.execute(
-            f"SELECT * FROM memory_scenes WHERE {clauses} ORDER BY last_updated DESC",
+            f"SELECT * FROM memory_scenes WHERE ({clauses}){erasure} ORDER BY last_updated DESC",
             tuple(params),
         )
         out: dict[str, list[MemoryScene]] = {}
@@ -2620,12 +2723,18 @@ class DatabaseManager:
         self, fact_id: str, profile_id: str,
         valid_from: str | None = None,
         valid_until: str | None = None,
+        *,
+        fill_only: bool = False,
     ) -> None:
         """Create or enrich the temporal record for a fact.
 
         The 4.0.2 fact writer creates the record immediately to anchor
         transaction time. A later temporal extraction may add event-time bounds;
         it must not be discarded merely because the anchor already exists.
+
+        ``fill_only`` is the fact writer's default event-time start (WP-19 A1):
+        it fills an empty ``valid_from`` and never replaces one a correction,
+        a replacement or an extraction already set.
         """
         from datetime import UTC
         from datetime import datetime as _dt
@@ -2636,7 +2745,18 @@ class DatabaseManager:
             "VALUES (?, ?, ?, ?, ?)",
             (fact_id, profile_id, valid_from, valid_until, system_created_at),
         )
-        if valid_from is not None or valid_until is not None:
+        if fill_only and valid_from is not None:
+            self.execute(
+                "UPDATE fact_temporal_validity SET valid_from = ? "
+                "WHERE fact_id = ? AND profile_id = ? AND valid_from IS NULL",
+                (valid_from, fact_id, profile_id),
+            )
+            current = self.execute(
+                "SELECT valid_from FROM fact_temporal_validity WHERE fact_id = ? AND profile_id = ?",
+                (fact_id, profile_id),
+            )
+            valid_from = current[0]["valid_from"] if current else valid_from
+        elif valid_from is not None or valid_until is not None:
             self.execute(
                 "UPDATE fact_temporal_validity "
                 "SET valid_from = COALESCE(?, valid_from), "
@@ -2644,6 +2764,16 @@ class DatabaseManager:
                 "WHERE fact_id = ? AND profile_id = ?",
                 (valid_from, valid_until, fact_id, profile_id),
             )
+
+        from superlocalmemory.storage.event_time import mirror
+
+        mirror(self, fact_id, profile_id, valid_from)
+        from superlocalmemory.encoding.non_answer import mark
+
+        rows = self.execute('SELECT content FROM atomic_facts WHERE fact_id=? AND profile_id=?',
+                            (fact_id, profile_id))
+        if rows:
+            mark(self, fact_id, profile_id, rows[0]['content'])
 
     def get_temporal_validity(self, fact_id: str, profile_id: str | None = None) -> dict | None:
         """Get temporal validity record for a fact (C4: optionally tenant-scoped)."""
@@ -2956,6 +3086,7 @@ class DatabaseManager:
         if not fact_ids or (known_as_of is None and valid_at is None):
             return set()
         from datetime import datetime as _dt
+
         from superlocalmemory.retrieval.temporal_utils import normalize_as_of
 
         def _parse_timestamp(value: object) -> _dt | None:
@@ -3242,14 +3373,22 @@ class DatabaseManager:
         Fail-soft: any exception is logged and ignored.
         """
         try:
-            scenes = self.get_scenes_for_fact(fact_id, profile_id)
+            scenes = self.get_scenes_for_fact(fact_id, profile_id, include_erasing=True)
+            erased_text = erasure_derived.fact_content(self.execute, profile_id, fact_id)
             for scene in scenes:
                 new_ids = [fid for fid in (scene.fact_ids or []) if fid != fact_id]
                 if new_ids:
+                    # The theme is the anchor fact's first 200 characters, so it
+                    # must not outlive the fact (storage/erasure_derived.py).
+                    theme = scene.theme
+                    if erasure_derived.theme_quotes(
+                            theme, scene.fact_ids or [], fact_id, erased_text):
+                        theme = erasure_derived.theme_from_members(
+                            self.execute, profile_id, new_ids)
                     self.execute(
-                        "UPDATE memory_scenes SET fact_ids_json = ? "
+                        "UPDATE memory_scenes SET fact_ids_json = ?, theme = ? "
                         "WHERE scene_id = ?",
-                        (json.dumps(new_ids), scene.scene_id),
+                        (json.dumps(new_ids), theme, scene.scene_id),
                     )
                 else:
                     self.execute(
@@ -3444,27 +3583,9 @@ class DatabaseManager:
 
         Returns count of successfully upserted rows.
         """
-        count = 0
-        from superlocalmemory.core.lifecycle_state import atomic_lifecycle_for
+        from superlocalmemory.storage.retention_lifecycle import batch_retention
 
-        with self.transaction():
-            for f in facts:
-                self._upsert_retention_in_transaction(
-                    fact_id=f["fact_id"],
-                    profile_id=profile_id,
-                    retention_score=f["retention"],
-                    memory_strength=f["strength"],
-                    access_count=f["access_count"],
-                    last_accessed_at=f["last_accessed_at"],
-                    lifecycle_zone=f["zone"],
-                )
-                self.execute(
-                    "UPDATE atomic_facts SET lifecycle = ? "
-                    "WHERE fact_id = ? AND profile_id = ?",
-                    (atomic_lifecycle_for(f["zone"]), f["fact_id"], profile_id),
-                )
-                count += 1
-        return count
+        return batch_retention(self, facts, profile_id)
 
     def get_facts_needing_decay(self, profile_id: str) -> list[dict]:
         """Get facts that need decay computation (excludes core memory).
@@ -3495,29 +3616,9 @@ class DatabaseManager:
 
         Idempotent: if fact not found, logs warning and returns.
         """
-        # Check existence first (idempotent)
-        rows = self.execute(
-            "SELECT fact_id FROM fact_retention WHERE fact_id = ? AND profile_id = ?",
-            (fact_id, profile_id),
-        )
-        if not rows:
-            logger.warning(
-                "soft_delete_fact: fact_id=%s not found in fact_retention, skipping",
-                fact_id,
-            )
-            return
+        from superlocalmemory.storage.retention_lifecycle import forget_fact
 
-        from superlocalmemory.core.lifecycle_state import set_fact_lifecycle_zone
-
-        with self.transaction():
-            set_fact_lifecycle_zone(
-                self, [fact_id], "forgotten", profile_id=profile_id,
-            )
-            self.execute(
-                "UPDATE fact_retention SET retention_score = 0.0 "
-                "WHERE fact_id = ? AND profile_id = ?",
-                (fact_id, profile_id),
-            )
+        forget_fact(self, fact_id, profile_id)
 
     # ------------------------------------------------------------------
     # Phase E: CCQ Consolidated Blocks & Audit CRUD

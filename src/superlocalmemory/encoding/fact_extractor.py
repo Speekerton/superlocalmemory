@@ -37,6 +37,11 @@ from superlocalmemory.core.config import EncodingConfig
 from superlocalmemory.encoding import llm_kind_hint
 from superlocalmemory.encoding.date_resolution import keep_supported_dates, try_parse_date
 from superlocalmemory.encoding.entity_mentions import extract_mentions
+from superlocalmemory.encoding.fact_extraction_result import (
+    FactExtraction,
+    for_review,
+    partition_facts,
+)
 from superlocalmemory.encoding.prospective_markers import looks_prospective
 from superlocalmemory.encoding.speaker_spans import bounded_turns, normalize_speaker, speaker_spans
 from superlocalmemory.storage.models import AtomicFact, FactType, Mode, SignalType
@@ -401,6 +406,7 @@ class FactExtractor:
 
         chunks = [[turn] for turn in bounded_turns(turns, speaker_a=speaker_a, speaker_b=speaker_b)]
         all_facts: list[AtomicFact] = []
+        review_candidates: list[AtomicFact] = []
 
         for chunk in chunks[:5]:
             chunk_facts = self._extract_chunk(
@@ -411,10 +417,14 @@ class FactExtractor:
                 speaker_b,
             )
             all_facts.extend(chunk_facts)
+            review_candidates.extend(getattr(chunk_facts, "review_candidates", ()))
             if len(self._deduplicate(all_facts)) >= 5:
                 break
 
-        return self._deduplicate(all_facts)[: min(5, self._config.max_facts_per_chunk)]
+        return FactExtraction(
+            self._deduplicate(all_facts)[: min(5, self._config.max_facts_per_chunk)],
+            review_candidates,
+        )
 
     # ------------------------------------------------------------------
     # Chunk-level dispatch
@@ -432,6 +442,7 @@ class FactExtractor:
         use_llm = (
             self._mode in (Mode.B, Mode.C) and self._llm is not None and self._llm.is_available()
         )
+        review_candidates = ()
         if use_llm:
             facts = self._extract_llm(
                 turns,
@@ -442,16 +453,17 @@ class FactExtractor:
             )
             if facts:
                 return facts
+            review_candidates = getattr(facts, "review_candidates", ())
             # Fallback to local if LLM produced nothing
             logger.info("LLM extraction returned no facts, falling back to local.")
 
-        return self._extract_local(
+        return FactExtraction(self._extract_local(
             turns,
             session_id,
             session_date,
             speaker_a,
             speaker_b,
-        )
+        ), review_candidates)
 
     # ------------------------------------------------------------------
     # Mode A: Rule-based extraction
@@ -559,21 +571,17 @@ class FactExtractor:
             facts = self._parse_llm_response(raw, session_id, session_date)
             from superlocalmemory.encoding.fact_speakers import grounded_speakers
 
-            facts = grounded_speakers(facts, conversation_text)
-            from superlocalmemory.encoding.source_fidelity import check_fact_against_source
-
-            facts = [
-                fact
-                for fact in facts
-                if check_fact_against_source(
-                    fact.content, conversation_text, reference_date=session_date
-                ).ok
-            ]
-            return keep_supported_dates(
-                self._reflexion_refine(conversation_text, facts),
+            grounded = grounded_speakers(facts, conversation_text)
+            grounded_ids = {fact.fact_id for fact in grounded}
+            ambiguous = [for_review(fact, ("attribution_changed",))
+                         for fact in facts if fact.fact_id not in grounded_ids]
+            checked = partition_facts(FactExtraction(grounded, ambiguous),
+                                      conversation_text, session_date)
+            return FactExtraction(keep_supported_dates(
+                self._reflexion_refine(conversation_text, checked),
                 conversation_text,
                 reference_date=session_date,
-            )
+            ), checked.review_candidates)
         except Exception as exc:
             logger.warning("LLM fact extraction failed: %s", exc)
             return []

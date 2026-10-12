@@ -250,11 +250,18 @@ class MediaChannel:
             return visible_facts(self._db, memory_ids, profile_id, include_global=include_global,
                                  include_shared=include_shared)
         rows: list[tuple[str, str]] = []
+        # Erasure wins here as on every other channel: a fact with a
+        # projection_tombstones row is never returned, even to a caller of this
+        # channel that sits upstream of the final recall filter. Test doubles
+        # without the clause builder have no tombstone table to consult.
+        clause = getattr(self._db, "current_fact_clause", None)
+        guard = clause("f") if callable(clause) else ""
         for i in range(0, len(memory_ids), _IN_CHUNK):
             part = memory_ids[i:i + _IN_CHUNK]
             found = self._db.execute(
-                "SELECT fact_id, memory_id FROM atomic_facts WHERE profile_id = ? AND memory_id IN ("
-                + ",".join("?" * len(part)) + ")", (profile_id, *part))
+                "SELECT f.fact_id, f.memory_id FROM atomic_facts f WHERE f.profile_id = ? "
+                "AND f.memory_id IN (" + ",".join("?" * len(part)) + ")" + guard,
+                (profile_id, *part))
             rows += [(r["fact_id"], r["memory_id"]) for r in found]
         return rows
 

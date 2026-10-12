@@ -51,8 +51,8 @@ def _require_admin(request: Request) -> None:
     this BEFORE the handler's try/except so the 401/403 is not swallowed into a
     500.
     """
-    from superlocalmemory.server.rbac_enforce import require_manage
-    require_manage(request)
+    from superlocalmemory.server.rbac_enforce import require_global_manage
+    require_global_manage(request)
 
 # ---------------------------------------------------------------------------
 # Allowed backend values
@@ -284,13 +284,16 @@ def put_storage_config(request: Request, body: StorageConfigUpdate):
 
 
 @router.get("/daemon/config")
-def get_daemon_config():
+def get_daemon_config(request: Request = None):
     """Return current daemon configuration."""
     try:
         data = _read_config()
+        from superlocalmemory.cli.deployment import configured_port
+        identity = getattr(request.app.state, "daemon_descriptor", None) if request else None
         return {
             "idle_timeout": data.get("daemon_idle_timeout", 0),
-            "port": data.get("daemon_port", 8765),
+            "port": identity.port if identity else configured_port(data.get("daemon_port")),
+            "configured_port": data.get("daemon_port", 8765),
             "legacy_port": data.get("daemon_legacy_port", 8767),
             "enable_legacy_port": data.get("daemon_enable_legacy_port", True),
         }

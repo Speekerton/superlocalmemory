@@ -180,9 +180,9 @@ def _live_config(request: Request) -> Any:
 
 @router.post("")
 async def start_switch(request: Request):
-    from superlocalmemory.server.rbac_enforce import require_manage
+    from superlocalmemory.server.rbac_enforce import require_global_manage
 
-    require_manage(request)
+    require_global_manage(request)
     runner = _runner(request)
     if runner is None:
         return _no_runner()
@@ -213,10 +213,10 @@ async def reindex_status(request: Request):
 
 async def _call(request: Request, method: str, accepted: bool) -> JSONResponse:
     from superlocalmemory.core.embedding_reindex import Refused
-    from superlocalmemory.server.rbac_enforce import require_manage
+    from superlocalmemory.server.rbac_enforce import require_global_manage
     from superlocalmemory.storage.embedding_reindex_jobs import JobConflict
 
-    require_manage(request)
+    require_global_manage(request)
     runner = _runner(request)
     if runner is None:
         return _no_runner()
@@ -280,9 +280,9 @@ def _start_upgrade(request: Request, runner: Any) -> JSONResponse:
 @router.post("/upgrade")
 async def start_upgrade(request: Request):
     """Start "Upgrade memory engine": the ordinary background switch to the managed model."""
-    from superlocalmemory.server.rbac_enforce import require_manage
+    from superlocalmemory.server.rbac_enforce import require_global_manage
 
-    require_manage(request)
+    require_global_manage(request)
     runner = _runner(request)
     if runner is None:
         return _no_runner()

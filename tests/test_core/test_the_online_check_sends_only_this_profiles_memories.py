@@ -116,13 +116,16 @@ from tests.test_core.test_the_answer_check_on_the_recall_path import (  # noqa: 
 
 
 def _recall(judge, config, monkeypatch, owners):
+    from tests._recall_sources import recall_sources
+
     response = _response(owners)
     engine = SimpleNamespace(_sufficiency_judge=judge, recall=lambda *a, **k: response)
     monkeypatch.setattr(recall_pipeline, "apply_ranking", lambda resp, *a, **k: resp)
-    return recall_pipeline.run_recall(
-        "which one?", "me", fast=True, config=config, retrieval_engine=engine,
-        trust_scorer=None, embedder=None, db=SimpleNamespace(db_path=None), llm=None,
-        hooks=None, include_shared=True)
+    with recall_sources(config.base_dir, response.results) as db:
+        return recall_pipeline.run_recall(
+            "which one?", "me", fast=True, config=config, retrieval_engine=engine,
+            trust_scorer=None, embedder=None, db=db, llm=None,
+            hooks=None, include_shared=True)
 
 
 def test_a_shared_recall_sends_nothing_of_another_profile_online(

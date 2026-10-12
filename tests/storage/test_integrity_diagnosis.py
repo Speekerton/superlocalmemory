@@ -91,7 +91,7 @@ def test_a_healthy_store_is_ok(tmp_path):
 
 
 def test_doctor_shows_the_message_and_the_targeted_fix(tmp_path, monkeypatch):
-    from superlocalmemory.cli.commands import cmd_doctor
+    from tests.helpers.doctor import run_doctor_report
 
     root = tmp_path / "s"
     damaged_store(root)
@@ -99,7 +99,7 @@ def test_doctor_shows_the_message_and_the_targeted_fix(tmp_path, monkeypatch):
     captured: list[dict] = []
     with patch("superlocalmemory.cli.json_output.json_print",
                side_effect=lambda event, data=None, **kw: captured.append(data or {})):
-        cmd_doctor(argparse.Namespace(json=True, quick=True))
+        run_doctor_report(argparse.Namespace(json=True, quick=True))
     check = next(c for c in captured[-1]["checks"] if c["name"] == "Database")
     assert check["status"] == "FAIL"
     assert "sqlite3.Row" not in check["detail"] and TABLE in check["detail"]

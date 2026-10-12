@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
-import importlib.util
 import pathlib
 import re
 import subprocess
 import sys
 import types
-
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 PLUGIN = REPO / "hermes-plugin"
@@ -67,7 +66,7 @@ def test_plugin_registers_all_skills_agents_and_lifecycle_hooks() -> None:
 def test_all_cli_commands_have_router_and_generated_slash_aliases() -> None:
     inventory = json.loads((PLUGIN / "command-inventory.json").read_text(encoding="utf-8"))
     commands = inventory["primary_commands"]
-    assert len(commands) == 72  # 4.1.25: + features, media, sources, team, token
+    assert len(commands) == 74  # includes outcome reporting and Memory health (enrich)
     assert len(set(commands)) == len(commands)
     runtime = _runtime()
     assert 'ctx.register_command("slm", plugin.slash_router' in runtime

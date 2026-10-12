@@ -235,6 +235,8 @@ def test_embedding_config_mutation_starts_from_running_daemon_config(
         json=AsyncMock(return_value={"provider": "openai", "model_name": "qwen3"}),
     )
     monkeypatch.setattr(rbac_enforce, "require_manage", lambda request: None)
+    # Embedding settings are installation-wide, so the route asks for global manage.
+    monkeypatch.setattr(rbac_enforce, "require_global_manage", lambda request: None)
     monkeypatch.setattr(v3_api, "_apply_runtime_config", AsyncMock())
     monkeypatch.setattr(
         SLMConfig,
@@ -254,7 +256,7 @@ def test_every_dashboard_settings_surface_exposes_embedding_config_failure() -> 
     root = Path(__file__).parents[1]
     for relative_path in (
         "src/superlocalmemory/ui/js/auto-settings.js",
-        "src/superlocalmemory/ui/js/od-settings.js",
+        "src/superlocalmemory/ui/js/od-settings-models.js",
     ):
         source = (root / relative_path).read_text(encoding="utf-8")
         assert "Embedding configuration unavailable" in source, relative_path

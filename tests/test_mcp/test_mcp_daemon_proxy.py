@@ -207,11 +207,12 @@ class TestDaemonPoolProxy:
         assert out["retryable"] is True
 
     def test_store_returns_ok_false_on_http_error(self, monkeypatch):
-        def _fake_urlopen(req, timeout=30):
+        def _slow_request(*args, **kwargs):
             raise TimeoutError("slow")
 
-        import superlocalmemory.mcp._daemon_proxy as mod
-        monkeypatch.setattr(mod.urllib.request, "urlopen", _fake_urlopen)
+        monkeypatch.setattr(
+            "superlocalmemory.cli.daemon.daemon_request", _slow_request,
+        )
 
         proxy = DaemonPoolProxy(port=9999)
         out = proxy.store("x")

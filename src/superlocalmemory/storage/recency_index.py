@@ -32,6 +32,8 @@ from __future__ import annotations
 import logging
 import sqlite3
 
+from superlocalmemory.storage.visibility_index import ensure_covering
+
 logger = logging.getLogger(__name__)
 
 NAME = "idx_facts_recent"
@@ -41,11 +43,7 @@ COLUMNS = ("profile_id", "created_at", "fact_id", "scope", "archive_status", "qu
 def ensure(conn: sqlite3.Connection) -> bool:
     """Create the index when the columns exist. True when it exists afterwards."""
     try:
-        have = {row[1] for row in conn.execute("PRAGMA table_info(atomic_facts)")}
-        if not set(COLUMNS) <= have:
-            return False
-        conn.execute(f"CREATE INDEX IF NOT EXISTS {NAME} ON atomic_facts ({', '.join(COLUMNS)})")
-        return True
+        return ensure_covering(conn, NAME, COLUMNS)
     except sqlite3.Error as exc:  # never fatal: reads stay correct, only slower
         logger.warning("recency index not created: %s", exc)
         return False

@@ -25,7 +25,8 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from superlocalmemory.storage.models import AtomicFact, FactType, MemoryRecord
+from superlocalmemory.storage.models import AtomicFact, FactType, MemoryRecord, RetrievalResult
+from tests._recall_sources import recall_sources
 
 
 def _daemon_headers(app) -> dict[str, str]:
@@ -72,6 +73,12 @@ def client(engine_with_mock_deps, monkeypatch):
         content="zorblatt is a type of cryptocurrency",
         fact_type=FactType.OPINION,
     ))
+    # Kind presentation is downstream of admission; give both rows their actual
+    # source while retaining their IDs, kind provenance, scores and fact types.
+    with recall_sources(engine._config.base_dir, [
+        RetrievalResult(fact=fact) for fact in db.get_all_facts("default")
+    ], db=db):
+        pass
 
     monkeypatch.setattr(engine, "recall", _slow_recall)
     monkeypatch.setenv("SLM_SEARCH_RECALL_TIMEOUT_S", "0.2")
@@ -93,6 +100,7 @@ class TestDegradedSearchShowsTheMemoryKind:
         r = tc.post("/api/search", json={"query": "zorblatt", "limit": 10}, headers=h)
         assert r.status_code == 200, r.text
         assert r.json()["retrieval_mode"] == "degraded_lexical", r.json()
+        assert r.json()["source_fidelity_status"] == "checked"
 
     def test_a_confirmed_kind_wins_over_the_legacy_fact_type(self, client) -> None:
         tc, h = client

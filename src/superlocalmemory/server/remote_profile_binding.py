@@ -137,7 +137,8 @@ NEUTRAL_ARGUMENTS: frozenset[str] = frozenset({
     "output_summary", "pattern_id", "pattern_type", "payload", "prefer_project", "project",
     "project_strict",
     "project_path", "query", "recall_query_id", "receipt_id", "refs", "replaces",
-    # Outcome idempotence is salted by the authorized profile in outcome_events.
+    # report_id is an idempotency key, hashed with the routed profile by outcome_events;
+    # it cannot select a stored report or another workspace.
     "reply_to", "report_id", "reversible", "run_id",
     "saved_by", "session_date", "session_id", "skill_name", "tags", "tags_match", "target",
     "timeout_s", "to", "tool_name", "ttl_seconds", "valid_at", "value", "window",

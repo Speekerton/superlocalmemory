@@ -152,7 +152,13 @@ def _session_context(project_name: str, deadline: HookDeadline,
 def _session_message(session: dict) -> str:
     if not session.get("session_id"):
         reason = _unavailable_reason(session)
-        return _SESSION_INIT_UNAVAILABLE + (f" ({reason})" if reason else "")
+        message = _SESSION_INIT_UNAVAILABLE + (f" ({reason})" if reason else "")
+        if reason == "recovery_needed":
+            message += (": a restore stopped part-way. Run `slm backup restore-safety-copy`, "
+                        "then `slm serve start`.")
+        elif reason == "restore_running":
+            message += ": a restore is running; wait for it to finish."
+        return message
     message = (
         f"SLM session_init OK: {session['session_id']} "
         f"({session.get('memory_count', 0)} memories, "

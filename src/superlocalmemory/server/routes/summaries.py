@@ -33,10 +33,12 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from superlocalmemory.core.project_identity import project_key
 from superlocalmemory.storage.database import visible_fact_clause_for_connection
 
+from .dashboard_tasks import router as dashboard_tasks_router
 from .helpers import dict_factory, get_active_profile, get_db_connection
 
 logger = logging.getLogger("superlocalmemory.routes.summaries")
 router = APIRouter()
+router.include_router(dashboard_tasks_router)
 
 _KINDS = ("day", "project", "session")
 
@@ -110,9 +112,10 @@ async def get_summary(request: Request, kind: str = "day", target: str = "",
     cfg = _load_config()
     try:
         if kind == "day":
+            from superlocalmemory.server.summary_cache import cached_daily
             from superlocalmemory.summaries import generate_daily_reflection
 
-            result = generate_daily_reflection(
+            result = cached_daily(generate_daily_reflection,
                 db_path, _caller_day(target, tz_offset_minutes), profile, cfg,
                 tz_offset_minutes=tz_offset_minutes)
         elif kind == "project":
@@ -132,9 +135,11 @@ async def get_summary(request: Request, kind: str = "day", target: str = "",
     except Exception:
         raise _internal_error("Summary generation error")
 
-    # Say why, not just what: someone seeing a plainer result than expected
-    # learns that a written summary needs a model, instead of reading the
-    # feature as broken.
+    return _summary_payload(result, cfg)
+
+
+def _summary_payload(result, cfg) -> dict:
+    """Describe this result and how it was produced, including cached results."""
     from superlocalmemory.core.mode_capability import llm_capability
 
     generated = str(getattr(result, "generated_by", "") or "")

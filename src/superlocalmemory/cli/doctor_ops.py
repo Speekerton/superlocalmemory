@@ -65,6 +65,11 @@ def failed_saves_finding(db_path: str | Path) -> tuple[str, str, str]:
 
     db_path = Path(db_path)
     counts = get_failure_counts(db_path)
+    if counts.get("unavailable"):
+        # OPS-10: unknown is not "no failures".
+        return ("WARN", "the list of failed saves could not be read ("
+                + ", ".join(counts["unavailable"]) + "), so failures are unknown",
+                "check that memory.db is readable, then run 'slm doctor' again")
     dead = counts["dead_letter_count"]
     degraded = counts["degraded_operations"]
     exhausted = counts["exhausted_obligations"]

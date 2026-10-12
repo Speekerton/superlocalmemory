@@ -17,6 +17,7 @@ memory. The Lance side is a fake here (real Lance is in tests/vector, native).
 
 from __future__ import annotations
 
+import itertools
 import json
 import sqlite3
 import uuid
@@ -220,7 +221,45 @@ def test_apply_syncs_the_stale_row_and_removes_the_orphans(drifted):
     assert not [k for k in again["done"] if k.startswith("vector_parity.")]
 
 
-def test_receipts_hold_ids_and_counts_only_and_are_not_undoable(drifted):
+@pytest.fixture
+def receipt_drifted(monkeypatch, request):
+    """Valid IDs deliberately contain the old privacy scan's forbidden text."""
+    values = itertools.count(1)
+
+    def next_uuid():
+        value = next(values)
+        return uuid.UUID(hex=f"b64{value:013x}{value:016x}")
+
+    monkeypatch.setattr(uuid, "uuid4", next_uuid)
+    return request.getfixturevalue("drifted")
+
+
+def _assert_vector_receipt_schema(receipts, drifted):
+    expected = {
+        "resync_stale_vectors": (
+            "fact_embeddings", "the vector was not the memory's own embedding",
+            {drifted["ids"]["stale"]}),
+        "remove_orphan_lance_vectors": (
+            "lance embeddings", "no live, visible memory behind the vector",
+            {drifted["ids"]["withheld"], drifted["ids"]["soft"],
+             drifted["erased"], drifted["ghost"]}),
+    }
+    assert len(receipts) == len(expected)
+    assert {row[0] for row in receipts} == set(expected)
+    for action, target, reason, before_json, after_json, undoable in receipts:
+        expected_target, expected_reason, ids = expected[action]
+        assert (target, reason, undoable) == (expected_target, expected_reason, 0)
+        before, after = json.loads(before_json), json.loads(after_json)
+        assert set(before) == {"rows", "fact_ids"}
+        assert type(before["rows"]) is int and before["rows"] == len(ids)
+        assert isinstance(before["fact_ids"], list)
+        assert all(isinstance(fact_id, str) for fact_id in before["fact_ids"])
+        assert set(before["fact_ids"]) == ids and len(before["fact_ids"]) == len(ids)
+        assert after == {"rows": 0} and type(after["rows"]) is int
+
+
+def test_receipts_hold_ids_and_counts_only_and_are_not_undoable(receipt_drifted):
+    drifted = receipt_drifted
     from superlocalmemory.storage.integrity_repair import Limits, Repair
 
     repair = Repair(drifted["db"], limits=Limits(pause_s=0, confirm_s=0), lance=drifted["lance"])
@@ -232,23 +271,15 @@ def test_receipts_hold_ids_and_counts_only_and_are_not_undoable(drifted):
         "SELECT action, target, reason, before_json, after_json, undoable FROM "
         "integrity_repair_receipts WHERE run_id = ? AND action IN "
         "('resync_stale_vectors', 'remove_orphan_lance_vectors')", (run_id,)).fetchall()
-    assert {r[0] for r in receipts} == {"resync_stale_vectors", "remove_orphan_lance_vectors"}
-    assert all(r[5] == 0 for r in receipts)
-    by_action = {r[0]: json.loads(r[3]) for r in receipts}
-    assert by_action["resync_stale_vectors"]["rows"] == 1
-    assert by_action["resync_stale_vectors"]["fact_ids"] == [drifted["ids"]["stale"]]
-    assert by_action["remove_orphan_lance_vectors"]["rows"] == 4
-    # no vector, no text: the only thing in a receipt besides ids is counts
-    dump = json.dumps(receipts)
-    assert drifted["marker"] not in dump and "orchard" not in dump
-    assert "b64" not in dump
+    assert drifted["ids"]["stale"].startswith("b64")
+    _assert_vector_receipt_schema(receipts, drifted)
     # nothing is kept to put back: a stale or orphaned vector must not return
     assert conn.execute("SELECT COUNT(*) FROM integrity_repair_undo WHERE run_id = ?",
                         (run_id,)).fetchone()[0] == 0
     conn.close()
 
     restored = repair.undo(run_id)
-    assert "fact_embeddings" not in restored and "lance" not in json.dumps(restored)
+    assert "fact_embeddings" not in restored and "lance embeddings" not in restored
     with vec_connection(drifted["db"]) as c2:
         assert _vec(c2, drifted["ids"]["stale"]) == _own(c2, drifted["ids"]["stale"])
 

@@ -30,6 +30,14 @@ def _adapters_config_path() -> Path:
     return state_path("adapters.json")
 
 
+def _admitted(name: str, cfg: dict) -> str:
+    """The configured path, re-checked against the import folders; "" if refused."""
+    from superlocalmemory.infra.data_root import canonical_data_root
+    from superlocalmemory.ingestion.import_roots import saved_path
+
+    return saved_path(name, cfg, canonical_data_root())
+
+
 def _import_dir() -> Path:
     return state_path("import")
 
@@ -67,6 +75,9 @@ class CalendarAdapter(BaseAdapter):
         self._stop_event.wait(self._poll_interval)
 
     def _detect_tier(self) -> None:
+        from superlocalmemory.ingestion.adapter_config import validate_tier
+
+        validate_tier("calendar", self._tier)
         if self._tier != "auto":
             return
 
@@ -77,7 +88,7 @@ class CalendarAdapter(BaseAdapter):
 
         if cfg.get("tier") == "ics" or cfg.get("ics_path"):
             self._tier = "ics"
-            self._ics_path = cfg.get("ics_path", "")
+            self._ics_path = _admitted("calendar", cfg)
             return
 
         # Check for OAuth (shares Gmail credentials)
@@ -91,7 +102,7 @@ class CalendarAdapter(BaseAdapter):
         ics_files = list(import_dir.glob("*.ics")) if import_dir.exists() else []
         if ics_files:
             self._tier = "ics"
-            self._ics_path = str(ics_files[0])
+            self._ics_path = _admitted("calendar", {"ics_path": str(ics_files[0])})
             return
 
         self._tier = "ics"

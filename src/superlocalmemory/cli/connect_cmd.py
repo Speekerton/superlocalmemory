@@ -66,6 +66,9 @@ def _emit(args, result):
 
 def _connect_one(args, ide):
     from superlocalmemory.cli.commands import _agents_md_source_factory
+    from superlocalmemory.cli.deployment import runtime_port
+
+    daemon_port = getattr(args, "daemon_port", None) or runtime_port()
 
     result = kit.connect_ide(
         ide,
@@ -75,8 +78,10 @@ def _connect_one(args, ide):
         agents_md_source=_agents_md_source_factory(),
         dry_run=getattr(args, "dry_run", False),
         transport=getattr(args, "transport", "stdio"),
-        daemon_port=getattr(args, "daemon_port", 8765),
+        daemon_port=daemon_port,
     )
+    # The requested host is the fallback name for output and diagnostics.
+    result = {"ide": ide, **result}
     if (
         getattr(args, "verify", False)
         and not result.get("error")
@@ -86,7 +91,7 @@ def _connect_one(args, ide):
             from superlocalmemory.hooks.verify_mcp import verify_http_mcp
 
             result["mcp_verification"] = verify_http_mcp(
-                getattr(args, "daemon_port", 8765),
+                daemon_port,
                 profile=getattr(args, "profile", None),
             )
     if (

@@ -369,17 +369,21 @@ def _cmd_ops_status(args: Namespace) -> None:
 def cmd_ops(args: Namespace) -> None:
     """Dispatch ``slm ops`` subcommands."""
     sub = getattr(args, "ops_command", None)
+    from superlocalmemory.cli.ops_repair_cmd import cmd_ops_repair_saves
+
     handlers = {
         "list": _cmd_ops_list,
         "resolve": _cmd_ops_resolve,
         "status": _cmd_ops_status,
+        "repair-saves": cmd_ops_repair_saves,
     }
     handler = handlers.get(sub)
     if handler:
         handler(args)
     else:
-        print("Usage: slm ops <list|resolve|status> [options]")
+        print("Usage: slm ops <list|resolve|status|repair-saves> [options]")
         print("  slm ops list [--profile P] [--json]")
         print("  slm ops resolve <id> --action {retry|force_reconcile|cancel} [--json]")
         print("  slm ops status [--json]")
+        print("  slm ops repair-saves [--apply] [--json]")
         sys.exit(1)

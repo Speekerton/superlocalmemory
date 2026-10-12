@@ -79,7 +79,7 @@
     return d;
   }
   function note(text, tone, cls) {
-    var colors = { ok: 'var(--success, #1a7f37)', bad: 'var(--danger)', dim: 'var(--fg-3)' };
+    var colors = { ok: 'var(--ok-text)', bad: 'var(--danger-text)', dim: 'var(--fg-3)' };
     return el('div', { text: text, class: cls || '' },
       { fontSize: '12.5px', color: colors[tone] || 'var(--fg-2)', marginTop: '6px' });
   }

@@ -1,8 +1,8 @@
-# CLI Reference — V4.0.5
+# CLI Reference — V4.1.25
 
 The installed CLI is the command source of truth. Use `slm --help` and
 `slm <command> --help`; commands that advertise `--json` provide structured
-output. This page describes **V4.0.5**; the installed `--help` wins if prose drifts.
+output. This page describes **V4.1.25**; the installed `--help` wins if prose drifts.
 
 ## Setup & Status
 
@@ -19,7 +19,40 @@ output. This page describes **V4.0.5**; the installed `--help` wins if prose dri
 | `slm doctor [--fix] [--quick] [--json]` | Pre-flight checks (deps, embedding worker, daemon) |
 | `slm restart` | Kill orphans, clean state, start fresh, verify health |
 
+Doctor checks daemon availability in every mode, including `--quick`: it reads
+the descriptor and makes at most one `/health` probe with a 0.5-second timeout.
+It never starts the daemon. A missing descriptor warns with `slm serve start`;
+a dead recorded process or an invalid or unhealthy daemon fails with
+`slm restart`. The daemon check is also included in `--json` output.
+
+Doctor exits **0** for passes or warnings only, and **1** if any check fails.
+The complete text or JSON report is emitted before the exit status is set.
+
 ## Memory Operations
+
+### Quantization and sketch repair
+
+```bash
+slm quantize                              # Preview the full precision cycle
+slm quantize --execute                    # Apply the full cycle
+slm quantize --repair-sketches            # Preview QJL sketch repairs only
+slm quantize --repair-sketches --execute  # Apply sketch repairs only
+slm quantize --repair-sketches --profile default --json
+```
+
+Use `--repair-sketches` for the QJL repair recommended by `slm doctor`. It repairs
+legacy or incompatible sketches from retained original vectors without changing
+canonical vectors, base quantized bytes, bit widths or lifecycle state. It starts
+no embedding model and previews by default. Repeating it skips compatible sketches;
+memories without usable original vectors are reported as needing re-embedding.
+Repair reuses existing rotation geometry, including the legacy polar fallback.
+Restore a missing or incompatible rotation matrix from backup before applying.
+
+The full `--execute` cycle also adjusts precision based on retention. Before it
+applies changes, it prints preview counts for sketch repairs, downgrades, upgrades
+and forgotten-state transitions (vectors are kept). Counts can change under
+concurrent writes. Both paths accept `--profile` and `--json`; execution previews
+go to stderr with `--json`, and the final JSON includes the preview in `data.plan`.
 
 ### Store
 

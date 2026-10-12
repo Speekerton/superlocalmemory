@@ -52,7 +52,7 @@ class _Engine:
     """MemoryEngine's recall signature over the real recall pipeline."""
 
     def __init__(self, judge, config) -> None:
-        response = RecallResponse(results=[
+        self._response = response = RecallResponse(results=[
             RetrievalResult(fact=AtomicFact(fact_id=f"f{i}", content=f"private memory {i}"),
                             score=0.9, confidence=1.0)
             for i in range(5)
@@ -61,14 +61,20 @@ class _Engine:
                                                  recall=lambda *a, **k: response)
         self._config = config
         self.calls: list[dict] = []
+        self.responses: list[RecallResponse] = []
 
     def recall(self, query, profile_id=None, mode=None, limit=20, agent_id="unknown",
                session_id=None, fast=None, **kwargs):
+        from tests._recall_sources import recall_sources
+
         self.calls.append({"query": query, "fast": fast, **kwargs})
-        return recall_pipeline.run_recall(
-            query, "default", limit=limit, fast=fast, config=self._config,
-            retrieval_engine=self._retrieval_engine, trust_scorer=None, embedder=None,
-            db=SimpleNamespace(db_path=None), llm=None, hooks=None, **kwargs)
+        with recall_sources(self._config.base_dir, self._response.results) as db:
+            response = recall_pipeline.run_recall(
+                query, "default", limit=limit, fast=fast, config=self._config,
+                retrieval_engine=self._retrieval_engine, trust_scorer=None, embedder=None,
+                db=db, llm=None, hooks=None, **kwargs)
+        self.responses.append(response)
+        return response
 
 
 class _Runtime:
@@ -100,6 +106,9 @@ def test_the_start_up_recalls_send_nothing_to_the_provider(
     recall_warmup.run_warmup_recalls(engine, _Runtime(),
                                      warm_spreading_activation=lambda e, r: None)
     assert len(engine.calls) == 3, "all three warm-up recalls still run"
+    assert len(engine.responses) == 3
+    assert all(len(r.results) == 5 and r.source_fidelity_status == "checked"
+               for r in engine.responses), "warm-up must have real candidates to judge"
     assert provider.bodies == [], (
         f"daemon start sent {len(provider.bodies)} billed request(s) carrying memories")
 

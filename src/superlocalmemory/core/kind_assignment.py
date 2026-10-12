@@ -105,7 +105,8 @@ def assign_kinds(facts: list, *, metadata: dict | None, source_type: str,
         return facts
     now = datetime.now(UTC).isoformat()
     declared = caller_kind(metadata, source_type)
-    return [with_assignment(fact, assignment, now)
+    return [fact if is_confirmed(getattr(fact, "memory_kind_source", None))
+            else with_assignment(fact, assignment, now)
             for fact, assignment in zip(facts, _suggestions(facts, declared, classifier))]
 
 

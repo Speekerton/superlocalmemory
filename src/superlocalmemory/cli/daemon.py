@@ -27,9 +27,13 @@ import os
 import socket
 import sys
 import time
+from typing import TYPE_CHECKING
 
 from superlocalmemory.cli import daemon_startup as _startup
-from superlocalmemory.cli.daemon_errors import DaemonServerError, server_error_from  # noqa: F401 - re-exported
+from superlocalmemory.cli.daemon_errors import (  # noqa: F401 - re-exported
+    DaemonServerError,
+    server_error_from,
+)
 from superlocalmemory.infra.daemon_identity import (
     build_descriptor,
     descriptor_matches_health,
@@ -43,6 +47,7 @@ from superlocalmemory.infra.data_root import (
     state_path,
 )
 from superlocalmemory.infra.instance_lock import instance_lock_is_held
+from superlocalmemory.cli.deployment import configured_port
 from superlocalmemory.infra.process_identity import (
     compare_start_tokens,
     process_start_token_for,
@@ -50,10 +55,10 @@ from superlocalmemory.infra.process_identity import (
 
 logger = logging.getLogger(__name__)
 
-try:
-    _DEFAULT_PORT = int(os.environ.get("SLM_DAEMON_PORT", "") or 8765)
-except ValueError:
-    _DEFAULT_PORT = 8765
+if TYPE_CHECKING:
+    from subprocess import Popen
+
+_DEFAULT_PORT = configured_port()
 _LEGACY_PORT = 8767   # backward-compat redirect
 _DEFAULT_IDLE_TIMEOUT = 0  # v3.4.3: 24/7 default (was 1800)
 _PID_FILE = None  # test-only override; runtime resolution stays dynamic
@@ -409,7 +414,10 @@ def _verified_legacy_health() -> dict | None:
     port_file = descriptor_path().with_name("daemon.port")
     try:
         pid = int(pid_file.read_text(encoding="utf-8").strip())
-        port = int(port_file.read_text(encoding="utf-8").strip()) if port_file.exists() else _DEFAULT_PORT
+        port = (
+            int(port_file.read_text(encoding="utf-8").strip())
+            if port_file.exists() else _DEFAULT_PORT
+        )
     except (OSError, ValueError):
         return None
     if not _is_verified_legacy_process(pid):
@@ -429,11 +437,11 @@ def _get_port() -> int:
     if descriptor is not None:
         return descriptor.port
     if descriptor_path().exists():
-        return _DEFAULT_PORT
+        return configured_port()
     legacy = _verified_legacy_health()
     if legacy is not None:
         return int(legacy["_legacy_port"])
-    return _DEFAULT_PORT
+    return configured_port()
 
 
 def _health_is_owned(health: dict, *, port: int | None = None) -> bool:
@@ -707,7 +715,9 @@ def daemon_request(
         import urllib.error
         import urllib.request
         url = f"http://127.0.0.1:{port}{path}"
-        data = json.dumps(body).encode() if body else None
+        # An empty dict is still a body: handlers that declare one reject a
+        # bodiless POST with 422, which callers would read as "no daemon".
+        data = json.dumps(body).encode() if body is not None else None
         headers = {"Content-Type": "application/json"} if data else {}
         if capability is not None and target_instance is not None:
             headers["X-SLM-Daemon-Capability"] = capability
@@ -716,9 +726,25 @@ def daemon_request(
         # does not replace a dashboard user's profile-scoped authorization in
         # governed workspaces. The user opts in by supplying an explicit
         # session through the process environment (never logged or persisted).
-        user_session = os.environ.get("SLM_USER_SESSION", "").strip()
+        # The caller's own session: the one an HTTP MCP request carried when
+        # this runs inside the daemon on its behalf (the daemon's environment
+        # is not the caller's), else this process's SLM_USER_SESSION (OPS-16).
+        from superlocalmemory.core.caller_session import presented_session
+
+        user_session = presented_session()
         if user_session:
             headers["X-SLM-User-Session"] = user_session
+        from superlocalmemory.server.caller_workspace import current_owner_workspace_binding
+
+        owner_binding = current_owner_workspace_binding()
+        if owner_binding:
+            headers["X-SLM-Workspace-Binding"] = owner_binding
+        # The connection's agent name (SLM_AGENT_ID, or an /mcp/<agent> name
+        # vouched by the capability; a bare URL name is only a claim). The
+        # daemon believes it only alongside the capability (L-15).
+        from superlocalmemory.core.agent_attribution import forwarded_headers
+
+        headers.update(forwarded_headers(capability))
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         from superlocalmemory.core import outbound_http  # never via a proxy
         resp = outbound_http.urlopen(req, timeout=timeout_seconds)
@@ -851,7 +877,7 @@ def _start_daemon_subprocess(*, port: int | None = None) -> bool:
     # 4.1.14 audit: bind the port ensure_daemon probed — probing a custom
     # port and then spawning on the default opened the browser on a port
     # with no daemon (or refused a start the probe had cleared).
-    _target_port = port if port is not None else _DEFAULT_PORT
+    _target_port = port if port is not None else configured_port()
     if _has_tcp_listener(_target_port):
         logger.warning("daemon port %d is already owned; refusing a second start", _target_port)
         return False
@@ -896,12 +922,18 @@ def _start_daemon_subprocess(*, port: int | None = None) -> bool:
     kwargs["env"] = daemon_env
 
     with open(log_file, "a", encoding="utf-8") as lf:
+        log_offset = lf.tell()
         proc = subprocess.Popen(cmd, stdout=lf, stderr=lf, **kwargs)
 
     # The child writes the record itself once it owns the data folder. The
     # parent never does: a child that loses a start race must not overwrite
     # the record of the daemon that won it.
-    return _wait_for_daemon(timeout=60)
+    ready = _wait_for_daemon(timeout=60, proc=proc)
+    if not ready and (exit_code := proc.poll()) is not None:
+        from superlocalmemory.cli.daemon_start_error import startup_error
+
+        logger.error("%s", startup_error(log_file, log_offset, exit_code))
+    return ready
 
 
 def _wait_bounded_for_lock_holder() -> bool:
@@ -943,6 +975,34 @@ def _wait_while_owned() -> bool | None:
     return True
 
 
+def _recovery_root():
+    from pathlib import Path
+
+    from superlocalmemory.core.config import SLMConfig
+
+    return Path(SLMConfig.load().db_path).parent
+
+
+def _recovery_state() -> tuple[str, str] | None:
+    """``(kind, message)`` when a restore forbids starting now, or None.
+
+    Kind is ``restore_running`` (wait) or ``recovery_needed`` (run the
+    recovery command). Unreadable settings never block.
+    """
+    try:
+        from superlocalmemory.server.backup_restore_txn import start_refusal
+
+        return start_refusal(_recovery_root())
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _recovery_block() -> str | None:
+    """Why a restore forbids starting now, or None (unreadable settings never block)."""
+    found = _recovery_state()
+    return found[1] if found else None
+
+
 def ensure_daemon(*, port: int | None = None) -> bool:
     """Start daemon if not running. Returns True if daemon is ready.
 
@@ -964,6 +1024,11 @@ def ensure_daemon(*, port: int | None = None) -> bool:
     """
     if is_daemon_running():
         return True
+    blocked = _recovery_block()
+    if blocked:
+        # A restore left the stores mixed: never start on them (see backup_restore_txn).
+        logger.error("Not starting SuperLocalMemory: %s", blocked)
+        return False
     if (
         os.environ.get("SLM_TEST_ISOLATION") == "1"
         and os.environ.get("SLM_TEST_ALLOW_DAEMON_SPAWN") != "1"
@@ -1101,21 +1166,33 @@ def ensure_daemon(*, port: int | None = None) -> bool:
             # third starter lock a fresh inode while this one is still held.
 
 
-def _wait_for_daemon(timeout: int = 60) -> bool:
-    """Wait for matching owned health; liveness alone is never readiness."""
+def _wait_for_daemon(timeout: int = 60, *, proc: Popen | None = None) -> bool:
+    """Wait for owned health, stopping when our child and any race winner die."""
     for _ in range(timeout * 2):  # check every 0.5s
         time.sleep(0.5)
         descriptor = read_descriptor()
-        if descriptor is not None:
-            if not _descriptor_process_is_alive(descriptor):
-                continue
+        live = descriptor is not None and _descriptor_process_is_alive(descriptor)
+        if live:
             health = _fetch_health(descriptor.port)
             if health is not None and descriptor_matches_health(descriptor, health):
                 return True
             continue
-        if descriptor_path().exists():
+        if proc is not None and proc.poll() is not None:
+            # A competing child may have published between our read and poll.
+            # Its live record wins even when the child we spawned lost the race.
+            winner = read_descriptor()
+            if winner is None or not _descriptor_process_is_alive(winner):
+                # Another starter can own the namespace before it publishes
+                # daemon.json. A kernel-held instance lock is live ownership
+                # evidence; our exited child does not invalidate that winner.
+                if instance_lock_is_held():
+                    continue
+                return False
             continue
-        if _verified_legacy_health() is not None:
+        if (
+            descriptor is None and not descriptor_path().exists()
+            and _verified_legacy_health() is not None
+        ):
             return True
     return False
 
@@ -1145,6 +1222,15 @@ def describe_daemon_unavailability() -> dict[str, str]:
 def _describe_daemon_unavailability() -> dict[str, str]:
     from superlocalmemory.cli import daemon_diagnosis
 
+    found = _recovery_state()
+    if found:
+        kind, message = found
+        if kind == "restore_running":
+            return {"reason": kind, "message": message,
+                    "hint": "Wait for the restore to finish; it starts the service again."}
+        # The stores may be mixed: the fix is the recovery command, not a retry.
+        return {"reason": "recovery_needed", "message": message,
+                "hint": "Run `slm backup restore-safety-copy`, then `slm serve start`."}
     return daemon_diagnosis.describe(sys.modules[__name__])
 
 

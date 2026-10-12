@@ -460,17 +460,78 @@ configuration. Run it after any install or upgrade.
 
 ```bash
 slm doctor
-slm doctor --quick   # dependencies and configuration only
+slm doctor --quick   # fast checks, including daemon health
 slm doctor --deep    # read every database page (slow on a large store)
 slm doctor --fix     # re-download missing models and install sqlite-vec first
 slm doctor --json
 ```
+
+Every mode checks the daemon descriptor and makes at most one short `/health`
+probe (0.5-second timeout). Doctor never starts the daemon. A missing descriptor
+warns with `slm serve start`; a dead recorded process, invalid descriptor or
+unhealthy daemon fails with `slm restart`. A `/health` reply that is streaming,
+oversized or never completes counts as unhealthy (FAIL), still within the 1-second
+diagnostic deadline. If only the optional feature probe overruns, the Daemon row
+stays PASS and a separate "Daemon features" row warns. The check appears in JSON
+output too.
+
+The whole run has one overall deadline (180 seconds; 900 with `--deep` or `--fix`).
+If a check hangs, doctor prints the report so far plus a failing "Doctor deadline"
+row naming the check that did not finish, and exits 1.
+
+Exit codes: **0** when checks pass or report warnings only; **1** when any check
+fails. Doctor prints the complete report before exiting, including with `--json`.
 
 Doctor also reads the same failure counts as `slm ops status`: a "Failed saves"
 row warns when saves were given up on after repeated attempts (dead-lettered, so
 those memories may lack entities or graph links) and fails at 50 or more. Its fix
 line names the commands to run: `slm ops list`, then `slm ops resolve <id> --action
 retry` or `--action cancel`.
+
+### `slm enrich status|pause|resume|undo|fix`
+
+After an upgrade the daemon describes older memories in the background: dates,
+the event-time start, names of people, projects and tools, tags and project on
+the source memory, a kind from a model on this machine when one is running, and
+a stub mark on operational receipts such as "Session ID: 9f8e7d6c5b4a" or
+"session ended 2026-10-12 11:28". It works only while nothing else is using
+your memories, only within the memory budget, and it only adds: it never
+changes what a memory says and never replaces a value a caller or you set. A
+safety copy of the store is taken before the first change. Nothing has to be
+configured; the dashboard's Memory health card shows the same progress and the
+same buttons.
+
+Stubs stay in `slm list`, the dashboard list and every count, marked "stub";
+recall never answers with one. Editing a stub (`slm update`, the dashboard, or
+the `update_memory` tool) clears the mark for good once the edit is accepted;
+a proposed edit that is rejected leaves the mark as it was.
+
+Repairs that only add (search sketches rebuilt from the stored vector) run on
+their own. Repairs that delete or move something (entity links: duplicate
+aliases and junk entities; hidden memories that are still in use) never run on
+their own: they are shown as a suggestion here, in `slm doctor` and as a Fix
+button in Memory health. An undone run is never re-applied automatically, and
+the items it touched stay out of suggestions and Fix until you ask for them with
+`--include-undone`.
+
+```bash
+slm enrich status              # progress, suggestions, and the id of every run that changed something
+slm enrich pause <run>         # stop for now (recall and remember keep working)
+slm enrich resume <run>
+slm enrich undo                # undo the most recent run that changed something (asks first)
+slm enrich undo <run> --yes    # a specific run, without asking (scripts need --yes)
+slm enrich fix entity-links    # apply a suggested repair (asks first; undoable)
+slm enrich fix entity-links --include-undone   # also apply items from a run you undid
+slm enrich fix repair-saves    # re-file saves that did not finish (asks first; NOT undoable)
+```
+
+`repair-saves` is `slm ops repair-saves --apply` (same code) behind the shared
+safety copy. It keeps no undo record, so the dashboard card and the command say so
+and ask for a confirm; the idle worker only suggests it, never runs it.
+
+`slm doctor` reports metadata coverage (tags, kind confirmed vs guessed, dates,
+entities), whether the improvements are running or up to date, and any
+suggested repair with its `slm enrich fix` command.
 
 ### `slm warmup`
 
@@ -792,6 +853,8 @@ for structured output.
 slm decay                   # Preview Ebbinghaus zone transitions
 slm decay --execute         # Apply them
 slm quantize --execute      # Apply embedding precision changes
+slm quantize --repair-sketches           # Preview QJL sketch repairs only
+slm quantize --repair-sketches --execute # Repair sketches without precision changes
 slm consolidate --cognitive # Include CCQ cognitive consolidation
 slm consolidate --dry-run
 slm soft-prompts            # List auto-learned soft prompts
@@ -799,6 +862,22 @@ slm soft-prompts            # List auto-learned soft prompts
 
 `decay`, `quantize`, `consolidate` and `soft-prompts` accept `--profile` and
 `--json`.
+
+`quantize --repair-sketches` repairs legacy or incompatible QJL sketches from
+retained original vectors. It preserves canonical vectors, base quantized bytes,
+bit widths and lifecycle state, and starts no embedding model. The default is a
+read-only preview; add `--execute` to apply repairs. Rows without usable original
+vectors are reported as needing re-embedding. Repeating the repair skips sketches
+that are already compatible.
+Repair uses the existing rotation matrix, including a legacy polar matrix when
+appropriate. If that matrix is missing or incompatible, restore it from backup
+before applying repairs.
+
+The full `quantize --execute` cycle also changes precision according to retention.
+Before applying, it prints preview counts for sketch repairs, precision downgrades,
+precision upgrades and forgotten-state transitions (whose vectors are kept).
+Counts can change if memories change concurrently. With `--json`, the preview is
+printed to stderr before execution and included as `data.plan` in the final JSON.
 
 ---
 
@@ -812,7 +891,7 @@ Versioned, checksummed JSONL bundles of memory evidence.
 slm evidence export /path/to/bundle.jsonl --profile default
 slm evidence verify /path/to/bundle.jsonl
 slm evidence import /path/to/bundle.jsonl --execute
-slm evidence import /path/to/bundle.jsonl --replace --execute
+slm evidence import /path/to/bundle.jsonl --replace --rollback-dir ./slm-rollback --execute
 slm evidence rebuild --execute   # Rebuild derived lexical state
 ```
 
@@ -831,12 +910,15 @@ memory content, no secrets) for manual inspection or support. `reliability
 Bayesian learner has moved off its prior and whether each schema-guarded path has
 ever run against this store.
 
-### `slm backup status|recovery-key|decrypt`
+### `slm backup status|recovery-key|decrypt|restore-safety-copy|clear-recovery-needed`
 
 Cloud backups are encrypted. `status` shows the encryption state;
 `recovery-key` shows the recovery key, or with `--import` reads one from stdin
 for a new computer; `decrypt <file> [-o OUT] [--recovery-key-stdin] [--force]`
-turns a downloaded backup into a plain `.db` file. See [Cloud
+turns a downloaded backup into a plain `.db` file;
+`restore-safety-copy [--id POINT]` puts back the safety copy a failed dashboard
+restore kept, with the service stopped; `clear-recovery-needed` lets the service
+start again after you repaired the stores yourself. See [Cloud
 backup](cloud-backup.md).
 
 ### `slm gdpr status|export|erase|verify`
@@ -905,7 +987,16 @@ slm adapters start gmail
 slm adapters status gmail
 slm adapters stop gmail
 slm adapters disable gmail
+slm adapters folders                    # where the dashboard may point importers
+slm adapters allow-folder ~/Meetings    # approve one more folder (this computer only)
 ```
+
+The dashboard's Configure button only accepts a file or folder inside an import
+folder: `imports/` (or the older `import/` drop folder) in the data folder, or a
+folder approved here. Symlinks out of those folders, hidden folders and the rest
+of the data folder are refused. A path saved earlier, or edited by hand in
+`adapters.json`, is checked again on Start and by the importer itself; one that
+fails the check is not read, and the adapter says what to do.
 
 ### `slm ingest [--source ecc|jsonl]`
 

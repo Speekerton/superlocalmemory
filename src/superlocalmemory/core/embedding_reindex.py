@@ -166,14 +166,12 @@ class ReindexRunner:
                                          secrets.get(self.data_root, secrets.PREVIOUS))
         finally:
             conn.close()
-        embedder = steps.build_embedder(prev)
         try:
+            # Same RAM reservation as a forward switch: a rollback load is a full model load.
+            embedder = self._load_embedder(prev)
             if embedder is None:
                 raise steps.StepFailed("it could not be started")
-            steps.probe(embedder, prev.dimension)
         except steps.StepFailed as exc:
-            if embedder is not None:
-                steps.close_embedder(embedder)
             raise Refused(f"the previous model {prev.model_name} is not available ({exc}); "
                           "make it available again, then retry the rollback") from exc
         try:
@@ -189,7 +187,13 @@ class ReindexRunner:
         try:
             job = active_job(conn)
             if job is None:
-                raise Refused("no re-index is running")
+                job = latest_job(conn)
+                if job is None or job["state"] != "failed":
+                    raise Refused("no re-index is running and no failed switch needs dismissing")
+                with steps.write_txn(conn, self.db_path):
+                    update_job(conn, job["job_id"], state="cancelled", finished_at=time.time(),
+                               error="Failed switch dismissed; the current engine is unchanged.")
+                return public_view(get_job(conn, job["job_id"]))
             if job["state"] == "queued":
                 with steps.write_txn(conn, self.db_path):
                     update_job(conn, job["job_id"], state="cancelled", finished_at=time.time(),
@@ -315,10 +319,14 @@ class ReindexRunner:
     def _fail(self, job: dict, message: str, state: str = "failed") -> None:
         conn = self._conn()
         try:
-            current = get_job(conn, job["job_id"]) or job
-            stats = json.loads(current["stats"]) if current.get("stats") else {}
-            stats["clear"] = {"cursor": 0}  # the column twins hold part of the new space
             with steps.write_txn(conn, self.db_path):
+                current = get_job(conn, job["job_id"]) or job
+                if state == "failed" and (current["state"] == "cancelled"
+                                           or self._cancel.is_set()):
+                    state, message = "cancelled", "cancelled"
+                    self._cancel.clear()
+                stats = json.loads(current["stats"]) if current.get("stats") else {}
+                stats["clear"] = {"cursor": 0}  # column twins hold part of the new space
                 sp.drop_staging(conn)
                 update_job(conn, job["job_id"], state=state, error=message,
                            finished_at=time.time(), stats=json.dumps(stats))
@@ -339,7 +347,8 @@ class ReindexRunner:
             if embedder is None:
                 embedder = self._load_embedder(target)
             if embedder is None:
-                raise steps.StepFailed(f"the model {target.model_name} could not be started")
+                raise steps.StepFailed(f"The model {target.model_name} could not be started. "
+                                       "Run slm doctor to check setup, then retry the switch.")
             job = self._prepare(job, embedder, target.dimension)
             if job["state"] == "running":
                 job = self._bulk(job, embedder, target.dimension)
@@ -368,28 +377,39 @@ class ReindexRunner:
         from contextlib import nullcontext
 
         from superlocalmemory.core.ram_lock import ram_reservation
-        from superlocalmemory.core.text_provider import PROVIDER
         from superlocalmemory.runtimes.media_models import load_mb_for
+        from superlocalmemory.runtimes.worker_client import MediaWorkerMemoryError
 
+        # The managed worker owns its cross-process reservation. Holding the
+        # same file lock here while probing prevents its cold load from starting.
+        reservation = nullcontext() if target.provider == "slm-media" else ram_reservation(
+            "embedding-reindex-load", required_mb=load_mb_for(target.model_name),
+            timeout_s=LOAD_WAIT_S)
+        embedder = None
         try:
-            reservation = (nullcontext() if target.provider == PROVIDER else ram_reservation(
-                "embedding-reindex-load", required_mb=load_mb_for(target.model_name),
-                timeout_s=LOAD_WAIT_S))
             with reservation:
                 embedder = steps.build_embedder(target)
                 if embedder is not None:
                     try:
                         steps.probe(embedder, target.dimension)
-                    except steps.StepFailed:
-                        refused = bool(getattr(embedder, "memory_refused", False))
-                        steps.close_embedder(embedder)
-                        if refused:  # a managed worker said no for lack of memory, not of a vector
+                    except steps.StepFailed as failed:
+                        if isinstance(failed.__cause__, MediaWorkerMemoryError):
+                            # a managed worker said no for lack of memory, not of a vector
                             raise steps.StepFailed(MEMORY_REFUSED_MESSAGE) from None
                         raise
                 return embedder
         except steps.StepFailed:
+            if embedder is not None:
+                steps.close_embedder(embedder)
             raise
         except RuntimeError as exc:
+            if embedder is not None:
+                steps.close_embedder(embedder)
+            if "timeout" in str(exc).lower():
+                raise steps.StepFailed(
+                    f"The model load could not obtain its memory reservation ({exc}). "
+                    "Close other large applications or wait for the other model load, "
+                    "then retry.") from exc
             logger.info("model load refused: %s", exc)
             raise steps.StepFailed(MEMORY_REFUSED_MESSAGE) from exc
 
@@ -470,6 +490,9 @@ class ReindexRunner:
             if job["state"] == "queued":
                 steps.probe(embedder, dimension)
                 with steps.write_txn(conn, self.db_path):
+                    current = get_job(conn, job["job_id"])
+                    if current and current["state"] == "cancelled":
+                        raise _Cancelled()
                     sp.drop_staging(conn)
                     sp.ensure_side_tables(conn)
                     sp.create_vec(conn, sp.NEXT_VEC, dimension)

@@ -35,7 +35,11 @@ LEGACY_KEY = RemotePrincipal("legacy-api-key", "api_key", "api_key", "write", No
 
 
 @pytest.fixture(scope="module")
-def registry() -> dict[str, list[str]]:
+def registry(tmp_path_factory) -> dict[str, list[str]]:
+    """Audit the complete remote schema, including explicitly enabled media."""
+    catalog_root = tmp_path_factory.mktemp("remote-tool-catalog")
+    (catalog_root / "features.json").write_text(
+        json.dumps({"schema": 1, "media": {"enabled": True}}), encoding="utf-8")
     code = (
         "import asyncio, json\n"
         "from superlocalmemory.mcp.server import server\n"
@@ -43,7 +47,8 @@ def registry() -> dict[str, list[str]]:
         "print(json.dumps({t.name: sorted((t.input_schema or {}).get('properties', {}))"
         " for t in tools}))\n"
     )
-    env = {**os.environ, "SLM_MCP_ALL_TOOLS": "1", "PYTHONPATH": str(REPO / "src")}
+    env = {**os.environ, "SLM_MCP_ALL_TOOLS": "1", "PYTHONPATH": str(REPO / "src"),
+           "SLM_DATA_DIR": str(catalog_root)}
     out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True,
                          text=True, timeout=240, check=True)
     return json.loads(out.stdout.strip().splitlines()[-1])
@@ -59,10 +64,12 @@ def test_every_argument_of_every_remote_tool_is_classified(registry) -> None:
                     if a not in binding.CLASSIFIED_ARGUMENTS}
     assert not unclassified, (
         "Classify these in server/remote_profile_binding.py: " + ", ".join(sorted(unclassified)))
-    groups = (binding.PROFILE_ARGUMENTS, binding.READ_SCOPE_ARGUMENTS,
-              binding.WRITE_SCOPE_ARGUMENTS, binding.NEUTRAL_ARGUMENTS, binding.MEDIA_ARGUMENTS)
+    groups = (
+        binding.PROFILE_ARGUMENTS, binding.READ_SCOPE_ARGUMENTS, binding.WRITE_SCOPE_ARGUMENTS,
+        binding.NEUTRAL_ARGUMENTS, binding.MEDIA_ARGUMENTS,
+    )
     assert sum(len(g) for g in groups) == len(binding.CLASSIFIED_ARGUMENTS)
-    # media_upload_link is a media tool that cannot carry file arguments.
+    # media_upload_link is a media tool, but takes no file arguments.
     assert binding.MEDIA_ARGUMENT_TOOLS | {"media_upload_link"} == policy.MEDIA_TOOLS
     media_seen = {a for t, args in remote.items() if t in policy.MEDIA_TOOLS for a in args}
     assert binding.MEDIA_ARGUMENTS <= media_seen, sorted(binding.MEDIA_ARGUMENTS - media_seen)
@@ -120,6 +127,50 @@ def test_every_remote_tool_is_routed_profile_free_or_active_only_with_a_reason(
 
 
 # -- bind_arguments -----------------------------------------------------------------------
+
+
+def test_outcome_report_key_is_neutral_and_bound_to_the_callers_profile() -> None:
+    from superlocalmemory.learning.outcome_events import OutcomeReport, _stable_outcome_id
+
+    arguments = {"memory_ids": "fact", "outcome": "success", "report_id": "same-report"}
+    identities = []
+    for profile in ("work", "other"):
+        bound = binding.bind_arguments("report_outcome", arguments, key_name="k", bound=profile)
+        assert bound == {**arguments, "profile_id": profile}
+        report = OutcomeReport(
+            profile_id=bound["profile_id"], fact_ids=("fact",), outcome="success",
+            surface="mcp", idempotency_key=bound["report_id"],
+        )
+        identities.append(_stable_outcome_id(report))
+    assert identities[0] != identities[1]
+    assert "profile_id" not in arguments  # binding leaves the caller's input alone
+
+
+@pytest.mark.parametrize("arguments", [
+    {"profile_id": "other"},
+    {"context": {"profile_id": "other"}},
+])
+def test_outcome_report_key_cannot_bypass_profile_binding(arguments) -> None:
+    with pytest.raises(binding.BindingRefusal) as exc:
+        binding.bind_arguments(
+            "report_outcome", {"report_id": "same-report", **arguments},
+            key_name="k", bound="work",
+        )
+    assert exc.value.code == binding.PROFILE_DENIAL
+
+
+@pytest.mark.parametrize("active", ["work", "personal"])
+def test_remote_outcome_report_key_reaches_only_the_keys_profile(active) -> None:
+    arguments = {"memory_ids": "fact", "outcome": "success", "report_id": "same-report"}
+    status, answer, stub, runtime = _run("report_outcome", arguments, WRITE_KEY, active=active)
+    assert status == 200 and answer["result"]["isError"] is False
+    assert stub.reached[0]["params"]["arguments"] == {**arguments, "profile_id": "work"}
+    assert runtime.snapshot.profile_id == active and stub.leases_during_call == [0]
+    _, denied, stub, _ = _run(
+        "report_outcome", {**arguments, "profile_id": "other"}, WRITE_KEY, active=active,
+    )
+    assert denied["result"]["structuredContent"]["error"] == binding.PROFILE_DENIAL
+    assert stub.reached == []
 
 
 @pytest.mark.parametrize("value", [None, "", "  ", "work", " work "])

@@ -143,7 +143,9 @@ class TestTheSummaryRouteReturnsIt:
 
         from superlocalmemory.server.routes import summaries
 
-        source = inspect.getsource(summaries.get_summary)
+        # The route builds its response through _summary_payload.
+        assert "_summary_payload(" in inspect.getsource(summaries.get_summary)
+        source = inspect.getsource(summaries._summary_payload)
         assert "llm_capability" in source
         assert '"capability"' in source
 

@@ -284,7 +284,9 @@ def _layers(engine: Any, call: RecallCall, results: list[dict]) -> tuple[list[di
 #: a prompt, so they keep the three-second ceiling and the keyword fallback.
 EXPLICIT_QUEUE_S = 12.0
 #: Extra time an explicit run that has started may take on a loaded machine
-#: before it is reported busy; the work it began is never thrown away.
+#: before it is reported busy. A run that has started is waited for (up to the
+#: request's own ceiling) rather than abandoned: abandoning it freed its slot
+#: while its thread kept the CPU, so every later question ran slower still.
 EXPLICIT_RUN_GRACE_S = 4.0
 #: Never longer than this from arrival to answer (the HTTP ingress clock).
 EXPLICIT_CEILING_S = EXPLICIT_QUEUE_S + 3.0 + EXPLICIT_RUN_GRACE_S
@@ -395,7 +397,7 @@ async def _run_admitted(engine, call, app_state, runtime, snapshot,
 
     loop = asyncio.get_running_loop()
     explicit = queue_deadline is not None
-    hold, acquired = RecallHold(), False
+    hold, acquired, future = RecallHold(), False, None
     try:
         # Explicit questions always take a slot: a dozen engine runs at once on
         # one machine each overrun their channels and all degrade together.
@@ -420,8 +422,11 @@ async def _run_admitted(engine, call, app_state, runtime, snapshot,
         run_deadline = worker_deadline
         if explicit:
             from superlocalmemory.server.recall_ingress import remaining_deadline
-            run_deadline = remaining_deadline(
-                max(0.0, worker_deadline - loop.time()) + EXPLICIT_RUN_GRACE_S)
+            # The grace, or whatever the request's own clock still allows
+            # (less a moment to assemble the answer), whichever is longer.
+            run_deadline = max(
+                remaining_deadline(max(0.0, worker_deadline - loop.time()) + EXPLICIT_RUN_GRACE_S),
+                remaining_deadline(EXPLICIT_CEILING_S) - 1.0)
             public_deadline = max(public_deadline, run_deadline + 0.15)
         response = await wait_until(future, run_deadline)
         if response is None:
@@ -439,8 +444,17 @@ async def _run_admitted(engine, call, app_state, runtime, snapshot,
         return assembled if assembled is not None else unjudged(minimal)
     finally:
         if acquired:
-            RECALL_SEMAPHORE.release()
+            _release_when_done(future)
         hold.leave()
+
+
+def _release_when_done(future: Any) -> None:
+    """Give the slot back when the engine work ends, not when the caller stops
+    waiting: a slot is a share of the CPU, and a run still going still uses it."""
+    if future is None or future.done():
+        RECALL_SEMAPHORE.release()
+        return
+    future.add_done_callback(lambda _f: RECALL_SEMAPHORE.release())
 
 
 def _minimal_envelope(call, response, snapshot):

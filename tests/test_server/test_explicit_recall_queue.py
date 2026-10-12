@@ -279,3 +279,35 @@ def test_background_generation_waits_for_a_running_recall(monkeypatch):
     start = time.monotonic()
     backbone._yield_to_recall()  # foreground never waits
     assert time.monotonic() - start < 0.05
+
+
+def test_a_started_run_keeps_its_slot_until_the_work_ends(monkeypatch, runtime):
+    """Reporting busy must not free the slot while the engine thread still runs."""
+    release = threading.Event()
+
+    def stuck(*a):
+        release.wait(5)
+        return object()
+
+    monkeypatch.setattr(recall_core, "_engine_call", stuck)
+    monkeypatch.setattr(recall_core, "_envelope", lambda *a: _answer())
+    monkeypatch.setattr(recall_core, "effective_budget_s", lambda call: 0.05)
+    monkeypatch.setattr(recall_core, "EXPLICIT_RUN_GRACE_S", 0.05)
+    monkeypatch.setattr(recall_core, "EXPLICIT_CEILING_S", 0.2)
+
+    async def run():
+        gate = asyncio.Semaphore(1)
+        monkeypatch.setattr(recall_core, "RECALL_SEMAPHORE", gate)
+        out = await recall_core.run_recall(object(), _call(), app_state=SimpleNamespace())
+        held_after_busy = gate.locked()
+        release.set()
+        for _ in range(50):
+            if not gate.locked():
+                break
+            await asyncio.sleep(0.02)
+        return out, held_after_busy, gate.locked()
+
+    out, held_after_busy, held_at_end = asyncio.run(run())
+    assert out["code"] == "RECALL_BUSY"
+    assert held_after_busy is True     # the thread still runs: the slot stays taken
+    assert held_at_end is False        # and is given back when it ends

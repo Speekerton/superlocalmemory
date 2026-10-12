@@ -115,6 +115,7 @@ def test_the_over_budget_answer_is_shared_too(daemon, monkeypatch) -> None:
     monkeypatch.setattr(daemon.engine, "recall", slow)
     monkeypatch.setenv("SLM_SEARCH_RECALL_TIMEOUT_S", "0.5")
     monkeypatch.setattr(recall_core, "EXPLICIT_RUN_GRACE_S", 0.05)
+    monkeypatch.setattr(recall_core, "EXPLICIT_CEILING_S", 0.5)
     view = daemon.client.get("/api/v3/views/run", params={"name": "Widget"})
     direct = daemon.client.get("/recall", params={"q": "widget release", "limit": 4})
     for res in (view, direct):

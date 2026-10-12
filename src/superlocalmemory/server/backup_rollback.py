@@ -27,6 +27,9 @@ _SIDECARS = ("", "-wal", "-shm")
 #: A restore holds the safety point, this copy and the backup coordinator's own
 #: pre-restore snapshot at once: about three times the stores (PR 251 R2).
 _COPIES_AT_ONCE = 3
+#: Manifests, checksums files and a store that grows while the safety point is
+#: taken (an empty media catalog gets its schema): a fixed allowance on top.
+_OVERHEAD_BYTES = 1024 * 1024
 _PREFIX = ".pre-restore-"
 
 
@@ -43,11 +46,22 @@ def _tree_bytes(path: Path) -> int:
 
 
 def space_needed(root: Path) -> int:
+    """Every byte a restore's copies write, before it stops anything.
+
+    Three copies of the stores and the vector index exist at once (the
+    safety point, the pre-write copy, the coordinator's own snapshot). The
+    safety point also copies the picture and document originals mirror
+    (PR 251 S3), and both the safety point and the pre-write copy hold the
+    settings files. A fixed allowance covers manifests and small growth.
+    """
     from superlocalmemory.infra.backup import MANAGED_DATABASES
 
     root = Path(root)
     stores = sum(_tree_bytes(root / (s + x)) for s in MANAGED_DATABASES for x in _SIDECARS)
-    return _COPIES_AT_ONCE * (stores + _tree_bytes(root / "lance"))
+    settings = sum(_tree_bytes(root / name) for name in _settings_names())
+    originals = _tree_bytes(root / "backups" / "media-originals")
+    return (_COPIES_AT_ONCE * (stores + _tree_bytes(root / "lance"))
+            + originals + 2 * settings + _OVERHEAD_BYTES)
 
 
 def check_free_space(root: Path) -> None:

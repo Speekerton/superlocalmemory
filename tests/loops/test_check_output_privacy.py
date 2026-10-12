@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import json
+import sys
 
 from superlocalmemory.loops.execution_guard import _key
 from superlocalmemory.loops.receipt_jobs import run_registered_check
@@ -116,3 +117,34 @@ def test_observable_admission_key_edit_refuses_receipt(receipt_db, tmp_path):
         f"Path({str(vault)!r}).write_bytes(b'N' * 32)\n"))
     with pytest.raises(ValueError, match='Admission key changed during verification'):
         run_registered_check(receipt_db, job['job_id'])
+
+
+def test_pipe_holding_setsid_child_is_stopped_when_leader_exits(receipt_db, tmp_path):
+    marker = tmp_path / 'escaped'
+    _, _, job = register(receipt_db, tmp_path, code=(
+        'import os,time\n'
+        'if os.fork()==0:\n'
+        '    os.setsid()\n'
+        f"    time.sleep(0.5); open({str(marker)!r},'w').write('alive'); os._exit(0)\n"))
+    receipt = run_registered_check(receipt_db, job['job_id'])
+    assert not marker.exists()
+    assert receipt['verdict'] == 'FAIL'
+    assert json.loads(receipt['evidence'])['stop_reason'].startswith(
+        'a process started by the check is still running:')
+
+
+def test_known_key_output_cannot_admit_pass(receipt_db, tmp_path):
+    vault = tmp_path / 'slm/loop-admission/admission.key'
+    _, _, job = register(receipt_db, tmp_path, code=(
+        'import sys\nfrom pathlib import Path\n'
+        f'sys.stdout.buffer.write(Path({str(vault)!r}).read_bytes())\n'))
+    assert run_registered_check(receipt_db, job['job_id'])['verdict'] == 'FAIL'
+
+
+def test_internal_execution_keeps_text_triplet_contract(tmp_path):
+    from superlocalmemory.loops.check_process import execute
+
+    result = execute([sys.executable, '-I', '-c', "print('measured')"], tmp_path, 3)
+    _, out, err = result
+    assert out == 'measured\n' and err == ''
+    assert result.stdout_bytes == b'measured\n'

@@ -30,3 +30,22 @@ async def test_no_registration_reason_in_run_and_history(db, ledger):
     history = await fns['slm_loop_history']('build')
     assert result['reason'] == 'operator-registered job_id required'
     assert history['runs'][0]['reason'] == result['reason']
+
+
+def test_process_name_cannot_replace_the_recorded_reason():
+    from types import SimpleNamespace
+
+    from superlocalmemory.loops.stop_reasons import last_gate_reason
+
+    reason = 'a process started by the check is still running: receipt_reason= (123)'
+    entry = SimpleNamespace(detail='recall: independent_receipt=False receipt_reason=' + reason,
+                            passed=False)
+    assert last_gate_reason([entry]) == reason
+
+
+async def test_no_progress_history_keeps_the_actual_gate_reason(db, ledger):
+    fns = tools(db)
+    result = await fns['slm_loop_run']('build', 'build', max_iterations=2, no_progress_window=1)
+    history = await fns['slm_loop_history']('build')
+    assert result['reason'] == 'operator-registered job_id required'
+    assert history['runs'][0]['reason'] == result['reason']

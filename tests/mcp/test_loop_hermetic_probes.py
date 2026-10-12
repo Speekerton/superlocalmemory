@@ -430,13 +430,19 @@ def test_validation_exception_publishes_nothing(db, tmp_path, monkeypatch):
     assert not receipts(db)
 
 
-def test_undecodable_output_fails_closed_without_receipt(db, tmp_path):
+def test_binary_output_is_hashed_without_raw_receipt_output(db, tmp_path):
     job, *_ = _simple(
         db, tmp_path, code="import os; os.write(1, b'\\xff\\xfe'); raise SystemExit(0)"
     )
-    with pytest.raises(UnicodeDecodeError):
-        run_registered_check(db, job["job_id"])
-    assert not receipts(db)
+    import hashlib
+    import json
+
+    receipt = run_registered_check(db, job['job_id'])
+    evidence = json.loads(receipt['evidence'])
+    assert evidence['stdout_sha256'] == hashlib.sha256(b'\xff\xfe').hexdigest()
+    assert 'stdout' not in evidence
+    assert evidence['stdout_excerpt'] == '\ufffd\ufffd'
+    assert len(receipts(db)) == 1
 
 
 def test_check_inherits_operator_stdin(db, tmp_path):

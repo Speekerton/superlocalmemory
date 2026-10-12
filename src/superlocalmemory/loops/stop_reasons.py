@@ -6,8 +6,11 @@
 def last_gate_reason(laps):
     for entry in reversed(laps):
         detail = entry.detail
-        if 'receipt_reason=' in detail:
-            reason = detail.rsplit('receipt_reason=', 1)[1]
+        marker = next((value for value in (
+            ' independent_receipt=False receipt_reason=',
+            ' independent_receipt=True receipt_reason=') if value in detail), None)
+        if marker is not None:
+            reason = detail.rsplit(marker, 1)[1]
             if reason != 'authenticated PASS for current copied revision':
                 return reason
             return reason if entry.passed else detail

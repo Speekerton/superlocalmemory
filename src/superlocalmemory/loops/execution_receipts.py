@@ -82,7 +82,9 @@ def run_check(
         if not isinstance(value, str) or not value.strip():
             raise ValueError("Execution identity fields must be nonempty strings")
     result = _execution(command, cwd, min(max(float(timeout), 0.1), 60))
-    exit_code, stdout, stderr = result[:3]
+    exit_code = result[0]
+    stdout = getattr(result, 'stdout_bytes', result[1])
+    stderr = getattr(result, 'stderr_bytes', result[2])
     if validate_result is not None:
         validate_result()
     receipt = _measurement(profile_id, task_id, run_id, producer,
@@ -94,7 +96,11 @@ def run_check(
 
 def _measurement(profile_id, task_id, run_id, producer, digest, exit_code, stdout, stderr,
                  secret_material=(), stop_reason=None):
-    measurement = dict(exit_code=exit_code, **output_evidence(stdout, stderr, secret_material))
+    output = output_evidence(stdout, stderr, secret_material)
+    if output['key_exposed']:
+        exit_code = -1 if exit_code == 0 else exit_code
+        stop_reason = stop_reason or 'Independent check exposed admission key material'
+    measurement = dict(exit_code=exit_code, **output)
     if stop_reason:
         measurement['stop_reason'] = output_evidence(
             '', stop_reason, secret_material)['stderr_excerpt']
@@ -125,7 +131,9 @@ def _run_registered(db, job, command, cwd, timeout, validate_result):
         raise ValueError('Admission key changed during verification')
     validate_result()
     receipt = _measurement(job["profile_id"], job["task_id"], job["run_id"], job["producer"],
-                           job["command_digest"], *result[:3], secret_material=(key,),
+                           job["command_digest"], result[0],
+                           getattr(result, 'stdout_bytes', result[1]),
+                           getattr(result, 'stderr_bytes', result[2]), secret_material=(key,),
                            stop_reason=getattr(result, "reason", None))
     _sign_receipt(job, receipt)
     _store(db, receipt)

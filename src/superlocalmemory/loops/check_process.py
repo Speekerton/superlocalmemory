@@ -6,7 +6,6 @@ import os
 import signal
 import subprocess
 import time
-from typing import NamedTuple
 
 import psutil
 
@@ -14,11 +13,29 @@ from superlocalmemory.loops.private_workspace import execution_environment
 from superlocalmemory.loops.process_sweep import sweep, user_processes
 
 
-class ExecutionResult(NamedTuple):
-    exit_code: int
-    stdout: bytes
-    stderr: bytes
-    reason: str | None = None
+class ExecutionResult(tuple):
+    """Keep the text-triplet API while carrying exact bytes for receipt hashes."""
+
+    def __new__(cls, exit_code, stdout, stderr, reason=None):
+        result = super().__new__(cls, (exit_code, stdout.decode('utf-8', errors='replace'),
+                                      stderr.decode('utf-8', errors='replace')))
+        result.stdout_bytes, result.stderr_bytes, result.reason = stdout, stderr, reason
+        return result
+
+
+def _collect_until_exit(process, timeout):
+    deadline, stdout, stderr = time.monotonic() + timeout, b'', b''
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return -1, stdout, stderr, 'Independent check timed out'
+        try:
+            stdout, stderr = process.communicate(timeout=min(remaining, 0.05))
+            return process.returncode, stdout, stderr, None
+        except subprocess.TimeoutExpired as error:
+            stdout, stderr = error.output or stdout, error.stderr or stderr
+            if process.poll() is not None:
+                return process.returncode, stdout, stderr, None
 
 
 def execute(command, cwd, timeout):
@@ -43,11 +60,8 @@ def execute(command, cwd, timeout):
     except psutil.Error:
         reason = 'Cannot validate the checker process start time'
     try:
-        stdout, stderr = process.communicate(timeout=timeout)
-        exit_code = process.returncode if reason is None else -1
-    except subprocess.TimeoutExpired as error:
-        stdout, stderr = error.output or b'', error.stderr or b''
-        exit_code, reason = -1, 'Independent check timed out'
+        exit_code, stdout, stderr, timed_out = _collect_until_exit(process, timeout)
+        reason = reason or timed_out
     finally:
         try:
             os.killpg(process.pid, signal.SIGKILL)
@@ -58,8 +72,9 @@ def execute(command, cwd, timeout):
         escaped = sweep(before, began)
     except ValueError as error:
         escaped = str(error)
-    if escaped:
-        exit_code, reason = -1, escaped
+    reason = escaped or reason
+    if reason and exit_code == 0:
+        exit_code = -1
     # Drain after the sweep has terminated escaped pipe holders as well.
     try:
         stdout, stderr = process.communicate(timeout=0.2)

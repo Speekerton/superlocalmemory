@@ -85,8 +85,8 @@ later live edits to these files do not change the registered check. Definition
 files and mutable artifacts must occupy distinct paths. Paths are confined to
 the project; symlinks, devices and FIFOs are refused. Explicit directory inputs
 include their regular-file trees. Globs are expanded again for each run and
-admission, so added or removed matching files change the revision. Files outside
-these declarations never enter the run directory.
+admission, so added or removed matching files change the revision. Other live project files
+are not copied into the run directory.
 
 ## Gate guarantees and threat model
 
@@ -149,6 +149,7 @@ Private directories are 0700 and key files are 0600. The per-data-root HMAC key
 lives in `loop-admission`, separate from the temporary copies and definition
 store. Moving it removes the old run-relative key path; it does not deny
 same-user access. An observed key change during execution refuses admission.
+Key bytes or their hex, base64 or repr forms in captured output force FAIL.
 Receipts store SHA-256 hashes of complete captured output and bounded
 excerpts with known key bytes and unbroken key-length material redacted. They
 do not retain raw stdout or stderr. The public `execution_receipts.run_check`

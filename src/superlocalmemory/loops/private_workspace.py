@@ -90,5 +90,7 @@ def run_workspace(job):
     forbidden = (Path(job['cwd']), Path(job['store_path']).parent)
     if any(parent.is_relative_to(root) for root in forbidden):
         raise ValueError('Check temporary directory must be outside the project and data root')
-    with temporary() as directory:
-        yield directory
+    with directory_handle(parent):
+        pass
+    with tempfile.TemporaryDirectory(prefix='slm-check-', dir=parent) as name:
+        yield private_dir(name)

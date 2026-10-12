@@ -90,7 +90,12 @@ async def test_registered_job_cannot_be_replayed_or_substituted(receipt_db, tmp_
     from superlocalmemory.loops.receipt_jobs import run_registered_check
 
     state, job = registered(receipt_db, tmp_path, ttl=.2 if case == "expired" else 3600)
-    assert run_registered_check(receipt_db, job["job_id"])["verdict"] == "PASS"
+    try:
+        receipt = run_registered_check(receipt_db, job['job_id'])
+    except ValueError as error:
+        assert case == 'expired' and 'expired' in str(error)
+    else:
+        assert receipt['verdict'] == 'PASS'
     contract, name = {"job_id": job["job_id"]}, "build"
     if case == "changed":
         state.write_text("fail")

@@ -62,7 +62,7 @@ async def test_generated_config_is_validated_after_execution(db, tmp_path):
     cwd.mkdir()
     (cwd / 'test_value.py').write_text(
         "from pathlib import Path\n"
-        "Path('.slm-pytest/pytest.ini').write_text('[pytest]\\naddopts = --co\\n')\n"
+        "Path('.slm-pytest.ini').write_text('[pytest]\\naddopts = --co\\n')\n"
         "def test_value():\n    assert True\n")
     job = register(db, cwd, [PY, '-m', 'pytest', 'test_value.py'],
                    ['test_value.py'], [], tmp_path / 'slm')
@@ -81,3 +81,37 @@ async def test_explicit_unpinned_config_is_refused(db, tmp_path):
                    ['test_value.py'], [], tmp_path / 'slm')
     assert 'pinned definition' in run(db, job)['refused']
     assert (await watch(db, job['job_id']))['status'] == 'HALT'
+
+
+@pytest.mark.parametrize('prefix', [['-mpytest'], ['-Impytest'], ['-W', 'ignore', '-mpytest'],
+                                  ['-m', 'pytest.__main__']])
+async def test_joined_python_module_options_pin_config(db, tmp_path, monkeypatch, prefix):
+    home = tmp_path / 'home'
+    home.mkdir()
+    monkeypatch.setattr(private_workspace.tempfile, 'gettempdir', lambda: str(home))
+    (home / 'pytest.ini').write_text('[pytest]\naddopts = --co\n')
+    cwd = tmp_path / 'work'
+    cwd.mkdir()
+    (cwd / 'test_value.py').write_text('def test_value():\n    assert False\n')
+    job = register(db, cwd, [PY, *prefix, 'test_value.py'], ['test_value.py'], [], home / 'slm')
+    assert run(db, job) == {'verdict': 'FAIL', 'exit': 1}
+    assert (await watch(db, job['job_id']))['status'] == 'HALT'
+
+
+def test_script_arguments_are_not_treated_as_python_module_options(db, tmp_path):
+    cwd = tmp_path / 'work'
+    cwd.mkdir()
+    job = register(db, cwd, [PY, '-c', 'raise SystemExit(9)', '-m', 'pytest'],
+                   [], [], tmp_path / 'slm')
+    assert run(db, job) == {'verdict': 'FAIL', 'exit': 9}
+
+
+def test_generated_config_keeps_pinned_root_conftest(db, tmp_path):
+    cwd = tmp_path / 'work'
+    cwd.mkdir()
+    (cwd / 'conftest.py').write_text(
+        'def pytest_sessionfinish(session, exitstatus):\n    session.exitstatus = 1\n')
+    (cwd / 'test_value.py').write_text('def test_value():\n    assert True\n')
+    job = register(db, cwd, [PY, '-m', 'pytest', 'test_value.py'],
+                   ['conftest.py', 'test_value.py'], [], tmp_path / 'slm')
+    assert run(db, job) == {'verdict': 'FAIL', 'exit': 1}

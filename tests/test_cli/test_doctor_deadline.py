@@ -80,9 +80,12 @@ def test_whole_diagnostic_has_one_deadline(free_port, behavior):
         assert {p.pid for p in psutil.Process().children()} == children
         if behavior == "healthy":
             assert result.status == "PASS"
+        elif behavior == "features":
+            assert result.status == "PASS" and result.feature_warning
         else:
-            assert result.status in {"WARN", "FAIL"}
-            assert any(word in result.detail.lower() for word in ("deadline", "within", "large"))
+            # A health reply that cannot be read is an unhealthy daemon, never a warning.
+            assert result.status == "FAIL"
+            assert any(word in result.detail.lower() for word in ("deadline", "within", "oversized"))
     finally:
         stop.set()
         server.shutdown()

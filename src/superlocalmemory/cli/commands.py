@@ -3202,6 +3202,9 @@ def cmd_doctor(args: Namespace) -> None:
 
     daemon_check = check_daemon()
     _check("Daemon", daemon_check.status, daemon_check.detail, daemon_check.fix)
+    if daemon_check.feature_warning:
+        # Optional probe trouble is its own line; it never rewrites the daemon verdict.
+        _check("Daemon features", "WARN", daemon_check.feature_warning, "slm restart")
 
     # v3.8.2 `--fix`: run the component healer (the SAME repair the daemon
     # self-heal performs) BEFORE the checks, so the report below reflects the

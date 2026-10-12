@@ -858,6 +858,9 @@ def main() -> None:
         help="Apply precision changes",
     )
     quantize_p.add_argument("--profile", default="", help="Target profile")
+    quantize_p.add_argument("--repair-sketches", action="store_true",
+                            help="Repair QJL sketches only; preserve embedding precision "
+                                 "(preview by default)")
     quantize_p.add_argument("--json", action="store_true", help="Output structured JSON (agent-native)")
 
     consolidate_p = sub.add_parser("consolidate", help="Run memory consolidation pipeline")

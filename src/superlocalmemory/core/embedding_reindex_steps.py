@@ -11,6 +11,7 @@ write lock, and its hold time is recorded so it can be measured, not assumed.
 
 from __future__ import annotations
 
+import inspect
 import logging
 import math
 import os
@@ -66,12 +67,15 @@ def close_embedder(embedder: Any) -> None:
 
 def _as_vector(raw: Any, dimension: int, label: str) -> np.ndarray:
     if raw is None:
-        raise ValueError(f"the model returned no vector for {label}")
+        raise ValueError(f"The embedding service could not complete {label}. "
+                         "Run slm doctor to check the model and its service, "
+                         "then retry the switch.")
     vec = np.asarray(raw, dtype=np.float32).reshape(-1)
     if vec.shape[0] != dimension:
         raise StepFailed(
             f"the model produces {vec.shape[0]}-dimensional vectors, not the "
-            f"{dimension} this switch was set up for")
+            f"{dimension} this switch was set up for. "
+            f"Retry the switch with --dimension {vec.shape[0]} and the matching model.")
     if not np.all(np.isfinite(vec)):
         raise ValueError(f"the model returned a vector with NaN/inf for {label}")
     return vec
@@ -79,15 +83,27 @@ def _as_vector(raw: Any, dimension: int, label: str) -> np.ndarray:
 
 def probe(embedder: Any, dimension: int) -> None:
     try:
-        vectors = list(embedder.embed_batch([PROBE_TEXT]))
+        vectors = list(_embed_batch(embedder, [PROBE_TEXT]))
     except Exception as exc:
-        raise StepFailed(f"the model did not answer a test request: {exc}") from exc
+        detail = str(exc).strip().rstrip(".")
+        # Worker errors already carry their own next step; do not repeat advice.
+        advice = "" if "slm " in detail else (
+            " Check slm doctor and the model settings, then retry the switch.")
+        raise StepFailed(f"The model did not answer a test request: {detail}.{advice}") from exc
     if len(vectors) != 1:
-        raise StepFailed("the model did not answer a test request")
+        raise StepFailed("The embedding service did not complete the test request. "
+                         "Run slm doctor, then retry the switch.")
     try:
         _as_vector(vectors[0], dimension, "the test request")
     except ValueError as exc:
         raise StepFailed(str(exc)) from exc
+
+
+def _embed_batch(embedder: Any, texts: list[str]) -> Any:
+    """Maintenance must hear worker failures that foreground recall tolerates."""
+    strict = (getattr(embedder, "embed_batch_strict")
+              if inspect.getattr_static(embedder, "embed_batch_strict", None) is not None else None)
+    return strict(texts) if callable(strict) else embedder.embed_batch(texts)
 
 
 def _yield_to_recall() -> None:
@@ -110,7 +126,7 @@ def embed_texts(embedder: Any, texts: list[str], dimension: int) -> list[np.ndar
         _yield_to_recall()
         try:
             with background_work():
-                raw = list(embedder.embed_batch(list(texts)))
+                raw = list(_embed_batch(embedder, list(texts)))
             if len(raw) != len(texts):
                 raise ValueError(f"{len(raw)} vectors for {len(texts)} memories")
             return [_as_vector(v, dimension, f"memory {i + 1} of the batch")

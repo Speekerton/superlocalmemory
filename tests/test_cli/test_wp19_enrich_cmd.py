@@ -114,3 +114,20 @@ def test_fix_is_explicit_and_confirmed(monkeypatch, capsys):
     assert [c[2] for c in calls if c[0] == 'POST'] == [
         {'action': 'repair', 'repair': 'entity-links'}]
     assert 'slm enrich undo fix-1' in capsys.readouterr().out
+
+
+def test_undo_prints_the_restored_total_of_a_native_repair(monkeypatch, capsys):
+    native = {'restored': 27, 'conflicts': 0, 'facts_restored': 6, 'aliases_restored': 16,
+              'junk_entities_restored': 5}
+    fake_daemon(monkeypatch, post=native)
+    cmd_enrich(parse('undo', 'fix-1', '--yes'))
+    assert 'Undone: 27 changes restored.' in capsys.readouterr().out
+
+
+def test_fix_include_undone_is_sent_only_when_asked(monkeypatch):
+    calls = fake_daemon(monkeypatch, post={'found': 3, 'fixed': 3, 'run_id': 'fix-2'})
+    cmd_enrich(parse('fix', 'entity-links', '--yes', '--include-undone'))
+    cmd_enrich(parse('fix', 'refile-hidden', '--yes'))
+    assert [c[2] for c in calls if c[0] == 'POST'] == [
+        {'action': 'repair', 'repair': 'entity-links', 'include_undone': True},
+        {'action': 'repair', 'repair': 'refile-hidden'}]

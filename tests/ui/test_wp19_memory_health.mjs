@@ -112,3 +112,24 @@ test('a refusal shows the service reason, not a generic error', async () => {
   for (let i = 0; i < 12; i += 1) await tick();
   assert.match(card.textContent, /That run was already undone\./);
 });
+
+test('after an undo the card says how many changes were restored', async () => {
+  const dom = new JSDOM('<div id="health"></div>', { runScripts: 'outside-only' });
+  dom.window.slmFetch = (path, init) => {
+    if (init && init.method === 'POST') {
+      return Promise.resolve(new Response(JSON.stringify({ restored: 27, conflicts: 2 }), { status: 200 }));
+    }
+    return Promise.resolve(new Response(JSON.stringify({
+      enrichment: { status: 'completed', changed: 0 },
+      runs: [{ run_id: 'fix1', status: 'completed', changed: 27, label: 'entity links' }],
+    }), { status: 200 }));
+  };
+  dom.window.setInterval = () => 0;
+  dom.window.eval(SCRIPT);
+  dom.window.odMountMemoryHealth(dom.window.document.getElementById('health'));
+  for (let i = 0; i < 6; i += 1) await tick();
+  const card = dom.window.document.getElementById('memory-health-card');
+  card.querySelector('button').click();
+  for (let i = 0; i < 12; i += 1) await tick();
+  assert.match(card.textContent, /Undone: 27 changes restored\. 2 kept because they were changed since\./);
+});

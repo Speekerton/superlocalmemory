@@ -63,3 +63,35 @@ def test_undoing_twice_answers_422_with_a_plain_reason(monkeypatch, tmp_path):
             assert listed['runs'][0]['run_id'] == run_id
     finally:
         fixture.close()
+
+
+def test_entity_links_fix_undo_and_include_undone_over_http(monkeypatch, tmp_path):
+    import sqlite3
+
+    from tests.test_storage.test_entity_link_repair import _build
+
+    from superlocalmemory.storage.migrations.M059_memory_description import apply
+
+    monkeypatch.setattr(memory_health, 'require_permission', lambda *a, **k: None)
+    monkeypatch.setattr(memory_health.write_identity, 'require_write_actor',
+                        lambda *a, **k: 'owner')
+    db = _build(tmp_path / 'memory.db')
+    with sqlite3.connect(db.db_path) as conn:
+        apply(conn)
+    try:
+        app = FastAPI()
+        app.include_router(memory_health.router)
+        app.state.engine = SimpleNamespace(_db=db)
+        with TestClient(app) as session:
+            def post(body):
+                return session.post('/api/memory-health/action', json=body)
+            fixed = post({'action': 'repair', 'repair': 'entity-links'}).json()
+            assert fixed['fixed'] == 27
+            undone = post({'action': 'undo', 'run_id': fixed['run_id']}).json()
+            assert undone['restored'] == 27 and undone['conflicts'] == 0
+            assert post({'action': 'repair', 'repair': 'entity-links'}).json()['fixed'] == 0
+            again = post({'action': 'repair', 'repair': 'entity-links',
+                          'include_undone': True}).json()
+            assert again['fixed'] == 27
+    finally:
+        db.close()

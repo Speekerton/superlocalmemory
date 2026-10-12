@@ -28,8 +28,9 @@ from superlocalmemory.core.admission import admits
 from superlocalmemory.core.operation_request import OperationKind
 from superlocalmemory.mcp.agent_context import get_current_agent_id
 from superlocalmemory.mcp.remote_caller import current_remote_key_id
-from superlocalmemory.optimize.compress.ccr import CCRStore, _UUID4_RE
-from superlocalmemory.optimize.compress.router import CompressRouter, CompressTextResult
+from superlocalmemory.optimize.compress.ccr import _UUID4_RE, CCRStore
+from superlocalmemory.optimize.compress.router import CompressRouter as CompressRouter
+from superlocalmemory.optimize.compress.router import CompressTextResult as CompressTextResult
 from superlocalmemory.optimize.storage.db import CacheDB, _normalize_tenant_id
 from superlocalmemory.optimize.storage.provenance import active_profile_id
 
@@ -107,90 +108,24 @@ def register_optimize_tools(server) -> None:
         reversible: bool = True,
         ttl_seconds: int = 86400,
     ) -> dict:
-        """Compress text or tool output to reduce context window usage.
+        """Compress text with one tenant-scoped, TTL-bound recovery copy.
 
-        Returns compressed text. Whenever the returned text differs from the
-        input by even one byte and reversible=True, the original is stored and
-        a ccr_id is returned — pass it to slm_retrieve to recover the exact
-        original. ``byte_exact`` says whether the output IS the input.
-
-        Args:
-            content: Text to compress (max 1MB).
-            mode: "normalize" (collapse 3+ blank lines in prose; code and
-                fenced code pass through byte-for-byte) | "auto" | "aggressive".
-            reversible: Keep the original in CCR whenever bytes change.
-            ttl_seconds: CCR lifetime in seconds (default 24h).
+        mode: normalize, auto or aggressive (daemon configuration controls models).
+        reversible keeps changed original bytes; ttl_seconds defaults to one day.
+        Returned byte_exact distinguishes unchanged bytes from normalized prose.
         """
-        try:
-            if not isinstance(content, str) or not content:
-                return {
-                    "ok": False, "compressed": content or "",
-                    "strategy": "none", "tokens_before": 0, "tokens_after": 0,
-                    "ratio": 1.0, "lossy": False, "ccr_id": None,
-                    "note": "empty input",
-                }
+        from superlocalmemory.mcp.compression_service import CompressionContext, compress
 
-            note_parts: list[str] = []
-            if len(content.encode("utf-8")) > _MAX_COMPRESS_BYTES:
-                reversible = False
-                note_parts.append("content over 1MB: ccr skipped")
-
-            if mode == "normalize":
-                # Blank-line collapse of prose only; code is passed through.
-                # Not "lossless": it changes bytes, so the original is kept
-                # below whenever it did (audit BRN-04).
-                normalized = CompressRouter._normalize_whitespace(content)
-                strategy = "normalize" if normalized != content else "none"
-                res = CompressTextResult(
-                    compressed_text=normalized, strategy=strategy,
-                    tokens_before=len(content.split()),
-                    tokens_after=len(normalized.split()),
-                    lossy=normalized != content,
-                )
-            else:
-                if mode == "aggressive":
-                    note_parts.append(
-                        "aggressive mode requires daemon compress_mode=aggressive "
-                        "in config"
-                    )
-                res = CompressRouter.get_instance().compress_text(content)
-
-            byte_exact = res.compressed_text == content
-            ccr_id = None
-            if not byte_exact and reversible:
-                stored = CCRStore.get_instance().store(
-                    content.encode("utf-8"),
-                    tenant_id=_tenant(),
-                    ttl_seconds=ttl_seconds,
-                    profile_id=active_profile_id(),
-                )
-                ccr_id = stored or None
-                if ccr_id:
-                    note_parts.append("reversible: call slm_retrieve with this ccr_id")
-                else:
-                    note_parts.append("original NOT stored: output is not recoverable")
-
-            ratio = (
-                round(res.tokens_after / res.tokens_before, 4)
-                if res.tokens_before else 1.0
-            )
-            return {
-                "ok": True, "compressed": res.compressed_text, "strategy": res.strategy,
-                "tokens_before": res.tokens_before, "tokens_after": res.tokens_after,
-                "ratio": ratio, "lossy": res.lossy, "byte_exact": byte_exact,
-                "ccr_id": ccr_id, "note": " | ".join(note_parts) or None,
-            }
-
-        except Exception as exc:
-            logger.error("slm_compress failed (fail-open): %s", exc)
-            t = len(content.split()) if isinstance(content, str) else 0
-            return {
-                "ok": False,
-                "compressed": content if isinstance(content, str) else "",
-                "strategy": "none", "tokens_before": t, "tokens_after": t,
-                "ratio": 1.0, "lossy": False, "ccr_id": None,
-                "note": f"internal error: {exc}",
-            }
+        ctx = CompressionContext(
+            CompressRouter,
+            CompressTextResult,
+            CCRStore,
+            CacheDB,
+            _tenant(),
+            _MAX_COMPRESS_BYTES,
+            active_profile_id(),
+        )
+        return compress(ctx, content, mode, reversible, ttl_seconds)
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
     async def slm_retrieve(ccr_id: str) -> dict:
@@ -205,13 +140,17 @@ def register_optimize_tools(server) -> None:
         try:
             if not ccr_id or not _UUID4_RE.match(ccr_id):
                 return {
-                    "ok": False, "content": None, "size_bytes": 0,
+                    "ok": False,
+                    "content": None,
+                    "size_bytes": 0,
                     "error": "ccr_id must be a UUID4",
                 }
             original = CCRStore.get_instance().retrieve(ccr_id, tenant_id=_tenant())
             if original is None:
                 return {
-                    "ok": False, "content": None, "size_bytes": 0,
+                    "ok": False,
+                    "content": None,
+                    "size_bytes": 0,
                     "error": "not found (expired / never stored / wrong id)",
                 }
             size = len(original)
@@ -224,7 +163,9 @@ def register_optimize_tools(server) -> None:
         except Exception as exc:
             logger.error("slm_retrieve failed (fail-open): %s", exc)
             return {
-                "ok": False, "content": None, "size_bytes": 0,
+                "ok": False,
+                "content": None,
+                "size_bytes": 0,
                 "error": f"internal error: {exc}",
             }
 
@@ -246,7 +187,8 @@ def register_optimize_tools(server) -> None:
         try:
             if not key or len(key) > _MAX_KV_KEY_CHARS:
                 return {
-                    "ok": False, "stored": False,
+                    "ok": False,
+                    "stored": False,
                     "note": f"key must be 1–{_MAX_KV_KEY_CHARS} chars",
                 }
             value_bytes = value.encode("utf-8")
@@ -258,8 +200,12 @@ def register_optimize_tools(server) -> None:
 
             db = CacheDB.get_default()
             db.set(
-                cache_key, norm_tid, value_bytes,
-                model="mcp-kv", ttl_expires=ttl_exp, tags=["mcp-kv"],
+                cache_key,
+                norm_tid,
+                value_bytes,
+                model="mcp-kv",
+                ttl_expires=ttl_exp,
+                tags=["mcp-kv"],
                 profile_id=active_profile_id(),
             )
             # ``tag_json`` is descriptive only; tag invalidation joins the
@@ -288,7 +234,9 @@ def register_optimize_tools(server) -> None:
         try:
             if not key or len(key) > _MAX_KV_KEY_CHARS:
                 return {
-                    "ok": False, "hit": False, "value": None,
+                    "ok": False,
+                    "hit": False,
+                    "value": None,
                     "note": f"key must be 1–{_MAX_KV_KEY_CHARS} chars",
                 }
             cache_key, norm_tid = _kv_location(key)
@@ -308,7 +256,9 @@ def register_optimize_tools(server) -> None:
         except Exception as exc:
             logger.error("slm_cache_get failed (fail-open): %s", exc)
             return {
-                "ok": False, "hit": False, "value": None,
+                "ok": False,
+                "hit": False,
+                "value": None,
                 "note": f"internal error: {exc}",
             }
 
@@ -322,7 +272,9 @@ def register_optimize_tools(server) -> None:
         """
         try:
             db = CacheDB.get_default()
-            snap = db.metrics_load()
+            from superlocalmemory.optimize.metrics.mcp_compression import snapshot_with_mcp
+
+            snap = snapshot_with_mcp(db, db.metrics_load())
             # M2: prefer the durable KV counters; fall back to session counters.
             persisted = db.kv_counters_load()
             with _kv_lock:
@@ -336,19 +288,19 @@ def register_optimize_tools(server) -> None:
                 "cache_proxy_misses": snap.misses,
                 "cache_kv_hits": kv_h,
                 "cache_kv_misses": kv_m,
-                "ccr_note": (
-                    "CCR entry count not tracked per-session; "
-                    "see daemon /api/v1/metrics"
-                ),
+                "ccr_note": ("CCR entry count not tracked per-session; see daemon /api/v1/metrics"),
                 "note": "proxy and kv stats are daemon-persisted across restarts",
             }
         except Exception as exc:
             logger.error("slm_optimize_stats failed (fail-open): %s", exc)
             return {
                 "ok": False,
-                "compress_runs": 0, "tokens_saved_compress": 0,
-                "cache_proxy_hits": 0, "cache_proxy_misses": 0,
-                "cache_kv_hits": 0, "cache_kv_misses": 0,
+                "compress_runs": 0,
+                "tokens_saved_compress": 0,
+                "cache_proxy_hits": 0,
+                "cache_proxy_misses": 0,
+                "cache_kv_hits": 0,
+                "cache_kv_misses": 0,
                 "ccr_note": None,
                 "note": f"internal error: {exc}",
             }

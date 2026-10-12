@@ -103,6 +103,25 @@ def _header(scope: dict[str, Any], key: bytes) -> str | None:
     return None
 
 
+def listener_host_allowed(scope: dict[str, Any]) -> bool:
+    """A loopback listener serves its aliases and explicitly configured names.
+
+    A same-machine reverse proxy may preserve its public Host. Only a finite
+    configured name permits that deployment; wildcards must not weaken the
+    loopback-only daemon. Caller authentication and proxy demotion are separate.
+    """
+    from superlocalmemory.server.loopback import is_loopback
+
+    raw = _header(scope, b"host")
+    server = scope.get("server") or ("", 0)
+    if is_loopback(server[0]) and raw and raw.strip():
+        name = _host_name(raw)
+        finite_hosts = {entry for entry in _configured_hosts() if "*" not in entry}
+        return (is_loopback(name) or name.endswith(".localhost")
+                or name in finite_hosts)
+    return host_allowed(raw)
+
+
 class HostGuardMiddleware:
     """Pure ASGI: refuses, before anything else runs, a request not addressed
     to this machine (421 for HTTP; policy-violation close for a websocket)."""
@@ -112,7 +131,7 @@ class HostGuardMiddleware:
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         if scope.get("type") in ("http", "websocket") and not scope.get(
-                "slm_remote_host_verified") and not host_allowed(_header(scope, b"host")):
+                "slm_remote_host_verified") and not listener_host_allowed(scope):
             if scope["type"] == "http":
                 await send({
                     "type": "http.response.start",

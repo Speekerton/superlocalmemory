@@ -3498,27 +3498,9 @@ class DatabaseManager:
 
         Returns count of successfully upserted rows.
         """
-        count = 0
-        from superlocalmemory.core.lifecycle_state import atomic_lifecycle_for
+        from superlocalmemory.storage.retention_lifecycle import batch_retention
 
-        with self.transaction():
-            for f in facts:
-                self._upsert_retention_in_transaction(
-                    fact_id=f["fact_id"],
-                    profile_id=profile_id,
-                    retention_score=f["retention"],
-                    memory_strength=f["strength"],
-                    access_count=f["access_count"],
-                    last_accessed_at=f["last_accessed_at"],
-                    lifecycle_zone=f["zone"],
-                )
-                self.execute(
-                    "UPDATE atomic_facts SET lifecycle = ? "
-                    "WHERE fact_id = ? AND profile_id = ?",
-                    (atomic_lifecycle_for(f["zone"]), f["fact_id"], profile_id),
-                )
-                count += 1
-        return count
+        return batch_retention(self, facts, profile_id)
 
     def get_facts_needing_decay(self, profile_id: str) -> list[dict]:
         """Get facts that need decay computation (excludes core memory).
@@ -3549,29 +3531,9 @@ class DatabaseManager:
 
         Idempotent: if fact not found, logs warning and returns.
         """
-        # Check existence first (idempotent)
-        rows = self.execute(
-            "SELECT fact_id FROM fact_retention WHERE fact_id = ? AND profile_id = ?",
-            (fact_id, profile_id),
-        )
-        if not rows:
-            logger.warning(
-                "soft_delete_fact: fact_id=%s not found in fact_retention, skipping",
-                fact_id,
-            )
-            return
+        from superlocalmemory.storage.retention_lifecycle import forget_fact
 
-        from superlocalmemory.core.lifecycle_state import set_fact_lifecycle_zone
-
-        with self.transaction():
-            set_fact_lifecycle_zone(
-                self, [fact_id], "forgotten", profile_id=profile_id,
-            )
-            self.execute(
-                "UPDATE fact_retention SET retention_score = 0.0 "
-                "WHERE fact_id = ? AND profile_id = ?",
-                (fact_id, profile_id),
-            )
+        forget_fact(self, fact_id, profile_id)
 
     # ------------------------------------------------------------------
     # Phase E: CCQ Consolidated Blocks & Audit CRUD

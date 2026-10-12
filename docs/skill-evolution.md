@@ -240,6 +240,21 @@ slm config set evolution.enabled true  # Enable evolution
 slm config set evolution.backend auto  # Set LLM backend
 ```
 
+## Artifact and local-host contracts
+
+Each candidate has a unique quarantine directory and a persisted verified
+content digest. Human approval checks those bytes before backup or activation.
+Installed Codex user, system and plugin skills are discovered alongside Claude
+skills; a namespaced skill stays within its requested package. Activation and
+rollback retain the discovered source path. Backup identities include the
+complete skill-name digest, so namespace punctuation cannot cause a collision.
+
+Local model tags are resolved from the installed Ollama inventory. Evolution
+never pulls models. A one-model installation reports reduced model-review
+independence; human approval remains off by default. A legacy candidate without
+a stored verified digest requires a human-reviewed `reviewed_hash` in its
+approval request.
+
 ## What's Next
 
 - **IDE Adapters** — Cursor, Windsurf, VS Code Copilot, JetBrains support for skill tracking.

@@ -87,6 +87,8 @@ _NO_DAEMON_COMMANDS = {
     # v4.0.2 receipt summary is a direct read-only learning.db query.
     "brain",
     "diagnostics",
+    # Doctor must observe a stopped/crashed daemon without recovering it first.
+    "doctor",
     # LLD-06 — agents launched through wrap start the daemon on demand.
     "wrap",
     # V3.6 Optimize commands that are config read/write only.
@@ -670,11 +672,15 @@ def main() -> None:
     trace_p.add_argument("--json", action="store_true", help="Output structured JSON (agent-native)")
 
     # -- Diagnostics (continued) ----------------------------------------
-    doctor_p = sub.add_parser("doctor", help="Pre-flight check: deps, embedding worker, connectivity")
+    doctor_p = sub.add_parser(
+        "doctor", help="Pre-flight check: deps, embedding worker, connectivity",
+        description="Check dependencies, configuration and daemon health. "
+        "Exit codes: 0 for passes or warnings only; 1 if any check fails.",
+    )
     doctor_p.add_argument("--json", action="store_true", help="Output structured JSON (agent-native)")
     doctor_p.add_argument(
         "--quick", action="store_true",
-        help="Run only the fast checks (deps + config); skip daemon/embedding probes",
+        help="Run fast checks, including daemon health; skip embedding worker and Ollama probes",
     )
     doctor_p.add_argument(
         "--deep", action="store_true",

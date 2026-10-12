@@ -19,6 +19,15 @@ output. This page describes **V4.1.25**; the installed `--help` wins if prose dr
 | `slm doctor [--fix] [--quick] [--json]` | Pre-flight checks (deps, embedding worker, daemon) |
 | `slm restart` | Kill orphans, clean state, start fresh, verify health |
 
+Doctor checks daemon availability in every mode, including `--quick`: it reads
+the descriptor and makes at most one `/health` probe with a 0.5-second timeout.
+It never starts the daemon. A missing descriptor warns with `slm serve start`;
+a dead recorded process or an invalid or unhealthy daemon fails with
+`slm restart`. The daemon check is also included in `--json` output.
+
+Doctor exits **0** for passes or warnings only, and **1** if any check fails.
+The complete text or JSON report is emitted before the exit status is set.
+
 ## Memory Operations
 
 ### Quantization and sketch repair

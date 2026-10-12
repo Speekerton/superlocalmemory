@@ -1,0 +1,265 @@
+#!/usr/bin/env python3
+# Copyright (c) 2026 Varun Pratap Bhardwaj / Qualixar
+# Licensed under AGPL-3.0-or-later - see LICENSE file
+"""Fit the answer-support recipe (retrieval/support_recipe.py) on the harness.
+
+Reads the per-question rows that ``answerability_eval.py --rows`` writes (its
+"features" pass: every question's candidates with their evidence features, the
+evidence floor off) and:
+
+  1. splits the questions once, deterministically, per set and category
+     (``TRAIN_SHARE`` to training, the rest held out; sha256 of the question id);
+  2. fits the per-memory logistic model on the training questions only, with
+     every weight's sign fixed in advance (``SIGNS``) -- multiple-instance
+     style: a real question contributes its best expected memory, a nonsense or
+     no-answer question its top-scoring candidates, re-chosen each round;
+  3. chooses the threshold on the held-out questions: the widest-margin point
+     between the highest held-out nonsense question and the lowest held-out
+     real question that recall answers today; if none exists, reports the
+     trade-off curve instead of pretending;
+  4. prints the held-out table per slice (all / legacy / described) and a
+     recipe block to paste into support_recipe.py.
+
+    python scripts/quality/answerability_fit.py --rows rows.jsonl [--profile a]
+        [--out fit.json]
+
+Synthetic data only. Needs numpy and scipy (development tools, not the product).
+Exit codes: 0 fitted (gate holds on held-out) · 1 fitted, gate does not hold · 2 bad input.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import math
+import sys
+from pathlib import Path
+
+import numpy as np
+
+_HERE = Path(__file__).resolve().parent
+SPLIT_VERSION = "answer-support-split-v1"
+TRAIN_SHARE = 0.6
+TOP_K = 5
+SLICES = ("legacy", "described")
+#: +1: can only raise support; -1: can only lower it.
+SIGNS = {"hub_corrected": 1, "keyword_coverage": 1, "cross_encoder": 1, "log_bm25": 1,
+         "entity_hit": 1, "oov_phrase": -1, "rare_miss": -1, "nonsense_similarity": -1}
+L2 = 0.001
+ROUNDS = 8
+NEGATIVES_PER_QUESTION = 3
+UNANSWERABLE_WEIGHT = 0.3
+
+
+def _bootstrap() -> None:
+    source = _HERE.parents[1] / "src"
+    if str(source) not in sys.path:
+        sys.path.insert(0, str(source))
+
+
+def split_of(qid: str, share: float = TRAIN_SHARE) -> float:
+    """A stable number in [0, 1) per question id."""
+    h = hashlib.sha256(f"{SPLIT_VERSION}:{qid}".encode()).digest()[:8]
+    return int.from_bytes(h, "big") / 2 ** 64
+
+
+def split(rows: list[dict], share: float = TRAIN_SHARE) -> tuple[list[dict], list[dict]]:
+    """Per (set, category): the lowest ``share`` of ids by hash train, the rest hold out."""
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for r in rows:
+        groups.setdefault((r["set"], r["category"]), []).append(r)
+    train, held = [], []
+    for members in groups.values():
+        ordered = sorted(members, key=lambda r: split_of(r["qid"]))
+        cut = max(1, round(len(ordered) * share)) if len(ordered) > 1 else 1
+        train.extend(ordered[:cut])
+        held.extend(ordered[cut:])
+    return train, held
+
+
+def answered_today(row: dict) -> bool:
+    return row["rank"] is not None and row["rank"] <= TOP_K
+
+
+# -- the model inputs ------------------------------------------------------------
+
+def _vectors(row: dict, recipe) -> list[tuple[dict, np.ndarray]]:
+    from superlocalmemory.retrieval import support_gate
+    from superlocalmemory.retrieval.support_recipe import FEATURES
+
+    qe = row.get("query_evidence") or {}
+    out = []
+    for cand in row.get("candidates", ()):
+        f = support_gate.features(cand, qe, recipe)
+        out.append((cand, np.array([f[name] for name in FEATURES], dtype=float)))
+    return out
+
+
+def imputations(train: list[dict]) -> dict:
+    """The values used when an input has no measurement, from training data only."""
+    baselines = [c["hub_baseline"] for r in train for c in r.get("candidates", ())
+                 if c.get("hub_baseline") is not None]
+    ce = [c["ce_raw"] for r in train for c in r.get("candidates", ())[:3]
+          if c.get("ce_raw") is not None]
+    nonsense_profile = [r["query_evidence"]["nonsense_similarity"] for r in train
+                        if r["set"] == "nonsense" and (r.get("query_evidence") or {}).get(
+                            "nonsense_similarity") is not None]
+    return {
+        # A memory with no baseline yet is assumed as hub-like as the upper quarter.
+        "hub_missing_baseline": round(float(np.percentile(baselines, 75)), 3),
+        # A cross-encoder with no vote reads as the median candidate's score.
+        "ce_missing": round(float(np.median(ce)), 2),
+        # A question with no profile (probes not embedded yet) is assumed to read
+        # like the median nonsense question: abstaining is the safe error.
+        "nonsense_similarity_missing": math.ceil(float(np.median(nonsense_profile)) * 100) / 100,
+    }
+
+
+# -- the fit -------------------------------------------------------------------------
+
+def _bounded_logistic(X: np.ndarray, y: np.ndarray, w: np.ndarray, names) -> tuple:
+    from scipy.optimize import minimize
+
+    mu, sd = X.mean(0), X.std(0) + 1e-9
+    Z = (X - mu) / sd
+    pos = (y == 1)
+    w = w * len(y) / w.sum()
+    w = np.where(pos, w * (~pos).sum() / max(1, pos.sum()), w)
+
+    def loss(p):
+        coef, b = p[:-1], p[-1]
+        z = Z @ coef + b
+        nll = np.logaddexp(0, -z) * y + np.logaddexp(0, z) * (1 - y)
+        g = (1 / (1 + np.exp(-z)) - y) * w
+        value = float((nll * w).sum() / len(y) + L2 * coef @ coef)
+        grad = np.append(Z.T @ g / len(y) + 2 * L2 * coef, g.sum() / len(y))
+        return value, grad
+
+    bounds = [((0, None) if SIGNS[n] > 0 else (None, 0)) for n in names] + [(None, None)]
+    res = minimize(loss, np.zeros(Z.shape[1] + 1), jac=True, method="L-BFGS-B",
+                   bounds=bounds)
+    coef = res.x[:-1] / sd
+    return coef, float(res.x[-1] - (res.x[:-1] * mu / sd).sum())
+
+
+def fit(train: list[dict], recipe) -> tuple[np.ndarray, float]:
+    from superlocalmemory.retrieval.support_recipe import FEATURES
+
+    vecs = {r["qid"]: _vectors(r, recipe) for r in train}
+    coef, b = np.zeros(len(FEATURES)), 0.0
+    for _ in range(ROUNDS):
+        examples: list[tuple[np.ndarray, int, float]] = []
+        for r in train:
+            cands = vecs[r["qid"]]
+            if not cands:
+                continue
+            if r["set"] == "real":
+                pos = [v for c, v in cands if c.get("key") in r["expected"]]
+                if not answered_today(r) or not pos:
+                    continue
+                examples.append((max(pos, key=lambda v: v @ coef), 1, 1.0))
+                continue
+            top = sorted((v for _, v in cands), key=lambda v: -(v @ coef))
+            top = top[:NEGATIVES_PER_QUESTION]
+            weight = (1.0 if r["set"] == "nonsense" else UNANSWERABLE_WEIGHT) / len(top)
+            examples.extend((v, 0, weight) for v in top)
+        X, y, w = (np.array(col) for col in zip(*examples))
+        coef, b = _bounded_logistic(X, y, w, FEATURES)
+    return coef, b
+
+
+def question_logit(row: dict, recipe, coef: np.ndarray, b: float,
+                   slice_name: str | None = None) -> float | None:
+    scores = [float(v @ coef + b) for c, v in _vectors(row, recipe)
+              if slice_name is None or c.get("slice") == slice_name]
+    return max(scores) if scores else None
+
+
+# -- the threshold and the table ---------------------------------------------------------
+
+def choose_threshold(held: list[dict], recipe, coef, b) -> dict:
+    nonsense = [question_logit(r, recipe, coef, b) for r in held if r["set"] == "nonsense"]
+    real = [question_logit(r, recipe, coef, b) for r in held
+            if r["set"] == "real" and answered_today(r)]
+    hi_nonsense = max((z for z in nonsense if z is not None), default=-math.inf)
+    lo_real = min((z for z in real if z is not None), default=math.inf)
+    feasible = hi_nonsense < lo_real
+    z = (hi_nonsense + lo_real) / 2 if feasible else lo_real
+    return {"feasible": feasible, "logit": z, "nonsense_max": hi_nonsense, "real_min": lo_real,
+            "probability": 1 / (1 + math.exp(-z))}
+
+
+def table(rows: list[dict], recipe, coef, b, z: float) -> dict:
+    out = {}
+    for name in (None, *SLICES):
+        real = [r for r in rows if r["set"] == "real" and answered_today(r)
+                and (name is None or r.get("slice") == name)]
+        nonsense = [r for r in rows if r["set"] == "nonsense"]
+        unans = [r for r in rows if r["set"] == "unanswerable"]
+
+        def abstains(r, sl=name):
+            q = question_logit(r, recipe, coef, b, sl)
+            return q is None or q < z
+        out[name or "all"] = {
+            "real_kept": f"{sum(not abstains(r, None) for r in real)}/{len(real)}",
+            "nonsense_abstain": f"{sum(abstains(r) for r in nonsense)}/{len(nonsense)}",
+            "unanswerable_abstain": f"{sum(abstains(r) for r in unans)}/{len(unans)}",
+            "real_lost": [r["qid"] for r in real if abstains(r, None)],
+            "nonsense_answered": [r["qid"] for r in nonsense if not abstains(r)],
+        }
+    return out
+
+
+def curve(held: list[dict], recipe, coef, b) -> list[dict]:
+    """Every distinct held-out question logit as a threshold: what it costs."""
+    marks = sorted({q for r in held if (q := question_logit(r, recipe, coef, b)) is not None})
+    points = []
+    for z in marks:
+        t = table(held, recipe, coef, b, z)["all"]
+        points.append({"logit": round(z, 3), **{k: t[k] for k in (
+            "real_kept", "nonsense_abstain", "unanswerable_abstain")}})
+    return points
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    p.add_argument("--rows", required=True)
+    p.add_argument("--profile", default="a")
+    p.add_argument("--out")
+    args = p.parse_args(argv)
+    _bootstrap()
+    from dataclasses import replace
+
+    from superlocalmemory.retrieval import support_recipe as sr
+
+    rows = [json.loads(line) for line in Path(args.rows).read_text(encoding="utf-8").splitlines()
+            if line.strip()]
+    rows = [r for r in rows if r.get("profile", args.profile) == args.profile
+            and "candidates" in r]
+    if not rows:
+        print("answerability-fit: no feature rows for that profile", file=sys.stderr)
+        return 2
+    train, held = split(rows)
+    recipe = replace(sr.ACTIVE, **imputations(train))
+    coef, b = fit(train, recipe)
+    chosen = choose_threshold(held, recipe, coef, b)
+    report = {
+        "split": SPLIT_VERSION, "train": len(train), "held_out": len(held),
+        "imputations": imputations(train),
+        "weights": {n: round(float(c), 4) for n, c in zip(sr.FEATURES, coef)},
+        "intercept": round(b, 4), "threshold": chosen,
+        "held_out_table": table(held, recipe, coef, b, chosen["logit"]),
+        "train_table": table(train, recipe, coef, b, chosen["logit"]),
+        "all_table": table(rows, recipe, coef, b, chosen["logit"]),
+        "held_out_curve": curve(held, recipe, coef, b),
+    }
+    text = json.dumps(report, indent=2)
+    if args.out:
+        Path(args.out).write_text(text, encoding="utf-8")
+    print(text)
+    return 0 if chosen["feasible"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

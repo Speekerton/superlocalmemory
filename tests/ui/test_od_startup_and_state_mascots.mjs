@@ -13,7 +13,7 @@ function health(body, ok = true) {
 describe('startup bar', function () {
   it('shows while warming, naming what warms, and goes when ready', async function () {
     const h = buildHarness(['main'], health({ ready: false, readiness: { engine: true,
-      recall_warmup: { warm: false, warming: ['the embedding model'] } } }));
+      recall_warmup: { warm: false, warming: ['indexes', 'entity_graph'] } } }));
     const w = h.window;
     evalModule(w, 'od-startup.js');
     await flushPromises(); await flushPromises();
@@ -21,7 +21,8 @@ describe('startup bar', function () {
     assert.ok(bar, 'bar shown');
     assert.equal(bar.getAttribute('role'), 'status');
     assert.match(bar.textContent, /warming up/);
-    assert.match(bar.textContent, /the embedding model/);
+    assert.match(bar.textContent, /the search indexes, the knowledge graph/);
+    assert.doesNotMatch(bar.textContent, /entity_graph/);
     assert.match(bar.querySelector('img').src, /mascot\/flying-320\.webp$/);
     w.__setFetchStub(health({ ready: true, readiness: { engine: true, recall_warmup: { warm: true } } }));
     w.SLMStartup.check();

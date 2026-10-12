@@ -65,9 +65,13 @@
     bar = null;
   }
 
+  var PLAIN = { indexes: 'the search indexes', entity_graph: 'the knowledge graph',
+                recalls: 'recall', embedding: 'the embedding model', reranker: 'the ranking model' };
+
   function warmingNames(r) {
     var w = (r && r.recall_warmup && r.recall_warmup.warming) || [];
-    return Array.isArray(w) ? w : [];
+    if (!Array.isArray(w)) return [];
+    return w.map(function (n) { return PLAIN[n] || String(n).replace(/_/g, ' '); });
   }
 
   function check() {

@@ -14,7 +14,7 @@ slm profile create work
 slm profile switch work
 ```
 
-Names may use letters, digits, underscore and hyphen only. Switching sets the active profile for the whole installation: the CLI, the dashboard and every connected agent use it until you switch again. The choice is persisted in both `config.json` (`active_profile`) and `profiles.json`. From an MCP client, the same switch is `switch_profile`.
+A name must start with a letter or digit, and after that may use only letters, digits, underscore and hyphen, up to 50 characters. Switching sets the active profile for the whole installation: the CLI, the dashboard and every connected agent use it until you switch again. The choice is persisted in both `config.json` (`active_profile`) and `profiles.json`. From an MCP client, the same switch is `switch_profile`.
 
 ```json
 { "tool": "switch_profile", "arguments": { "profile_id": "work" } }
@@ -26,13 +26,13 @@ Most memory tools accept a `profile_id`. A non-empty value routes that single ca
 
 ### Deleting a profile
 
-Deletion is available in the dashboard's profile list, not on the CLI. It cannot delete `default` or the active profile. The profile's memories, facts, graph and everything that makes them findable move into `default` in one transaction, so a failure leaves the profile as it was. Pictures and documents move afterwards, and if that step fails it is recorded and finished at the next daemon start.
+Deletion is available in the dashboard's profile list, not on the CLI. It cannot delete `default` or the profile that is active. Memories, facts, the graph and the indexes that make them findable move into `default` in one database transaction. If that transaction fails, the profile row is still there. Saved views, Answer Check history and learned state are cleared before that transaction, so a later failure does not put them back. Pictures and documents move after the transaction commits. If that move fails, the profile is still deleted, the move is recorded, and it finishes at the next daemon start or before the next profile is created.
 
-Not everything moves. The profile's saved views, receipts, Answer Check history and learned ranking state are erased, because they describe how that workspace was used and would mislead in `default`. If you want any of those, export or note them before you delete.
+Not everything moves. Saved views, Answer Check history, the receipts of how agents used that workspace, and what the workspace learned (its ranker, bandit and signals) are removed. Folding that learned state into `default` would retrain it. Pending memories that were not stored yet move with the rest. Write receipts and erasure receipts stay, still labelled with the deleted profile, and so do the markers that refuse a late write for that profile. If you want the views or the Answer Check history, export or note them before you delete.
 
 ### Profiles and remote access
 
-A key created for [Web Access](Web-Access-and-Connected-Apps) is bound to one profile (`slm remote keys add <name> --profile <profile>`), and keys not bound to a profile are refused. Every remote tool call is served for the key's profile, whatever profile your computer is using at that moment.
+A key for `slm remote`, the listener for other computers on your network ([Web Access and Connected Apps](Web-Access-and-Connected-Apps)), is bound to exactly one profile. `slm remote keys add <name>` binds it to the profile active at that moment; add `--profile <profile>` to name a different one. A key that still has no profile is refused. Keys made before this binding are bound once, to the profile active when the daemon next starts or when any `slm remote keys` command runs. Every remote tool call is served for the key's profile, whatever profile the computer is using at that moment. A `profile_id` on the call that names a different profile is refused.
 
 ## Scopes: how one profile can see another's memories
 
@@ -59,7 +59,7 @@ Two limits to know. Cognitive-consolidation summary blocks are always `personal`
 
 ## MCP tool profiles
 
-An MCP tool profile controls how many of SLM's 110 tools an AI client sees. The reason is practical: many editors cap the total number of tools across all servers at 50 to 100, and a maximal SLM registration crowds out everything else. The profile is chosen when the MCP server starts, with the environment variable `SLM_MCP_PROFILE` or `slm connect <ide> --profile <name>`, which writes it into the IDE's MCP block. It cannot be changed mid-session, and the dashboard's "MCP & Tools" pane shows the active profile but only gives instructions for changing it.
+An MCP tool profile controls how many of SLM's 110 tools an AI client sees. Many editors cap how many tools they will load from all servers together, and registering every SLM tool can crowd out other servers. The profile is chosen when the MCP server starts, with the environment variable `SLM_MCP_PROFILE` or `slm connect <ide> --profile <name>`, which writes it into the IDE's MCP block. It cannot be changed mid-session, and the dashboard's "MCP & Tools" pane shows the active profile but only gives instructions for changing it.
 
 | Profile | Tools | What it is for |
 |---|---:|---|

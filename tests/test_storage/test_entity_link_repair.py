@@ -51,7 +51,7 @@ FACTS = {  # fact -> (raw names, links as saved by the old resolver)
                 "2026-09-14 00:55"], ["e_users", "e_live", "e_hex", "e_stamp"]),
 }
 NOTE = ("Final: PASS. LIVE at 2026-09-14 00:55 IST for b2f4b74fbbad434c, see "
-        "/Users/varun/notes.md. Varun reviewed it.")
+        "/Users/yourusername/notes.md. Varun reviewed it.")
 #: Junk the old extractor made entities of; e_orphan has no fact at all, and
 #: e_summary has none either but a temporal event of an unrelinked fact names it.
 JUNK = (("e_users", "Users"), ("e_live", "LIVE"), ("e_hex", "b2f4b74fbbad434c"),

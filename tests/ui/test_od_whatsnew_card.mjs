@@ -9,7 +9,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { makeEnv, features, flushPromises } from './features_helpers.mjs';
 
-const KEY = 'slm.whatsnew.4.1.25';
+const KEY = 'slm.whatsnew.4.2.0';
 const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, '../../src/superlocalmemory/ui/index.html'), 'utf8');
 const css = readFileSync(join(here, '../../src/superlocalmemory/ui/css/design-system.css'), 'utf8');

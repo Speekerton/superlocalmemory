@@ -158,6 +158,26 @@ operations and, for an owner or admin, resolves them. The MCP counterpart for
 Living Brain totals is `get_brain_evidence_status(profile_id="")`; it only
 observes and does not change recall, ranking or review.
 
+## Memory health: SLM looks after older memories
+
+While the computer is idle, Memory health describes older memories (event dates,
+names, projects, tags and kinds) by adding only — it never changes or deletes what
+was written. Repairs that move or delete anything wait for the owner's **Fix**, and
+every run that changed something can be undone.
+
+```bash
+slm enrich status              # progress, repairs waiting, the id of every run that changed something
+slm enrich pause <run>         # recall and remember keep working
+slm enrich resume <run>
+slm enrich fix entity-links    # apply a suggested repair (asks first)
+slm enrich undo                # undo the latest run that changed something (asks first)
+```
+
+`repair-saves` keeps no undo record; it says so and takes a safety copy before it
+runs. An undone repair is not suggested again until you ask with
+`--include-undone`. The dashboard shows the same state on the **Memory health**
+card at the top of the Health pane. Guide: `docs/memory-health.md`.
+
 ## Pictures and documents: status and repair
 
 Pictures and documents are an optional feature, off by default. Check them with

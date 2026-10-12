@@ -2,7 +2,7 @@
 name: slm-loop
 description: Gate-verified bounded loops with SuperLocalMemory as the durable ledger. Use when a task has a checkable acceptance condition and you must iterate until an INDEPENDENT gate passes — never stopping because the agent believes it is done. `slm_loop_run` (MCP) waits, under hard bounds, for a recall gate to pass; `slm loop demo` shows the control flow keyless; `slm loop history` and `slm loop show <run_id>` (or `slm_loop_history` / `slm_loop_show`) inspect past runs, whose every lap is stored as queryable SLM memory (tag `loop:<name>`). Terminal statuses are DONE / HALT / PAUSE / KILLED / ERROR — report them exactly, never converting HALT/PAUSE/ERROR into success.
 when_to_use: "run a bounded loop, gate-verified task, iterate until tests pass, verify against an independent gate, don't trust the agent's own done claim, slm loop, convergence loop, loop until green, loop ledger, wait for another agent's result"
-allowed-tools: slm_loop_run, slm_loop_history, slm_loop_show, recall, Bash
+allowed-tools: slm_loop_run, slm_loop_history, slm_loop_show, recall, report_outcome, get_soft_prompts, skill_health, skill_lineage, evolve_skill, observe_bounded_loop_evidence, Bash
 ---
 
 # slm-loop — Bounded, gate-verified agent loops
@@ -140,6 +140,26 @@ paused, name the approval needed; when errored, quote the short detail.
   exact failure mode bounded loops exist to remove.
 
 ---
+
+## The learning brain around loops
+
+Loops are one half; SLM also learns from what happened, and none of it can quietly
+make recall worse.
+
+- **Outcomes.** Pass a recall's `query_id` to `report_outcome` when the memories
+  helped or misled; the local ranker learns from that. A new ranker is promoted
+  only on a statistically valid win and rolled back automatically if it slips.
+- **Soft prompts.** `get_soft_prompts(profile_id)` returns the patterns SLM learned
+  for this workspace.
+- **Skill evolution** (off by default, it makes model calls). `skill_health` and
+  `skill_lineage` are read-only; `evolve_skill` runs one evolution for the active
+  workspace and needs `slm config set evolution.enabled true`. A candidate is
+  verified blind and approved before it replaces a skill.
+- **Bounded Loops evidence.** With Bounded Loops installed
+  (github.com/qualixar/bounded-loops), `observe_bounded_loop_evidence(workspace)`
+  imports its run evidence read-only, so laps and gates join the same memory.
+
+Guides: `docs/skill-evolution.md`, `docs/bounded-loops-bridge.md`.
 
 ## Related skills
 

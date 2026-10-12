@@ -86,6 +86,7 @@ _KNOWN_DEAD: dict[str, str] = {
     "core/engine_lock.py": "seeded 4.0.6 — triage",
     "core/recall_worker.py": "ALIVE — subprocess-spawned by infra/self_heal.py",
     "core/reranker_worker.py": "ALIVE — subprocess reranker backend",
+    "server/backup_restore_worker.py": "ALIVE — run with python -m by server/routes/backup_recovery.py",
     "core/laya_worker.py": "ALIVE — run by file path in Laya's own Python, which cannot "
                            "import this package (retrieval/sufficiency.py, core/laya_runtime.py)",
     "runtimes/multimodal_worker.py": "ALIVE — run by file path inside the managed media environment, "

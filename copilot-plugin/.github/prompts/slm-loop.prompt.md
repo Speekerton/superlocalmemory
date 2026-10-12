@@ -8,6 +8,12 @@ tools:
   - slm_loop_history
   - slm_loop_show
   - recall
+  - report_outcome
+  - get_soft_prompts
+  - skill_health
+  - skill_lineage
+  - evolve_skill
+  - observe_bounded_loop_evidence
   - Bash
 ---
 
@@ -146,6 +152,26 @@ paused, name the approval needed; when errored, quote the short detail.
   exact failure mode bounded loops exist to remove.
 
 ---
+
+## The learning brain around loops
+
+Loops are one half; SLM also learns from what happened, and none of it can quietly
+make recall worse.
+
+- **Outcomes.** Pass a recall's `query_id` to `report_outcome` when the memories
+  helped or misled; the local ranker learns from that. A new ranker is promoted
+  only on a statistically valid win and rolled back automatically if it slips.
+- **Soft prompts.** `get_soft_prompts(profile_id)` returns the patterns SLM learned
+  for this workspace.
+- **Skill evolution** (off by default, it makes model calls). `skill_health` and
+  `skill_lineage` are read-only; `evolve_skill` runs one evolution for the active
+  workspace and needs `slm config set evolution.enabled true`. A candidate is
+  verified blind and approved before it replaces a skill.
+- **Bounded Loops evidence.** With Bounded Loops installed
+  (github.com/qualixar/bounded-loops), `observe_bounded_loop_evidence(workspace)`
+  imports its run evidence read-only, so laps and gates join the same memory.
+
+Guides: `docs/skill-evolution.md`, `docs/bounded-loops-bridge.md`.
 
 ## Related skills
 

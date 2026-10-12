@@ -160,7 +160,10 @@ class Instance:
     def owns(self, pid: int) -> bool:
         """True only when ``pid`` is an SLM process started with this instance's HOME or data dir."""
         cmd = _proc_text(pid, "cmdline").replace(b"\0", b" ")
-        if b"superlocalmemory" not in cmd:
+        # The interpreter's own path may contain "superlocalmemory" (a venv in the
+        # checkout); only the arguments say whether this process runs SLM.
+        args = cmd.strip().split(b" ", 1)[1:] or [b""]
+        if b"superlocalmemory" not in args[0]:
             return False
         want = {f"HOME={self.home}".encode(), f"SLM_DATA_DIR={self.data_dir}".encode()}
         return bool(want & set(_proc_text(pid, "environ").split(b"\0")))

@@ -1,7 +1,7 @@
 ---
 name: slm-status
 description: Health and optimization stats for SuperLocalMemory — call slm_optimize_stats() for live compression and cache counters (compress_runs, tokens_saved_compress, cache_proxy_hits, cache_proxy_misses, cache_kv_hits, cache_kv_misses); run slm status [--json] for system state (mode, profile, DB size, fact/entity/edge counts) and slm doctor [--json] for preflight including the "Optimize (Surface B)" health line; use together to confirm optimization is actually saving tokens.
-when_to_use: "check slm status, health check, is slm working, optimize stats, tokens saved, cache hits, compress runs, slm doctor, preflight, db size, slm info, diagnose slm, slm media status, are pictures on, slm features, picture search not working, slm media repair, embedder status"
+when_to_use: "check slm status, health check, is slm working, optimize stats, tokens saved, cache hits, compress runs, slm doctor, preflight, db size, slm info, diagnose slm, slm media status, are pictures on, slm features, picture search not working, slm media repair, embedder status, memory health, slm enrich, repair memories, undo a repair"
 allowed-tools: slm_optimize_stats, get_status, get_brain_evidence_status, Bash
 ---
 
@@ -152,6 +152,26 @@ was erased, deleted or withheld. `slm ops` lists failed, stuck or degraded
 operations and, for an owner or admin, resolves them. The MCP counterpart for
 Living Brain totals is `get_brain_evidence_status(profile_id="")`; it only
 observes and does not change recall, ranking or review.
+
+## Memory health: SLM looks after older memories
+
+While the computer is idle, Memory health describes older memories (event dates,
+names, projects, tags and kinds) by adding only — it never changes or deletes what
+was written. Repairs that move or delete anything wait for the owner's **Fix**, and
+every run that changed something can be undone.
+
+```bash
+slm enrich status              # progress, repairs waiting, the id of every run that changed something
+slm enrich pause <run>         # recall and remember keep working
+slm enrich resume <run>
+slm enrich fix entity-links    # apply a suggested repair (asks first)
+slm enrich undo                # undo the latest run that changed something (asks first)
+```
+
+`repair-saves` keeps no undo record; it says so and takes a safety copy before it
+runs. An undone repair is not suggested again until you ask with
+`--include-undone`. The dashboard shows the same state on the **Memory health**
+card at the top of the Health pane. Guide: `docs/memory-health.md`.
 
 ## Pictures and documents: status and repair
 

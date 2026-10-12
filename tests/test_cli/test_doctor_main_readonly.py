@@ -29,7 +29,7 @@ def test_main_doctor_never_launches_daemon(tmp_path, free_port, quick, use_json,
             if event in ('open', 'os.listdir', 'os.scandir', 'sqlite3.connect') and args:
                 if isinstance(args[0], (str, bytes)):
                     path = Path(os.fsdecode(args[0])).resolve()
-                    live = Path('/Users/varunpratapbhardwaj/.superlocalmemory')
+                    live = Path('/Users/yourusername/.superlocalmemory')
                     if path == live or live in path.parents:
                         raise RuntimeError('live data forbidden')
         sys.addaudithook(audit)

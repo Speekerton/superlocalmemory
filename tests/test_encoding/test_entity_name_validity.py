@@ -37,7 +37,7 @@ NOTE = ("Final: PASS. Status LIVE and VERIFIED at 14:55 IST on 2026-09-14 00:55.
         "Configure the gateway first. Tested on fact b2f4b74fbbad434c and "
         "cf43af4b67a347fd via /api/v3/consolidation/trigger and "
         "/.well-known/oauth-protected-resource.\n"
-        "Users: see /Users/varun/Documents/notes.md. Comma placement fixed.\n"
+        "Users: see /Users/yourusername/Documents/notes.md. Comma placement fixed.\n"
         "Varun asked Accenture about pgbouncer; the Xenobot Section Still Has gaps.")
 
 

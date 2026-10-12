@@ -1,7 +1,10 @@
 # Editor and agent plugins
 
-SuperLocalMemory works with any MCP client through `slm connect <ide>`, which
-writes the MCP server into that tool's config. A plugin adds more on top: skills
+SuperLocalMemory works with any harness that speaks MCP or can run a command
+(`slm remember`, `slm recall`). `slm connect <ide>` writes the MCP server into a
+tool's config, and the six packaged plugins below (Claude Code, Codex, GitHub Copilot,
+Antigravity, Hermes and the Cursor-format plugin for Grok Bot) are examples of what a
+host-specific package adds, not a list of what is supported. A plugin adds more on top: skills
 that teach the agent when to recall and what to save, sub-agents, session hooks
 and slash commands. Every plugin is built from one source (`plugin-src/`), so
 they all carry the same 16 skills and 4 sub-agents, adapted to each host.
@@ -15,7 +18,7 @@ this repository.
 |---|---|---|
 | Claude Code | `claude plugin marketplace add qualixar/superlocalmemory` then `claude plugin install superlocalmemory@qualixar` | MCP server, 16 skills, 4 sub-agents, hooks, `/slm-loop` |
 | Codex | `slm connect codex` then `slm codex install` | MCP server, skills, sub-agents, lifecycle hooks |
-| VS Code / GitHub Copilot | `slm connect vscode-copilot --here` (from the project root), then copy `copilot-plugin/.github/` add-ons | MCP server, agent rules, 15 prompt files, 4 agents, hooks |
+| VS Code / GitHub Copilot | `slm connect vscode-copilot --here` (from the project root), then copy `copilot-plugin/.github/` add-ons | MCP server, agent rules, 16 prompt files, 4 agents, hooks |
 | Cursor-format hosts (Grok Bot, Cursor) | Add the `qualixar` marketplace in the host's Plugins screen, then `superlocalmemory` | MCP server, a bot-sized skill set, no hooks or dashboard needed |
 | Hermes | `hermes plugins install 'https://github.com/qualixar/superlocalmemory.git#hermes-plugin'` | Skills, child-agent roles, `/slm` commands |
 | Antigravity (`agy`) | `agy plugin install "$(npm root -g)/superlocalmemory/antigravity-plugin"` | MCP server, skills, agents, hooks |
@@ -42,7 +45,24 @@ this repository.
 | `slm-bot-memory`, `slm-getting-started-bot` | Several bots sharing one computer and one store |
 
 The four sub-agents are the memory advisor, the optimize advisor, the governance
-advisor and the loop runner.
+advisor and the loop runner. The Claude Code, Codex and Antigravity plugins also ship the
+`/slm-loop` command; Hermes has `/slm <command>` and a `/slm-<command>` alias for each, and
+Copilot has the 16 skills as prompt files.
+
+## What the hooks do
+
+Hooks run at session events without the agent doing anything, and every one fails open:
+a hook problem never blocks your agent. In the Claude Code plugin, at session start one
+hook prints the `session_init` guidance, another injects project context, and the launcher
+makes sure the environment exists. `checkpoint` records files you edit. `post_tool_outcome`
+and `stop_outcome` notice which recalled memories were actually used and settle each
+outcome. `user_prompt_rehash` treats the same question asked again within a minute as a sign
+the last answer missed, and `topic_shift` reminds the agent to recall when you change subject.
+`before_web` runs a recall before a web search or fetch. `stop` saves a session summary.
+Codex, Copilot and Antigravity carry the subset their host can fire (Copilot's hooks are a
+preview in VS Code); the Cursor-format plugin ships none, and Hermes does its lifecycle observation inside the plugin. Per-prompt recall
+and the session summary can be switched off in the rules in `config.json`
+([Auto-memory](auto-memory.md)).
 
 ## Claude Code
 

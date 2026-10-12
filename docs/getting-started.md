@@ -77,9 +77,10 @@ Upgrades](host-upgrades.md).
 The wizard walks you through these choices:
 
 1. **Pick your mode**
-   - **Mode A** (Local Guardian, the default) — no language model; the core
-     memory path makes no model-provider call. Optional downloads, connectors,
-     backups and explicitly enabled integrations can still use the network.
+   - **Mode A** (Local Guardian, the default) — memories are saved and recalled
+     without a language model, and nothing leaves this device. Optional
+     downloads, connectors, backups and explicitly enabled integrations can
+     still use the network.
    - **Mode B** (Smart Local) — a model on your machine improves recall:
      Ollama by default, or any local OpenAI-compatible server.
    - **Mode C** (Full Power) — your own endpoint or a cloud provider such as
@@ -97,11 +98,12 @@ The wizard walks you through these choices:
    all three; you can do each later with `slm connect <ide>` and `slm serve
    install`.
 
-On a Mac with Apple Silicon, the wizard also offers to set up [Answer
-check](answer-check.md), which lets recall say "I don't have that" instead of
-guessing. Say no and set it up later from **Settings → Answer check** in the
-dashboard. On other platforms, the wizard points you to that same settings page
-for the online option instead.
+On a Mac with Apple Silicon, the wizard also sets up the on-device [Answer
+check](answer-check.md) (about 1.1 GB, yes by default; unattended runs install it too), which
+helps recall tell "this answers it" from "this is merely related". Opt out with
+`slm setup --no-laya` or `SLM_SKIP_LAYA=1`, and set it up later from **Settings → Answer
+check** in the dashboard. On other platforms, that settings page offers the online option
+instead.
 
 > **Tip:** Start with Mode A. You can switch anytime with `slm mode b` or `slm mode c`,
 > then run `slm restart`.
@@ -138,10 +140,15 @@ Output:
 The bracketed number is query-relative relevance, not answer confidence. By
 default, SLM declares `calibration_status: "uncalibrated"` and
 `answer_confidence: null`; see the [retrieval score
-contract](retrieval-score-contract.md). Turn on [Answer check](answer-check.md)
-and recall additionally tells you whether the top result actually answers your
+contract](retrieval-score-contract.md). Recall also tells you when memory cannot answer: ask something nothing supports and it
+says "That isn't in SuperLocalMemory." and returns nothing, or shows the closest memories
+under a plain label ([Recall](recall.md#when-memory-cannot-answer)). With [Answer
+check](answer-check.md) on, it also judges whether the top result actually answers your
 question, not just whether it is related. Narrow a recall by project, kind, tag
 or time with the flags in [Recall](recall.md).
+
+For a few minutes after SLM starts, the models are still loading; recall then says "SuperLocalMemory
+is still warming up" and shows what it has found instead of claiming the memory is empty.
 
 ## Check System Status
 
@@ -209,7 +216,8 @@ For the full parameter set, see [CLI Reference → Bounded Loops](cli-reference.
 
 | What you want to do | Guide |
 |---------------------|-------|
-| Let recall say "I don't have that" instead of guessing | [Answer Check](answer-check.md) |
+| Understand when recall says "That isn't in SuperLocalMemory." | [Recall](recall.md#when-memory-cannot-answer) and [Answer Check](answer-check.md) |
+| See how SLM looks after older memories | [Memory health](memory-health.md) |
 | Set up a specific IDE | [IDE Setup](ide-setup.md) |
 | Use your memory from a web app | [Web access](remote-access/README.md) |
 | Switch modes or providers | [Configuration](configuration.md) |

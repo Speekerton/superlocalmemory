@@ -124,7 +124,18 @@ Search memories with hybrid retrieval, rank fusion and reranking. See
 | `about` | string | Keep only memories that mention this name |
 | `kind` | string | Keep only one [memory kind](memory-kinds.md) |
 | `tags`, `tags_match` | string or list, `all`/`any` | Exact tag filter; `tags_match` defaults to `all` |
+| `show_weak` | boolean | When no memory supports the question, return the closest weak matches (each `weak: true`) instead of nothing |
+| `include_related` | boolean | When the question is real but not answered exactly, return up to three close memories labelled `tier: related` |
+| `depth` | 0, 1 or 2 | 0 glance (ids, tier, one-line previews), 1 full facts (default), 2 adds source, same-session neighbours, same-entity facts and the replacing correction |
+| `max_tokens` | integer | Hard cap on the returned results; never exceeded (0 means no cap) |
 | `profile_id` | string | Recall from this profile |
+
+When nothing in memory supports the question, recall returns **no results** and
+`abstention_note` says "That isn't in SuperLocalMemory." Do not invent an answer then.
+`warming_up: true` (with the text in `status_note`) means SuperLocalMemory is still loading:
+tell the person and retry shortly; do not conclude the memory is empty. Start at `depth` 0 or 1
+and drill into one result with `expand`. See
+[Recall](recall.md#when-memory-cannot-answer).
 
 Results follow the [score contract](retrieval-score-contract.md):
 `relevance_score` is query relevance, `ranking_score` is diagnostic ranking
@@ -133,13 +144,28 @@ configured check the response says `calibration_status: "uncalibrated"` and
 `answer_confidence: null`; retrieval scores are not answer probabilities.
 
 The response also carries `query_id` (pass it to `report_outcome`),
-`no_confident_match`, `abstained`, `answerability`, `answer_check_status`,
+`no_confident_match`, `abstained`, `tier`, `support`, `answerability`, `answer_check_status`,
 `channel_status`, `incomplete_channels`, `project_scope`, `tag_scope` and
 `reranker_status`. When [Answer check](answer-check.md) is on, `answer_confidence`
 and `abstention_reason` (for example `judged_insufficient`) carry its verdict.
 `no_confident_match: true` means nothing cleared the evidence floor: do not
 invent a memory, rewrite the query more specifically and try once more. An
 invalid `kind` returns `INVALID_KIND` before anything is retrieved.
+
+### `expand`
+
+Drill into one recall result: the full fact and, at depth 2, its source memory, same-session
+neighbours, facts about the same entities and the correction that replaced it. Read-only, with
+the same profile, quarantine and visibility checks as `fetch`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `memory_id` | string, required | A result's `fact_id` or `memory_id` |
+| `depth` | 0, 1 or 2 | Default 2 |
+| `max_tokens` | integer | Hard cap; never exceeded (0 means no cap) |
+| `profile_id` | string | Read this profile |
+
+An invalid `depth` returns `INVALID_LAYERS`; an unknown id returns `success: false`.
 
 ### `search`
 
@@ -151,7 +177,12 @@ Full-text search (FTS5 with BM25 ranking).
 | `limit` | integer | Max results (default 20) |
 | `kind` | string | Keep only one memory kind |
 | `tags`, `tags_match` | string or list, `all`/`any` | Exact tag filter |
+| `depth`, `max_tokens` | 0, 1 or 2; integer | As in `recall` |
 | `profile_id` | string | Search this profile |
+
+Each result carries a `tier`: `supported` when the question's words support it, otherwise
+`related` (at most three). When none is supported, `abstention_note` says so. Keyword search
+needs no model, so it is never warming up.
 
 ### `fetch`
 

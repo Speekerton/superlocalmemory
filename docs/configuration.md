@@ -39,7 +39,7 @@ no provider configured, `slm mode c` tells you to run `slm provider set`.
 
 ### Mode A: Local Guardian (default)
 
-Core memory operations run against the local data root. Optional model and dependency downloads, connectors, backup, and other enabled integrations can use the network.
+Memories are saved and recalled without a language model, and nothing leaves this device. Core memory operations run against the local data root. Optional model and dependency downloads, connectors, backup, and other enabled integrations can use the network. On Apple Silicon the on-device answer check runs in this mode too; it adds no outbound call.
 
 Best for: deployments that want a local core path and can govern optional integrations explicitly. Regulatory compliance still requires deployment-specific assessment.
 
@@ -289,6 +289,13 @@ dashboard's install token, the daemon capability, or an API key):
 | `sufficiency_jev_rerank`, `sufficiency_jev_rerank_consent` | `false` | Reordering with Jev and its own consent; both must be `true`; set only by the dashboard switch |
 | `sufficiency_jev_rerank_k` | `20` | How many top results reordering sends (clamped to 5–30) |
 
+Recall's answer-support decision is configured under `retrieval` in `config.json`. Defaults:
+`answer_support_gate` on, `query_rewrite` on (base forms and known aliases for the keyword
+search only; the decision always reads your original question), `query_rewrite_llm` off
+(in Mode B, a few keywords from the local model, bounded by `query_rewrite_timeout_s`, default
+0.8, and failing open), and `min_semantic_evidence` 0.60 (the lowest raw cosine that counts as
+meaning-only evidence).
+
 The Answer Check tab's history lives in `config.json` under
 `retrieval`, with the other recall settings. A change applies at the next
 daemon start:
@@ -346,6 +353,9 @@ These override config file settings when set:
 | `SLM_REMOTE_RERANK_DEADLINE_S` | Longer time limit for a remote rerank call |
 | `SLM_LOOP_KILL` | Any non-empty value stops bounded loops |
 | `SLM_CROSS_ENCODER_API_KEY` | Runtime-only bearer token for a remote rerank endpoint; overrides any owner-only config value |
+| `SLM_SKIP_LAYA` | `1` (also `true`, `yes`, `on`) stops setup from installing the on-device answer check; `slm setup --no-laya` does the same. `SLM_INSTALL_LAYA=0` also opts out |
+| `SLM_RECALL_NO_SUPPORT_GATE` | `1` turns the answer-support decision off, so recall no longer returns "That isn't in SuperLocalMemory." or the closest-memories tier ([Recall](recall.md#when-memory-cannot-answer)) |
+| `SLM_RECALL_NO_FLOOR` | `1` turns the evidence floor off |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `AZURE_OPENAI_API_KEY`, `OPENROUTER_API_KEY` | Provider keys for Mode C |
 
 ## Database Location

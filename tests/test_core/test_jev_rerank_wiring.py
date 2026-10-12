@@ -26,6 +26,7 @@ from superlocalmemory.retrieval.jev_judge import JEV_ENDPOINTS, JevSufficiencyJu
 from superlocalmemory.retrieval.jev_rerank import CHOICE_KEY, RerankVerdict
 from superlocalmemory.retrieval.sufficiency import SufficiencyVerdict
 from superlocalmemory.storage.models import AtomicFact, RecallResponse, RetrievalResult
+from tests._recall_sources import recall_sources
 
 # The selection fixture fakes platform, runtime, key store and both judges.
 from tests.test_core.test_judge_selection import world  # noqa: F401 — a fixture
@@ -457,11 +458,12 @@ class TestTheWholeRecallSeesTheFinalOrder:
                                 (sink.get("play_id"), [r.fact.fact_id for r in results[:5]],
                                  list(before))))
 
-        out = recall_pipeline.run_recall(
-            "which one?", "default", session_id="conversation-42", fast=True,
-            config=mode_a_config, retrieval_engine=engine, trust_scorer=None,
-            embedder=None, db=SimpleNamespace(db_path=None), llm=None, hooks=None,
-        )
+        with recall_sources(mode_a_config.base_dir, response.results) as db:
+            out = recall_pipeline.run_recall(
+                "which one?", "default", session_id="conversation-42", fast=True,
+                config=mode_a_config, retrieval_engine=engine, trust_scorer=None,
+                embedder=None, db=db, llm=None, hooks=None,
+            )
 
         ids = [r.fact.fact_id for r in out.results]
         assert ids[:2] == ["fact-06", "fact-05"]

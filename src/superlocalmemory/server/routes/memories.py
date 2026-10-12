@@ -1126,12 +1126,14 @@ async def search_memories(request: Request, body: SearchRequest):
             abandoned_channel_metadata, keyword_match_sql)
         sql = keyword_match_sql(body.query, column="content")
         rows = [] if sql is None else cursor.execute(f"""
-            SELECT fact_id, content, confidence as memory_confidence,
+            SELECT fact_id, memory_id, profile_id, content, confidence as memory_confidence,
                    fact_type as category, created_at{kind_select}
             FROM atomic_facts WHERE profile_id = ? AND {sql[0]}{kind_clause}
             ORDER BY {sql[2]}, confidence DESC LIMIT ?
         """, (active_profile, *sql[1], *kind_params, *sql[3], body.limit)).fetchall()
-        conn.close()
+        from superlocalmemory.retrieval.fallback_fidelity import admit_fallback
+        from superlocalmemory.server.recall_serializer import recall_response_metadata
+        rows, fidelity = admit_fallback(rows, conn, active_profile, close_db=True)
 
         if has_kind_columns:
             from superlocalmemory.core.kind_query import engine_display_min_confidence
@@ -1148,6 +1150,7 @@ async def search_memories(request: Request, body: SearchRequest):
 
         return {
             "query": body.query, "results": results, "total": len(results),
+            **recall_response_metadata(fidelity),
             "query_type": "text_search", "retrieval_time_ms": 0,
             "retrieval_mode": "degraded_lexical", **abandoned_channel_metadata(),
             "score_contract_version": "2",

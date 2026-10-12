@@ -472,27 +472,41 @@ those memories may lack entities or graph links) and fails at 50 or more. Its fi
 line names the commands to run: `slm ops list`, then `slm ops resolve <id> --action
 retry` or `--action cancel`.
 
-### `slm enrich status|pause|resume|undo <run>`
+### `slm enrich status|pause|resume|undo|fix`
 
 After an upgrade the daemon describes older memories in the background: dates,
 the event-time start, names of people, projects and tools, tags and project on
-the source memory, a kind from a local model when one is running, and a
-non-answer mark on operational stubs such as "session ended". It works only
-while nothing else is using your memories, only within the memory budget, and
-it only adds: it never changes what a memory says and never replaces a value a
-caller or you set. A safety copy of the store is taken before the first change.
-Nothing has to be configured; the dashboard's Memory health card shows the same
-progress and the same buttons.
+the source memory, a kind from a model on this machine when one is running, and
+a stub mark on operational receipts such as "Session ID: 9f8e7d6c5b4a" or
+"session ended 2026-10-12 11:28". It works only while nothing else is using
+your memories, only within the memory budget, and it only adds: it never
+changes what a memory says and never replaces a value a caller or you set. A
+safety copy of the store is taken before the first change. Nothing has to be
+configured; the dashboard's Memory health card shows the same progress and the
+same buttons.
+
+Stubs stay in `slm list`, the dashboard list and every count, marked "stub";
+recall never answers with one. Editing a stub (`slm update`, the dashboard, or
+the `update_memory` tool) clears the mark for good.
+
+Repairs that only add (search sketches rebuilt from the stored vector) run on
+their own. Repairs that delete or move something (entity links: duplicate
+aliases and junk entities; hidden memories that are still in use) never run on
+their own: they are shown as a suggestion here, in `slm doctor` and as a Fix
+button in Memory health. An undone run is never re-applied automatically.
 
 ```bash
-slm enrich status            # "Improving your memories: X of Y"
-slm enrich pause <run>       # stop for now (recall and remember keep working)
+slm enrich status              # progress, suggestions, and the id of every run that changed something
+slm enrich pause <run>         # stop for now (recall and remember keep working)
 slm enrich resume <run>
-slm enrich undo <run>        # removes exactly that run's additions
+slm enrich undo                # undo the most recent run that changed something (asks first)
+slm enrich undo <run> --yes    # a specific run, without asking (scripts need --yes)
+slm enrich fix entity-links    # apply a suggested repair (asks first; undoable)
 ```
 
 `slm doctor` reports metadata coverage (tags, kind confirmed vs guessed, dates,
-entities) and whether the improvements are running or complete.
+entities), whether the improvements are running or up to date, and any
+suggested repair with its `slm enrich fix` command.
 
 ### `slm warmup`
 

@@ -52,3 +52,29 @@ Failed-save repair: there is no `slm ops repair-saves` on this branch, so the
 Memory health card covers hidden-memory re-filing, search-sketch repair,
 entity-link repair and the upgrade store check; failed operations stay under
 `slm ops`.
+
+Review follow-ups (H1-H3, M1-M5, L1-L3):
+
+- Automatic repairs only add. Search-sketch repair runs on idle ticks, never
+  for an action whose latest run was undone, never for an item an undone run
+  touched. Entity-link repair (deletes aliases and junk entities) and hidden
+  re-filing (moves lifecycle zones) are counted into a `suggested` row and run
+  only on the user's Fix (`slm enrich fix`, the card). Failures are one row per
+  action and error class with an attempt count and exponential back-off.
+- Legacy facts without a `fact_temporal_validity` row stay `legacy_unknown`:
+  enrichment fills `atomic_facts.valid_from` and an empty `valid_from` on an
+  existing temporal row, never creates a row and never touches
+  `system_created_at`. Every writer uses fill-only event starts, including a
+  duplicate re-save through the store pipeline.
+- Stub exclusion is opt-in for recall answer paths only (engine hydration,
+  degraded recall, degraded session context). Lists, counts, export and the
+  dashboard include stubs with a `stub` flag. The stub rule is a label plus a
+  machine-shaped id (8+ hex, UUID, ULID) or dated session boilerplate; a user
+  edit sets `non_answer_user=0`, which the save-time mark and enrichment obey.
+- A profile fold maps the undo ledger's entity ids through its own merge, so
+  undo after a profile delete restores exactly.
+- Background kind suggestions refuse Ollama cloud models by tag and by
+  `/api/show` remote fields; an unverifiable model keeps the rules.
+- The health report lists every changing run with its id; the card's Undo and
+  `slm enrich undo` (no id: latest, confirmed) use it. States are plain
+  sentences and exception class names are logged, never shown.

@@ -9,7 +9,9 @@
 
 ### The governed memory system for AI agents. On your computer, honest when it doesn't know.
 
-Claude Code, Codex, Cursor, ChatGPT, Grok Bot and other MCP clients share one memory that lives on your machine. It learns from use, controls who may read and erase what, and says "I don't have that" instead of guessing. It now remembers **pictures and documents** you can find by describing them, and lets **your bots talk to each other** through the same governed memory.
+Claude Code, Codex, Cursor, ChatGPT, Grok Bot and other MCP clients share one memory that lives on your machine. It learns from use, controls who may read and erase what, and says "That isn't in SuperLocalMemory." instead of guessing. It remembers **pictures and documents** you can find by describing them, looks after its own older memories with **Memory health**, and lets **your bots talk to each other** through the same governed memory.
+
+It works with any harness that speaks MCP or can run a command (`slm remember`, `slm recall`). The six packaged plugins (Claude Code, Codex, GitHub Copilot, Antigravity, Hermes and the Cursor-format plugin for Grok Bot) are examples of that, not a list of what is supported.
 
 [![PyPI](https://img.shields.io/pypi/v/superlocalmemory)](https://pypi.org/project/superlocalmemory/)
 [![npm](https://img.shields.io/npm/v/superlocalmemory)](https://www.npmjs.com/package/superlocalmemory)
@@ -35,11 +37,13 @@ Claude Code, Codex, Cursor, ChatGPT, Grok Bot and other MCP clients share one me
 
 [How pictures and documents work](#pictures-and-documents) · [Requirements and limits](docs/pictures-and-documents.md) · [How bot messaging works](#bot-to-bot-messaging)
 
-**Recall can be checked before your agent uses it.** With the answer check on, a judge decides whether the memories found actually answer the question: **Laya** runs fully on your Mac, and **Jev** runs online on Windows, Linux and macOS. When they don't answer it, recall marks the results `abstained`, so your agent can say "I don't have that" instead of handing over a confident wrong answer: a hallucination guard for retrieval ([answer check](#answer-check-laya-and-jev)).
+**Recall tells you when memory cannot answer.** Every recall comes back in one of three tiers. *Supported*: at least one memory is strong enough evidence for the question. *Closest memories*: nothing supports it, but the question is a real one and a few memories are close, so you see up to three, labelled, under "I don't have this exactly — here are the closest memories." *Not in memory*: nonsense, or nothing close, and recall returns nothing under "That isn't in SuperLocalMemory." While SLM is still warming up after a start it says so and shows what it has found, and never claims the memory is empty ([how recall decides](docs/recall.md#when-memory-cannot-answer)).
+
+**An on-device answer check, installed for you where it can run.** On Apple Silicon, setup installs **Laya** (about 1.1 GB) by default, with no terminal question in unattended runs; it judges on your Mac whether the memories found answer the question and nothing leaves the machine. Opt out with `slm setup --no-laya` or `SLM_SKIP_LAYA=1`. **Jev**, the online check, stays off until you choose it and tick its consent ([answer check](#answer-check-laya-and-jev)).
 
 **Your bots and web apps can use the same memory.** Local agents connect over MCP, including the Grok Bot plugin on a shared bot computer. ChatGPT, Claude on the web, Muse, Composio and other web MCP clients can reach it through optional [Web access](#web-apps-and-bots-web-access): you sign in with GitHub for each app, choose whether it may only read or also save, and remove any app at once.
 
-In Mode A, core remember and recall make no model-provider call unless you turn on the online answer check (Jev). Anything that sends data out is a choice you make, and the docs say exactly what goes.
+Mode A saves and recalls memories without a language model, and nothing leaves the device unless you turn on the online answer check (Jev). Anything that sends data out is a choice you make, and the docs say exactly what goes.
 
 
 ```bash
@@ -51,6 +55,26 @@ slm connect cursor                # or codex, windsurf, zed, claude-desktop, jet
 npm installs SLM into a package-owned virtual environment. The other primary route is pip in a Python virtual environment you activate: `python3 -m venv .venv`, activate it, then `python -m pip install superlocalmemory`. Repository clone: `./scripts/install.sh install` (macOS, Linux) or `.\scripts\install.ps1 -Action Install` (Windows); see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Runs on Windows, Linux and macOS ([platforms](#platform-support)). No Docker, no required graph database, no API key.
+
+## What it does
+
+| If you are | You get | Where |
+|---|---|---|
+| Anyone | One memory on your computer that every connected agent shares: Claude Code, Codex, Cursor, Copilot, Antigravity, Hermes, ChatGPT and more | [Works with your agents](#works-with-your-agents) |
+| Anyone | Recall in three honest tiers: supported, closest memories, or "That isn't in SuperLocalMemory." Never a confident guess | [Recall](docs/recall.md) |
+| Anyone | An on-device answer check (Laya), installed by default on Apple Silicon; an optional online one (Jev) | [Answer check](docs/answer-check.md) |
+| Anyone | Pictures, screenshots and PDFs you find by describing them; folders and Obsidian vaults mirrored read-only | [Pictures and documents](docs/pictures-and-documents.md) |
+| Anyone | **Memory health**: older memories described and tidied in the background, only ever by adding, with a Fix button and Undo for anything bigger | [Memory health](docs/memory-health.md) |
+| Anyone | A dashboard with search, a knowledge graph, an answer-check view, connected apps, bot messages and governance | [Dashboard](docs/DASHBOARD-COVERAGE.md) |
+| Anyone | Backup that is encrypted before upload, restore points before each store update, and a restore that rolls back if it fails | [Cloud backup](docs/cloud-backup.md), [Restore points](docs/restore-points.md) |
+| Teams | Roles per workspace, company mode with sign-in, personal / shared / global scopes, a hash-chained audit trail, GDPR export and verified erasure that also removes derived copies | [Teams](docs/rbac-teams.md), [Compliance](docs/compliance.md) |
+| Developers | An MCP server (stdio or HTTP) with tool profiles from 9 to 110 tools, a CLI, a REST API and a Python SDK | [MCP tools](docs/mcp-tools.md), [CLI](docs/cli-reference.md), [API](docs/api-reference.md) |
+| Developers | Layered recall: `depth` 0 (ids and one-line previews), 1 (full facts), 2 (with source, neighbours and the correction that replaced it), a hard `max_tokens` cap, and an `expand` tool to drill into one result | [Recall](docs/recall.md#layered-recall) |
+| Developers | Adapters for LangGraph, LangChain, LlamaIndex, CrewAI, AutoGen, Semantic Kernel, Microsoft Agent Framework, Google ADK and the OpenAI Agents SDK | [Framework adapters](docs/framework-adapters.md) |
+| Developers | SLM-Mesh messages, locks and shared state between agent sessions and the web apps you allow; bounded loops that finish only when an independent gate passes | [Multi-machine](docs/multi-machine.md), [Bounded loops](docs/bounded-loops-bridge.md) |
+| Developers | Exact cache and reversible compression of tool output, a proxy or MCP tools, no change to your context window | [Optimize](docs/optimize-overview.md) |
+| Developers | Bi-temporal queries (`--valid-at`, `--known-as-of`), nine memory kinds, saved views and summaries that cite their memory ids | [Recall](docs/recall.md), [Memory kinds](docs/memory-kinds.md) |
+| Operators | Modes A, B and C (no language model, a model on this machine, or your own endpoint), SQLite canonical with optional CozoDB and LanceDB projections, remote access over TLS, `slm doctor` | [Configuration](docs/configuration.md), [Scale engine](docs/scale-engine.md), [Troubleshooting](docs/troubleshooting.md) |
 
 ## 30-second example
 
@@ -110,7 +134,7 @@ A vector store answers "what is similar". AI agent memory must also answer: is t
 
 **2. A zero-LLM core built on published math.** Six retrieval channels and fusion run without a language model; the published architecture scored 60.4% on LoCoMo with no LLM anywhere ([benchmarks](#benchmarks)). Fisher-information scoring, sheaf contradiction detection and Langevin lifecycle dynamics added 12.7 points ([architecture paper](https://arxiv.org/abs/2603.14588)).
 
-**3. It says "I don't have that."** The [answer check](docs/answer-check.md) decides whether the top results answer the question, on your Mac (Laya) or online (Jev), and recall reports `abstained` instead of a confident wrong answer.
+**3. It says "That isn't in SuperLocalMemory."** Recall scores each memory on several signals together and answers only when one is strong enough; otherwise it shows the closest memories, labelled, or nothing. The [answer check](docs/answer-check.md) adds a second opinion from a model on your Mac (Laya) or online (Jev).
 
 **4. Memory that learns, and cannot quietly get worse (opt-in).** With `SLM_RANKING` set, a Thompson-sampling bandit tunes channel weights and a LightGBM ranker learns from reported outcomes. A retrained ranker is served to half of live recalls and promoted only when an always-valid sequential test (mSPRT, α = 0.05) shows a higher reward from reported outcomes; after promotion it is rolled back automatically if mean settled reward drops 2% or more over a 200-recall watch window. That watch measures outcome reward, not NDCG. Off by default, so a fresh install ranks the same way every time. Code: `learning/shadow_test.py`, `learning/model_rollback.py`.
 
@@ -133,14 +157,59 @@ SLM is part of Qualixar's AI Reliability Engineering work: agent memory that is 
 | Editor plugins | Claude Code, Codex, VS Code / Copilot, Antigravity, Hermes. Each ships 16 skills, 4 sub-agents and session hooks; the npm package carries every plugin folder | [Plugins](docs/plugins.md), [IDE setup](docs/ide-setup.md), [Hermes](docs/hermes.md) |
 | Any other agent | The universal agent rules: one file that teaches any agent when to recall, what to save and how to keep memory clean. Paste it into `AGENTS.md`, `CLAUDE.md`, `.cursorrules` or the agent's system prompt | [Universal agent rules](plugin-src/rules/AGENTS.md) |
 | `slm connect <ide>` | Writes the MCP config for Cursor, Windsurf, Zed, JetBrains, Gemini CLI, Claude Desktop, VS Code / Copilot, Antigravity, OpenCode, Continue and Codex CLI; `slm connect claude-code` points you to the plugin and Hermes installs as a native plugin | [IDE setup](docs/ide-setup.md) |
-| MCP | stdio (`slm mcp`) or HTTP at `http://127.0.0.1:8765/mcp/`; profiles from 9 to 109 tools | [MCP tools](docs/mcp-tools.md) |
+| MCP | stdio (`slm mcp`) or HTTP at `http://127.0.0.1:8765/mcp/`; profiles from 9 to 110 tools | [MCP tools](docs/mcp-tools.md) |
 | Framework adapters | LangGraph, LangChain, LlamaIndex, CrewAI, AutoGen, Semantic Kernel, Microsoft Agent Framework, Google ADK, OpenAI Agents | [Framework adapters](docs/framework-adapters.md) |
 | Python SDK and HTTP API | `MemoryEngine` in your code; the local REST API | [API reference](docs/api-reference.md) |
 | Auto-capture hooks | `slm hooks install` for Claude Code, `--agent codex` for Codex | [Auto-memory](docs/auto-memory.md) |
 | Web apps (ChatGPT, Claude on the web, Muse, Composio) | Optional Web access, turned on from the dashboard: OAuth sign-in, read or save per app, and a Connected apps page to remove any app at once. With your permission an app can also message your other bots (`slm:mesh`) and use pictures (`slm:media`). Copy-paste instructions tell the app when to recall and what to save | [Web access](#web-apps-and-bots-web-access), [Host guides](docs/remote-access/hosts.md), [Web agent instructions](docs/web-agents/README.md) |
 | Cursor-format plugin (Grok Bot, Cursor) | A marketplace-distributed plugin — different from `slm connect cursor` above — that runs on a shared, memory-tight computer with no hooks or dashboard | See below |
 
-Claude Code memory in two commands: `claude plugin marketplace add qualixar/superlocalmemory`, then `claude plugin install superlocalmemory@qualixar`.
+### Set up your platform
+
+SuperLocalMemory has no list of approved hosts. Any harness that speaks MCP can use `slm mcp` (stdio) or `http://127.0.0.1:8765/mcp/`, and any harness that can run a command can call `slm remember` and `slm recall`. Install it once, then connect the host:
+
+| Platform | Set up | What you get | Honest limits |
+|---|---|---|---|
+| Claude Code | `claude plugin marketplace add qualixar/superlocalmemory`, then `claude plugin install superlocalmemory@qualixar` | MCP server, 16 skills, 4 sub-agents, `/slm-loop`, session and recall hooks | The plugin runs the `slm` you installed; on Windows it stops with a plain message when `slm` is not on PATH |
+| Codex | `slm connect codex`, then `slm codex install` (or `codex plugin add superlocalmemory-codex@qualixar`) | MCP server, 16 skills, 4 sub-agents, `/slm-loop`, lifecycle hooks | Review and trust the new hooks with `/hooks`; the agent rules in `codex-plugin/AGENTS.md` are yours to append |
+| GitHub Copilot (VS Code, Visual Studio, JetBrains, Eclipse, CLI) | `slm connect vscode-copilot --here` in the project, then copy the add-ons from `copilot-plugin/.github/` | MCP server, agent rules, 16 prompt files, 4 agents, hooks | MCP is generally available everywhere; prompts, agents and hooks are additive and hooks are a preview in VS Code |
+| Antigravity (`agy`) | `agy plugin install "$(npm root -g)/superlocalmemory/antigravity-plugin"` | MCP server, 16 skills, 4 agents, `/slm-loop`, hooks | `agy plugin install` takes a local folder; with a pip install run `scripts/install-antigravity-plugin.sh` |
+| Hermes | `hermes plugins install 'https://github.com/qualixar/superlocalmemory.git#hermes-plugin'` | 16 skills, advisor child agents, `/slm <command>` and a `/slm-<command>` alias for each | Installed disabled; grant only the `superlocalmemory` MCP server; destructive commands need a `CONFIRM` token; a remote SLM supports a fixed command set |
+| Cursor-format hosts (Grok Bot, Cursor) | Add the `qualixar` marketplace in the Plugins screen, then `superlocalmemory` | MCP server on the 19-tool `core` profile, a bot-sized skill set | No hooks, no dashboard, no interactive setup; designed for a shared, memory-tight computer |
+| Cursor, Windsurf, Zed, JetBrains, Gemini CLI, Claude Desktop, OpenCode, Continue | `slm connect <name>` (`--dry-run` first) | MCP server in that tool's own config format | MCP only: no skills or hooks |
+| ChatGPT, Claude on the web, Muse, Composio, other remote MCP clients | Web access from the dashboard, then the [host guide](docs/remote-access/hosts.md) | Recall and, if you allow it, save, mesh and pictures | Your computer must be online; each app is limited by what you tick |
+| Anything else | Paste the [universal agent rules](plugin-src/rules/AGENTS.md) into its instructions and give it the CLI or MCP | Memory discipline for any agent | You wire the hooks yourself, if it has any |
+
+`slm connect` lists every host it can write for with `slm connect --list`. Hosts that update on their own schedule are checked by `slm upgrade-hosts`, which previews and changes nothing until you add `--apply`.
+
+### What the packaged plugins contain
+
+All six plugins are generated from one source, `plugin-src/`, so they carry the same skills and agents adapted to each host. The skills teach an agent when and how to use SLM; the agents are bounded helpers it can hand a job to; the hooks run at session events without the agent doing anything.
+
+| Skill | What it teaches |
+|---|---|
+| `slm-recall` | Searching memory: filters, kinds, time windows, the three recall tiers, `depth`, `max_tokens`, `expand` |
+| `slm-remember` | What is worth saving, memory kinds, `replaces`, corrections |
+| `slm-session` | Session start and close, pinned items and standing rules |
+| `slm-status` | Health, `slm doctor`, `slm db integrity` and `repair`, optimize counters |
+| `slm-governance` | Roles, company mode, retention, audit, GDPR export and erasure, what remote apps never see |
+| `slm-scope`, `slm-profile` | Personal, shared and global memory; switching memory profiles and tool sets |
+| `slm-graph` | The knowledge graph and code graph tools |
+| `slm-mesh` | Messages, `mesh_wait`, locks and shared state between sessions and allowed web apps |
+| `slm-loop` | Bounded loops with SLM as the ledger |
+| `slm-cache`, `slm-compress` | KV cache and reversible compression |
+| `slm-web-access` | Setting up and diagnosing Web access, Connected apps and upload links |
+| `slm-media` | Pictures, PDFs and folders: `remember_media`, `remember_document`, `media_upload_link`, `slm media`, `slm sources` |
+| `slm-bot-memory`, `slm-getting-started-bot` | Several bots on one computer; first-session orientation on a headless bot host |
+
+| Sub-agent | Job |
+|---|---|
+| `slm-memory-advisor` | When to remember or recall, how to phrase a query, how to keep memory clean |
+| `slm-optimize-advisor` | Compress and cache to stretch the context window; advisory and fail-open |
+| `slm-governance-advisor` | Scope, roles, retention and erasure decisions; never bypasses a control |
+| `slm-loop-runner` | Runs a task as a bounded loop until an independent gate passes |
+
+The Claude Code plugin's hooks, in the order they matter: at session start one hook prints the `session_init` guidance, another injects project context, and the launcher makes sure the environment exists. `checkpoint` records files you edit. `post_tool_outcome` and `stop_outcome` notice which recalled memories were actually used and settle each outcome. `user_prompt_rehash` treats the same question asked again within a minute as a sign the last answer missed, and `topic_shift` reminds the agent to recall when you change subject. `before_web` runs a recall before a web search or fetch. `stop` saves a session summary. Codex, Copilot and Antigravity carry the subset their host can fire. Every hook fails open: a hook problem never blocks your agent.
 
 ### Grok Bot (and other Cursor-format plugin hosts)
 
@@ -174,8 +243,8 @@ See the `slm-bot-memory` skill (ships with this plugin) for the full model, incl
 should never be stored on a computer shared with other bots (secrets, keys, other people's
 personal data).
 
-**Tools:** this plugin sets `SLM_MCP_PROFILE=core` — 18 tools (`remember`, `recall`, `search`,
-session lifecycle, compression/cache, corrections) — deliberately smaller than the 57-tool
+**Tools:** this plugin sets `SLM_MCP_PROFILE=core` — 19 tools (`remember`, `recall`, `search`,
+session lifecycle, compression/cache, corrections) — deliberately smaller than the 58-tool
 default profile every other host gets, so a shared computer is not listing tool descriptions
 for tiers it will not use.
 
@@ -210,7 +279,7 @@ Connecting an app gives it the tools, not the judgment to use them well. The qui
 - **Persistent memory for Claude Code, Codex and Cursor.** Decisions, conventions, fixes and project context carry across sessions and across tools; confirmed rules and decisions load at session start.
 - **An MCP memory server for any agent.** stdio or HTTP, with adapters for LangGraph, LangChain, LlamaIndex, CrewAI, AutoGen, Semantic Kernel, Microsoft Agent Framework, Google ADK and the OpenAI Agents SDK.
 - **Local-first RAG without a vector database service.** SQLite + sqlite-vec, hybrid search (BM25, embeddings, knowledge graph, temporal), reranking, no Docker and no cloud account.
-- **A hallucination guard for retrieval.** The answer check, Jev or Laya, abstains when the retrieved memories don't answer the question, so your agent doesn't build on a wrong one.
+- **A hallucination guard for retrieval.** Recall returns nothing, and says "That isn't in SuperLocalMemory.", when no memory supports the question, and the answer check (Laya on your Mac, or Jev online) adds a second opinion, so your agent doesn't build on a wrong memory.
 - **Team and enterprise AI memory.** Roles, company mode with sign-in, scoped sharing, GDPR export and verified erasure, a hash-chained audit trail and an EU AI Act posture report.
 - **Multi-agent memory and coordination.** One store shared by many agents with per-agent attribution, SLM-Mesh messages, locks and shared state, and bounded loops that finish only when an independent gate passes.
 - **Lower token cost.** Exact caching and reversible compression of tool output and file reads keep long agent sessions inside the context window.
@@ -229,6 +298,9 @@ Connecting an app gives it the tools, not the judgment to use them well. The qui
 
 | Capability | What you get | Docs |
 |---|---|---|
+| Recall tiers | Every recall is *supported*, *closest memories* (up to three, labelled `related`, when the question is real but nothing answers it exactly) or *not in memory* (no results, "That isn't in SuperLocalMemory."). `--show-weak` (`show_weak` over MCP and REST) shows the weak matches anyway; `include_related` asks for the closest memories over MCP and REST | [Recall](docs/recall.md#when-memory-cannot-answer) |
+| Warming up | For a few minutes after a start the models are still loading. Recall then shows the keyword finds it has, up to five, under "SuperLocalMemory is still warming up — results may be incomplete", and never says the memory is empty. Over MCP and REST the response carries `warming_up` and `status_note` | [Recall](docs/recall.md#warming-up) |
+| Layered recall | `depth` 0 glance (ids, tier, a one-line preview), 1 recall (the default), 2 context (also the source memory, up to three neighbours from the same session, up to three facts about the same entities, and the correction that replaced it). `max_tokens` is a hard cap, and the `expand` tool drills into one result. `slm recall --depth 2 --max-tokens 1500` | [Recall](docs/recall.md#layered-recall) |
 | Hybrid recall | Semantic, keyword (BM25), entity graph, temporal, associative (Hopfield) and spreading-activation channels, plus a picture channel when pictures are on, fused by reciprocal rank and reranked. `slm trace` shows each channel's score | [Recall](docs/recall.md) |
 | Memory kinds | Nine kinds: fact, event, status, opinion, rule, decision, how-to, plan, correction. "What did we decide" favours decisions | [Memory kinds](docs/memory-kinds.md) |
 | Standing rules | Confirmed rules (up to 10) and decisions (up to 5) load into every new agent session | [Memory kinds](docs/memory-kinds.md#standing-rules-at-session-start) |
@@ -259,6 +331,20 @@ Recalled text is untrusted evidence: before it reaches a prompt, secrets are red
 
 The picture model is EmbeddingGemma 2, running on your computer. On a 24 GB Apple Silicon Mac, SLM with pictures on used about 6.2 GB of memory idle and 6.5 GB at peak while saving large photos.
 
+### Memory health
+
+SLM looks after the descriptions of your older memories while your computer is idle. A background worker fills in what is missing (event dates, the names of people, projects and tools, a kind, and a short description) and **only ever adds**: it never edits what you wrote and never replaces a value you set. It stops when you are working or memory is tight, and one safety copy of the store is taken before its first change.
+
+| Part | What you get |
+|---|---|
+| Memory health card | In the dashboard's **Health** pane: progress, what is waiting, and buttons |
+| Stub badge | A memory that is only a label and an id (a session receipt, say) is marked **stub** in lists and counts; only recall leaves stubs out of its answers |
+| Fix and Undo | Repairs that delete or move something (junk entity links, memories hidden although scored to keep, saves that did not finish) never run on their own: they appear as a count with a **Fix** button, and each run that changed something has an **Undo** that keeps anything you edited since |
+| `slm enrich` | `status`, `pause`, `resume`, `undo`, and `fix entity-links\|refile-hidden\|repair-saves` (`repair-saves` has no undo, so it says so and takes a safety copy) |
+| `slm doctor` | Rows for how findable and described your memories are, repairs ready for you, and failed saves |
+
+[Memory health](docs/memory-health.md)
+
 ### Learning in memory
 
 - **Adaptive ranking.** A contextual Thompson-sampling bandit picks channel weights per query type; a LightGBM learning-to-rank model trains on `report_outcome` and `report_feedback`. The same question on an unchanged store gets the same ranking.
@@ -274,12 +360,12 @@ The picture model is EmbeddingGemma 2, running on your computer. On a 24 GB Appl
 | Roles | Admin, member and viewer per workspace. A role in one workspace grants nothing in another | [Teams](docs/rbac-teams.md) |
 | Company mode | Every read and write is attributed to a signed-in person; turn on with "Require login" | [Company mode](docs/company-mode.md) |
 | Profiles and scopes | Isolated workspaces. Memories are `personal` by default; `shared` and `global` are opt-in | [Profiles](docs/profiles.md), [Scopes](docs/shared-memory.md) |
-| GDPR | `slm gdpr export` (Art. 15/20), `slm gdpr erase` (Art. 17) across every store, `slm gdpr verify` checks the erasure receipt | [Compliance](docs/compliance.md) |
+| GDPR | `slm gdpr export` (Art. 15/20), `slm gdpr erase` (Art. 17) across every store and every derived copy (queued saves, caches, the vector index, compression originals, picture mirrors), reporting `success: false` if anything remains; `slm gdpr verify` checks the erasure receipt | [Compliance](docs/compliance.md) |
 | Retention and audit | Per-profile retention rules; a hash-chained audit trail of stores, recalls, changes and erasures; ABAC policy checks | [Compliance](docs/compliance.md) |
 | EU AI Act posture | A per-mode technical report (data locality, generative AI use). Risk class stays "undetermined"; no legal verdict | [Compliance](docs/compliance.md) |
 | Write gate | Install token, API keys and remote keys decide who may write | [Auth write gate](docs/auth-write-gate.md) |
 | Evidence export | Checksummed JSONL bundles: `slm evidence export`, `verify`, `import` | [CLI reference](docs/cli-reference.md#data-and-evidence) |
-| Backup and restore | Cloud backup to GitHub or Google Drive, encrypted before upload. A restore point before each store update | [Cloud backup](docs/cloud-backup.md), [Restore points](docs/restore-points.md) |
+| Backup and restore | Cloud backup to GitHub or Google Drive, encrypted before upload. A restore point before each store update. A restore holds the store, keeps a safety copy and rolls back if it fails; `slm backup restore-safety-copy` brings the safety copy back if even the rollback cannot | [Cloud backup](docs/cloud-backup.md), [Restore points](docs/restore-points.md) |
 
 Engineering controls that support a compliance program, not a certification.
 
@@ -295,13 +381,13 @@ Engineering controls that support a compliance program, not a certification.
 
 ### Answer check: Laya and Jev
 
-Answer check adds a second step after ranking; choose one in **Settings → Answer check**:
+Answer check adds a second opinion after ranking, on top of the support score every recall already computes. Choose in **Settings → Answer check**:
 
-- **Laya, on this Mac:** a small on-device model (about 1.1 GB) for Apple Silicon Macs. Nothing leaves the machine.
-- **Jev, online, on any computer:** Windows, Linux or macOS, through TypeSafe or OpenRouter with your own key and an explicit consent box. Sends the question and the top 3 memories.
+- **Laya, on this Mac:** a small on-device model (about 1.1 GB) for Apple Silicon Macs. Setup installs it by default, unattended runs included, and the first command after an upgrade offers it (it asks in a terminal, and starts a background install without one). Nothing leaves the machine. Opt out with `slm setup --no-laya` or `SLM_SKIP_LAYA=1`; a no is remembered. It is never installed on other hardware, over an install you already have, or when you chose Off or Jev.
+- **Jev, online, on any computer:** Windows, Linux or macOS, through TypeSafe or OpenRouter with your own key and an explicit consent box. Sends the question and the top 3 memories. It never turns itself on.
 - **Off.**
 
-Only one runs at a time and the online option never turns itself on. Results are never hidden: recall marks them `abstained` and your agent decides. A repeat question gets the same verdict. The **Answer Check** tab shows verdicts, timing against the 3-second recall ceiling and the "I don't have that" rate; it never stores questions or memory text. [Answer check](docs/answer-check.md)
+Only one runs at a time. The check has its own time budget inside the recall ceiling, a repeat question gets the same verdict, and the verdict is one input to the support decision rather than a switch that silently hides results. The **Answer Check** tab shows verdicts, timing and the "not in memory" rate; it never stores questions or memory text. Laya can be calibrated to your store in the background (`slm embedder calibrate`), with visible progress and a cancel. [Answer check](docs/answer-check.md)
 
 ### Context optimisation: cache and compression
 
@@ -333,12 +419,12 @@ Pick how many tools your agent sees with `SLM_MCP_PROFILE`.
 
 | Profile | Tools | For |
 |---|---:|---|
-| `core` | 18 | Remember, recall, sessions, optimize, correction review |
-| `code` | 38 | Core plus code graph, memory kinds, Brain evidence, profile switching, bounded loops |
+| `core` | 19 | Remember, recall, expand, sessions, optimize, correction review |
+| `code` | 39 | Core plus code graph, memory kinds, Brain evidence, profile switching, bounded loops |
 | `mesh` | 9 | SLM-Mesh coordination only |
-| `full` (and unset) | 57 | Memory, kinds, Brain, optimize, skill evolution, mesh, loops, views and summaries (62 with pictures and documents on) |
-| `power` | 69 | Full plus administration, lifecycle and diagnostics (74 with pictures and documents on) |
-| `whole` | 109 | Every registered tool |
+| `full` (and unset) | 58 | Memory, kinds, Brain, optimize, skill evolution, mesh, loops, views and summaries (63 with pictures and documents on) |
+| `power` | 70 | Full plus administration, lifecycle and diagnostics (75 with pictures and documents on) |
+| `whole` | 110 | Every registered tool |
 
 ```json
 { "mcpServers": { "superlocalmemory": { "type": "http", "url": "http://127.0.0.1:8765/mcp/" } } }
@@ -399,7 +485,7 @@ Cite the governed-memory paper with [CITATION.cff](CITATION.cff) or GitHub's "Ci
 
 **Start:** [Getting started](docs/getting-started.md) · [IDE setup](docs/ide-setup.md) · [Plugins](docs/plugins.md) · [Linux install](docs/install-linux.md) · [Quick proof](docs/QUICK_PROOF.md)
 
-**Use:** [Recall](docs/recall.md) · [Memory kinds](docs/memory-kinds.md) · [Answer check](docs/answer-check.md) · [Auto-memory](docs/auto-memory.md) · [Universal agent rules](plugin-src/rules/AGENTS.md) · [Web agent instructions](docs/web-agents/README.md) · [Shared memory](docs/shared-memory.md) · [Optimize](docs/optimize-overview.md)
+**Use:** [Recall](docs/recall.md) · [Memory health](docs/memory-health.md) · [Memory kinds](docs/memory-kinds.md) · [Answer check](docs/answer-check.md) · [Auto-memory](docs/auto-memory.md) · [Universal agent rules](plugin-src/rules/AGENTS.md) · [Web agent instructions](docs/web-agents/README.md) · [Shared memory](docs/shared-memory.md) · [Optimize](docs/optimize-overview.md)
 
 **Reference:** [CLI](docs/cli-reference.md) · [MCP tools](docs/mcp-tools.md) · [Configuration](docs/configuration.md) · [Errors](docs/errors.md) · [Troubleshooting](docs/troubleshooting.md) · [Distributed deployment](docs/distributed-deployment.md) · [Privacy diagnostics](docs/privacy-diagnostics.md)
 
@@ -419,7 +505,7 @@ Upgrades never move or delete memory; an update that changes the store takes a r
 
 | | SuperLocalMemory | Jev (online check) | Laya (on-device check) |
 |---|---|---|---|
-| Apple Silicon macOS | Yes | Yes | Yes |
+| Apple Silicon macOS | Yes | Yes | Yes, installed by default |
 | 64-bit Windows | Yes | Yes | No (Laya uses Apple's MLX) |
 | 64-bit Linux (x86-64, ARM64) | Yes | Yes | No |
 | Intel Mac, 32-bit Windows | No prebuilt install | — | — |

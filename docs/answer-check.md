@@ -132,10 +132,14 @@ answer check is on — say no and you can always do it later from the
 dashboard. On any other machine, the wizard points you to the online option
 instead.
 
-An unattended setup (`slm setup --auto`, CI, or any run without a terminal)
-never starts that download on its own; it's skipped and reported as such,
-and you can set it up later from the dashboard. Set `SLM_INSTALL_LAYA=1`
-before running setup to install it automatically in that case too.
+On Apple Silicon the answer check is on by default. An unattended setup
+(`slm setup --auto`, CI, or any run without a terminal) installs it too, and
+the first command after an upgrade offers it the same way: it asks in a
+terminal, and without one it starts the install in the background (logged to
+`runtimes/laya/install-after-upgrade.log` in your SuperLocalMemory folder).
+To opt out, set `SLM_SKIP_LAYA=1` or run `slm setup --no-laya`; answering no
+once is remembered. It is never installed on other hardware, over an install
+you already have, or when you set the check to off or to the hosted option.
 
 ## Privacy, by choice
 

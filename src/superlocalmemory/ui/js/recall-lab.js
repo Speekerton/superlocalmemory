@@ -95,6 +95,17 @@ document.addEventListener('click', function(e) {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({query: query, limit: fetchLimit, synthesize: true})
     }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.code === 'RECALL_BUSY') {
+            // Every slot is answering other agents: an honest "ask again",
+            // never a keyword guess and never shown as a failure.
+            resultsDiv.textContent = '';
+            var busyDiv = document.createElement('div');
+            busyDiv.className = 'alert alert-info';
+            busyDiv.setAttribute('role', 'status');
+            busyDiv.textContent = data.message || 'SuperLocalMemory is busy. Ask again in a few seconds.';
+            resultsDiv.appendChild(busyDiv);
+            return;
+        }
         if (data.error) {
             resultsDiv.textContent = '';
             var errDiv = document.createElement('div');

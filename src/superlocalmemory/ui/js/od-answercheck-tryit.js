@@ -270,6 +270,11 @@
           verdict.textContent = '';
           return;
         }
+        if (r.body && r.body.code === 'RECALL_BUSY') {
+          message(found, r.body.message || 'SuperLocalMemory is busy. Ask again in a few seconds.');
+          verdict.textContent = '';
+          return;
+        }
         if (!r.ok || !r.body || r.body.error) {
           message(found, 'That did not work. Try again in a moment.');
           verdict.textContent = '';

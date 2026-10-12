@@ -55,6 +55,15 @@ describe('Try it', function () {
     assert.match(p.d.querySelector('.ac-stack').getAttribute('aria-label'), /total 1,013 ms of the 3,000 ms limit/);
   });
 
+  it('busy: says to ask again shortly, never "did not work"', async function () {
+    const p = mount({ status: 503, body: { ok: false, code: 'RECALL_BUSY', retry_after_s: 4,
+      message: 'SuperLocalMemory is answering other questions right now. Ask again in about 4 seconds; nothing was lost.',
+      error: 'busy', results: [] } });
+    await ask(p);
+    assert.match(p.root.textContent, /Ask again in about 4 seconds/);
+    assert.doesNotMatch(p.root.textContent, /That did not work/);
+  });
+
   it('answered', async function () {
     const p = mount({ status: 200, body: { result_count: 2, results: results(2), answer_check: block() } });
     await ask(p);

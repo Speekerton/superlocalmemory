@@ -70,7 +70,13 @@
     fetch('/api/v3/recall/trace', { method:'POST', credentials:'same-origin',
       headers:{'Content-Type':'application/json'}, body:JSON.stringify({query:query, limit:10}),
       slmInvalidatesCache:false, slmRequiresWriteAuth:false })
-      .then(function (r) { if (!r.ok) throw new Error('Search is unavailable. Check your access or try again.'); return r.json(); })
+      .then(function (r) {
+        if (r.status === 503) return r.json().catch(function () { return {}; }).then(function (b) {
+          throw new Error(b.message || 'SuperLocalMemory is busy. Ask again in a few seconds.');
+        });
+        if (!r.ok) throw new Error('Search is unavailable. Check your access or try again.');
+        return r.json();
+      })
       .then(function (body) {
         if (body.error) throw new Error('Search could not finish. Try again.');
         window.SLMAnswerCheckTryIt.renderVerdict(verdict, body);

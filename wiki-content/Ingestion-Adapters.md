@@ -45,9 +45,9 @@ Adapter settings live in `adapters.json` in the data root (`~/.superlocalmemory/
 
 ```json
 {
-  "gmail":      { "enabled": true, "tier": "mbox", "mbox_path": "/Users/yourusername/Downloads/All mail.mbox" },
-  "calendar":   { "enabled": true, "tier": "ics",  "ics_path":  "/Users/yourusername/Downloads/calendar.ics" },
-  "transcript": { "enabled": true, "watch_dir": "/Users/yourusername/Documents/transcripts" }
+  "gmail":      { "enabled": true, "tier": "mbox", "mbox_path": "/path/to/All-mail.mbox" },
+  "calendar":   { "enabled": true, "tier": "ics",  "ics_path":  "/path/to/calendar.ics" },
+  "transcript": { "enabled": true, "watch_dir": "/path/to/transcripts" }
 }
 ```
 

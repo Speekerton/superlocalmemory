@@ -98,6 +98,7 @@ class DaemonPoolProxy:
         tags_match: str = "all",
         project_strict: bool = False,
         budget_s: float | None = None,
+        evidence: bool = False,
     ) -> dict[str, Any]:
         if self._unavailable:
             return self._unavailable_response()
@@ -157,6 +158,10 @@ class DaemonPoolProxy:
         # deadline, so every other query string is unchanged.
         if budget_s is not None:
             _params["budget_s"] = f"{float(budget_s):.3f}"
+        # 4.1.25: recall trace asks for the evidence features; sent only then,
+        # so every other query string is unchanged.
+        if evidence:
+            _params["evidence"] = "true"
         if known_as_of:
             _params["known_as_of"] = known_as_of
         if valid_at:

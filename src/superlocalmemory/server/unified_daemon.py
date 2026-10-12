@@ -5019,6 +5019,9 @@ def _register_daemon_routes(application: FastAPI) -> None:
         fast: bool | None = None,
         full: bool = False,
         include_source: bool = False,
+        # 4.1.25: each result's evidence features plus ``query_evidence``
+        # (recall trace asks for them; ordinary recalls leave them out).
+        evidence: bool = False,
         include_global: bool | None = None,
         include_shared: bool | None = None,
         window: str = "",
@@ -5212,7 +5215,7 @@ def _register_daemon_routes(application: FastAPI) -> None:
             ).get("facets"),
             skip_answer_check=_skip_check, no_reorder=_check_request == "no_reorder",
             full=full, include_source=include_source,
-            include_marker=bool(session_id),
+            include_marker=bool(session_id), include_evidence=bool(evidence),
             budget_s=parse_budget_s(budget_s),
             caller_view=parse_view(caller_view),
         )

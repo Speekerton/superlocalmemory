@@ -676,10 +676,13 @@ class RetrievalEngine:
             else "not_configured"
         )
         _t_rerank = time.monotonic()
+        # fact_id -> (raw cross-encoder score, its in-batch normalised value),
+        # kept for the evidence features below rather than thrown away.
+        ce_scores: dict[str, tuple[float, float]] = {}
         if reranker_ready and facts:
             ce_alpha = 0.5 if strat.query_type in ("multi_hop", "temporal") else 0.75
             top, reranker_applied, reranker_status = self._apply_reranker(
-                query, top, facts, alpha=ce_alpha,
+                query, top, facts, alpha=ce_alpha, raw_out=ce_scores,
             )
         elif reranker_ready:
             reranker_status = "no_candidates"
@@ -723,6 +726,9 @@ class RetrievalEngine:
         # which candidates made the cut (boost_order above).
         results = self._build_results(final_top, facts, strat,
                                       reranked=reranker_applied)
+        _t_evidence = time.monotonic()
+        query_evidence = self._attach_evidence(query, results, ce_scores, profile_id)
+        stage_ms["evidence"] = round((time.monotonic() - _t_evidence) * 1000.0, 1)
         ms = (time.monotonic() - t0) * 1000.0
         stage_ms["retrieval_total"] = round(ms, 1)
         no_match = floor_enabled and len(results) == 0
@@ -742,7 +748,54 @@ class RetrievalEngine:
             stage_ms=dict(stage_ms),
             project_scope=project_scope,
             tag_scope=tag_scope,
+            query_evidence=query_evidence,
         )
+
+    # -- Evidence features (measurement only) -------------------------------
+
+    def _hub_baselines(
+        self, fact_ids: list[str], profile_id: str,
+    ) -> dict[str, tuple[float, float]]:
+        """``fact_id -> (top-k, mean)`` hub baselines stored for the live space.
+
+        None are stored yet; the hub-baseline pass fills them in.
+        """
+        return {}
+
+    def _attach_evidence(
+        self, query: str, results: list[RetrievalResult],
+        ce_scores: dict[str, tuple[float, float]], profile_id: str,
+    ) -> dict:
+        """Record each result's evidence features; return the question's own.
+
+        Measurement only (``retrieval.evidence_features``): no score, order or
+        abstention changes here. Fail-open -- a feature that cannot be computed
+        is recorded as missing, and an error never reaches the caller.
+        """
+        from superlocalmemory.retrieval import evidence_features as ef
+
+        try:
+            terms = ef.query_terms(query)
+            q_evidence = ef.query_evidence(query, terms)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("query evidence: %s", exc)
+            return {}
+        if not results:
+            return q_evidence
+        try:
+            vector = getattr(self, "_query_embedding_cache", {}).get(query)
+            baselines = self._hub_baselines([r.fact.fact_id for r in results], profile_id)
+            for r in results:
+                raw, norm = ce_scores.get(r.fact.fact_id, (None, None))
+                topk, mean = baselines.get(r.fact.fact_id, (None, None))
+                r.evidence = ef.build(
+                    query=query, terms=terms, query_vector=vector, fact=r.fact,
+                    channel_scores=r.channel_scores, ce_raw=raw, ce_batch_norm=norm,
+                    hub_baseline=topk, hub_baseline_mean=mean,
+                )
+        except Exception as exc:
+            logger.debug("result evidence: %s", exc)
+        return q_evidence
 
     # -- Community context (Wave Q2b) --------------------------------------
 
@@ -1398,11 +1451,18 @@ class RetrievalEngine:
         self, query: str, fused: list[FusionResult],
         fact_map: dict[str, AtomicFact],
         alpha: float = 0.75,
+        *,
+        raw_out: dict[str, tuple[float, float]] | None = None,
     ) -> tuple[list[FusionResult], bool, str]:
         """Rerank with blended CE + RRF scores (Bug 1 fix).
 
         Blended: alpha * sigmoid(CE_score) + (1 - alpha) * rrf_score.
         Speaker tags stripped before scoring (Bug 3 fix).
+
+        ``raw_out``, when given, receives ``fact_id -> (raw CE score, in-batch
+        normalised CE score)`` for every scored candidate. The normalised value
+        is what the blend uses; the raw one is the only form that can be
+        compared across recalls (the best of an unrelated batch normalises to 1.0).
         """
         # Bug 2 fix: score ALL candidates, not just top_k. v3.8.5: verified on
         # the real DB that bounding the CE to the top-N fusion candidates both
@@ -1487,6 +1547,9 @@ class RetrievalEngine:
         ce_min = min(ce_values) if ce_values else 0.0
         ce_max = max(ce_values) if ce_values else 1.0
         ce_range = ce_max - ce_min if ce_max > ce_min else 1.0
+        if raw_out is not None:
+            for fid, raw in score_map.items():
+                raw_out[fid] = (float(raw), (raw - ce_min) / ce_range)
 
         # Also normalize RRF scores so both terms contribute meaningfully
         rrf_values = [fr.fused_score for fr in fused]
@@ -1741,5 +1804,6 @@ def apply_channel_weights(
             evidence_chain=c.evidence_chain,
             trust_score=c.trust_score,
             marker=c.marker,
+            evidence=c.evidence,
         ))
     return out

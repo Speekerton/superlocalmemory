@@ -191,6 +191,7 @@ def serialize_recall_response(
     include_marker: bool = False,
     display_min_confidence: float | None = None,
     source_map: dict[str, dict] | None = None,
+    include_evidence: bool = False,
 ) -> tuple[list[dict], bool]:
     """Convert a RecallResponse into budgeted, source-disciplined dicts.
 
@@ -207,6 +208,10 @@ def serialize_recall_response(
         full:           Bypass clamping/stubs (additive escape hatch).
         include_source: Return full source_content (else ≤280-char preview).
         include_marker: Emit each result's HMAC usage marker. See below.
+        include_evidence: Emit each result's evidence features
+            (``retrieval.evidence_features``) as ``evidence``. Recall trace
+            asks for them; an ordinary recall does not, so an agent's context
+            is not spent on numbers it does not read.
         source_map:     memory_id -> ``_slm_source`` for the pictures and pages
             among the results (``retrieval.media_channel.memory_sources``).
             Those results get a ``media`` block; ``None`` changes nothing.
@@ -311,6 +316,8 @@ def serialize_recall_response(
             marker = getattr(r, "marker", "") or ""
             if marker:
                 entry["marker"] = marker
+        if include_evidence:
+            entry["evidence"] = dict(getattr(r, "evidence", None) or {})
         raw.append(entry)
 
     # F-3 source discipline, then F-2 budget — order matters (discipline first

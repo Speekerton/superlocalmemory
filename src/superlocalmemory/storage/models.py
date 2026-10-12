@@ -465,6 +465,12 @@ class RetrievalResult:
     # The cross-encoder's score for this result, when it ran: what later
     # layers may reorder only within a bound (retrieval/reranker_lead.py).
     rerank_score: float | None = None
+    # 4.1.25: what each signal says about this result
+    # (``retrieval.evidence_features``): raw cosine, hub baseline and the
+    # hub-corrected cosine, the cross-encoder's raw score, raw BM25, keyword
+    # coverage and entity hit. Measurement only: nothing ranks or abstains on
+    # it yet. In-process and in recall trace; the recall envelope is unchanged.
+    evidence: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -549,6 +555,10 @@ class RecallResponse:
     # response did not come from the retrieval engine. In-process, like
     # ``answer_check_trace``: the MCP/HTTP recall envelope is unchanged.
     stage_ms: dict[str, float] = field(default_factory=dict)
+    # 4.1.25: question-level evidence (``retrieval.evidence_features.
+    # query_evidence``): the nonsense-phrase check and the content-term count.
+    # In-process and in recall trace, like ``stage_ms``. Additive.
+    query_evidence: dict = field(default_factory=dict)
     # 4.1.21 (#150): what a recall's project did - ``{"filter": {...}}`` when
     # ``project`` was given (``applied`` False, with a plain ``note``, when it
     # fell back to unfiltered results), ``{"prefer": {...}}`` when

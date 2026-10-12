@@ -384,6 +384,7 @@ def register_v3_tools(server, get_engine: Callable) -> None:
                        if (tags_match or "").strip().lower() == "any" else {}),
                     **({"project_strict": True}
                        if project_strict and (project or "").strip() else {}),
+                    evidence=True,
                 )
             )
             if ((profile_id or "").strip() and isinstance(raw, dict)
@@ -417,6 +418,9 @@ def register_v3_tools(server, get_engine: Callable) -> None:
                     "fact_type": item.get("fact_type", ""),
                     "lifecycle": item.get("lifecycle", ""),
                     "access_count": int(item.get("access_count", 0)),
+                    # 4.1.25: what each signal says about this result
+                    # (retrieval/evidence_features.py); {} from an older daemon.
+                    "evidence": item.get("evidence", {}) or {},
                 })
             return {
                 "success": True,
@@ -430,6 +434,8 @@ def register_v3_tools(server, get_engine: Callable) -> None:
                 # M-10: the HTTP envelope's metadata in full (and any field
                 # added to it later), not a hand-picked subset.
                 **forward_recall_metadata(raw if isinstance(raw, dict) else {}),
+                "query_evidence": (raw.get("query_evidence", {}) or {})
+                if isinstance(raw, dict) else {},
             }
         except Exception as exc:
             logger.exception("recall_trace failed")

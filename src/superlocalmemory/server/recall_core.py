@@ -115,6 +115,9 @@ class RecallCall:
     #: How a remote caller came in (see ``retrieval/remote_view``); ``""`` is a local caller.
     caller_view: str = ""
     trace: bool = False
+    #: 4.1.25: add each result's evidence features and the question's own
+    #: (``query_evidence``) to the envelope. Recall trace sets it.
+    include_evidence: bool = False
 
 
 def effective_budget_s(call: RecallCall) -> float:
@@ -210,6 +213,7 @@ def _envelope(engine: Any, call: RecallCall, response: Any, snapshot: Any) -> di
         include_marker=call.include_marker,
         full=call.full,
         include_source=call.include_source,
+        include_evidence=call.include_evidence,
         # One kind threshold for the filter and the labels on every surface.
         display_min_confidence=engine_display_min_confidence(engine),
     )
@@ -232,6 +236,8 @@ def _envelope(engine: Any, call: RecallCall, response: Any, snapshot: Any) -> di
         "count": len(results),
         "no_confident_match": no_confident_match,
         **recall_response_metadata(response),
+        **({"query_evidence": dict(getattr(response, "query_evidence", {}) or {})}
+           if call.include_evidence else {}),
     }
 
 

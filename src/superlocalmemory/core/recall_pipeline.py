@@ -1170,6 +1170,9 @@ def _completeness_of(response: RecallResponse) -> dict:
         "project_scope": getattr(response, "project_scope", None),
         # 4.1.22: a tag filter's note/reason must survive a rebuild too.
         "tag_scope": getattr(response, "tag_scope", None),
+        # 4.1.25: the question's evidence features describe the question, not
+        # the result list, so a rebuild keeps them.
+        "query_evidence": dict(getattr(response, "query_evidence", {}) or {}),
     }
 
 

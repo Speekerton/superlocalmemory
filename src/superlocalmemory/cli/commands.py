@@ -3594,6 +3594,15 @@ def cmd_doctor(args: Namespace) -> None:
             _check("Failed saves", "WARN", f"could not read the failed-save counts: {_fs_exc}",
                    "Run `slm ops status`")
 
+    if db_path.exists():
+        try:
+            from superlocalmemory.cli.doctor_quantization import qjl_finding
+
+            _check("QJL sketches", *qjl_finding(db_path))
+        except Exception as exc:  # noqa: BLE001 - report unavailable diagnostics
+            _check("QJL sketches", "WARN", f"could not inspect QJL sketches: {exc}",
+                   "Run `slm quantize --dry-run --json`")
+
     # 11. PEP 668 advisory (only for the system Python; a venv is exempt)
     #     and whether this Python can load SQLite extensions at all.
     try:
@@ -5113,6 +5122,8 @@ def cmd_decay(args: Namespace) -> None:
 
 def cmd_quantize(args: Namespace) -> None:
     """Run EAP embedding quantization cycle."""
+    from dataclasses import replace
+
     from superlocalmemory.core.admission import gate_cli_mutation
     from superlocalmemory.core.operation_request import OperationKind
     gate_cli_mutation(OperationKind.CONSOLIDATE)
@@ -5139,7 +5150,8 @@ def cmd_quantize(args: Namespace) -> None:
         from superlocalmemory.math.qjl import QJLEncoder
 
         ebbinghaus = EbbinghausCurve(config.forgetting)
-        polar = PolarQuantEncoder(config.quantization.polar)
+        polar = PolarQuantEncoder(replace(config.quantization.polar,
+                                          dimension=config.embedding.dimension))
         qjl = QJLEncoder(config.quantization.qjl)
         qstore = QuantizedEmbeddingStore(
             engine._db, polar, qjl, config.quantization,
@@ -5170,6 +5182,11 @@ def cmd_quantize(args: Namespace) -> None:
     print(f"  Upgrades:    {result.get('upgrades', 0)}")
     print(f"  Skipped:     {result.get('skipped', 0)}")
     print(f"  Errors:      {result.get('errors', 0)}")
+
+    print(f"  QJL repair needed: {result.get('repair_needed', 0)}")
+    print(f"  QJL repaired:      {result.get('repaired', 0)}")
+    print(f"  QJL repair errors: {result.get('repair_errors', 0)}")
+    print(f"  Need re-embedding: {result.get('unrecoverable', 0)}")
 
 
 def cmd_consolidate(args: Namespace) -> None:

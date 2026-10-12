@@ -32,7 +32,7 @@ License: AGPL-3.0-or-later
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -128,7 +128,21 @@ class EAPScheduler:
                 "hidden, and their vectors are kept (nothing is physically reclaimed)")
             logger.warning("EAP: %s", stats["note"])
 
-        # Step 1: Fetch all facts with retention + current bit_width
+        from superlocalmemory.storage.qjl_repair import repair_sketches
+
+        try:
+            stats.update(repair_sketches(self._db, self._quantized_store, profile_id,
+                                        self._config, dry_run=dry_run))
+        except Exception as exc:  # noqa: BLE001 - report a failed repair query
+            logger.error("QJL repair query failed: %s", exc)
+            stats["repair_errors"] = 1
+
+        self._run_precision_transitions(profile_id, stats, dry_run=dry_run)
+        return stats
+
+    def _run_precision_transitions(self, profile_id: str, stats: dict[str, Any],
+                                   *, dry_run: bool = False) -> None:
+        """Read EAP candidates and retain the existing transition policy."""
         try:
             rows = self._db.execute(
                 "SELECT r.fact_id, r.retention_score, r.lifecycle_zone, "
@@ -142,59 +156,34 @@ class EAPScheduler:
         except Exception as exc:
             logger.error("EAP cycle query failed: %s", exc)
             stats["errors"] = 1
-            return stats
+            return
 
         if not rows:
-            return stats
+            return
 
         # Step 2+3: Process each fact
         for row in rows:
-            d = dict(row)
-            fact_id = d["fact_id"]
-            retention = float(d["retention_score"])
-            current_bw = int(d["current_bw"])
+            self._transition_one(dict(row), profile_id, stats, dry_run=dry_run)
 
-            stats["total"] += 1
-
-            target_bw = retention_to_bit_width(retention)
-
-            if target_bw == current_bw:
-                stats["skipped"] += 1
-                continue
-
-            if target_bw == 0:
-                # Forgotten -- mark as deleted
-                if not dry_run:
-                    self._handle_deletion(fact_id, profile_id)
-                stats["deleted"] += 1
-                continue
-
-            if target_bw < current_bw:
-                # Downgrade -- compress to lower precision
-                if dry_run:
-                    stats["downgrades"] += 1
-                    continue
-                success = self._handle_downgrade(
-                    fact_id, profile_id, target_bw,
-                )
-                if success:
-                    stats["downgrades"] += 1
-                else:
-                    stats["errors"] += 1
+    def _transition_one(self, row: dict[str, Any], profile_id: str, stats: dict[str, Any],
+                        *, dry_run: bool = False) -> None:
+        fact_id, current_bw = row["fact_id"], int(row["current_bw"])
+        target_bw = retention_to_bit_width(float(row["retention_score"]))
+        stats["total"] += 1
+        if target_bw == current_bw:
+            stats["skipped"] += 1
+        elif target_bw == 0:
+            if not dry_run:
+                self._handle_deletion(fact_id, profile_id)
+            stats["deleted"] += 1
+        else:
+            downgrade = target_bw < current_bw
+            counter = "downgrades" if downgrade else "upgrades"
+            handler = self._handle_downgrade if downgrade else self._handle_upgrade
+            if dry_run or handler(fact_id, profile_id, target_bw):
+                stats[counter] += 1
             else:
-                # Upgrade -- restore to higher precision (only if float32 exists)
-                if dry_run:
-                    stats["upgrades"] += 1
-                    continue
-                success = self._handle_upgrade(
-                    fact_id, profile_id, target_bw,
-                )
-                if success:
-                    stats["upgrades"] += 1
-                else:
-                    stats["skipped"] += 1  # Can't upgrade without float32
-
-        return stats
+                stats["errors" if downgrade else "skipped"] += 1
 
     # -- Handlers ----------------------------------------------------------
 

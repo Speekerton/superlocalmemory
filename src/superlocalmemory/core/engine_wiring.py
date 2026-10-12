@@ -538,23 +538,29 @@ def _init_quantization_aware_search(
 ) -> Any | None:
     """Create QuantizationAwareSearch if quantized store is available.
 
-    Returns None on failure — SemanticChannel falls back to VectorStore KNN.
-    Stateless wrapper: zero memory overhead, no workers, no threads.
+    Returns None on an explicit disable or a reported initialization failure.
+    No workers or threads; reuses the canonical candidate vector index.
     """
-    if vector_store is None:
+    if not config.quantization.enabled:
+        logger.info("Quantized search disabled by configuration")
         return None
     try:
-        from superlocalmemory.retrieval.quantization_aware_search import QuantizationAwareSearch
-        from superlocalmemory.storage.quantized_store import QuantizedEmbeddingStore
+        from dataclasses import replace
+
         from superlocalmemory.math.polar_quant import PolarQuantEncoder
         from superlocalmemory.math.qjl import QJLEncoder
+        from superlocalmemory.retrieval.canonical_vector_index import candidate_vector_source
+        from superlocalmemory.retrieval.quantization_aware_search import QuantizationAwareSearch
+        from superlocalmemory.storage.quantized_store import QuantizedEmbeddingStore
 
-        polar = PolarQuantEncoder(dimension=config.embedding.dimension)
-        qjl: QJLEncoder | None = None
-        try:
-            qjl = QJLEncoder(dimension=config.embedding.dimension)
-        except Exception:
-            pass  # QJL is optional (HR-07)
+        vector_store = candidate_vector_source(db, vector_store, config.embedding.dimension)
+        if vector_store is None or not vector_store.available:
+            logger.warning("Quantized tiers unavailable: no vector candidate store")
+            return None
+        polar = PolarQuantEncoder(replace(
+            config.quantization.polar, dimension=config.embedding.dimension,
+        ))
+        qjl = QJLEncoder(config.quantization.qjl)
 
         q_store = QuantizedEmbeddingStore(
             db=db, polar=polar, qjl=qjl, config=config.quantization,
@@ -567,7 +573,7 @@ def _init_quantization_aware_search(
         logger.info("QuantizationAwareSearch initialized (3-tier quantization pipeline)")
         return qas
     except Exception as exc:
-        logger.debug("QuantizationAwareSearch init failed (non-fatal): %s", exc)
+        logger.warning("Quantized tiers unavailable; using float32 search: %s", exc)
         return None
 
 

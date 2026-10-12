@@ -573,7 +573,10 @@ class MemoryEngine:
         shared_with: list[str] | None = None,
         profile_id: str | None = None,
     ) -> list[str]:
-        """Store content and extract structured facts. Returns fact_ids.
+        """Store content and finish canonical materialization. Returns fact_ids.
+
+        Standalone callers own the work they queue, so enrichment finishes
+        before success. Without an embedder, lexical materialization suffices.
 
         Multi-scope: ``scope`` sets the visibility (personal/shared/global).
         ``shared_with`` is a list of profile_ids for shared scope.

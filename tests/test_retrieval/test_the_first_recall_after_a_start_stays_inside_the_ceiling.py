@@ -48,8 +48,18 @@ def cold_engine(mode_a_config, monkeypatch):
 
 
 def test_the_first_recall_is_inside_the_ceiling_and_says_it_is_warming(cold_engine) -> None:
+    from superlocalmemory.core.engine_ingestion import canonical_store
+
     engine, svc = cold_engine
-    engine.store("The quarterly planning offsite is in Lisbon this year.")
+    # Seed without warming the model. Standalone store() owns synchronous
+    # enrichment and would load it before the measured recall.
+    canonical_store(
+        engine,
+        "The quarterly planning offsite is in Lisbon this year.",
+        source_type="python-api",
+        trusted_actor_id="local-capability:python-api:test",
+        require_complete=False,
+    )
     assert svc.has_loaded_once is False
 
     t0 = time.monotonic()

@@ -9,6 +9,13 @@ from types import SimpleNamespace
 from superlocalmemory.server.routes import v3_api
 
 
+
+def _call(result):
+    """A route may be a plain function (read routes run on the thread pool) or a coroutine."""
+    import inspect
+
+    return asyncio.run(result) if inspect.isawaitable(result) else result
+
 class _Embedder:
     _available = True
     is_available = True
@@ -38,7 +45,7 @@ class _Request:
 
 
 def _post(body, embedder):
-    response = asyncio.run(v3_api.embed_texts(_Request(body, embedder)))
+    response = _call(v3_api.embed_texts(_Request(body, embedder)))
     return response if isinstance(response, dict) else (response.status_code, json.loads(response.body))
 
 
@@ -73,9 +80,9 @@ def test_an_unknown_prompt_is_refused():
 def test_the_ping_says_what_the_embedder_is_so_other_processes_never_mix_spaces():
     emb = _Embedder()
     request = _Request({}, emb)
-    ping = asyncio.run(v3_api.embed_ping(request))
+    ping = _call(v3_api.embed_ping(request))
     assert ping["ok"] is True
     assert ping["embedder"] == {"available": True, "warm": False,
                                 "model": "google/embeddinggemma-2", "dimension": 4}
     request.app.state.engine = None  # engine not built yet
-    assert asyncio.run(v3_api.embed_ping(request))["embedder"]["available"] is False
+    assert _call(v3_api.embed_ping(request))["embedder"]["available"] is False

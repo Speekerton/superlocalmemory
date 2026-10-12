@@ -13,6 +13,13 @@ EG2 = "google/embeddinggemma-2"
 NOMIC = "nomic-ai/nomic-embed-text-v1.5"
 
 
+
+def _call(result):
+    """A route may be a plain function (read routes run on the thread pool) or a coroutine."""
+    import inspect
+
+    return asyncio.run(result) if inspect.isawaitable(result) else result
+
 def _daemon(monkeypatch, model, *, dim=768, embed_reply=None):
     calls = []
 
@@ -100,7 +107,7 @@ class _Request:
 
 
 def _post(body, embedder):
-    response = asyncio.run(v3_api.embed_texts(_Request(body, embedder)))
+    response = _call(v3_api.embed_texts(_Request(body, embedder)))
     return response if isinstance(response, dict) else (response.status_code, json.loads(response.body))
 
 
@@ -126,7 +133,7 @@ def test_the_ping_never_asks_an_embedder_that_probes_for_its_availability():
         def is_available(self):
             raise AssertionError("the ping must not probe on the event loop")
 
-    ping = asyncio.run(v3_api.embed_ping(_Request({}, Probing())))
+    ping = _call(v3_api.embed_ping(_Request({}, Probing())))
     assert ping["ok"] is True and ping["embedder"]["available"] is True
 
 
@@ -138,7 +145,7 @@ def test_an_embedder_not_yet_probed_is_reported_unavailable_without_probing():
         def is_available(self):
             raise AssertionError("the ping must not probe on the event loop")
 
-    ping = asyncio.run(v3_api.embed_ping(_Request({}, Lazy())))
+    ping = _call(v3_api.embed_ping(_Request({}, Lazy())))
     assert ping["embedder"]["available"] is False
 
 

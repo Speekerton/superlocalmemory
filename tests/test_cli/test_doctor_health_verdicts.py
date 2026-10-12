@@ -91,3 +91,42 @@ def test_feature_timeout_keeps_proven_daemon_pass(free_port, capsys):
     checks = {c["name"]: c for c in json.loads(capsys.readouterr().out)["data"]["checks"]}
     assert checks["Daemon"]["status"] == "PASS"
     assert checks["Daemon features"]["status"] == "WARN"
+
+def test_whole_doctor_has_one_deadline_naming_unfinished_check(monkeypatch, capsys):
+    release = threading.Event()
+
+    def hang():
+        release.wait(10)
+        return {"enabled": False}
+
+    monkeypatch.setattr(commands, "_gather_optimize_surface_b", hang)
+    monkeypatch.setattr(commands, "DOCTOR_TIMEOUT", 1.0, raising=False)
+    began = time.monotonic()
+    try:
+        with pytest.raises(SystemExit) as exc:
+            commands.cmd_doctor(Namespace(json=True, quick=True))
+        assert time.monotonic() - began < 3
+        assert exc.value.code == 1
+    finally:
+        release.set()
+    data = json.loads(capsys.readouterr().out)["data"]
+    deadline = [c for c in data["checks"] if c["name"] == "Doctor deadline"]
+    assert deadline and deadline[0]["status"] == "FAIL"
+    assert "Optimize (Surface B)" in deadline[0]["detail"]
+    assert data["summary"]["failed"] >= 1
+
+
+def test_deadline_text_mode_names_check_and_exits_one(monkeypatch, capsys):
+    release = threading.Event()
+    monkeypatch.setattr(commands, "_gather_optimize_surface_b",
+                        lambda: release.wait(10) or {"enabled": False})
+    monkeypatch.setattr(commands, "DOCTOR_TIMEOUT", 1.0, raising=False)
+    try:
+        with pytest.raises(SystemExit) as exc:
+            commands.cmd_doctor(Namespace(json=False, quick=True))
+    finally:
+        release.set()
+    out = capsys.readouterr().out
+    assert exc.value.code == 1
+    assert "Optimize (Surface B)" in out and "did not finish" in out
+    assert "Summary:" in out

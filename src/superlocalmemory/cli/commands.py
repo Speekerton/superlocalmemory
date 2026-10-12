@@ -3159,7 +3159,82 @@ def _detect_all_installs() -> list:
         return []
 
 
+# One wall-clock budget for the whole doctor run. --deep reads every database
+# page and --fix may download models, so they get a larger budget.
+DOCTOR_TIMEOUT = 180.0
+DOCTOR_DEEP_TIMEOUT = 900.0
+
+
 def cmd_doctor(args: Namespace) -> None:
+    """Run doctor under one overall deadline; exit 1 on any failed check.
+
+    The checks run on a worker thread so a hung probe cannot hang the command.
+    When the budget runs out, the report so far is printed together with a
+    failing "Doctor deadline" row that names the check that did not finish.
+    Doctor still never starts a daemon.
+    """
+    import threading
+
+    use_json = getattr(args, "json", False)
+    deep = bool(getattr(args, "deep", False) or getattr(args, "fix", False))
+    budget = DOCTOR_DEEP_TIMEOUT if deep else DOCTOR_TIMEOUT
+    state = {"checks": [], "stage": "startup", "closed": False,
+             "lock": threading.Lock(), "exit": None, "error": None}
+
+    def _run() -> None:
+        try:
+            _cmd_doctor_checks(args, state)
+        except SystemExit as exc:
+            state["exit"] = exc.code
+        except BaseException as exc:  # noqa: BLE001 - re-raised on the caller's thread
+            state["error"] = exc
+
+    worker = threading.Thread(target=_run, name="slm-doctor", daemon=True)
+    worker.start()
+    worker.join(budget)
+    if not worker.is_alive():
+        if state["error"] is not None:
+            raise state["error"]
+        if state["exit"] not in (None, 0):
+            sys.exit(state["exit"])
+        return
+    with state["lock"]:
+        state["closed"] = True
+        checks = list(state["checks"])
+        stage = state["stage"]
+    detail = (f"Check '{stage}' did not finish within the {budget:g}s overall doctor "
+              "deadline; the checks after it were not run")
+    checks.append({"name": "Doctor deadline", "status": "FAIL", "detail": detail,
+                   "fix": "Re-run `slm doctor --quick`, or investigate the named check"})
+    if not use_json:
+        print(f"  [FAIL] Doctor deadline: {detail}")
+    _doctor_summary(checks, use_json, None, None)
+    sys.exit(1)
+
+
+def _doctor_summary(checks: list[dict], use_json: bool, memory_health_data, refile_data) -> int:
+    """Print the closing report for ``checks``; return how many failed."""
+    passed = sum(c["status"] == "PASS" for c in checks)
+    warned = sum(c["status"] == "WARN" for c in checks)
+    failed = len(checks) - passed - warned
+    if use_json:
+        from superlocalmemory.cli.json_output import json_print
+        next_actions = [{"command": c["fix"], "description": f"Fix {c['name']}"}
+                        for c in checks if c["fix"]]
+        json_print("doctor", data={
+            "checks": checks,
+            "summary": {"passed": passed, "warned": warned, "failed": failed},
+            "memory_health": memory_health_data,
+            "refile_hidden": refile_data,
+        }, next_actions=next_actions)
+    else:
+        print(f"\nSummary: {passed} passed, {warned} warnings, {failed} failed")
+        if failed > 0:
+            print("Run the suggested fix commands above, then re-run: slm doctor")
+    return failed
+
+
+def _cmd_doctor_checks(args: Namespace, state: dict) -> None:
     """Comprehensive pre-flight check — verify everything works.
 
     S9-UX-10: ``--quick`` skips the slow probes (embedding worker
@@ -3172,30 +3247,29 @@ def cmd_doctor(args: Namespace) -> None:
 
     use_json = getattr(args, "json", False)
     quick = getattr(args, "quick", False)
-    checks: list[dict] = []
-    passed = warned = failed = 0
+    checks: list[dict] = state["checks"]
+
+    def _stage(name: str) -> None:
+        state["stage"] = name
 
     def _check(name: str, status: str, detail: str, fix: str = ""):
-        nonlocal passed, warned, failed
-        checks.append({"name": name, "status": status, "detail": detail, "fix": fix})
-        if status == "PASS":
-            passed += 1
-        elif status == "WARN":
-            warned += 1
-        else:
-            failed += 1
-        if not use_json:
-            tag = {"PASS": "[PASS]", "WARN": "[WARN]", "FAIL": "[FAIL]"}[status]
-            line = f"  {tag} {name}: {detail}"
-            if fix:
-                line += f"\n         Fix: {fix}"
-            print(line)
+        with state["lock"]:
+            if state["closed"]:  # the overall deadline already printed the report
+                return
+            checks.append({"name": name, "status": status, "detail": detail, "fix": fix})
+            if not use_json:
+                tag = {"PASS": "[PASS]", "WARN": "[WARN]", "FAIL": "[FAIL]"}[status]
+                line = f"  {tag} {name}: {detail}"
+                if fix:
+                    line += f"\n         Fix: {fix}"
+                print(line)
 
     if not use_json:
         print("SuperLocalMemory V4 — Doctor (Pre-flight Check)")
         print("=" * 50)
         print()
 
+    _stage("Daemon")
     # Always check the daemon, including --quick. This never starts it and
     # never waits for boot; other diagnostics reuse the proven identity.
     from superlocalmemory.cli.doctor_daemon import check_daemon
@@ -3206,6 +3280,7 @@ def cmd_doctor(args: Namespace) -> None:
         # Optional probe trouble is its own line; it never rewrites the daemon verdict.
         _check("Daemon features", "WARN", daemon_check.feature_warning, "slm restart")
 
+    _stage("Auto-repair (--fix)")
     # v3.8.2 `--fix`: run the component healer (the SAME repair the daemon
     # self-heal performs) BEFORE the checks, so the report below reflects the
     # healed state. Re-downloads missing models / installs sqlite-vec; big or
@@ -3260,6 +3335,7 @@ def cmd_doctor(args: Namespace) -> None:
             if not use_json:
                 print(f"  stale-artifact cleanup skipped: {_sh_exc}\n")
 
+    _stage("Python")
     # 1. Python version
     v = sys.version_info
     if v >= (3, 12):
@@ -3268,6 +3344,7 @@ def cmd_doctor(args: Namespace) -> None:
         _check("Python", "FAIL", f"{v.major}.{v.minor}.{v.micro} (need >= 3.12)",
                "Install Python 3.12+ from https://python.org/downloads/")
 
+    _stage("Version integrity")
     # 1b. Version integrity (issue #107). Doctor is what a user runs when
     # something seems wrong, so it is exactly where "the code you are running
     # is not the code you installed" has to appear. Reported as WARN rather
@@ -3290,6 +3367,7 @@ def cmd_doctor(args: Namespace) -> None:
     except Exception as _vi_exc:  # noqa: BLE001 - never break doctor
         _check("Version integrity", "WARN", f"could not verify: {_vi_exc}")
 
+    _stage("Core deps")
     # 2. Core deps
     core_modules = {
         "numpy": "numpy", "scipy": "scipy", "networkx": "networkx",
@@ -3313,6 +3391,7 @@ def cmd_doctor(args: Namespace) -> None:
         _check("Core deps", "FAIL", f"Missing: {', '.join(missing)}",
                "pip install " + " ".join(core_modules[m] for m in missing))
 
+    _stage("Search deps")
     # 3. Search deps
     #
     # Presence only. Importing these executes torch, which cost ~4 s of every
@@ -3338,6 +3417,7 @@ def cmd_doctor(args: Namespace) -> None:
         _check("Search deps", "WARN", f"Missing: {', '.join(missing)}",
                "pip install 'superlocalmemory[search]'")
 
+    _stage("Dashboard deps")
     # 4. Dashboard deps
     dash_ok = True
     for mod in ["fastapi", "uvicorn", "websockets"]:
@@ -3352,6 +3432,7 @@ def cmd_doctor(args: Namespace) -> None:
         _check("Dashboard deps", "WARN", "Missing dashboard deps",
                "pip install 'fastapi[all]' uvicorn websockets")
 
+    _stage("Learning deps")
     # 5. Learning deps
     try:
         import lightgbm
@@ -3363,6 +3444,7 @@ def cmd_doctor(args: Namespace) -> None:
         _check("Learning deps", "WARN", f"lightgbm installed but broken: {exc}",
                "brew install libomp && pip install --force-reinstall lightgbm")
 
+    _stage("Performance deps")
     # 6. Performance deps
     # v3.4.43: diskcache removed from this check — it was a phantom dependency
     # (declared in pyproject.toml but never imported anywhere in src/ or tests/).
@@ -3381,6 +3463,7 @@ def cmd_doctor(args: Namespace) -> None:
         _check("Performance deps", "WARN", "Missing: orjson",
                "pip install orjson")
 
+    _stage("Embedding worker")
     # 7. Embedding worker functional test — skipped under --quick.
     if quick:
         _check("Embedding worker", "PASS", "skipped (--quick)")
@@ -3437,6 +3520,7 @@ def cmd_doctor(args: Namespace) -> None:
         except Exception as exc:
             _check("Embedding worker", "FAIL", str(exc), "slm warmup")
 
+    _stage("Ollama / API key")
     # 8. Ollama connectivity (Mode B only) — skipped under --quick.
     if quick:
         _check("Ollama / API key", "PASS", "skipped (--quick)")
@@ -3481,6 +3565,7 @@ def cmd_doctor(args: Namespace) -> None:
         except Exception:
             pass  # Config load failed — already caught above
 
+    _stage("Disk space")
     # 9. Disk space
     from superlocalmemory.infra.data_root import canonical_data_root
     slm_home = canonical_data_root()
@@ -3495,6 +3580,7 @@ def cmd_doctor(args: Namespace) -> None:
     except Exception:
         pass
 
+    _stage("Database")
     # 10. Database integrity
     db_path = slm_home / "memory.db"
     if db_path.exists():
@@ -3532,6 +3618,7 @@ def cmd_doctor(args: Namespace) -> None:
     else:
         _check("Database", "PASS", "not yet created (will initialize on first use)")
 
+    _stage("Projection queue")
     # 10b. Projection queue. The graph and the vectors live in other storage
     # engines, and a queue that stops draining is the one failure that produces
     # no error at all: the memory is safely in SQLite, nothing raises, and
@@ -3573,6 +3660,7 @@ def cmd_doctor(args: Namespace) -> None:
             # pending on it by definition, so this is not a finding.
             _check("Projection queue", "PASS", "not applicable to this store")
 
+    _stage("Failed saves")
     # 10c. Failed saves. `slm ops status` reports dead-lettered saves, degraded
     # operations and exhausted retries; doctor said nothing about them and read
     # 0 failures on a store where 60 saves had been given up on (4.1.25 audit
@@ -3595,6 +3683,7 @@ def cmd_doctor(args: Namespace) -> None:
             _check("QJL sketches", "WARN", f"could not inspect QJL sketches: {exc}",
                    "Run `slm quantize --dry-run --json`")
 
+    _stage("PEP 668 / Install method")
     # 11. PEP 668 advisory (only for the system Python; a venv is exempt)
     #     and whether this Python can load SQLite extensions at all.
     try:
@@ -3605,6 +3694,7 @@ def cmd_doctor(args: Namespace) -> None:
     except Exception:
         pass  # advisory only — never fail doctor on this check
 
+    _stage("Images & documents")
     # 11b. Images & documents: a read-only line, "off" until someone turns it on.
     try:
         from superlocalmemory.runtimes import media_feature_status
@@ -3625,6 +3715,7 @@ def cmd_doctor(args: Namespace) -> None:
     except Exception:
         pass  # advisory only — never fail doctor on this check
 
+    _stage("Component registry")
     # 12a. Component registry (v3.8.2) — models + optional vector/graph/
     #      compression backends the older checks above did NOT cover
     #      (embedder/reranker/compressor cache presence, sqlite-vec, lancedb,
@@ -3653,6 +3744,7 @@ def cmd_doctor(args: Namespace) -> None:
     except Exception as _cr_exc:
         _check("Component registry", "WARN", f"probe failed: {_cr_exc}")
 
+    _stage("install_versions")
     # 13. Install version convergence — detect all copies of SLM on this machine
     #     and warn when they are at different versions. Silent divergence is the
     #     most common source of unexpected behaviour after an upgrade.
@@ -3720,6 +3812,7 @@ def cmd_doctor(args: Namespace) -> None:
     except Exception as _inst_exc:  # noqa: BLE001 — never break doctor
         _check("install_versions", "WARN", f"could not probe installs: {_inst_exc}")
 
+    _stage("plugin_skills")
     # 14. The skills, agents and commands are NOT in the Python package.
     #     They ship through the editor's own plugin channel -- `plugin/` in the
     #     repository -- so `pip install --upgrade` cannot move them, and until now
@@ -3771,6 +3864,7 @@ def cmd_doctor(args: Namespace) -> None:
     except Exception as _pl_exc:  # noqa: BLE001 — never break doctor
         _check("plugin_skills", "WARN", f"could not probe plugins: {_pl_exc}")
 
+    _stage("migration_errors")
     # 14. Migration error logs — surface any unresolved failure from a previous
     #     upgrade attempt. The daemon writes these and they persist until the
     #     user takes action; doctor is the right place to surface them.
@@ -3799,6 +3893,7 @@ def cmd_doctor(args: Namespace) -> None:
     except Exception as _mel_exc:  # noqa: BLE001 — never break doctor
         _check("migration_errors", "WARN", f"could not check error logs: {_mel_exc}")
 
+    _stage("Optimize (Surface B)")
     # 12. Optimize (Surface B) — reads daemon-persisted metrics (≤60s stale).
     info = _gather_optimize_surface_b()
     _enabled = info["enabled"]
@@ -3856,6 +3951,7 @@ def cmd_doctor(args: Namespace) -> None:
                 f"enabled [{_surface_str}] {_stats}",
             )
 
+    _stage("Memory answer-ability")
     # Memory answer-ability.
     #
     # Every other check here asks whether a component is installed. None of
@@ -3901,22 +3997,11 @@ def cmd_doctor(args: Namespace) -> None:
         refile_data = run_refile(args, use_json)
 
     # Summary
-    if use_json:
-        from superlocalmemory.cli.json_output import json_print
-        next_actions = []
-        for c in checks:
-            if c["fix"]:
-                next_actions.append({"command": c["fix"], "description": f"Fix {c['name']}"})
-        json_print("doctor", data={
-            "checks": checks,
-            "summary": {"passed": passed, "warned": warned, "failed": failed},
-            "memory_health": memory_health_data,
-            "refile_hidden": refile_data,
-        }, next_actions=next_actions)
-    else:
-        print(f"\nSummary: {passed} passed, {warned} warnings, {failed} failed")
-        if failed > 0:
-            print("Run the suggested fix commands above, then re-run: slm doctor")
+    with state["lock"]:
+        if state["closed"]:
+            return
+        state["closed"] = True
+        failed = _doctor_summary(checks, use_json, memory_health_data, refile_data)
 
     if failed > 0:
         sys.exit(1)

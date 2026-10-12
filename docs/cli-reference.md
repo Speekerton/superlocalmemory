@@ -469,7 +469,15 @@ slm doctor --json
 Every mode checks the daemon descriptor and makes at most one short `/health`
 probe (0.5-second timeout). Doctor never starts the daemon. A missing descriptor
 warns with `slm serve start`; a dead recorded process, invalid descriptor or
-unhealthy daemon fails with `slm restart`. The check appears in JSON output too.
+unhealthy daemon fails with `slm restart`. A `/health` reply that is streaming,
+oversized or never completes counts as unhealthy (FAIL), still within the 1-second
+diagnostic deadline. If only the optional feature probe overruns, the Daemon row
+stays PASS and a separate "Daemon features" row warns. The check appears in JSON
+output too.
+
+The whole run has one overall deadline (180 seconds; 900 with `--deep` or `--fix`).
+If a check hangs, doctor prints the report so far plus a failing "Doctor deadline"
+row naming the check that did not finish, and exits 1.
 
 Exit codes: **0** when checks pass or report warnings only; **1** when any check
 fails. Doctor prints the complete report before exiting, including with `--json`.

@@ -85,7 +85,8 @@ def test_whole_diagnostic_has_one_deadline(free_port, behavior):
         else:
             # A health reply that cannot be read is an unhealthy daemon, never a warning.
             assert result.status == "FAIL"
-            assert any(word in result.detail.lower() for word in ("deadline", "within", "oversized"))
+            words = ("deadline", "within", "oversized")
+            assert any(word in result.detail.lower() for word in words)
     finally:
         stop.set()
         server.shutdown()

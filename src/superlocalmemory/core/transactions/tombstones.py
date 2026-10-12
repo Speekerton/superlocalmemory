@@ -22,6 +22,25 @@ TOMBSTONE_CONFLICT = "conflict"
 TOMBSTONE_ERROR = "error"
 
 
+def _invalidate_display_summaries(conn: object, profile_id: str, fact_id: str) -> None:
+    """Drop display summaries that quote the fact the moment its erasure starts.
+
+    ``consolidated_summaries`` rows are derived text that the consolidator
+    regenerates, so removing them here costs nothing on heal and means no
+    reader can ever see the fact's words through a summary. The read path also
+    withholds them by tombstone (storage/erasure_visibility.py) for tombstones
+    written by other paths.
+    """
+    try:
+        conn.execute(
+            "DELETE FROM consolidated_summaries WHERE profile_id = ? AND EXISTS "
+            "(SELECT 1 FROM json_each(consolidated_summaries.source_fact_ids) m "
+            "WHERE m.value = ?)", (profile_id, fact_id))
+    except Exception as exc:  # noqa: BLE001 - table absent on older schemas
+        if "no such table" not in str(exc).lower() and "malformed json" not in str(exc).lower():
+            raise
+
+
 def write_tombstones_status(
     db: object,
     profile_id: str,
@@ -51,6 +70,7 @@ def write_tombstones_status(
                     "memory_id = COALESCE(projection_tombstones.memory_id, excluded.memory_id)",
                     (profile_id, fact_id, erasure_id, memory_id, created_at),
                 )
+                _invalidate_display_summaries(conn, profile_id, fact_id)
                 stored = conn.execute(
                     "SELECT memory_id FROM projection_tombstones "
                     "WHERE profile_id = ? AND fact_id = ?",

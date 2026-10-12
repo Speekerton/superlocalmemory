@@ -57,22 +57,28 @@ def _memory_clause(prefix: str) -> str:
     )
 
 
-def aggregate_erasure_clause(conn: sqlite3.Connection, prefix: str) -> str:
-    """Withhold a precomputed summary if any of its source members is erasing."""
+def aggregate_erasure_clause(
+    conn: sqlite3.Connection, prefix: str, *, column: str = "fact_ids_json",
+) -> str:
+    """Withhold a precomputed summary if any of its source members is erasing.
+
+    ``column`` names the JSON list of source fact ids (``source_fact_ids`` on
+    ``consolidated_summaries`` and ``core_memory_blocks``).
+    """
     if not has_tombstones(conn):
         return ""
-    return _aggregate_clause(prefix)
+    return _aggregate_clause(prefix, column)
 
 
-def _aggregate_clause(prefix: str) -> str:
+def _aggregate_clause(prefix: str, column: str = "fact_ids_json") -> str:
     return (
         " AND NOT EXISTS (SELECT 1 FROM json_each("
-        f"{prefix}.fact_ids_json) member JOIN projection_tombstones pt"
+        f"{prefix}.{column}) member JOIN projection_tombstones pt"
         f" ON pt.profile_id = {prefix}.profile_id AND pt.fact_id = member.value)"
     )
 
 
-def aggregate_erasure_clause_for_db(db, prefix: str) -> str:
+def aggregate_erasure_clause_for_db(db, prefix: str, *, column: str = "fact_ids_json") -> str:
     """Use the manager's cached schema probe, with execute-only legacy support."""
     probe = getattr(type(db), "_has_projection_tombstones_table", None)
     if callable(probe):
@@ -81,7 +87,7 @@ def aggregate_erasure_clause_for_db(db, prefix: str) -> str:
         rows = db.execute("SELECT name FROM sqlite_master WHERE type='table' "
                           "AND name='projection_tombstones'")
         present = any(dict(r).get("name") == "projection_tombstones" for r in rows)
-    return _aggregate_clause(prefix) if present else ""
+    return _aggregate_clause(prefix, column) if present else ""
 
 
 def erasure_cache_ready(db) -> bool:

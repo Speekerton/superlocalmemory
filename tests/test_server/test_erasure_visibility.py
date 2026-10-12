@@ -111,3 +111,50 @@ def test_cross_profile_erased_endpoint_is_hidden_after_canonical_deletion(dashbo
     db.execute("DELETE FROM atomic_facts WHERE fact_id='foreign'")
     during = client.get(path, headers=headers)
     assert during.status_code == 200 and 'foreign' not in during.text, during.text
+
+
+_SUMMARY_TEXT = "The copper compass location is in the attic chest beside the old lantern and maps."
+
+
+def _add_summary(db, source_ids):
+    import json
+
+    db.execute(
+        "INSERT INTO consolidated_summaries(summary_id,profile_id,entity_id,entity_name,content,"
+        "source_fact_ids,source_count,char_count,generated_by) VALUES "
+        "('sum1','default','e1','Erasure Entity',?,?,?,?,'extractive')",
+        (_SUMMARY_TEXT, json.dumps(source_ids), len(source_ids), len(_SUMMARY_TEXT)))
+
+
+@pytest.mark.parametrize("flag", ["", "&include_unusable=true"])
+def test_consolidated_summary_is_withheld_while_a_source_is_erasing(dashboard, flag):
+    client, headers, db = dashboard
+    path = "/api/v3/abstraction/consolidated?limit=10" + flag
+    _add_summary(db, ["erasuremarker", "controlmarker"])
+    assert "copper compass" in client.get(path, headers=headers).text
+    db.execute("INSERT INTO projection_tombstones(profile_id,fact_id,erasure_id,created_at) "
+               "VALUES ('default','erasuremarker','synthetic-erasure',?)",
+               (time.time() - STALE_AFTER_S - 1,))
+    during = client.get(path, headers=headers)
+    assert during.status_code == 200 and "copper compass" not in during.text, during.text
+    assert _drop_stale_erasure(db, "default", "erasuremarker")
+    assert "copper compass" in client.get(path, headers=headers).text
+
+
+def test_consolidated_summary_with_untouched_sources_stays_visible(dashboard):
+    client, headers, db = dashboard
+    _add_summary(db, ["controlmarker"])
+    db.execute("INSERT INTO projection_tombstones(profile_id,fact_id,erasure_id,created_at) "
+               "VALUES ('default','erasuremarker','synthetic-erasure',?)", (time.time(),))
+    assert "copper compass" in client.get(
+        "/api/v3/abstraction/consolidated?limit=10", headers=headers).text
+
+
+def test_tombstone_write_invalidates_summaries_that_include_the_fact(dashboard):
+    from superlocalmemory.core.transactions.tombstones import write_tombstones
+
+    _, _, db = dashboard
+    _add_summary(db, ["erasuremarker", "controlmarker"])
+    assert write_tombstones(db, "default", ("erasuremarker",), "e-1", time.time(), "erasuremarker")
+    left = db.execute("SELECT COUNT(*) AS n FROM consolidated_summaries")
+    assert dict(list(left)[0])["n"] == 0

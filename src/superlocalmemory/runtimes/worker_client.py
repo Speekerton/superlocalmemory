@@ -47,6 +47,10 @@ class MediaWorkerError(RuntimeError):
     """The worker could not answer. The text is plain language."""
 
 
+class MediaWorkerMemoryError(MediaWorkerError):
+    """The worker was not started because the computer is short of free memory."""
+
+
 class MediaWorkerWarming(MediaWorkerError):
     """The worker is starting; ask again shortly."""
 
@@ -244,7 +248,7 @@ class MediaWorkerClient(MediaEmbedderPort):
         except RuntimeError as exc:
             if isinstance(exc, MediaWorkerError):
                 raise
-            raise MediaWorkerError("Not enough free memory to load the image model right now.") from exc
+            raise MediaWorkerMemoryError("Not enough free memory to load the image model right now.") from exc
         except OSError as exc:
             raise MediaWorkerError("The image model could not be started.") from exc
         if not reply.get("ok"):

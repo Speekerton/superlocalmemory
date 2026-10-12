@@ -49,6 +49,7 @@ _QUIET_WAIT_S = 600.0  # background is paused meanwhile; requests are served
 _MAX_BACKOFF_S = 60.0
 #: How long a model load waits for another heavy job (a picture-model load, a document parse).
 LOAD_WAIT_S = 600.0
+MEMORY_REFUSED_MESSAGE = "Not enough free memory to load the model right now; try again later."
 
 
 class NoChange(ValueError):
@@ -377,14 +378,20 @@ class ReindexRunner:
             with reservation:
                 embedder = steps.build_embedder(target)
                 if embedder is not None:
-                    steps.probe(embedder, target.dimension)
+                    try:
+                        steps.probe(embedder, target.dimension)
+                    except steps.StepFailed:
+                        refused = bool(getattr(embedder, "memory_refused", False))
+                        steps.close_embedder(embedder)
+                        if refused:  # a managed worker said no for lack of memory, not for lack of a vector
+                            raise steps.StepFailed(MEMORY_REFUSED_MESSAGE) from None
+                        raise
                 return embedder
         except steps.StepFailed:
             raise
         except RuntimeError as exc:
-            raise steps.StepFailed(
-                "there was not enough free memory to load the model right now "
-                f"(another large job may be running); try again later ({exc})") from exc
+            logger.info("model load refused: %s", exc)
+            raise steps.StepFailed(MEMORY_REFUSED_MESSAGE) from exc
 
     def _activate(self, job: dict, embedder: Any, target: Any) -> tuple[dict, bool]:
         from superlocalmemory.core.embedding_reindex_activate import activate_job

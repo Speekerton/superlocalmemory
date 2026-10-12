@@ -1,5 +1,6 @@
 """ENG-17: a saved migration resumes through a cold managed worker's real lock."""
 
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -14,6 +15,8 @@ from superlocalmemory.storage import embedding_spaces as sp
 from tests.helpers.env_capabilities import NO_VECTOR_SEARCH_REASON, vector_search_available
 from tests.test_runtimes.conftest import StubEnv
 from tests.test_storage.test_embedding_reindex_units import store  # noqa: F401
+
+MEMORY_MESSAGE = "Not enough free memory to load the model right now; try again later."
 
 pytestmark = pytest.mark.skipif(not vector_search_available(), reason=NO_VECTOR_SEARCH_REASON)
 
@@ -64,7 +67,7 @@ def test_nonmanaged_model_still_reserves_memory(store, monkeypatch):  # noqa: F8
                         lambda: SimpleNamespace(available=100 * 1024**2))
     runner = er.ReindexRunner(db_path=db_path, data_root=root)
     target = EmbeddingConfig(provider="sentence-transformers", model_name="new", dimension=4)
-    with pytest.raises(steps.StepFailed, match="not enough free memory"):
+    with pytest.raises(steps.StepFailed, match=re.escape(MEMORY_MESSAGE)):
         runner._load_embedder(target)
 
 
@@ -78,7 +81,7 @@ def test_managed_worker_still_refuses_loading_below_memory_floor(store, monkeypa
     target = EmbeddingConfig(provider="slm-media", model_name="fake:4", dimension=4)
     try:
         runner = er.ReindexRunner(db_path=db_path, data_root=root)
-        with pytest.raises(steps.StepFailed, match="no vector"):
+        with pytest.raises(steps.StepFailed, match=re.escape(MEMORY_MESSAGE)):
             runner._load_embedder(target)
         assert client.pid is None
     finally:

@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from superlocalmemory.runtimes import media_models, worker_client
-from superlocalmemory.runtimes.worker_client import MediaWorkerError
+from superlocalmemory.runtimes.worker_client import MediaWorkerError, MediaWorkerMemoryError
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +50,7 @@ class ManagedTextEmbedder:
         self._last: Any = None
         self._loaded_once = False
         self._closed = False
+        self.memory_refused = False  # the last request failed because free memory was short
         self._status_at, self._status_ok = 0.0, False
         with _OPEN_LOCK:
             _OPEN.add(self)
@@ -132,7 +133,9 @@ class ManagedTextEmbedder:
             vectors = client.embed_texts(texts, prompt=prompt)
         except MediaWorkerError as exc:
             logger.info("managed text embedder: %s", exc)
+            self.memory_refused = isinstance(exc, MediaWorkerMemoryError)
             return [None] * len(texts)
+        self.memory_refused = False
         self._loaded_once = True
         self._check_width(vectors)
         return list(vectors)

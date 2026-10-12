@@ -483,10 +483,29 @@ def facts_for_entity(
     where, params = _scope_where(profile_id, include_global=include_global,
                                  include_shared=include_shared, prefix="af")
     needle = f'%"{entity_id}"%'
-    use_index = (
-        indexed and not include_global and not include_shared
-        and _owner_profile(db, entity_id, conn) == profile_id
-    )
+    owned = indexed and _owner_profile(db, entity_id, conn) == profile_id
+    use_index = owned and not include_global and not include_shared
+    if owned and not use_index:
+        # This profile's own facts are complete in the index; only other
+        # profiles' global or shared facts need the scan, and they are few.
+        sql = (
+            "SELECT fact_id, ents FROM ("
+            "SELECT af.fact_id AS fact_id, af.canonical_entities_json AS ents, "
+            "af.created_at AS created_at "
+            "FROM fact_entity_associations AS fea "
+            "JOIN atomic_facts AS af ON af.fact_id = fea.fact_id "
+            "WHERE fea.profile_id = ? AND fea.entity_id = ? "
+            f"AND {where} AND af.canonical_entities_json LIKE ? "
+            "UNION "
+            "SELECT af.fact_id, af.canonical_entities_json, af.created_at "
+            "FROM atomic_facts AS af "
+            "WHERE af.scope IN ('global', 'shared') AND af.profile_id != ? "
+            f"AND {where} AND af.canonical_entities_json LIKE ?"
+            ") ORDER BY created_at DESC, fact_id LIMIT ?"
+        )
+        args_u: tuple[Any, ...] = (profile_id, entity_id, *params, needle,
+                                   profile_id, *params, needle, int(limit))
+        return [(str(fid), entity_ids(ents)) for fid, ents in _rows(db, conn, sql, args_u)]
     if use_index:
         sql = (
             "SELECT af.fact_id AS fact_id, af.canonical_entities_json AS ents "

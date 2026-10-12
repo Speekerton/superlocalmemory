@@ -35,12 +35,17 @@ def _unverified(db: Any, profile_id: str, fact_ids: list[str]) -> dict[str, str]
     if any(not dict(r)["source"] or dict(r)["source_profile"] != dict(r)["profile_id"]
            for r in rows):
         raise LookupError("owning source unavailable")
+    # Only a release recorded under the fact's own profile counts (checked
+    # below), so naming those profiles lets the (profile, type, id) index
+    # answer instead of a scan of the whole lineage table.
+    profiles = sorted({str(dict(r)["profile_id"]) for r in rows})
+    pmarks = ",".join("?" for _ in profiles)
     released = {
         (str(dict(r)["profile_id"]), str(dict(r)["object_id"])) for r in db.execute(
             "SELECT profile_id,object_id FROM derivation_lineage "
-            f"WHERE object_type = 'fact' AND object_id IN ({marks}) "
-            "AND unresolved_reason LIKE ?",
-            (*fact_ids, RELEASED_PREFIX + "%"),
+            f"WHERE profile_id IN ({pmarks}) AND object_type = 'fact' "
+            f"AND object_id IN ({marks}) AND unresolved_reason LIKE ?",
+            (*profiles, *fact_ids, RELEASED_PREFIX + "%"),
         )
     }
     flags: dict[str, str] = {}

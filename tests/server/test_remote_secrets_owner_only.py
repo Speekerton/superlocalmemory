@@ -83,7 +83,8 @@ def test_windows_files_have_an_owner_only_protected_dacl(tmp_path) -> None:
     import win32security
 
     from superlocalmemory.optimize.proxy.capture import (
-        _windows_dacl_is_owner_only, _windows_owner_dacl,
+        _windows_dacl_is_owner_only,
+        _windows_owner_dacl,
     )
 
     store_path = tmp_path / "remote_keys.json"

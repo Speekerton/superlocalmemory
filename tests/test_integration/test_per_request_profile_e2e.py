@@ -127,13 +127,46 @@ _DEFAULT_DAEMON_PORT = 8765  # unified_daemon --start with no --port
 
 def _daemon_port(cmdline: list[str]) -> int | None:
     """The port a ``unified_daemon --start`` command line serves on."""
-    for arg in cmdline:
+    for index, arg in enumerate(cmdline):
         if arg.startswith("--port="):
             try:
                 return int(arg.split("=", 1)[1])
             except ValueError:
                 return None
+        if arg == "--port":
+            try:
+                return int(cmdline[index + 1])
+            except (ValueError, IndexError):
+                return None
     return _DEFAULT_DAEMON_PORT
+
+
+def _daemon_arguments(cmdline: list[str]) -> list[str] | None:
+    """Read the Python entry point before inspecting its application arguments."""
+    if not cmdline or not Path(cmdline[0]).name.lower().startswith(("python", "pypy")):
+        return None
+    module = "superlocalmemory.server.unified_daemon"
+    index = 1
+    while index < len(cmdline):
+        arg = cmdline[index]
+        if arg.startswith("-c") or arg == "-":
+            return None
+        if arg == "-m":
+            return cmdline[index + 2:] if cmdline[index + 1:index + 2] == [module] else None
+        if arg.startswith("-m"):
+            return cmdline[index + 1:] if arg[2:] == module else None
+        if arg == "--":
+            index += 1
+            break
+        if arg in {"-W", "-X"}:
+            index += 2
+        elif arg.startswith("-"):
+            index += 1
+        else:
+            break
+    if index < len(cmdline) and Path(cmdline[index]).name == "unified_daemon.py":
+        return cmdline[index + 1:]
+    return None
 
 
 def _foreign_daemon_pids() -> set[int]:
@@ -155,10 +188,11 @@ def _foreign_daemon_pids() -> set[int]:
             cmdline = list(proc.info["cmdline"] or [])
         except Exception:
             continue
+        daemon_args = _daemon_arguments(cmdline)
         if (
             proc.info["pid"] != mine
-            and "superlocalmemory.server.unified_daemon" in " ".join(cmdline)
-            and _daemon_port(cmdline) in PRODUCTION_PORTS
+            and daemon_args is not None and "--start" in daemon_args
+            and _daemon_port(daemon_args) in PRODUCTION_PORTS
         ):
             pids.add(proc.info["pid"])
     return pids

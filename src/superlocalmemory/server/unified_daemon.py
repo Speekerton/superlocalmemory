@@ -3500,6 +3500,12 @@ async def lifespan(application: FastAPI):
         try:
             yield
         finally:
+            from superlocalmemory.server.manual_heal import join_manual_heals
+            if not await asyncio.to_thread(join_manual_heals, application.state):
+                logger.warning("Manual component repair still running at shutdown")
+            from superlocalmemory.retrieval.fallback_fidelity import join_fallback_checks
+            if not await asyncio.to_thread(join_fallback_checks):
+                logger.warning("Fallback source admission still running at shutdown")
             remote_runtime = getattr(application.state, "remote_connection_runtime", None)
             if remote_runtime is not None:
                 try:
@@ -6086,7 +6092,9 @@ def _register_daemon_routes(application: FastAPI) -> None:
             except Exception as exc:
                 logger.warning("Manual component heal failed (non-fatal): %s", exc)
 
-        threading.Thread(target=_run, daemon=True, name="manual-heal").start()
+        from superlocalmemory.server.manual_heal import start_manual_heal
+        if not start_manual_heal(application.state, _run):
+            raise HTTPException(503, detail="component repair unavailable during shutdown")
         return {"status": "started"}
 
     # ------------------------------------------------------------------

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from typing import Any
 
 from superlocalmemory.retrieval import channel_status as chstat
@@ -108,7 +109,7 @@ def _fetch_candidates(db, pid: str, query: str, pool_limit: int) -> list[dict]:
     current_clause = db.current_fact_clause("af")
     rows = db.execute(
         "SELECT af.fact_id AS fact_id, af.content AS content, "
-        "af.confidence AS confidence FROM atomic_facts AS af "
+        "af.confidence AS confidence, af.memory_id, af.profile_id FROM atomic_facts AS af "
         f"WHERE af.profile_id = ? AND {where} {current_clause} "
         f"ORDER BY {order}, af.confidence DESC LIMIT ?",
         (pid, *where_params, *order_params, pool_limit),
@@ -151,6 +152,7 @@ def recall_keyword_fallback(
     engine, query: str, limit: int, *, profile_id: str | None = None,
     profile: str | None = None, profile_generation: int | None = None,
     facets: Any = None,
+    fidelity_budget_s: float = 0.5,
 ) -> dict:
     """Profile-scoped keyword recall for a recall that exceeded its budget.
 
@@ -164,6 +166,9 @@ def recall_keyword_fallback(
     facet_filter_error: str | None = None
     project_scope: dict | None = None
     tag_scope: dict | None = None
+    from superlocalmemory.storage.models import RecallResponse
+    response = RecallResponse(source_fidelity_status="degraded")
+    deadline = time.monotonic() + fidelity_budget_s
     try:
         db = engine._db
         pid = profile_id or engine.profile_id
@@ -179,6 +184,9 @@ def recall_keyword_fallback(
         if has_facets:
             candidates, facet_filter_error, project_scope, tag_scope = _apply_facets(
                 engine, db, pid, candidates, facets)
+        from superlocalmemory.retrieval.fallback_fidelity import admit_fallback
+        candidates, response = admit_fallback(
+            candidates, db, pid, budget_s=deadline - time.monotonic())
         for pos, d in enumerate(candidates[:limit], start=1):
             results.append({
                 "fact_id": d.get("fact_id"),
@@ -188,23 +196,22 @@ def recall_keyword_fallback(
                 "rank_position": pos,
             })
     except Exception as exc:
-        logger.warning("recall keyword fallback failed (non-fatal): %s", exc)
+        logger.warning("recall keyword fallback failed (non-fatal): %s", type(exc).__name__)
+        if not callable(getattr(getattr(engine, "_db", None), "execute", None)):
+            response.source_fidelity_status = "unavailable"
         if has_facets and facet_filter_error is None:
             facet_filter_error = type(exc).__name__
     from superlocalmemory.server.recall_serializer import recall_response_metadata
-    from superlocalmemory.storage.models import RecallResponse
 
     # Nothing from full recall reached this answer: every channel was
     # abandoned when the budget ran out. Saying "{}" here made a degraded
     # answer look like a complete one that found nothing.
     abandoned = abandoned_channel_metadata()
-    contract = recall_response_metadata(RecallResponse(
-        query=query,
-        incomplete_channels=tuple(abandoned["incomplete_channels"]),
-        channel_status=abandoned["channel_status"],
-        project_scope=project_scope,
-        tag_scope=tag_scope,
-    ))
+    response.incomplete_channels = tuple(abandoned["incomplete_channels"])
+    response.channel_status = abandoned["channel_status"]
+    response.project_scope = project_scope
+    response.tag_scope = tag_scope
+    contract = recall_response_metadata(response)
     return {
         **contract,
         "ok": True,

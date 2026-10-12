@@ -681,7 +681,7 @@ class EntityResolver:
         "recall is 8 s" regression.  We now record it in memory and flush from a
         single background thread in coalesced batches, so recall stays
         READ-ONLY on its hot path.  The dashboard stays correct within the flush
-        interval (~2 s).  The profile_id guard (L-01) is preserved in the
+        interval (~2 s).  The profile_id guard is preserved in the
         deferred UPDATE (see storage/deferred_writes.py).
         """
         try:

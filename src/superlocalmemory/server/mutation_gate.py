@@ -7,7 +7,7 @@
 ``read_gates`` answers the read side. This is the write side: one place that
 every POST, PUT, PATCH and DELETE passes through before the route runs, so a
 route added later without its own role check is still refused to a caller who
-may not change anything (4.1.25 governance audit G-C1, G-H3, G-L3).
+may not change anything.
 
 Before this, about fifteen state-changing routes (``/observe``, the mesh, the
 Optimize settings, compaction, tiering, heal, profile switch, restart ...) only

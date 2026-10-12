@@ -76,7 +76,7 @@ class OutcomeTracker:
         Delegates to :mod:`superlocalmemory.learning.outcome_events`, the one
         writer every surface shares. This method used to build its own INSERT
         without ``reward``/``settled``/``settled_at``, so the settler skipped
-        every row it wrote and an MCP report trained nothing (audit BRN-05).
+        every row it wrote and an MCP report trained nothing.
 
         Args:
             query: The recall query that produced these facts.

@@ -9,7 +9,7 @@ settled recalls are measured against the pre-promotion baseline. If the
 mean settled **reward** drops by ≥ REGRESSION_THRESHOLD (2%), auto-rollback
 fires.
 
-WHAT IS MEASURED (audit BRN-19)
+WHAT IS MEASURED
 -------------------------------
 The watched quantity is the reward a settled recall earned: an explicit
 outcome (success 1.0 / partial 0.5 / failure 0.0) or the engagement label
@@ -111,7 +111,7 @@ class ModelRollback:
     ) -> None:
         """Record one post-promotion reward (at most WATCH_WINDOW).
 
-        ``ndcg_at_10`` is the legacy name of ``reward`` (BRN-19).
+        ``ndcg_at_10`` is the legacy name of ``reward``.
         """
         value = reward if reward is not None else ndcg_at_10
         if value is None or len(self._observations) >= self.WATCH_WINDOW:

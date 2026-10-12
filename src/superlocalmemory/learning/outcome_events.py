@@ -12,7 +12,7 @@ build their own ``action_outcomes`` INSERT, and they disagreed on what a report
 ``OutcomeTracker`` wrote none of them. The settler
 (``reward_from_outcomes._candidate_outcomes``) skips a row whose reward is NULL,
 so every outcome reported over MCP returned ``success: true`` and trained
-nothing (audit BRN-05). Both answers looked identical to the caller.
+nothing. Both answers looked identical to the caller.
 
 This module is that contract, once:
 

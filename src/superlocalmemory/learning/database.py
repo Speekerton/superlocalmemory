@@ -551,7 +551,7 @@ class LearningDatabase:
         Rows come from :func:`training_rows.fetch_labelled_rows`: exposure
         features joined to the outcomes that name the recall and the memory,
         across learning.db and memory.db (``memory_db``, default the one beside
-        this file). Judged queries only; position is never a label (BRN-12).
+        this file). Judged queries only; position is never a label.
         The old join looked for ``action_outcomes`` in learning.db (it lives in
         memory.db) and gated on M006 in learning.db's migration log (M006 is
         logged in memory.db), so production training never saw a real label.

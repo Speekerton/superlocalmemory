@@ -4,7 +4,7 @@
 
 """The entity graph follows writes by their size; it is not rebuilt per write.
 
-WHY (N-11, measured live 2026-10-11)
+WHY
 ------------------------------------
 After every write the next recall reloaded the entity maps, the graph metrics
 and the adjacency cache of a 25.6k-node / 611k-edge store: 2.3 s quiet, 5+ s

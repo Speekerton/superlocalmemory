@@ -783,7 +783,7 @@ def register_active_tools(server, get_engine: Callable) -> None:
                     "feedback_signals": feedback_count,
                     "phase": _phase_for_signal_count(feedback_count),
                     # From the model registry and settled plays, never from a
-                    # count of reports (audit BRN-12: 'trained' was claimed
+                    # count of reports ('trained' was claimed
                     # with zero models trained).
                     **_learning_evidence(engine, pid),
                 },

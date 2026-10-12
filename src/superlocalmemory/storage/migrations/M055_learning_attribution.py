@@ -9,7 +9,7 @@ WHAT IT ADDS
 outcome is evidence about ONE recall. The settler used to keep the set of
 outcomes it had spent in a local variable, so the next scheduler pass spent the
 same outcome again on another play: one "that helped" moved three arms across
-three passes (audit BRN-11). Writing the consuming outcome's id on the play, in
+three passes. Writing the consuming outcome's id on the play, in
 the same transaction as the posterior update, and letting SQLite refuse a
 second play with the same id, makes the spend exactly-once across passes,
 restarts and concurrent settlers.
@@ -17,7 +17,7 @@ restarts and concurrent settlers.
 ``shadow_assignments``: which arm a recall was routed to while a candidate
 ranker was under test, and which model actually served it. The shadow test
 used to recompute the arm from the query id at settle time and never record
-that the candidate had served anything — in fact it never did (audit BRN-01).
+that the candidate had served anything — in fact it never did.
 Persisting the assignment at serve time is what lets a settled reward be
 credited to the model that produced the ranking, survive a restart, and be
 deduplicated when a query id is replayed.

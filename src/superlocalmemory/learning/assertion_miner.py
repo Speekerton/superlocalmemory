@@ -7,7 +7,7 @@
 Zero-LLM: frequency, conditional frequency and temporal clustering. Runs as a
 consolidation step. Two correctness invariants, both broken before 4.1.25:
 
-IDEMPOTENT (audit BRN-02)
+IDEMPOTENT
 -------------------------
 Mining the same evidence twice must leave every assertion exactly as it was.
 The miner used to nudge confidence toward 1 and bump ``reinforcement_count``
@@ -30,7 +30,7 @@ events. A rejected rule is now a tombstone (``source = 'rejected'``,
 confidence 0) and the miner leaves it alone; only an explicit
 ``reinforce_assertion`` reinstates it.
 
-SCOPED (audit BRN-03)
+SCOPED
 ---------------------
 Tool sequences were bigrams over every event in the profile, ordered globally,
 so interleaved sessions from different agents and projects "showed" a Read ->

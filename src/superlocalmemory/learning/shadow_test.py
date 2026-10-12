@@ -4,7 +4,7 @@
 
 """Live A/B validation of a retrained ranker: promote, reject, or keep going.
 
-WHAT WAS WRONG (audit BRN-01)
+WHAT WAS WRONG
 -----------------------------
 Each recall is routed to ONE arm — the active model or the candidate. The old
 validator enforced exactly that (a query id may live on one arm only) and then
@@ -249,7 +249,7 @@ class ShadowTest:
         self, *, query_id: str, arm: str,
         ndcg_at_10: float | None = None, reward: float | None = None,
     ) -> bool:
-        """Back-compatible alias. ``ndcg_at_10`` was always a reward (BRN-19)."""
+        """Back-compatible alias. ``ndcg_at_10`` was always a reward."""
         value = reward if reward is not None else ndcg_at_10
         if value is None:
             return False

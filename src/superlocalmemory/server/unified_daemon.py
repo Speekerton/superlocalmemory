@@ -4441,7 +4441,7 @@ def _register_dashboard_routes(application: FastAPI) -> None:
                                 )
                             },
                         )
-            # RBAC mutation gate (4.1.25 governance audit G-C1/G-H3): every
+            # RBAC mutation gate: every
             # state-changing route needs a role once team accounts are on, so a
             # route without a check of its own is still refused to a viewer
             # and to a caller with no session in company mode.

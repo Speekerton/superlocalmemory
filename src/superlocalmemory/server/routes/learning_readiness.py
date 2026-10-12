@@ -2,7 +2,7 @@
 # Licensed under AGPL-3.0-or-later - see LICENSE file
 """``GET /api/learning/readiness`` — what the learning loop has actually done.
 
-Backs the dashboard's Learning card (audit BRN-21): daemon liveness and
+Backs the dashboard's Learning card: daemon liveness and
 learning evidence are separate states, and this endpoint reports only the
 second, from ``learning.learning_state``.
 """

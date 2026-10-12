@@ -9,7 +9,7 @@ state machines: :class:`~superlocalmemory.learning.shadow_test.ShadowTest`
 (before promotion) and :class:`~superlocalmemory.learning.model_rollback.ModelRollback`
 (after it).
 
-WHAT CHANGED IN 4.1.25 (audit BRN-01)
+WHAT CHANGED IN 4.1.25
 -------------------------------------
 * **The candidate is actually served.** ``assign()`` runs at recall time,
   routes the query, and records ``(candidate_id, query_id, arm,
@@ -224,7 +224,7 @@ class ShadowRouter:
         """Start the 200-recall post-promotion watch.
 
         ``baseline_ndcg`` is the pre-4.1.25 name of the same number; it was
-        never an NDCG (BRN-19) and is accepted only for old callers.
+        never an NDCG and is accepted only for old callers.
         """
         base = baseline_reward if baseline_reward is not None else baseline_ndcg
         self._rollback = ModelRollback(

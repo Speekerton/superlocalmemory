@@ -36,7 +36,7 @@ def split_by_query(rows: list[dict], *, holdout_share: int = 5
 
     Roughly 1 in ``holdout_share`` queries is held out. Every row of a query
     lands on the same side, so the holdout measures generalisation to unseen
-    queries rather than memorisation of seen ones (audit BRN-19/BRN-12: the
+    queries rather than memorisation of seen ones (the
     old metrics and shadow gate were computed on the training rows).
     """
     import hashlib

@@ -304,7 +304,7 @@ class CognitiveConsolidator:
         """
         # Only facts the store still believes are consolidated: a fact a
         # correction retired must never be copied into a fresh, current gist
-        # (audit BRN-31 — the retired rule came back under a new id).
+        # (the retired rule came back under a new id).
         current = self._db.current_fact_clause("f")
         rows = self._db.execute(
             """
@@ -460,7 +460,7 @@ class CognitiveConsolidator:
             dated.append((fid, _parse_date(raw)))
 
         # A fact whose date is unknown cannot be shown to fall inside the
-        # window, so it joins nothing (audit BRN-32: it used to join whatever
+        # window, so it joins nothing (it used to join whatever
         # cluster was open, which merged facts months apart).
         dated = [(fid, dt) for fid, dt in dated if dt is not None]
         dated.sort(key=lambda t: t[1])
@@ -667,7 +667,7 @@ class CognitiveConsolidator:
         """Measure one source embedding. Returns (bytes_before, bytes_after).
 
         This step does NOT quantize, and since 4.1.25 it no longer says it
-        does (audit BRN-10). It used to import PolarQuantEncoder, never call
+        does. It used to import PolarQuantEncoder, never call
         it, write ``quantization_level='polar2', bit_width=2`` and report an
         estimated 2-bit size: the stored embedding kept every byte (identical
         SHA-256), and the fake ``bit_width=2`` made the EAP scheduler — which

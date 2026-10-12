@@ -675,7 +675,7 @@ class EngagementRewardModel:
         # S9-W1 C1: feed the settled reward into the shadow router so
         # LLD-10 ShadowTest / ModelRollback see live A/B signals. The value
         # is an ENGAGEMENT reward in [0, 1] (cite/edit/dwell/requery), not an
-        # NDCG@10 — it has no ranked relevance list (audit BRN-19). Fail-soft
+        # NDCG@10 — it has no ranked relevance list. Fail-soft
         # so router issues never poison the finalize_outcome return contract.
         if _qid:
             try:

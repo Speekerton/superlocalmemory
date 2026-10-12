@@ -43,7 +43,7 @@ MANIFEST_NAME = ".slm-managed.json"
 #: files.  ``slm doctor`` reads this to say what ``slm upgrade-hosts`` actually
 #: installed.  It used to read the Codex plugin cache under ``~/.codex/plugins``
 #: instead, which the upgrade never touches, and reported the old version after
-#: a successful refresh (4.1.25 audit L-21).
+#: a successful refresh.
 VERSION_STAMP_NAME = ".slm-assets-version.json"
 
 #: Used only when the advisor source document is unavailable — an installation

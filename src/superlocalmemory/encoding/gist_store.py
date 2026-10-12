@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 def _encode_gist(embedder, text) -> list[float] | None:
-    """The gist's embedding, kept (audit BRN-10: it used to be thrown away)."""
+    """The gist's embedding, kept (it used to be thrown away)."""
     if embedder is None:
         return None
     try:
@@ -41,7 +41,7 @@ def store_block(db, embedder, cluster, gist, profile_id, new_id, current_confide
     """Persist the gist before soft-archiving its sources, in one transaction.
 
     ``current_confidence(fact_ids)`` runs inside the transaction: it raises when a
-    source was retired after selection (audit BRN-31, the cluster is abandoned)
+    source was retired after selection (the cluster is abandoned)
     and returns the least confident source's confidence, which the gist takes.
     """
     block_id = new_id()

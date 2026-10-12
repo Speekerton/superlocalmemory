@@ -363,7 +363,7 @@ class SkillPerformanceMiner:
 
         if existing:
             row = dict(existing)
-            # Idempotent (audit BRN-02): a rejected rule stays rejected, and a
+            # Idempotent: a rejected rule stays rejected, and a
             # re-run over the same evidence changes nothing. Confidence is a
             # function of the evidence, not of how often mining ran.
             if row.get("source") == "rejected":

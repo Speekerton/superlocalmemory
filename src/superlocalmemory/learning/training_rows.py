@@ -3,7 +3,7 @@
 
 """Labelled ranker-training rows: exposures joined to authentic outcomes.
 
-WHY THIS EXISTS (audit BRN-12)
+WHY THIS EXISTS
 ------------------------------
 The trainer's join read ``action_outcomes`` from learning.db. That table lives
 in memory.db; learning.db has none, so the query raised, the fetch returned

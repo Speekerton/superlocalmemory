@@ -104,7 +104,7 @@ def register_v28_tools(server, get_engine: Callable) -> None:
                 UnknownMemories,
                 write_outcome,
             )
-            # The one writer every surface shares (audit BRN-05): reward,
+            # The one writer every surface shares: reward,
             # settlement fields, attribution, provenance and idempotence.
             try:
                 written = write_outcome(

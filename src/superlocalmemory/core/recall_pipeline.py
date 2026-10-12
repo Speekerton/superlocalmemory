@@ -170,7 +170,7 @@ def feed_recall_settled(
     a query served outside a test is ignored there.
 
     ``ndcg_at_10`` is the pre-4.1.25 name of ``reward`` — the value was never
-    an NDCG (audit BRN-19). ``memory_db`` is accepted and unused.
+    an NDCG. ``memory_db`` is accepted and unused.
     """
     del memory_db
     value = reward if reward is not None else ndcg_at_10
@@ -1049,7 +1049,7 @@ def apply_v2_bandit_ensemble(
             signal_count = db.count_signals(profile_id)
             active_model = load_active(db, profile_id)
             # While a retrained candidate is under test, half the recalls are
-            # ranked by it and the assignment is recorded (audit BRN-01).
+            # ranked by it and the assignment is recorded.
             from superlocalmemory.learning.shadow_serving import serving_model
             active_model = serving_model(db_path, profile_id, query_id,
                                          active_model)
@@ -1287,7 +1287,7 @@ def run_recall(
     ``query_id`` is this recall's one identity. The engine allocates it and
     returns it on the response; the bandit play, the shadow assignment and
     the exposure features are all recorded under the same id, so an outcome
-    that quotes it settles exactly this recall (audit BRN-13). A fresh id is
+    that quotes it settles exactly this recall. A fresh id is
     minted only for a direct caller that supplies none.
 
     Multi-scope: ``include_global`` / ``include_shared`` control which
@@ -1449,8 +1449,8 @@ def run_recall(
         mode = _resolve_ranking_mode(_os.environ)
         # Exposure features are recorded (asynchronously, by the signal
         # worker) only when the operator turned adaptive ranking on: they are
-        # the trainer's input, and without them no labelled row can exist
-        # (audit BRN-12). An exposure is never counted as feedback.
+        # the trainer's input, and without them no labelled row can exist.
+        # An exposure is never counted as feedback.
         response = apply_ranking(
             response, query, profile_id, query_id,
             config=config, pipeline_version=mode,

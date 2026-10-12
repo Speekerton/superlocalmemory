@@ -371,7 +371,7 @@ def _update_assertion_confidence(
         if reinforce:
             new_conf = old_conf + (1.0 - old_conf) * 0.15  # Bayesian nudge toward 1.0
             # An explicit reinforcement is the one thing that reinstates a
-            # rejected rule; mining alone never does (audit BRN-02).
+            # rejected rule; mining alone never does.
             db.execute(
                 "UPDATE behavioral_assertions SET confidence = ?, "
                 "reinforcement_count = reinforcement_count + 1, "
@@ -392,8 +392,8 @@ def _update_assertion_confidence(
             )
             # Below 0.2 the rule is REJECTED: kept as a tombstone at
             # confidence 0 so the next mining pass cannot recreate it from the
-            # same events (it used to be deleted and came straight back —
-            # audit BRN-02). Every reader filters on confidence, so it is
+            # same events (it used to be deleted and came straight back).
+            # Every reader filters on confidence, so it is
             # never injected; only an explicit reinforce reinstates it.
             if new_conf < 0.2:
                 db.execute(

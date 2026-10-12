@@ -16,7 +16,7 @@ def _parse_date(raw: str | None) -> datetime | None:
     and numeric offsets; a naive value is taken as UTC. The previous parser
     tried four offset-free formats, so every ``...+00:00`` timestamp SLM
     writes came back None and was then treated as "close enough" to every
-    other date (audit BRN-32). None now means unknown, never compatible.
+    other date. None now means unknown, never compatible.
     """
     if not raw:
         return None

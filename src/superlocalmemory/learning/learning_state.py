@@ -5,9 +5,9 @@
 
 Three surfaces used to answer "is it learning?" from proxies: ``session_init``
 said ``status: trained`` once 200 feedback signals existed (a count of
-reports, with zero models trained — audit BRN-12), and the dashboard's health
+reports, with zero models trained), and the dashboard's health
 page said "All green means your memory is learning correctly" whenever the
-daemon answered (BRN-21). This module reads the evidence each claim needs:
+daemon answered. This module reads the evidence each claim needs:
 
 * ``labelled_outcomes`` — outcome reports that name a recall and carry a
   numeric reward (the only rows that can settle a play or label training);

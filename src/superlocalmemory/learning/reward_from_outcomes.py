@@ -39,8 +39,8 @@ an exposure is not.
 
 It carries ``recall_query_id``, a join key straight to ``bandit_plays.query_id``.
 Since 4.1.25 that id is the one recall returns as ``query_id`` (one identity
-from engine to play, audit BRN-13), and every surface writes it through
-``outcome_events`` (BRN-05). When it is present the outcome settles exactly
+from engine to play), and every surface writes it through
+``outcome_events``. When it is present the outcome settles exactly
 that play; only an outcome that names no recall falls back to overlap between
 its ``fact_ids_json`` and the ``shown_fact_ids`` the play recorded (M044).
 
@@ -226,7 +226,7 @@ def _match(
     ``claimed`` starts from every outcome id already written on a play
     (``bandit_plays.outcome_id``, M055) — not from an empty set per pass. The
     per-pass set let the next scheduler pass spend the same outcome on another
-    play: one report moved three arms in three passes (audit BRN-11).
+    play: one report moved three arms in three passes.
 
     AN OUTCOME THAT NAMES ITS RECALL IS ONLY ABOUT THAT RECALL
     ---------------------------------------------------------

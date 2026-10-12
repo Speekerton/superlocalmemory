@@ -1632,7 +1632,7 @@ def _compute_shadow_preview(profile_id: str) -> dict:
             # Observations per arm of the live test. The arms are disjoint by
             # design (one recall is served by one model), so the old
             # "paired" count — the INTERSECT of the arms' query ids — was 0
-            # by construction (audit BRN-01). Report the real sample.
+            # by construction. Report the real sample.
             paired = 0
             if cand_id is not None:
                 try:

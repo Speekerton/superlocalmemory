@@ -371,7 +371,7 @@ def report_outcome(request: Request, data: ReportOutcomeRequest):
             extra={"action_type": action_type,
                    "source": "dashboard_report_outcome"},
         )
-        # The one writer every surface shares (audit BRN-05).
+        # The one writer every surface shares.
         try:
             written = write_outcome(
                 report, memory_db_path=_memory_db_path(),

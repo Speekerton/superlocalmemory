@@ -535,7 +535,7 @@ class RecallResponse:
     # key is a reporting gap and ``empty`` is an answer. Additive — backward
     # compatible.
     channel_status: dict[str, str] = field(default_factory=dict)
-    # 4.1.25 (N-11): how many seconds the entity graph this recall walked was
+    # 4.1.25: how many seconds the entity graph this recall walked was
     # behind the store. 0.0 is the normal case (writes are spliced into the
     # graph on the next recall); positive only while a large backlog waits for
     # its background rebuild; None when the graph did not run. Removed memories

@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 #: Access rows written by SLM's own maintenance, not by anyone using a memory.
 #: Consolidation logs one per source it archives; counting it as a use raised
 #: the source's strength and the next decay pass reactivated every source the
-#: consolidation had just archived (audit BRN-25).
+#: consolidation had just archived.
 _INTERNAL_ACCESS_SQL = "('consolidation')"
 
 #: A source a consolidation archived stays out of the decay pass — its

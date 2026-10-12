@@ -68,7 +68,7 @@ class ConsolidationWorker:
         }
 
         # 1. Confidence decay on unused facts. A dry run COUNTS the facts it
-        # would touch and writes nothing (audit BRN-06: the UPDATE used to run
+        # would touch and writes nothing (the UPDATE used to run
         # before the dry_run check, so a preview changed stored confidence).
         try:
             from superlocalmemory.learning.signals import LearningSignals

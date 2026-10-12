@@ -138,7 +138,7 @@ def register_optimize_tools(server) -> None:
             if mode == "normalize":
                 # Blank-line collapse of prose only; code is passed through.
                 # Not "lossless": it changes bytes, so the original is kept
-                # below whenever it did (audit BRN-04).
+                # below whenever it did.
                 normalized = CompressRouter._normalize_whitespace(content)
                 strategy = "normalize" if normalized != content else "none"
                 res = CompressTextResult(

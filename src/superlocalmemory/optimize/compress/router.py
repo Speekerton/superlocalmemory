@@ -354,7 +354,7 @@ class CompressRouter:
     def _normalize_whitespace(text: str) -> str:
         """Layer 1: collapse runs of 3+ newlines to one blank line — in prose only.
 
-        Not lossless, and no longer called that (audit BRN-04): it changes
+        Not lossless, and no longer called that: it changes
         bytes. It is safe only where a blank-line run carries no meaning, which
         is NOT true inside source code (a triple-quoted string literal holding
         three newlines changed value, and the code's own assert failed), inside

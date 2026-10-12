@@ -1161,7 +1161,7 @@ class MemoryEngine:
 
         # One identity for this recall, allocated before ranking so the bandit
         # play, any shadow-test assignment and the outcome ticket all carry the
-        # id the caller gets back (audit BRN-13: they used to be two UUIDs).
+        # id the caller gets back (they used to be two UUIDs).
         import uuid as _uuid
 
         answer_id = _uuid.uuid4().hex

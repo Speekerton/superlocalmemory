@@ -387,7 +387,7 @@ class ContextualBandit:
         ``outcome_id``: the reported outcome spent on this play, written in the
         SAME transaction as the posterior change under a unique index (M055),
         so one outcome settles one play across passes, restarts and concurrent
-        settlers (audit BRN-11); a second claim is refused and nothing moves.
+        settlers; a second claim is refused and nothing moves.
         Returns True on success. Never raises. Cache invalidated (B5).
         """
         reward_f = _clamp_reward(reward)

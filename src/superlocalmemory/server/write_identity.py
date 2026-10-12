@@ -122,7 +122,7 @@ def require_write_actor(
         return f"api-key:{actor_kind}:{fingerprint}"
 
     # Name the credential this caller can actually use. A local caller needs the
-    # install token; telling it to send an API key first (4.1.25 audit L-20) sent
+    # install token; telling it to send an API key first sent
     # it looking for a key it does not have.
     if _caller_is_local(request):
         detail = "Write rejected: " + _local_credential_hint()

@@ -358,7 +358,12 @@ def test_personal_mode_the_operator_still_changes_settings_and_restarts(personal
                           headers=who["token"])
     switch = client.post("/api/profiles/default/switch", headers=who["token"])
 
-    assert restart.status_code == 200 and len(spawned) == 1
+    # Profile switching can concurrently start an embedding verification child.
+    # Count daemon restarts specifically, including duplicate restart attempts.
+    restarts = [args for args in spawned if args[0][1:] == [
+        "-m", "superlocalmemory.cli.main", "restart", "--json",
+    ]]
+    assert restart.status_code == 200 and len(restarts) == 1
     assert optimize.status_code == 200, optimize.text
     assert switch.status_code == 200, switch.text
     assert refused == []

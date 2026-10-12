@@ -31,6 +31,8 @@ def register_enrich_parser(sub):
                                  help='Defaults to the most recent run that changed something')
         elif action == 'fix':
             command.add_argument('repair', choices=FIXES)
+            command.add_argument('--include-undone', action='store_true',
+                                 help='Also apply items from a repair you undid earlier')
         if action in ('undo', 'fix'):
             command.add_argument('--yes', action='store_true',
                                  help='Confirm without asking (needed when not interactive)')
@@ -108,8 +110,10 @@ def _undo(args):
 def _fix(args):
     if not _confirmed(args, f'Fix {args.repair.replace("-", " ")} now? You can undo it later.'):
         _fail('Nothing was changed.', 1)
-    result = _request('POST', '/api/memory-health/action',
-                      {'action': 'repair', 'repair': args.repair})
+    body = {'action': 'repair', 'repair': args.repair}
+    if getattr(args, 'include_undone', False):
+        body['include_undone'] = True
+    result = _request('POST', '/api/memory-health/action', body)
     return result, (f"Fixed {result.get('fixed', 0)} of {result.get('found', 0)}. "
                     f"Undo with: slm enrich undo {result.get('run_id', '')}".rstrip())
 

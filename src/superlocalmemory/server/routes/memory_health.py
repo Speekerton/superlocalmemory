@@ -23,6 +23,7 @@ class Action(BaseModel):
     action: Literal['pause', 'resume', 'undo', 'repair']
     run_id: str = Field('', max_length=64, pattern=r'^[a-zA-Z0-9_-]*$')
     repair: Literal['refile-hidden', 'qjl-sketches', 'entity-links'] | None = None
+    include_undone: bool = False  # `slm enrich fix --include-undone`
 
 
 def _engine(request):
@@ -60,7 +61,8 @@ def change_health(body: Action, request: Request):
             from superlocalmemory.core.health_repairs import repair_action
             if not body.repair:
                 raise ValueError('Choose the repair action.')
-            return repair_action(engine, body.repair, dry_run=False)
+            return repair_action(engine, body.repair, dry_run=False,
+                                 include_undone=body.include_undone)
         if not body.run_id:
             raise ValueError('An improvement run is required.')
         if body.action == 'undo':

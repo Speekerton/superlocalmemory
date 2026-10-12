@@ -10,8 +10,11 @@ Two kinds, and the line between them is the point (WP-19 review H1):
   lifecycle zones). The idle worker only counts them and stores a suggestion;
   they run when the user presses Fix (dashboard) or runs ``slm enrich fix``.
 
-An undone run is final: an action whose latest run was undone is never run
-automatically again, and no item an undone run touched is ever re-applied.
+An undone run is final until the user says otherwise: an action whose latest run
+was undone is never run automatically again, and the items an undone run touched
+(from the enrichment ledger, or the native entity-link repair's own undo record)
+are left out of every suggestion and every Fix. Only ``slm enrich fix <repair>
+--include-undone`` applies them again.
 """
 
 from __future__ import annotations
@@ -68,12 +71,23 @@ def _changes(db, run_id, table, before, fields):
 
 
 def undone_items(db, action) -> frozenset:
-    """Every item an undone run of *action* touched: never re-applied."""
+    """Every item an undone run of *action* touched: hidden and not re-applied.
+
+    Two ledgers: ``enrichment_changes`` (refile, sketches), and the native
+    entity-link repair's own undo record, named by ``native_run_id``.
+    """
     rows = db.execute(
         'SELECT DISTINCT c.target_id FROM enrichment_changes c '
         'JOIN memory_health_repairs r ON r.run_id=c.run_id '
         "WHERE r.action=? AND r.status='undone'", (action,))
-    return frozenset(r['target_id'] for r in rows)
+    items = {r['target_id'] for r in rows}
+    native = [r['native_run_id'] for r in db.execute(
+        'SELECT native_run_id FROM memory_health_repairs WHERE action=? '
+        "AND status='undone' AND native_run_id IS NOT NULL AND native_run_id!=''", (action,))]
+    if native:
+        from superlocalmemory.storage.entity_link_repair_apply import touched_ids
+        items |= touched_ids(db.execute, native)
+    return frozenset(items)
 
 
 def _refile(engine, dry_run, idle, skip=frozenset()):
@@ -173,7 +187,7 @@ def _entities(engine, dry_run, idle, skip=frozenset()):
     db = engine._db
     uri = f'{Path(db.db_path).absolute().as_uri()}?mode=ro'
     with closing(sqlite3.connect(uri, uri=True)) as conn:
-        proposed = plan(conn)
+        proposed = plan(conn, skip)
         found = sum(len(p.facts) + len(p.aliases) + len(p.junk) for p in proposed.profiles)
     if dry_run or not found or not idle():
         return {'found': found, 'fixed': 0}
@@ -181,7 +195,7 @@ def _entities(engine, dry_run, idle, skip=frozenset()):
     # native repair, whose own run ledger is what undo replays. Explicit only:
     # the user asked, so the whole plan is applied in one native transaction.
     run_id = _new_run(db, 'entity-links')
-    result = apply(db.db_path)
+    result = apply(db.db_path, skip)
     fixed = sum(result.get(k, 0) for k in ('facts_relinked', 'aliases_removed',
                                           'aliases_kept_relabelled', 'junk_entities_removed'))
     _record(db, run_id, 'entity-links', found, fixed, native=result.get('run_id'))
@@ -191,14 +205,19 @@ def _entities(engine, dry_run, idle, skip=frozenset()):
 _RUNNERS = {'refile-hidden': _refile, 'qjl-sketches': _qjl, 'entity-links': _entities}
 
 
-def repair_action(engine, action, *, dry_run=True, idle=lambda: True):
-    """The user's explicit repair (dashboard Fix, ``slm enrich fix``) or a dry run."""
+def repair_action(engine, action, *, dry_run=True, idle=lambda: True, include_undone=False):
+    """The user's explicit repair (dashboard Fix, ``slm enrich fix``) or a dry run.
+
+    Items an earlier, undone run touched are left out unless ``include_undone``
+    (``slm enrich fix <repair> --include-undone``) says the user wants them again.
+    """
     if action not in ACTIONS:
         raise ValueError('Unknown memory health action')
-    skip = undone_items(engine._db, action)
+    hidden = undone_items(engine._db, action)
+    skip = frozenset() if include_undone else hidden
     result = {'action': action, **_RUNNERS[action](engine, dry_run, idle, skip)}
     if not dry_run and action in EXPLICIT_ACTIONS:
-        remaining = _RUNNERS[action](engine, True, lambda: True, skip)
+        remaining = _RUNNERS[action](engine, True, lambda: True, hidden)
         _suggest(engine._db, action, remaining['found'])
     return result
 
@@ -275,6 +294,19 @@ def run_safe_repairs(engine, *, idle):
         engine._memory_health_checked = 0.0
 
 
+def _native_total(native):
+    """One ``restored`` total (what the CLI and card show) plus the native counts.
+
+    Facts, aliases and removed entities are the changes a Fix counts as ``fixed``,
+    so "Fixed 27" is undone as "27 changes restored". Edges, events and created
+    entities are consequences of those, kept in the detail only.
+    """
+    total = sum(native.get(k, 0) for k in ('facts_restored', 'aliases_restored',
+                                          'junk_entities_restored'))
+    return {**native, 'restored': total,
+            'conflicts': native.get('facts_changed_since_left_alone', 0)}
+
+
 def undo_action(engine, run_id):
     db = engine._db
     rows = db.execute('SELECT * FROM memory_health_repairs WHERE run_id=?', (run_id,))
@@ -284,7 +316,7 @@ def undo_action(engine, run_id):
         raise ValueError('That is not a run that changed anything.')
     if rows and rows[0]['native_run_id']:
         from superlocalmemory.storage.entity_link_repair_apply import undo
-        result = undo(db.db_path, rows[0]['native_run_id'])
+        result = _native_total(undo(db.db_path, rows[0]['native_run_id']))
         db.execute("UPDATE enrichment_runs SET status='undone',updated_at=? WHERE run_id=?",
                    (now(), run_id))
     else:

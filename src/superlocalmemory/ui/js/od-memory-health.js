@@ -51,7 +51,12 @@
       requestNumber += 1;
       node.disabled = true;
       notice = '';
-      call('POST', action).catch(function (error) {
+      call('POST', action).then(function (result) {
+        if (action.action === 'undo' && result && typeof result.restored === 'number') {
+          notice = 'Undone: ' + result.restored + ' changes restored.' +
+            (result.conflicts ? ' ' + result.conflicts + ' kept because they were changed since.' : '');
+        }
+      }).catch(function (error) {
         notice = error.message;
       }).finally(function () { mutationBusy = false; refresh(); });
     });

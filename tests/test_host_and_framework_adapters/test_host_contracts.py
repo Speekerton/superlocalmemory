@@ -1,6 +1,7 @@
 """WP-7 host regressions; all filesystem and socket operations are isolated."""
 
 import json
+import sys
 import threading
 from argparse import Namespace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -11,6 +12,7 @@ import pytest
 import yaml
 
 from superlocalmemory.hooks import portable_kit as kit
+from superlocalmemory.infra.data_root import canonical_data_root
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -50,9 +52,13 @@ def test_brn27_ux34_continue_retains_mcp_servers(tmp_path, existing):
     assert data["name"] and data["version"] and data["schema"] == "v1"
     assert data["mcpServers"][-1] == {
         "name": "superlocalmemory",
-        "command": "slm",
-        "args": ["mcp"],
-        "env": {"SLM_MCP_PROFILE": "full"},
+        "command": sys.executable,
+        "args": ["-m", "superlocalmemory.cli", "mcp"],
+        "env": {
+            "SLM_MCP_PROFILE": "full",
+            "SLM_MCP_HOST": "continue",
+            "SLM_DATA_DIR": str(canonical_data_root()),
+        },
     }
     if existing:
         assert data["rules"] == original["rules"]
@@ -78,7 +84,11 @@ def test_ux38_antigravity_documented_path(tmp_path, monkeypatch, here, transport
     assert block == (
         {"serverUrl": "http://127.0.0.1:29177/mcp/"}
         if transport == "http"
-        else {"command": "slm", "args": ["mcp"]}
+        else {
+            "command": sys.executable,
+            "args": ["-m", "superlocalmemory.cli", "mcp"],
+            "env": {"SLM_MCP_HOST": "antigravity", "SLM_DATA_DIR": str(canonical_data_root())},
+        }
     )
     assert result["host_verification"] == "pending"
 
@@ -162,11 +172,11 @@ import YAML from 'yaml';
 import fs from 'node:fs';
 const parsed = configYamlSchema.parse(YAML.parse(fs.readFileSync(process.argv[1], 'utf8')));
 if (!parsed.mcpServers.some(s => s.name === 'superlocalmemory' &&
-    (s.command === 'slm' || s.command === 'mcp-remote' || s.type === 'streamable-http')))
+    (s.command === process.argv[2] || s.command === 'mcp-remote' || s.type === 'streamable-http')))
   throw Error('Parser discarded SLM MCP server');
 """
     completed = subprocess.run(
-        ["node", "--input-type=module", "-e", code, str(config)],
+        ["node", "--input-type=module", "-e", code, str(config), sys.executable],
         cwd=parser_root,
         capture_output=True,
         text=True,

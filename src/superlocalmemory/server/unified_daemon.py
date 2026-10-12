@@ -4601,6 +4601,9 @@ def _register_dashboard_routes(application: FastAPI) -> None:
     from superlocalmemory.server.routes.config_api import router as config_api_router
     application.include_router(config_api_router)
 
+    from superlocalmemory.server.routes.local_apps import router as local_apps_router
+    application.include_router(local_apps_router)
+
     # Optional hosted connections must never become a local startup requirement.
     try:
         from superlocalmemory.server.routes.connections import router as connections_router
@@ -4800,7 +4803,18 @@ def _register_daemon_routes(application: FastAPI) -> None:
         writers instead present the install token, which is never the daemon
         process capability.
         """
-        from superlocalmemory.server.write_identity import require_write_actor
+        from superlocalmemory.server.loopback import is_loopback
+        from superlocalmemory.server.write_identity import (
+            authenticated_request_actor,
+            require_write_actor,
+        )
+
+        if (request.client and is_loopback(request.client.host)
+                and not any(request.headers.get(key) for key in (
+                    "X-SLM-Daemon-Capability", "X-Install-Token", "X-SLM-API-Key"))):
+            return authenticated_request_actor(
+                request, getattr(application.state, "daemon_descriptor", None),
+                actor_kind="dashboard")
 
         return require_write_actor(
             request,
@@ -5512,6 +5526,9 @@ def _register_daemon_routes(application: FastAPI) -> None:
                 accept_after_ms=_REMEMBER_ADMISSION_DEADLINE_MS,
             )
             payload = dict(receipt.payload)
+            if wait:
+                from superlocalmemory.server.remember_completion import wait_for_completion
+                payload = await wait_for_completion(engine, payload, write_profile)
             if payload.get("status") == "accepted":
                 # The writer was busy past the deadline. The memory is durable
                 # in the admission journal and is being committed now; it is
@@ -5563,27 +5580,27 @@ def _register_daemon_routes(application: FastAPI) -> None:
             _elapsed = time.monotonic() - _store_started
             _remaining = _REMEMBER_TOTAL_CEILING_SECONDS - (time.monotonic() - _request_started)
             if wait:
-                enrich_budget = _REMEMBER_ENRICHMENT_WAIT_SECONDS
+                enrich_budget = 0.0
             else:
                 # The hand-off grace below is part of the ceiling, not on top of it.
                 enrich_budget = min(
                     1.0, _REMEMBER_ENRICHMENT_WAIT_SECONDS,
                     max(0.0, _remaining - _ENRICHMENT_HANDOFF_GRACE_SECONDS),
                 )
-            if enrich_budget <= 0.0:
+            if enrich_budget <= 0.0 and not wait:
                 logger.warning(
                     "the durable write used the whole %.1fs budget (%.2fs) — this "
                     "memory is findable by its wording and the background pass "
                     "will attach its vector",
                     _REMEMBER_TOTAL_CEILING_SECONDS, _elapsed,
                 )
-            enriched = 0
+            enriched = len(fact_ids) if wait else 0
             # Taken before submitting, released by the worker. If none is free
             # the pool is already saturated, and queueing behind it would mean
             # writing to the database after this response has been sent — so the
             # write is simply reported as findable by wording and the background
             # pass picks it up, which is the intended degradation.
-            # No time left inside the ceiling: no inline wait at all.
+            # Explicit wait already completed canonical materialization above.
             _permit = enrich_budget > 0.0 and _enrichment_semaphore.acquire(blocking=False)
             if not _permit and enrich_budget > 0.0:
                 logger.warning(
@@ -5645,7 +5662,7 @@ def _register_daemon_routes(application: FastAPI) -> None:
                 # One-release compatibility alias. The durable operation ID is
                 # opaque and replaces the integer pending.db row identifier.
                 "pending_id": payload["pending_id"],
-                "status": "queryable",
+                "status": payload.get("status", "queryable"),
                 "materialization_state": payload["materialization_state"],
                 "commit_sequence": payload.get("commit_sequence"),
                 "note": (
@@ -5654,10 +5671,7 @@ def _register_daemon_routes(application: FastAPI) -> None:
                     else "stored and searchable by wording; "
                          "searchable by meaning shortly"
                 ),
-                # Retained for callers that already read it. It used to be
-                # unconditionally true, because `wait` bought nothing. It now
-                # buys a larger best-effort enrichment budget — still never a
-                # guarantee, and still never a block on durability.
+                # Explicit wait completes the canonical operation after admission.
                 "wait_ignored": False if wait else True,
             }
             if replaced is not None:
@@ -5671,6 +5685,8 @@ def _register_daemon_routes(application: FastAPI) -> None:
                 if conflict is not None:
                     response["kind_conflict"] = conflict
             return response
+        except HTTPException:
+            raise
         except Exception as exc:
             from superlocalmemory.core.remember_admission import AdmissionRejected
             from superlocalmemory.core.remember_runtime import CanonicalRememberUnavailable

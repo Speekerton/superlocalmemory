@@ -27,6 +27,9 @@ class _StrictToolServer:
     def __init__(self) -> None:
         self.tools: dict[str, object] = {}
 
+    def configure_tool_surface(self, allowed: frozenset[str]) -> None:
+        self.allowed = allowed
+
     def tool(self, *args, **kwargs):
         del args, kwargs
 
@@ -137,7 +140,8 @@ def _register_every_tool(target) -> None:
         # v4.0.8: +get_memory_summary. The essential/fallback surface must
         # mirror the full profile, so it moves with it.
         # 4.1.21: +run_view, +manage_view (saved views, issue #113).
-        ("essential", "", 57),
+        # Media handlers stay registered for actionable refusals while hidden.
+        ("essential", "", 62),
         # v4.0.8: get_memory_summary added to CORE — the summary layer's MCP
         # surface (issue #113). Counts bumped deliberately, which is what
         # this contract exists to force.
@@ -159,7 +163,7 @@ def test_registration_exposure_is_exact_and_duplicate_free(
     strict = _StrictToolServer()
 
     if exposure == "essential":
-        expected = mod._ESSENTIAL_TOOLS
+        expected = mod._ESSENTIAL_TOOLS | mod._MEDIA_TOOLS
         target = mod._FilteredServer(strict, expected)
     elif exposure == "named-core":
         expected = mod._PROFILE_DEFINITIONS["core"]
@@ -178,6 +182,12 @@ def test_registration_exposure_is_exact_and_duplicate_free(
     assert len(actual_names) == expected_count
     assert len(actual_names) == len(set(actual_names))
     assert set(actual_names) == set(strict.tools)
+
+    import asyncio
+
+    listed_names = {tool.name for tool in asyncio.run(mod.server.list_tools())}
+    assert listed_names == set(strict.tools) - mod._MEDIA_TOOLS
+    assert len(listed_names) == {"essential": 57, "named-core": 18, "whole": 104}[exposure]
 
 
 @pytest.mark.asyncio

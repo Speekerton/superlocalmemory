@@ -160,10 +160,10 @@ def test_wait_remember_completes_same_canonical_operation(
 
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert payload["materialization_state"] == "queryable"
+    assert payload["materialization_state"] == "complete"
     assert payload["fact_ids"]
     assert payload["wait_ignored"] is False, (
-        "wait now buys a larger best-effort enrichment budget; it is no "
+        "wait completes canonical enrichment; it is no "
         "longer discarded"
     )
     operation = engine_with_mock_deps._db.execute(
@@ -172,13 +172,13 @@ def test_wait_remember_completes_same_canonical_operation(
         (payload["operation_id"],),
     )
     assert dict(operation[0]) == {
-        "state": "queryable",
+        "state": "complete",
         "session_id": "session-sync",
     }
 
 
-def test_wait_remember_never_runs_inline_materialization(engine_with_mock_deps) -> None:
-    """The compatibility query parameter cannot make a model call inline."""
+def test_wait_remember_reports_canonical_completion(engine_with_mock_deps) -> None:
+    """Explicit wait completes derivation outside the admission transaction."""
     with _client(engine_with_mock_deps) as client:
         response = client.post(
             "/remember?wait=true",
@@ -190,10 +190,10 @@ def test_wait_remember_never_runs_inline_materialization(engine_with_mock_deps) 
 
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert payload["status"] == "queryable"
-    assert payload["materialization_state"] == "queryable"
+    assert payload["status"] == "complete"
+    assert payload["materialization_state"] == "complete"
     assert payload["wait_ignored"] is False, (
-        "wait now buys a larger best-effort enrichment budget; it is no "
+        "wait completes canonical enrichment; it is no "
         "longer discarded"
     )
 
@@ -631,3 +631,27 @@ def test_status_counts_saves_set_aside_as_unreadable(engine_with_mock_deps) -> N
     assert flagged["unreadable_saves"] == 1
     assert _admission_status_text(clean) == ""
     assert "Saves set aside: 1" in _admission_status_text(flagged)
+
+
+def test_wait_reports_failed_completion_without_losing_durable_save(
+    engine_with_mock_deps, monkeypatch,
+):
+    from types import SimpleNamespace
+
+    from superlocalmemory.core import engine_ingestion
+    from superlocalmemory.core.ingestion_command import IngestionState
+
+    original = engine_ingestion.build_engine_ingestion_command
+    def failing_complete(*args, **kwargs):
+        command = original(*args, **kwargs)
+        command.materialize = lambda operation_id: SimpleNamespace(
+            state=IngestionState.QUERYABLE, operation_id=operation_id)
+        return command
+    monkeypatch.setattr(engine_ingestion, 'build_engine_ingestion_command', failing_complete)
+    with _client(engine_with_mock_deps) as client:
+        response = client.post('/remember?wait=true', json={
+            'content': 'Mira approved the durable recovery decision today.',
+            'idempotency_key': 'failed-sync'})
+    assert response.status_code == 503
+    assert response.json()['detail']['code'] == 'MATERIALIZATION_INCOMPLETE'
+    assert engine_with_mock_deps._db.execute('SELECT * FROM ingestion_operations')

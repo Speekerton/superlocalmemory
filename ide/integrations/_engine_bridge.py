@@ -21,6 +21,9 @@ from pathlib import Path
 
 _MAX_FRAME = 16 * 1024 * 1024
 _TIMEOUT = 60
+# Canonical saves complete enrichment, matching the CLI synchronous budget.
+_SAVE_TIMEOUT = 300
+_SAVE_METHODS = frozenset({"add_events", "save", "update", "upsert", "create_collection"})
 
 
 def _dispose(process):
@@ -87,12 +90,12 @@ class RemoteStore:
             self._finalizer()
             raise
 
-    def _receive(self):
+    def _receive(self, timeout=_TIMEOUT):
         try:
-            result = self._results.get(timeout=_TIMEOUT)
+            result = self._results.get(timeout=timeout)
         except queue.Empty as exc:
             self._finalizer()
-            raise TimeoutError("SLM engine did not reply within 60 seconds") from exc
+            raise TimeoutError(f"SLM engine did not reply within {timeout} seconds") from exc
         if isinstance(result, Exception):
             raise result
         if not result.get("ok"):
@@ -110,7 +113,8 @@ class RemoteStore:
             try:
                 self._process.stdin.write(frame)
                 self._process.stdin.flush()
-                return self._receive()
+                timeout = _SAVE_TIMEOUT if name in _SAVE_METHODS else _TIMEOUT
+                return self._receive(timeout=timeout)
             except (BrokenPipeError, OSError, TimeoutError):
                 self._closed = True
                 self._finalizer()

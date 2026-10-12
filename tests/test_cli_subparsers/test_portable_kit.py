@@ -111,13 +111,15 @@ def _assert_slm_block_present(path: Path, desc: Any) -> None:
             servers = data[desc.server_key]
         assert "superlocalmemory" in servers
         block = servers["superlocalmemory"]
-        assert block["command"] == (["slm", "mcp"] if desc.ide_id == "opencode" else "slm")
+        expected = ([sys.executable, "-m", "superlocalmemory.cli", "mcp"]
+                    if desc.ide_id == "opencode" else sys.executable)
+        assert block["command"] == expected
     elif desc.fmt == "toml":
         import tomllib
         data = tomllib.loads(path.read_text(encoding="utf-8"))
         servers = data[desc.server_key]
         assert "superlocalmemory" in servers
-        assert servers["superlocalmemory"]["command"] == "slm"
+        assert servers["superlocalmemory"]["command"] == sys.executable
     elif desc.fmt == "yaml":
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         # continue uses contextProviders list
@@ -443,8 +445,8 @@ def test_toml_codex_roundtrip(fake_home: Path):
     data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     assert "superlocalmemory" in data[desc.server_key]
     block = data[desc.server_key]["superlocalmemory"]
-    assert block["command"] == (["slm", "mcp"] if desc.ide_id == "opencode" else "slm")
-    assert block["args"] == ["mcp"]
+    assert block["command"] == sys.executable
+    assert block["args"] == ["-m", "superlocalmemory.cli", "mcp"]
 
 
 # ---------------------------------------------------------------------------

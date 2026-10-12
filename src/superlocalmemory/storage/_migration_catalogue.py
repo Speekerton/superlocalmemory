@@ -184,6 +184,9 @@ from superlocalmemory.storage.migrations import (
 from superlocalmemory.storage.migrations import (
     M059_erasure_visibility as _M059,
 )
+from superlocalmemory.storage.migrations import (
+    M060_memory_description as _M060,
+)
 
 # Order matters: M003 creates the log table. The runner handles M003's own
 # bootstrap (it can't record itself before it exists).
@@ -392,4 +395,5 @@ DEFERRED_MIGRATIONS: list[Migration] = [
     Migration(name=_M058.NAME, db_target="memory", ddl=_M058.DDL),
     Migration(name=_M059.NAME, db_target="memory", ddl=_M059.DDL,
               dependencies=(_M035.NAME,)),
+    Migration(name=_M060.NAME, db_target="memory", ddl=_M060.DDL),
 ]

@@ -683,6 +683,7 @@ def dispatch(args: Namespace) -> None:
         # V3.3 commands
         "decay": cmd_decay,
         "quantize": cmd_quantize,
+        "enrich": cmd_enrich,
         "consolidate": cmd_consolidate,
         "soft-prompts": cmd_soft_prompts,
         "reap": cmd_reap,
@@ -1805,6 +1806,7 @@ def cmd_list(args: Namespace) -> None:
             items.append({
                 "fact_id": f.fact_id, "content": f.content,
                 "fact_type": ftype, "created_at": (f.created_at or "")[:19],
+                "stub": bool(getattr(f, "non_answer", False)),
                 **kind_fields(f, display_min_confidence=_display_min_confidence),
             })
         _data = {"results": items, "count": len(items),
@@ -1830,7 +1832,9 @@ def cmd_list(args: Namespace) -> None:
             date = (f.created_at or "")[:19]
             content = f.content[:100] + ("..." if len(f.content) > 100 else "")
             fields = kind_fields(f, display_min_confidence=_display_min_confidence)
-            print(f"  {i:3d}. [{date}] {_kind_display(fields)}: {content}")
+            # A stored stub is kept and listed, never used as an answer.
+            stub = " (stub)" if getattr(f, "non_answer", False) else ""
+            print(f"  {i:3d}. [{date}] {_kind_display(fields)}{stub}: {content}")
             print(f"       id: {f.fact_id}")
         print("\nChange one with: slm update <id> \"new text\"   "
               "Remove one with: slm delete <id>")
@@ -2962,6 +2966,7 @@ _COMMAND_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
     ]),
     ("Health & self-healing", [
         ("doctor", "Full pre-flight check (add --fix to auto-repair)"),
+        ("enrich", "Memory health: describe older memories, suggest and fix repairs, undo"),
         ("health", "Quick math/retrieval layer status"),
         ("ops", "List/resolve stuck, dead-lettered, or degraded operations (admin)"),
         ("diagnostics", "Export a local diagnostics bundle"),
@@ -3999,6 +4004,12 @@ def _cmd_doctor_checks(args: Namespace, state: dict) -> None:
             "unavailable": list(_h.unavailable),
             "summary": describe(_h),
         }
+        from superlocalmemory.core.metadata_health import from_path as _metadata_report
+        _metadata = _metadata_report(_HealthCfg.load().db_path)
+        memory_health_data["metadata"] = _metadata
+        from superlocalmemory.core.metadata_health import doctor_checks as _doctor_checks
+        for _row in _doctor_checks(_metadata):
+            _check(*_row)
         _detail = " ".join(describe(_h))
         if _h.healthy:
             _check("Memory answer-ability", "PASS", _detail)
@@ -5226,6 +5237,13 @@ def cmd_decay(args: Namespace) -> None:
     print(f"  Archive:      {result.get('archive', 0)}")
     print(f"  Forgotten:    {result.get('forgotten', 0)}")
     print(f"  Transitions:  {result.get('transitions', 0)}")
+
+
+def cmd_enrich(args: Namespace) -> None:
+    """slm enrich: the automatic background improvements (cli/enrich_cmd.py)."""
+    from superlocalmemory.cli.enrich_cmd import cmd_enrich as _run
+
+    _run(args)
 
 
 def cmd_quantize(args: Namespace) -> None:

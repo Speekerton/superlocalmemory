@@ -194,16 +194,6 @@
       // with copy-paste fix commands + a Retry-now button. The daemon
       // auto-heals fixable items on start; this is transparency + fallback.
       // Rendered by od-components.js → window.odRenderComponents.
-      // 4.1.23: memory store check and repair (od-store-check.js).
-      '<div class="card" style="margin-top:16px" id="health-section-store">' +
-        '<div class="card-head">' +
-          '<h3>Memory store</h3>' +
-          '<span class="sub">checked once after each upgrade · repairs only when you choose</span>' +
-        '</div>' +
-        '<div class="card-pad" id="store-check" aria-live="polite">' +
-          '<div class="muted-info" style="text-align:center;padding:20px">Loading…</div>' +
-        '</div>' +
-      '</div>' +
       '<div class="card" style="margin-top:16px">' +
         '<div class="card-head">' +
           '<h3>System Health — Components</h3>' +
@@ -597,7 +587,7 @@
       if (typeof window.odRenderComponents === 'function') {
         window.odRenderComponents(document.getElementById('od-h-components'));
       }
-      if (window.odStoreCheck) window.odStoreCheck.init();
+      if (window.odMountMemoryHealth) window.odMountMemoryHealth(container);
 
     }).catch(function (err) {
       container.innerHTML =

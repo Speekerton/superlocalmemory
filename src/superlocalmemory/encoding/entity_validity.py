@@ -157,7 +157,10 @@ def capitalised_mid_sentence(word: str, text: str) -> bool:
     for m in re.finditer(rf"(?<![\w/.~-]){re.escape(word)}(?![\w/-])", text or ""):
         if not opens_sentence(text, m.start()):
             return True
-    return False
+    # An explicit naming role is evidence even at a sentence boundary.
+    role = (r"\s+(?:is|was)\s+(?:(?:our|my|the|a|an)\s+)?"
+            r"(?:project|tool|application|service|colleague|teammate|client|company)\b")
+    return bool(re.search(rf"(?<![\w/.~-]){re.escape(word)}{role}", text or "", re.I))
 
 
 def valid_names(names: list[str], text: str | None) -> list[str]:

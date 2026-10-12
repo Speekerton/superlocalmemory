@@ -905,7 +905,8 @@ SLM improves how well it describes your older memories while your computer is
 idle, and offers repairs that need your say-so. `slm enrich` is the terminal
 view of the dashboard's **Memory health** card. Everything here goes through the
 running service; if it is not running the command says so and points at `slm
-serve`.
+serve`. [Memory health](memory-health.md) explains what the improvement does and
+does not touch.
 
 ### `slm enrich status|pause|resume|undo|fix`
 

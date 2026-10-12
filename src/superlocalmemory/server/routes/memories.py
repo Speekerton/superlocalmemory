@@ -17,6 +17,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from superlocalmemory.core.config import BROWSE_PAGE_SIZE
 from superlocalmemory.retrieval import remote_view
 from superlocalmemory.storage.database import (
+    stub_flag_sql_for_connection,
     visible_fact_clause_for_connection,
 )
 from superlocalmemory.storage.erasure_visibility import (
@@ -611,6 +612,9 @@ def get_memories(
             # real ones -- the count a user reads, inflated by exactly the
             # 1,299 rows 4.0.10 withheld.
             visible = visible_fact_clause_for_connection(conn)
+            # Stored stubs are listed and counted like any memory, flagged
+            # ("stub" badge); only recall leaves them out (WP-19).
+            stub_flag = stub_flag_sql_for_connection(conn)
             # project_name: NOT session_id (that is a different field — see
             # mcp/tools_core.py's remember(), which stores them separately in
             # the same metadata dict). The project a memory was saved under
@@ -637,7 +641,7 @@ def get_memories(
                 "(SELECT CASE WHEN json_valid(m.metadata_json) "
                 " THEN json_extract(m.metadata_json, '$.project') END "
                 " FROM memories m WHERE m.memory_id = atomic_facts.memory_id) "
-                "as project_name, scope, shared_with "
+                f"as project_name, scope, shared_with, {stub_flag} AS stub "
                 f"FROM atomic_facts WHERE {scope_where}{visible}"
             )
             params = list(scope_params)
@@ -821,6 +825,9 @@ def get_memories(
                 for row in memories:
                     row.update(kind_fields(row, display_min_confidence=threshold))
 
+        if use_v3:
+            for row in memories:
+                row["stub"] = bool(row.get("stub"))
         response = {
             "memories": memories, "total": total,
             "limit": limit, "offset": offset,

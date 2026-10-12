@@ -1384,10 +1384,13 @@ class RetrievalEngine:
         needed = [fr.fact_id for fr in fused]
         if not needed:
             return {}
+        # The recall answer path opts in to excluding stored stubs (WP-19):
+        # every channel's candidates are hydrated here, so one clause covers all.
         facts = self._db.get_facts_by_ids(
             needed, profile_id,
             include_global=include_global,
             include_shared=include_shared,
+            exclude_non_answer=True,
         )
         return visibility.drop_hidden_facts({f.fact_id: f for f in facts}, self._db)
 

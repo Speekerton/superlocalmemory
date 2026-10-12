@@ -98,6 +98,7 @@ _EXACT: dict[str, Rule] = {
     # Installation-wide state: one setting for every workspace.
     **{path: _GLOBAL for path in (
         "/api/rbac/policy",
+        "/api/memory-kinds/settings",
         "/api/daemon/restart",
         "/api/v3/components/heal",
         "/api/v3/ide/connect",

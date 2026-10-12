@@ -570,17 +570,21 @@ _REFUSAL_HELP = {
 }
 
 
-def refusal_result(reason: str) -> dict:
+def refusal_result(reason: str, kind: OperationKind | None = None) -> dict:
     """The tool result for a refused call (reported to MCP clients as isError)."""
+    policy = _DEFAULT_REGISTRY.get_policy(kind) if kind is not None else None
+    roles = sorted(role.value for role in policy.required_roles) if policy is not None else []
+    message = _REFUSAL_HELP.get(reason, "This call is not allowed by the workspace policy.")
+    if roles:
+        message += " Required role on this workspace: " + " or ".join(roles) + "."
     return {
         "success": False,
         "error": "not_authorized",
         "code": "NOT_AUTHORIZED",
         "retryable": False,
         "reason": reason,
-        "message": _REFUSAL_HELP.get(
-            reason, "This call is not allowed by the workspace policy.",
-        ),
+        "message": message,
+        "required_roles": roles,
     }
 
 
@@ -621,8 +625,11 @@ def admits(kind: OperationKind, *, http_kind: OperationKind | None = None):
             try:
                 admit(effective_kind, actor, mode=mode)
             except AdmissionDenied as exc:
-                return refusal_result(exc.decision.reason)
-            return await fn(*args, **kwargs)
+                return refusal_result(exc.decision.reason, effective_kind)
+            try:
+                return await fn(*args, **kwargs)
+            except AdmissionDenied as exc:
+                return refusal_result(exc.decision.reason, effective_kind)
         wrapper._slm_admission_gated = True
         return wrapper
     return decorator

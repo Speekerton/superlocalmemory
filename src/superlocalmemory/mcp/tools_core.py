@@ -1250,6 +1250,12 @@ def register_core_tools(server, get_engine: Callable) -> None:
                 "current_profile": profile_id,
                 "generation": generation,
             }
+        except PermissionError:
+            from superlocalmemory.core.admission import refusal_result
+            from superlocalmemory.core.caller_session import presented_session
+
+            reason = "insufficient_roles" if presented_session() else "authentication_required"
+            return refusal_result(reason, OperationKind.RECALL)
         except Exception as exc:
             logger.exception("switch_profile failed")
             return {"success": False, "error": str(exc)}

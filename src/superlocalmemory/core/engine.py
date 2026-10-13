@@ -486,6 +486,7 @@ class MemoryEngine:
             self._maintenance_scheduler = MaintenanceScheduler(
                 self._db, self._config, self._profile_id,
                 embedder=self._embedder,  # v3.8.2: periodic NULL-embedding self-heal
+                fact_writer=self._store_coverage_fact,  # 4.2.5: coverage backfill
             )
             self._maintenance_scheduler.start()
         except Exception as exc:
@@ -607,6 +608,22 @@ class MemoryEngine:
             role=role,
             require_complete=True,
             profile_id=profile_id,
+        )
+
+    def _store_coverage_fact(self, fact: AtomicFact) -> str:
+        """Add one sentence fact to its existing memory (core/coverage_backfill.py).
+
+        ``store_fact_direct`` gives a prebuilt fact a memory of its own; a
+        coverage fact belongs to the memory it was cut from, so deleting that
+        memory deletes it too.
+        """
+        from superlocalmemory.core.store_pipeline import run_store_fact_direct
+
+        return run_store_fact_direct(
+            fact, fact.profile_id, db=self._db, embedder=self._embedder,
+            entity_resolver=self._entity_resolver, ann_index=self._ann_index,
+            graph_builder=self._graph_builder, retrieval_engine=self._retrieval_engine,
+            vector_store=self._vector_store,
         )
 
     def store_fact_direct(

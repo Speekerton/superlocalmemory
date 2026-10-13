@@ -21,7 +21,8 @@ import logging
 from datetime import timedelta
 import os
 import threading
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from superlocalmemory.core.config import SLMConfig
@@ -104,8 +105,12 @@ class MaintenanceScheduler:
         config: SLMConfig,
         profile_id: str = "default",
         embedder: object | None = None,
+        fact_writer: Callable[[Any], object] | None = None,
     ) -> None:
         self._db = db
+        # 4.2.5: stores one prebuilt fact with full enrichment; the coverage
+        # backfill needs it (core/coverage_backfill.py).
+        self._fact_writer = fact_writer
         self._config = config
         self._profile_id = profile_id
         # v3.8.2 self-heal: when provided, periodic maintenance backfills
@@ -180,6 +185,12 @@ class MaintenanceScheduler:
         self._initial_hub_timer = threading.Timer(390.0, self._hub_baseline_pass)
         self._initial_hub_timer.daemon = True
         self._initial_hub_timer.start()
+        # 4.2.5: memories saved before coverage-at-save get a fact for every
+        # sentence. Same one-shot pattern, after the others; the periodic
+        # cycle then continues it in bounded steps.
+        self._initial_coverage_timer = threading.Timer(450.0, self._coverage_pass)
+        self._initial_coverage_timer.daemon = True
+        self._initial_coverage_timer.start()
         logger.info(
             "Maintenance scheduler started (interval=%dm)",
             self._config.forgetting.scheduler_interval_minutes,
@@ -218,6 +229,28 @@ class MaintenanceScheduler:
             self._record_step("hub baseline", True)
         except Exception as exc:
             self._record_step("hub baseline", False, str(exc))
+
+    def _coverage_pass(self, max_batches: int | None = 40) -> None:
+        """Add the missing sentence facts of older memories, bounded and
+        resumable (core/coverage_backfill.py)."""
+        if not self._running or self._fact_writer is None:
+            return
+        try:
+            from superlocalmemory.core.coverage_backfill import CoverageBackfill
+            from superlocalmemory.infra.data_root import state_path
+
+            self._coverage_job = CoverageBackfill(
+                self._db, self._fact_writer, state_dir=state_path("backfill"),
+                max_batches=max_batches,
+                limit=self._config.encoding.coverage_facts_per_memory,
+            )
+            written = self._coverage_job.run_until_done()
+            if written:
+                logger.info("Coverage backfill: %d sentence facts added (%s)", written,
+                            "done" if self._coverage_job.finished else "more next cycle")
+            self._record_step("coverage backfill", True)
+        except Exception as exc:  # noqa: BLE001
+            self._record_step("coverage backfill", False, str(exc))
 
     def _project_backfill(self) -> None:
         """Tag a bounded batch of session-end summaries with their project
@@ -318,6 +351,13 @@ class MaintenanceScheduler:
         if _hub_timer is not None:
             _hub_timer.cancel()
             self._initial_hub_timer = None
+        _coverage_timer = getattr(self, "_initial_coverage_timer", None)
+        if _coverage_timer is not None:
+            _coverage_timer.cancel()
+            self._initial_coverage_timer = None
+        _coverage_job = getattr(self, "_coverage_job", None)
+        if _coverage_job is not None:  # stops after the memory in progress
+            _coverage_job.stop()
         _hub_pass = getattr(self, "_hub_pass", None)
         if _hub_pass is not None:  # stops between batches
             _hub_pass.stop(timeout=0)
@@ -571,6 +611,7 @@ class MaintenanceScheduler:
         # #150: once per cycle, all profiles in one sweep (each row stays in
         # its own profile); batched, so the write lock is held per batch.
         self._project_backfill()
+        self._coverage_pass()
 
         # Anything that has failed on several cycles running is not a blip.
         # Every step here logs and continues, which is right -- one broken step

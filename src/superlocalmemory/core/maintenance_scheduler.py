@@ -233,8 +233,9 @@ class MaintenanceScheduler:
     def _coverage_pass(self, max_batches: int | None = 40) -> None:
         """Add the missing sentence facts of older memories, bounded and
         resumable (core/coverage_backfill.py)."""
-        if not self._running or self._fact_writer is None:
-            return
+        limit = self._config.encoding.coverage_backfill_per_memory
+        if not self._running or self._fact_writer is None or limit <= 0:
+            return  # 0 turns the pass off
         try:
             from superlocalmemory.core.coverage_backfill import CoverageBackfill
             from superlocalmemory.infra.data_root import state_path
@@ -242,7 +243,7 @@ class MaintenanceScheduler:
             self._coverage_job = CoverageBackfill(
                 self._db, self._fact_writer, state_dir=state_path("backfill"),
                 max_batches=max_batches,
-                limit=self._config.encoding.coverage_backfill_per_memory,
+                limit=limit,
             )
             written = self._coverage_job.run_until_done()
             if written:

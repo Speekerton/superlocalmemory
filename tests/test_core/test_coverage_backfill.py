@@ -176,3 +176,20 @@ def test_newest_memories_are_covered_first(tmp_path):
     newest = _memory(db)
     _, written = _run(db, tmp_path, batch=1, max_batches=1)
     assert {f.memory_id for f in written} == {newest.memory_id}
+
+
+def test_a_cap_of_zero_turns_the_pass_off(tmp_path, monkeypatch):
+    from superlocalmemory.core.config import SLMConfig
+    from superlocalmemory.core.maintenance_scheduler import MaintenanceScheduler
+
+    monkeypatch.setenv("SLM_DATA_DIR", str(tmp_path / "data"))
+    db = _db(tmp_path / "memory.db")
+    _memory(db)
+    config = SLMConfig()
+    config.encoding.coverage_backfill_per_memory = 0
+    written: list[AtomicFact] = []
+    scheduler = MaintenanceScheduler(db, config, fact_writer=written.append)
+    scheduler._running = True
+    scheduler._coverage_pass()
+    assert written == []
+    assert not (tmp_path / "data" / "backfill").exists()  # not even a scan

@@ -283,6 +283,8 @@ class EncodingConfig:
     max_facts_per_chunk: int = 10  # V3.3.11: increased from 5 to preserve more details
     # 4.2.5: verbatim facts per memory for sentences extraction missed (0 = off)
     coverage_facts_per_memory: int = 40
+    # 4.2.5: the same, for memories saved before it (the daemon backfill)
+    coverage_backfill_per_memory: int = 10
     min_fact_confidence: float = 0.3
 
     # Entity resolution

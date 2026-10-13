@@ -15,8 +15,9 @@ memory ever had, live or not, so a corrected or forgotten sentence is not
 brought back.
 
 Each added fact is appended to ``coverage-backfill.jsonl`` (fact and memory
-ids) so the pass can be undone exactly. ``coverage-backfill.json`` holds the
-last memory reached; a stop loses nothing and a restart resumes there.
+ids) so the pass can be undone exactly. Newest memories first: they are the
+ones being asked about. ``coverage-backfill.json`` holds the last memory
+reached; a stop loses nothing and a restart resumes there.
 """
 
 from __future__ import annotations
@@ -40,19 +41,21 @@ LOCK = "coverage-backfill.lock"
 STATE = "coverage-backfill.json"
 #: Longer memories are stored truncated with a source pointer; left as they are.
 MAX_CHARS = 24000
+#: Above any rowid: the newest-first pass starts here.
+_TOP = 2**62
 
 _CANDIDATES = """
 SELECT m.rowid AS rid, m.memory_id, m.profile_id, m.content, m.session_id,
        m.session_date, m.scope, m.shared_with
 FROM memories m
-WHERE m.rowid > ? AND length(m.content) BETWEEN 40 AND ?
+WHERE m.rowid < ? AND length(m.content) BETWEEN 40 AND ?
   AND EXISTS (SELECT 1 FROM atomic_facts s
               WHERE s.memory_id = m.memory_id AND s.content = m.content
                 AND s.quarantined = 0 AND s.non_answer = 0
                 AND s.lifecycle != 'archived' AND s.merged_into IS NULL
                 AND s.valid_until IS NULL)
   {erased}
-ORDER BY m.rowid
+ORDER BY m.rowid DESC
 LIMIT ?
 """
 _ERASED = "AND NOT EXISTS (SELECT 1 FROM projection_tombstones t WHERE t.memory_id = m.memory_id)"
@@ -79,19 +82,20 @@ def plan(execute: Callable, row, limit: int = DEFAULT_LIMIT) -> list[AtomicFact]
     ]
 
 
-def pending(execute: Callable, limit: int = DEFAULT_LIMIT, after_rowid: int = 0) -> tuple[int, int]:
+def pending(execute: Callable, limit: int = DEFAULT_LIMIT,
+            before_rowid: int = _TOP) -> tuple[int, int]:
     """(memories, facts) the pass would add, without writing anything."""
     memories = facts = 0
     sql = _candidates_sql(execute)
     while True:
-        rows = execute(sql, (after_rowid, MAX_CHARS, 500))
+        rows = execute(sql, (before_rowid, MAX_CHARS, 500))
         if not rows:
             return memories, facts
         for row in rows:
             n = len(plan(execute, row, limit))
             memories += 1 if n else 0
             facts += n
-        after_rowid = rows[-1]["rid"]
+        before_rowid = rows[-1]["rid"]
 
 
 class CoverageBackfill:
@@ -119,12 +123,12 @@ class CoverageBackfill:
         try:
             return json.loads((self._dir / STATE).read_text())
         except (OSError, ValueError):
-            return {"after_rowid": 0, "finished": False}
+            return {"before_rowid": _TOP, "finished": False}
 
-    def _save(self, after_rowid: int, finished: bool) -> None:
+    def _save(self, before_rowid: int, finished: bool) -> None:
         self._dir.mkdir(parents=True, exist_ok=True)
         tmp = self._dir / (STATE + ".tmp")
-        tmp.write_text(json.dumps({"after_rowid": after_rowid, "finished": finished,
+        tmp.write_text(json.dumps({"before_rowid": before_rowid, "finished": finished,
                                    "written": self.written}))
         tmp.replace(self._dir / STATE)
 
@@ -154,11 +158,14 @@ class CoverageBackfill:
         from superlocalmemory.core.recall_gate import background_work
 
         state = self._state()
-        after, batches = int(state.get("after_rowid") or 0), 0
+        if state.get("finished"):
+            self.finished = True  # newer memories were covered when saved
+            return 0
+        before, batches = int(state.get("before_rowid") or _TOP), 0
         sql = _candidates_sql(self._db.execute)
         while not self._stop.is_set() and (self._max_batches is None
                                            or batches < self._max_batches):
-            rows = self._db.execute(sql, (after, MAX_CHARS, self._batch))
+            rows = self._db.execute(sql, (before, MAX_CHARS, self._batch))
             if not rows:
                 self.finished = True
                 break
@@ -170,8 +177,8 @@ class CoverageBackfill:
                         self._write(fact)
                         self._record(fact)
                         self.written += 1
-                    after = row["rid"]
-            self._save(after, False)
+                    before = row["rid"]
+            self._save(before, False)
             batches += 1
-        self._save(after, self.finished)
+        self._save(before, self.finished)
         return self.written

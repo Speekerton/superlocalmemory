@@ -73,7 +73,7 @@ def test_every_added_fact_is_in_the_ledger(tmp_path):
     assert [json.loads(line)["fact_id"] for line in lines] == [f.fact_id for f in written]
 
 
-def test_a_second_run_adds_nothing_and_starts_after_the_last_memory(tmp_path):
+def test_a_finished_pass_adds_nothing_again(tmp_path):
     db = _db(tmp_path / "memory.db")
     _memory(db)
     _, first = _run(db, tmp_path)
@@ -82,7 +82,7 @@ def test_a_second_run_adds_nothing_and_starts_after_the_last_memory(tmp_path):
     _, second = _run(db, tmp_path)
     assert second == []
     state = json.loads((tmp_path / "coverage-backfill.json").read_text())
-    assert state["finished"] is True and state["after_rowid"] >= 1
+    assert state["finished"] is True and state["before_rowid"] >= 1
 
 
 def test_untouched_when_the_whole_memory_is_not_live(tmp_path):
@@ -163,3 +163,11 @@ def test_a_second_process_waits_its_turn(tmp_path):
         fcntl.flock(held, fcntl.LOCK_EX)
         assert _run(db, tmp_path)[1] == []
     assert len(_run(db, tmp_path)[1]) == 2
+
+
+def test_newest_memories_are_covered_first(tmp_path):
+    db = _db(tmp_path / "memory.db")
+    _memory(db, NOTE.replace("Wednesday", "Monday"))
+    newest = _memory(db)
+    _, written = _run(db, tmp_path, batch=1, max_batches=1)
+    assert {f.memory_id for f in written} == {newest.memory_id}

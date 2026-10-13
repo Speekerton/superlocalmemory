@@ -242,7 +242,7 @@ class MaintenanceScheduler:
             self._coverage_job = CoverageBackfill(
                 self._db, self._fact_writer, state_dir=state_path("backfill"),
                 max_batches=max_batches,
-                limit=self._config.encoding.coverage_facts_per_memory,
+                limit=self._config.encoding.coverage_backfill_per_memory,
             )
             written = self._coverage_job.run_until_done()
             if written:

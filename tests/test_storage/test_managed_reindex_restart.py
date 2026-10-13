@@ -16,6 +16,15 @@ from tests.helpers.env_capabilities import NO_VECTOR_SEARCH_REASON, vector_searc
 from tests.test_runtimes.conftest import StubEnv
 from tests.test_storage.test_embedding_reindex_units import store  # noqa: F401
 
+
+@pytest.fixture(autouse=True)
+def _target_model_is_approved_for_text(monkeypatch):
+    """These tests are about the re-index mechanics on a managed model. Whether a
+    managed model may take text at all is tests/test_storage/test_every_switch_door_is_guarded.py."""
+    from superlocalmemory.retrieval import support_recipe
+    monkeypatch.setattr(support_recipe, "approved_for_text", lambda model: True)
+
+
 MEMORY_MESSAGE = "Not enough free memory to load the model right now; try again later."
 
 pytestmark = pytest.mark.skipif(not vector_search_available(), reason=NO_VECTOR_SEARCH_REASON)

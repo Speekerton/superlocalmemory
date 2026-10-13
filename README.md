@@ -36,7 +36,7 @@ Three ways in. All three end in the same setup: your text memory on this machine
 
 **1. Ask your agent.** Copy this into Claude Code, Codex, Cursor or any agent that can run commands:
 
-```text
+```
 Install SuperLocalMemory on this computer for me. Follow
 https://github.com/qualixar/superlocalmemory/blob/main/SETUP_FOR_AGENTS.md
 step by step and show me what each step printed. Ask me only one question,
@@ -53,12 +53,12 @@ slm setup                         # pick Mode A to keep everything on this machi
 slm connect claude-code           # or codex, cursor, windsurf, zed, claude-desktop, jetbrains, opencode ...
 ```
 
-**3. pip**, the other primary route (Python 3.12 to 3.14), in a Python virtual environment you activate (pipx works too: `pipx install superlocalmemory`):
+**3. pip**, the other primary route (Python 3.12 to 3.14), in a Python virtual environment you activate:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate         # Windows: .venv\Scripts\activate
-python -m pip install superlocalmemory
+python -m pip install superlocalmemory   # or, without a venv: pipx install superlocalmemory
 slm setup
 slm connect claude-code
 slm media enable                  # optional: pictures and documents (about 1.5 GB; needs 16 GB of memory)

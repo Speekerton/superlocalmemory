@@ -18,6 +18,15 @@ from superlocalmemory.core.config import EmbeddingConfig  # noqa: E402
 from superlocalmemory.storage import embedding_spaces as sp  # noqa: E402
 from tests.test_storage.test_embedding_reindex_units import FakeEmbedder, store  # noqa: E402,F401
 
+
+@pytest.fixture(autouse=True)
+def _target_model_is_approved_for_text(monkeypatch):
+    """These tests are about the re-index mechanics on a managed model. Whether a
+    managed model may take text at all is tests/test_storage/test_every_switch_door_is_guarded.py."""
+    from superlocalmemory.retrieval import support_recipe
+    monkeypatch.setattr(support_recipe, "approved_for_text", lambda model: True)
+
+
 EG2 = "google/embeddinggemma-2"
 LIVE = EmbeddingConfig(provider="sentence-transformers", model_name="old-model", dimension=8)
 

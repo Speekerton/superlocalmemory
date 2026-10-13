@@ -14,6 +14,15 @@ from tests.test_storage.test_embedding_reindex_units import _target
 from tests.test_storage.test_embedding_reindex_units import store as store
 
 
+@pytest.fixture(autouse=True)
+def _target_model_is_approved_for_text(monkeypatch):
+    """These tests are about the re-index mechanics on a managed model. Whether a
+    managed model may take text at all is tests/test_storage/test_every_switch_door_is_guarded.py."""
+    from superlocalmemory.retrieval import support_recipe
+    monkeypatch.setattr(support_recipe, "approved_for_text", lambda model: True)
+
+
+
 def test_cold_managed_load_does_not_reserve_the_workers_ram_lock(store, monkeypatch):
     root, path = store
     target = replace(_target('fake:4', 4), provider='slm-media')

@@ -57,7 +57,7 @@ There are three ways in, and all three end in the same setup.
 commands. It follows [SETUP_FOR_AGENTS.md](../SETUP_FOR_AGENTS.md) and asks you one
 question:
 
-```text
+```
 Install SuperLocalMemory on this computer for me. Follow
 https://github.com/qualixar/superlocalmemory/blob/main/SETUP_FOR_AGENTS.md
 step by step and show me what each step printed. Ask me only one question,

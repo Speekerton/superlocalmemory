@@ -53,7 +53,7 @@ const HASHED = ['od-brain.js', 'od-graph.js', 'fact-detail.js', 'od-memories.js'
                 'od-shell.js', 'od-settings.js', 'od-answercheck.js', 'od-answercheck-tryit.js',
                 // 4.1.20 audit: the Memory activity fix and the Automatic answer-check
                 // state lived in files a browser could keep serving from cache.
-                'dashboard.js', 'answer-check.js', 'recall-lab.js',
+                'dashboard.js', 'answer-check.js', 'recall-lab.js', 'modal.js', 'od-team.js', 'od-signin-gate.js', 'od-sources.js', 'od-source-button.js', 'od-startup.js', 'od-polish.js',
                 // 4.1.21 (#113): the Summaries and Saved views panes.
                 'od-summaries.js', 'od-views.js',
                 // 4.1.21: the Ops Health table now explains an unconfirmed deletion;

@@ -230,6 +230,7 @@ function renderRecallPage() {
         contentDiv.style.cssText = 'white-space:pre-wrap; line-height:1.5;';
         var truncated = displayText.length > 500 ? displayText.substring(0, 500) + '...' : displayText;
         contentDiv.textContent = truncated;
+        item.title = 'Open to read the whole memory';
         item.appendChild(contentDiv);
 
         // Expandable atomic fact section (only if source differs from content)
@@ -279,7 +280,8 @@ function renderRecallPage() {
         // Click for detail modal
         item.style.cursor = 'pointer';
         (function(result) {
-            contentDiv.addEventListener('click', function() {
+            item.addEventListener('click', function(ev) {
+                if (ev.target.closest && ev.target.closest('button,a,input')) return;
                 if (typeof openMemoryDetail === 'function') {
                     openMemoryDetail({
                         id: result.fact_id,

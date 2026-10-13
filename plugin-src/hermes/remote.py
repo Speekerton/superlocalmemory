@@ -336,8 +336,28 @@ REMOTE_COMMANDS: dict[str, RemoteSpec] = {
 }
 
 
+REINSTALL_HINT = ("hermes plugins install <the SuperLocalMemory repository>#hermes-plugin "
+                  "--force --ref <the commit of the SLM release tag> "
+                  "(docs/hermes.md, Upgrade, has the exact command)")
+
+
+def compatible(version: str | None, release: tuple[int, int, int]) -> bool:
+    """The SLM this plugin can drive: same major version, this release or newer.
+
+    The plugin uses only CLI commands and MCP tools that stay stable within a
+    major version. An exact match stopped every command after a routine SLM
+    upgrade until the plugin was reinstalled by commit; an older SLM is still
+    refused, since it may lack what this plugin calls.
+    """
+    try:
+        found = tuple(int(part) for part in str(version or "").strip().split(".")[:3])
+    except ValueError:
+        return False
+    return len(found) == 3 and found[0] == release[0] and found >= release
+
+
 def version_problem(ctx: Any, health: RemoteHealth, release: tuple[int, int, int]) -> str | None:
-    """The plugin runs only with the SLM release it ships with, remote or local."""
+    """The plugin runs with the SLM release it ships with or a newer one of the same major."""
     wanted = ".".join(str(p) for p in release)
     cached = health.cached_version()
     if cached is False:
@@ -349,9 +369,10 @@ def version_problem(ctx: Any, health: RemoteHealth, release: tuple[int, int, int
         version = env.payload.get("version") if isinstance(env.payload, dict) else None
         health.remember_version(str(version) if version else None)
         cached = health.cached_version()
-    if cached != wanted:
-        return (f"Hermes SLM plugin requires exactly SLM {wanted} on the SLM server; the server "
-                f"reports {cached or 'no version'}. Upgrade one side so they match.")
+    if not compatible(cached, release):
+        return (f"Hermes SLM plugin needs SLM {wanted} or a newer {release[0]}.x on the SLM server; "
+                f"the server reports {cached or 'no version'}. Upgrade SLM, or move the plugin to "
+                f"the server's release: {REINSTALL_HINT}")
     return None
 
 

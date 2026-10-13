@@ -268,9 +268,30 @@
         ctx.chooseBtn = null;
         return;
       }
-      if (errCode(res) === 'remote_access_on') return remoteNotice(ctx.preview);
-      note(ctx.preview, F().failText(res, 'Could not open the folder picker.'));
+      if (errCode(res) === 'remote_access_on') {
+        remoteNotice(ctx.preview);
+      } else {
+        note(ctx.preview, F().failText(res, 'Could not open the folder picker.'));
+      }
+      // The answer appears under the form; bring it into view so a click
+      // never looks like it did nothing.
+      if (ctx.preview.scrollIntoView) ctx.preview.scrollIntoView({ block: 'center', behavior: 'smooth' });
     });
+  }
+
+  // Folders are refused while remote access is on. Say so before anyone
+  // clicks, next to the button, and switch the button off until it changes.
+  function pausedForRemote(ctx) {
+    if (ctx.chooseBtn) {
+      ctx.chooseBtn.disabled = true;
+      ctx.chooseBtn.title = 'Turn remote access off to connect a folder';
+    }
+    if (!ctx.remoteBox) {
+      ctx.remoteBox = el('div', 'od-folder-remote');
+      ctx.remoteBox.setAttribute('role', 'status');
+      ctx.form.insertBefore(ctx.remoteBox, ctx.form.firstChild);
+    }
+    remoteNotice(ctx.remoteBox);
   }
 
   function showSuggestions(ctx, items) {
@@ -285,6 +306,7 @@
   function loadSuggestions(ctx) {
     F().api('GET', BASE + '/suggestions').then(function (res) {
       ctx.chips.textContent = '';
+      if (!res.ok && errCode(res) === 'remote_access_on') return pausedForRemote(ctx);
       if (res.ok && res.data && res.data.suggestions && res.data.suggestions.length) {
         ctx.chips.appendChild(el('p', 'muted', 'Suggested folders:'));
         showSuggestions(ctx, res.data.suggestions);

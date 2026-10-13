@@ -24,10 +24,6 @@
 <img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/docs/assets/gifs/recall-tiers.gif" alt="Recall in the dashboard: a real question gets its answer; a gibberish question gets 'That isn't in SuperLocalMemory.'; a real question memory cannot answer exactly gets the closest memories, labelled" width="820">
 
 
-### Watch the four-minute product film
-
-[![Watch the SuperLocalMemory product film: Claude Code and Codex sharing one memory](https://img.youtube.com/vi/pyAu_vaIYZQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=pyAu_vaIYZQ)
-
 </div>
 
 **Agents forget everything between sessions. The usual fix — a vector store with a save button — makes it worse:** it always returns *something*, even when nothing it holds answers the question, and your agent builds on it. This is a memory **brain**, not a bucket: it understands what was saved (who, what, when, which project), keeps it true over time, governs who may see it, and refuses to bluff. Four arXiv papers describe how it works.
@@ -97,6 +93,16 @@ Real output from a fresh Mode A install, trimmed. Scores rank memories; they are
 **12. Science, not vibes.** Four arXiv papers back every layer: information-geometric retrieval, biologically inspired forgetting, Bayesian trust against memory poisoning, and governed memory with measured costs. The core math runs without a language model, and the published benchmarks state exactly how they were measured.
 
 SuperLocalMemory is part of Qualixar's AI Reliability Engineering work: agent memory that is observable, bounded and honest about what it doesn't know.
+
+## Watch it work
+
+<div align="center">
+
+[![Watch the SuperLocalMemory product film: Claude Code and Codex sharing one memory](https://img.youtube.com/vi/pyAu_vaIYZQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=pyAu_vaIYZQ)
+
+*The four-minute product film: Claude Code and Codex sharing one memory.*
+
+</div>
 
 ## Works with your agents
 

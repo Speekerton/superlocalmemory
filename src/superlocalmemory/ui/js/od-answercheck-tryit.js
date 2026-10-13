@@ -141,12 +141,23 @@
       var score = typeof rel === 'number' ? Math.round(rel * 100) + '% relevant' : '';
       var text = String(r.content || '');
       if (text.length > SNIPPET) text = text.slice(0, SNIPPET) + '…';
-      list.appendChild(el('li', { style: 'margin-bottom:6px' }, [
+      var item = el('li', { style: 'margin-bottom:6px' }, [
         el('span', { class: 'badge neutral', style: 'margin-right:6px', text: score || 'match' }),
         (r.memory_kind_label || r.memory_kind) ? el('span', { class: 'badge cyan', style: 'margin-right:6px',
           text: kindBadgeText(r) }) : null,
         el('span', { class: 'ac-snippet', text: text }),
-      ]));
+      ]);
+      // A found memory opens in full in the Memories tab.
+      if (r.fact_id && typeof window.odOpenMemory === 'function') {
+        item.style.cursor = 'pointer';
+        item.title = 'Open this memory in Memories';
+        item.setAttribute('role', 'link');
+        item.tabIndex = 0;
+        var open = function () { window.odOpenMemory(String(r.fact_id)); };
+        item.addEventListener('click', open);
+        item.addEventListener('keydown', function (e) { if (e.key === 'Enter') open(); });
+      }
+      list.appendChild(item);
     });
     col.appendChild(list);
     if (results.length > 3) {

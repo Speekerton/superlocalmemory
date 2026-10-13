@@ -20,6 +20,21 @@ To pin an exact release, add `--ref` with that release's 40-character commit.
 Hermes asks before it enables the plugin (`--no-enable` installs it disabled);
 the plugin cannot grant itself capabilities or MCP access.
 
+## Upgrade
+
+The plugin works with the SLM release it came with and every newer release of
+the same major version, so upgrading SLM does not stop `/slm` commands. To move
+a pinned plugin to a new release, reinstall it at that release's commit:
+
+```bash
+SHA=$(git ls-remote https://github.com/qualixar/superlocalmemory.git refs/tags/v4.2.1^{} | cut -f1)
+hermes plugins install 'https://github.com/qualixar/superlocalmemory.git#hermes-plugin' --force --ref "$SHA"
+```
+
+Replace `v4.2.0` with the release you run (`slm --version`). `hermes plugins
+update superlocalmemory` refuses a pinned plugin by design; `--force` with a new
+`--ref` is the supported way to move it.
+
 The plugin ships 16 namespaced skills, four on-demand Hermes child-agent
 roles, `/slm <command>`, and `/slm-<command>` aliases for the public SLM CLI.
 It calls only the configured `superlocalmemory` MCP server. Grant that server

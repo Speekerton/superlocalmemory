@@ -261,7 +261,7 @@ def test_version_mismatch_refuses_commands(module) -> None:
     ctx = Ctx(module, answers={"get_status": {"ok": True, "result": json.dumps(
         {"success": True, "version": "0.0.1"})}})
     plugin = module.SlmHermesPlugin(ctx)
-    assert "requires exactly SLM" in plugin.slash_router("recall x")
+    assert "or a newer" in plugin.slash_router("recall x")
     assert plugin.slash_router("remember x").startswith("NOT SAVED")
     assert [tool for _, tool, *_ in ctx.calls] == ["get_status"]  # cached, then refused
 

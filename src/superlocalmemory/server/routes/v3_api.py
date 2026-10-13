@@ -108,7 +108,16 @@ def _resolve_profile(request: Request, requested: str = "") -> str:
 
     if requested and not isinstance(requested, str):
         raise HTTPException(status_code=422, detail="profile must be a string")
-    profile = requested.strip() if requested else get_active_profile()
+    if requested:
+        profile = requested.strip()
+    else:
+        # A signed-in person's own workspace when they name none, exactly as
+        # /recall routes it (caller_workspace.route_to_bound). The daemon's
+        # active workspace here sent a viewer of another workspace to the
+        # owner's: the Recall Lab then said "That isn't in SuperLocalMemory".
+        from superlocalmemory.server.caller_workspace import bound_workspace
+
+        profile = bound_workspace() or get_active_profile()
     require_permission(request, Permission.READ, profile=profile)
     return profile
 
@@ -1249,7 +1258,10 @@ async def recall_trace(request: Request):
     import time as _time
     # 4.1.20: it returns memory content, so it needs READ on the workspace when
     # team accounts are on. The RBAC middleware gates GET only; this is a POST.
-    _resolve_profile(request)
+    # The recall below runs on exactly the workspace that was checked: without
+    # it the engine searched its own active workspace, so a person signed in to
+    # one workspace read another's memories.
+    _profile = _resolve_profile(request)
     try:
         body = await request.json()
         query = body.get("query", "")
@@ -1316,6 +1328,7 @@ async def recall_trace(request: Request):
             None,
             lambda: call_as_dashboard(  # a dashboard test, never agent traffic
                 engine.recall, query, limit=limit, fast=False,
+                profile_id=_profile,
                 window=window or None, as_of=_as_of,
                 known_as_of=_known_as_of, valid_at=_valid_at,
                 include_unknown=include_unknown,
@@ -1345,7 +1358,7 @@ async def recall_trace(request: Request):
 
         # Record learning signals (non-blocking, non-critical)
         try:
-            _record_learning_signals(query, results)
+            _record_learning_signals(query, results, profile_id=_profile)
         except Exception as _sig_exc:
             import logging as _log
             _log.getLogger(__name__).warning("Learning signal error: %s", _sig_exc)
@@ -1365,14 +1378,17 @@ async def recall_trace(request: Request):
         return _internal_error()
 
 
-def _record_learning_signals(query: str, results: list) -> None:
-    """Record feedback + co-retrieval + confidence boost for any recall."""
+def _record_learning_signals(query: str, results: list, profile_id: str = "") -> None:
+    """Record feedback + co-retrieval + confidence boost for any recall.
+
+    ``profile_id`` is the workspace the recall ran on; signals are filed there.
+    """
     from superlocalmemory.core.config import SLMConfig
 
     from superlocalmemory.infra.data_root import canonical_data_root
     slm_dir = canonical_data_root()
     config = SLMConfig.load()
-    pid = config.active_profile
+    pid = profile_id or config.active_profile
     fact_ids = [r.get("fact_id", "") for r in results[:10] if r.get("fact_id")]
     if not fact_ids:
         return

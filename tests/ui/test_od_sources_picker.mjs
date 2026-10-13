@@ -131,6 +131,15 @@ describe('remote access is on', () => {
         assert.equal(sentences(h), 1);
     });
 
+    it('says so before any click and switches Choose folder off', async () => {
+        const h = setup({ suggStatus: 409 });
+        await h.open();
+        assert.equal(sentences(h), 1, 'the reason is shown on load, next to the button');
+        assert.equal(h.button('Choose folder').disabled, true);
+        assert.ok(h.button('Open Web access settings'));
+        assert.equal(h.posts().length, 0, 'nothing was asked of the daemon');
+    });
+
     it('offers a button that opens Connected apps, where Web access is turned off', async () => {
         const h = setup({ pick: refusal });
         await h.open();

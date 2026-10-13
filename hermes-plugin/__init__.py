@@ -115,10 +115,9 @@ def _supported_slm(binary: str) -> bool:
     raw = _slm_version(binary)
     if not raw:
         return False
-    # This Hermes artifact is an exact release companion, not a floating
-    # compatibility promise. Refuse a different runtime until that contract is
-    # explicitly versioned and tested in a later release.
-    return tuple(int(part) for part in raw.split(".")) == _RELEASE_SLM_VERSION
+    # Same major, this release or newer (remote.compatible): an exact match
+    # stopped every command after a routine SLM upgrade.
+    return _REMOTE.compatible(raw, _RELEASE_SLM_VERSION)
 
 
 def _safe_mcp(ctx: Any, tool: str, arguments: dict[str, Any], timeout: float = 3,
@@ -369,7 +368,9 @@ class SlmHermesPlugin:
                     "The Hermes plugin never installs Python packages.")
         if not _supported_slm(binary):
             release = ".".join(str(part) for part in _RELEASE_SLM_VERSION)
-            return f"Hermes SLM plugin requires exactly SLM CLI {release} from the owning runtime; refusing an incompatible or unverifiable executable."
+            return (f"Hermes SLM plugin needs SLM CLI {release} or a newer {_RELEASE_SLM_VERSION[0]}.x "
+                    "from the owning runtime; this one is older, a different major version, or "
+                    f"unverifiable. Upgrade SLM, or move the plugin to its release: {_REMOTE.REINSTALL_HINT}")
         argv[0] = command
         if "--json" not in argv and command not in {"mcp", "dashboard", "serve", "proxy", "warmup", "setup"}:
             argv.append("--json")

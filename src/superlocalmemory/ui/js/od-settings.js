@@ -331,7 +331,11 @@
   ═══════════════════════════════════════════════════════════ */
   function odRenderSettings(container) {
     if (!container) return;
-    var existing = document.getElementById(ID);
+    // Look in THIS pane only. A background refresh renders into a fresh copy
+    // while the old pane (and its hub) is still in the page; a page-wide
+    // lookup found the old hub, rendered nothing, and the empty copy was then
+    // swapped in: a blank Settings page.
+    var existing = container.querySelector('#' + ID);
     if (existing) { loadAll(); return; }
 
     Array.from(container.children).forEach(function (c) { c.style.display = 'none'; });

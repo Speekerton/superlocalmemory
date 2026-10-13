@@ -75,9 +75,13 @@ async def chat_stream(request: Request):
 
     mode = (body.get("mode") or "a").lower()
     limit = min(body.get("limit", 10), 20)
+    # READ on the caller's own workspace, and the chat recalls only there:
+    # this POST is not gated by the GET-only RBAC middleware.
+    from superlocalmemory.server.routes.v3_api import _resolve_profile
+    profile = _resolve_profile(request)
 
     return StreamingResponse(
-        _stream_chat(request.app.state, query, mode, limit),
+        _stream_chat(request.app.state, query, mode, limit, profile),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -90,7 +94,7 @@ async def chat_stream(request: Request):
 # ── Core Chat Logic ──────────────────────────────────────────────
 
 async def _stream_chat(
-    app_state, query: str, mode: str, limit: int,
+    app_state, query: str, mode: str, limit: int, profile: str = "",
 ) -> AsyncGenerator[str, None]:
     """Retrieve memories, then stream LLM response with citations."""
 
@@ -100,7 +104,7 @@ async def _stream_chat(
     try:
         loop = asyncio.get_event_loop()
         memories = await loop.run_in_executor(
-            None, _recall_memories, app_state, query, limit,
+            None, _recall_memories, app_state, query, limit, profile,
         )
     except Exception:
         logger.exception("chat: memory retrieval failed")
@@ -326,7 +330,7 @@ async def _stream_openai_compat(
 
 # ── Retrieval Helper ─────────────────────────────────────────────
 
-def _recall_memories(app_state, query: str, limit: int) -> list:
+def _recall_memories(app_state, query: str, limit: int, profile: str = "") -> list:
     """Run full recall via the daemon's resident, lease-protected engine.
 
     v3.7.8 CRITICAL fix: this used to go through ``WorkerPool.shared()``, a
@@ -340,7 +344,9 @@ def _recall_memories(app_state, query: str, limit: int) -> list:
     reflects the current profile.
     """
     adapter = getattr(app_state, "engine_recall_adapter", None)
-    if adapter is not None:
+    # The adapter recalls the engine's own workspace; a caller's workspace is
+    # served by the resident engine, which takes it explicitly.
+    if adapter is not None and not profile:
         result = adapter.recall(query, limit=limit)
         if result.get("ok"):
             return result.get("results", [])
@@ -349,10 +355,10 @@ def _recall_memories(app_state, query: str, limit: int) -> list:
     # recall directly against the resident engine under the same profile
     # lease the HTTP /recall route uses. Never fall back to WorkerPool —
     # that reintroduces the stale-profile leak this fix closes.
-    return _recall_via_resident_engine(app_state, query, limit)
+    return _recall_via_resident_engine(app_state, query, limit, profile)
 
 
-def _recall_via_resident_engine(app_state, query: str, limit: int) -> list:
+def _recall_via_resident_engine(app_state, query: str, limit: int, profile: str = "") -> list:
     """Lease-protected direct-engine recall, mirroring the /recall route."""
     from superlocalmemory.server.profile_runtime import get_profile_runtime
     from superlocalmemory.server.routes.helpers import get_engine_lazy
@@ -363,14 +369,15 @@ def _recall_via_resident_engine(app_state, query: str, limit: int) -> list:
         if engine is None:
             return []
         from superlocalmemory.core.answer_check_history import call_as_dashboard
-        response = call_as_dashboard(engine.recall, query, limit=limit)  # not agent traffic
+        response = call_as_dashboard(  # not agent traffic
+            engine.recall, query, limit=limit, profile_id=profile or None)
         memory_ids = list({
             r.fact.memory_id for r in response.results[:limit]
             if r.fact.memory_id
         })
         memory_map = (
             engine._db.get_memory_content_batch(
-                memory_ids, engine.profile_id,
+                memory_ids, profile or engine.profile_id,
                 include_global=True, include_shared=True,
             ) if memory_ids else {}
         )

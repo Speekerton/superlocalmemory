@@ -565,6 +565,10 @@ def get_memories(
     cluster_id: Optional[int] = None,
     min_importance: Optional[int] = None,
     tags: Optional[str] = None,
+    fact_id: Optional[str] = Query(
+        None, max_length=64, pattern=r"^[A-Za-z0-9_-]+$",
+        description="Only this memory (a source opened from recall on the dashboard).",
+    ),
     limit: int = Query(BROWSE_PAGE_SIZE, ge=1, le=200),
     offset: int = Query(0, ge=0),
     filter: Optional[str] = Query(
@@ -687,6 +691,11 @@ def get_memories(
                 count_base += " AND project_name = ?"
             params.append(project_name)
             count_params.append(project_name)
+        if fact_id and use_v3:
+            query += " AND fact_id = ?"
+            params.append(fact_id)
+            count_base += " AND fact_id = ?"
+            count_params.append(fact_id)
         if cluster_id is not None and not use_v3:
             query += " AND cluster_id = ?"
             params.append(cluster_id)
@@ -977,6 +986,11 @@ async def search_memories(request: Request, body: SearchRequest):
     (422, INVALID_KIND) before any retrieval if it does not parse.
     """
     from superlocalmemory.core.kind_query import InvalidKind, resolve_kind
+    # READ on the caller's own workspace, and the search below runs there only.
+    # This POST is not gated by the GET-only RBAC middleware; without it a
+    # person signed in to one workspace searched the owner's active one.
+    from superlocalmemory.server.routes.v3_api import _resolve_profile
+    _search_profile = _resolve_profile(request)
     try:
         parsed_kind = resolve_kind(getattr(body, "kind", ""))
     except InvalidKind as exc:
@@ -1034,6 +1048,7 @@ async def search_memories(request: Request, body: SearchRequest):
                 None,
                 lambda: call_as_dashboard(
                     engine.recall, body.query, limit=_search_limit, fast=True,
+                    profile_id=_search_profile,
                     window=_window or None,
                     # 4.1.25: a person searching sees close memories of a real
                     # question (labelled related); the toggle shows every weak one.
@@ -1043,7 +1058,7 @@ async def search_memories(request: Request, body: SearchRequest):
                     # an outcome can be matched to, and a search typed into the
                     # dashboard is one continuous thread of use, not a
                     # conversation turn.
-                    session_id=f"dashboard:{get_active_profile()}",
+                    session_id=f"dashboard:{_search_profile}",
                 ),
             )
             # A run_in_executor thread cannot be cancelled, and wait_for() on it
@@ -1112,7 +1127,7 @@ async def search_memories(request: Request, body: SearchRequest):
         conn = get_db_connection()
         conn.row_factory = dict_factory
         cursor = conn.cursor()
-        active_profile = get_active_profile()
+        active_profile = _search_profile
         # Degraded-lexical fallback: a plain equality filter, not the
         # over-fetch-then-trim windowing core.kind_query's helpers use for
         # list/search's primary paths (this is a raw connection, not a

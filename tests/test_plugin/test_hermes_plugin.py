@@ -276,8 +276,13 @@ def test_subagent_handle_round_trips_and_cli_refuses_stale_slm(monkeypatch) -> N
     assert plugin.agent_result_tool(handle)["ready"] is True
     monkeypatch.setattr(module.shutil, "which", lambda _: "/tmp/slm")
     major, minor, patch = (int(p) for p in _product_version().split("."))
-    expected = f"requires exactly SLM CLI {major}.{minor}.{patch}"
-    monkeypatch.setattr(module, "_slm_version", lambda _: f"{major}.{minor}.{patch - 1}")
-    assert expected in plugin.slash_router("status")
-    monkeypatch.setattr(module, "_slm_version", lambda _: f"{major}.{minor}.{patch + 1}")
-    assert expected in plugin.slash_router("status")
+    expected = f"needs SLM CLI {major}.{minor}.{patch} or a newer {major}.x"
+    older = f"{major}.{minor - 1}.9" if patch == 0 else f"{major}.{minor}.{patch - 1}"
+    monkeypatch.setattr(module, "_slm_version", lambda _: older)
+    refused = plugin.slash_router("status")
+    assert expected in refused and "hermes plugins install" in refused  # says how to fix it
+    monkeypatch.setattr(module, "_slm_version", lambda _: f"{major + 1}.0.0")
+    assert expected in plugin.slash_router("status")  # another major is refused
+    # A routine SLM upgrade (a newer patch or minor) keeps the plugin working.
+    assert module._REMOTE.compatible(f"{major}.{minor}.{patch + 1}", (major, minor, patch))
+    assert module._REMOTE.compatible(f"{major}.{minor + 1}.0", (major, minor, patch))

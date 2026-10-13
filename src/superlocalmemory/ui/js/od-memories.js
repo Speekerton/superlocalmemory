@@ -673,6 +673,38 @@
   // ── Public API + auto-init ───────────────────────────────────────────────────
 
   window.odRenderMemories = render;
+
+  // Open one memory in the Memories tab, by fact id: a source opened from a
+  // recall elsewhere on the dashboard lands on the real memory, in full, with
+  // its scope, project and kind read the same way the table reads them.
+  window.odOpenMemory = function (factId) {
+    if (!factId) return;
+    var link = document.querySelector('.nav-link[data-tab="memories-pane"]');
+    if (link) link.click();
+    fetch('/api/memories?limit=1&fact_id=' + encodeURIComponent(factId), { credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (d) {
+        var row = (d.memories || [])[0];
+        if (!row) throw new Error('not found');
+        var list = (_st.memories || []).filter(function (m) { return m.id !== row.id; });
+        list.unshift(row);
+        _st = Object.assign({}, _st, { memories: list });
+        _openDrawer(0);
+      })
+      .catch(function () {
+        _ensureDrawer();
+        var drawer = document.getElementById('od-mem-drawer');
+        if (!drawer) return;
+        drawer.textContent = '';
+        var p = document.createElement('p');
+        p.className = 'muted';
+        p.textContent = 'That memory could not be opened. It may have been deleted, or it belongs to a workspace you cannot read.';
+        drawer.appendChild(p);
+        drawer.classList.add('open');
+        var scrim = document.getElementById('od-mem-drawer-scrim');
+        if (scrim) scrim.classList.add('open');
+      });
+  };
   document.addEventListener('keydown', function (e) {
     var drawer = document.getElementById('od-mem-drawer');
     if (e.key === 'Escape' && drawer && drawer.classList.contains('open')) _closeDrawer();

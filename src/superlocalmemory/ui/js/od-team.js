@@ -85,8 +85,22 @@
         esc(who.profile) + '</code></div>' +
         '<button class="btn sm" id="od-team-logout">Sign out</button></div>';
     }
-    return '<div>Operating as the <strong>machine owner</strong> (full control). ' +
-      'Sign in as a user below to act with a specific role.</div>';
+    return '<div>You are the <strong>owner of this computer</strong> with full control. ' +
+      '<strong>You never need to sign in</strong> to use SuperLocalMemory here.</div>';
+  }
+
+  // Users and roles are for a shared workspace (a team on one server). Until a
+  // user exists there is nothing to sign in with, so the form is not shown:
+  // showing it made people think SLM needed a password. There is no default
+  // account and never a default password: a known password would open every
+  // install that is reachable from a network (CWE-1393).
+  function noUsersNote() {
+    return '<div class="card" style="margin-top:12px;max-width:640px"><div class="card-pad">' +
+      '<p style="margin:0 0 6px"><strong>Signing in is optional.</strong></p>' +
+      '<p class="muted" style="margin:0">It is only for a shared workspace where several people ' +
+      'use one SuperLocalMemory with different roles. Add a user below and choose their password ' +
+      'yourself; they sign in with it. SuperLocalMemory never ships a default account or password.</p>' +
+      '</div></div>';
   }
 
   function loginForm() {
@@ -148,7 +162,9 @@
       '<input id="od-team-new-user" class="input sm" placeholder="Username">' +
       '<input id="od-team-new-name" class="input sm" placeholder="Display name (optional)">' +
       '<input id="od-team-new-pass" class="input sm" type="password" placeholder="Password (min 8)">' +
-      '<select id="od-team-new-role" class="input sm">' + roleOptions('member') + '</select>' +
+      '<select id="od-team-new-role" class="input sm">' +
+      // The first person added runs the workspace; later ones start as members.
+      roleOptions(users.length ? 'member' : 'admin') + '</select>' +
       '<button class="btn sm primary" id="od-team-add-btn">Add user</button>' +
       '</div><p class="muted" id="od-team-msg" style="margin:8px 0 0"></p>' +
       '</div></div>' +
@@ -169,7 +185,8 @@
     var body = container.querySelector('#od-team-body');
     if (!body) return;
     var html = identityLine(who);
-    if (who.kind !== 'user') html += loginForm();
+    var anyUsers = (status && status.user_count > 0) || users.length > 0;
+    if (who.kind !== 'user') html += anyUsers ? loginForm() : noUsersNote();
     if (canManage) html += manageBlock(status, users, members);
     else if (who.kind === 'user') {
       html += '<p class="muted" style="margin-top:12px">Your role does not include ' +

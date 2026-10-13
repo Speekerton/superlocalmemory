@@ -39,7 +39,7 @@ def _engine(root):
     db = Mock()
     db.get_all_facts.return_value = facts
     db.get_facts_by_ids.return_value = [facts[0]]
-    retrieval = SimpleNamespace(_sufficiency_judge=judge, _channels={"semantic": channel})
+    retrieval = SimpleNamespace(_sufficiency_judge=judge, _semantic=channel)
     config = SimpleNamespace(
         base_dir=root,
         active_profile="default",  # the real SLMConfig field; it has no profile_id
@@ -251,7 +251,7 @@ def test_semantic_floor_uses_the_answer_source_not_a_higher_scoring_noise_hit(tm
     )
     noise = AtomicFact(fact_id="noise", content="random deployment identifiers", embedding=[1, 0])
     engine._db.get_facts_by_ids.return_value = [source, noise]
-    engine._retrieval_engine._channels["semantic"].search.return_value = [("noise", 0.99)]
+    engine._retrieval_engine._semantic.search.return_value = [("noise", 0.99)]
     engine._retrieval_engine.recall = lambda *a, **kw: RecallResponse(
         results=[RetrievalResult(source)]
     )

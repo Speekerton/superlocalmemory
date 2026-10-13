@@ -43,6 +43,14 @@ screenshots and PDFs by describing them. Connect SuperLocalMemory to the agent
 I am using. When you finish, run slm doctor and tell me in plain words what works.
 ```
 
+**No AI agent? One line in Terminal** (macOS and Linux). It brings its own Python, sets everything up, connects the AI tools it finds and opens the dashboard; no Python or npm needed beforehand:
+
+```bash
+curl -fsSLo get-slm.sh https://raw.githubusercontent.com/qualixar/superlocalmemory/main/scripts/get-slm.sh && sh get-slm.sh
+```
+
+Add pictures and documents from the start with `sh get-slm.sh --media` at the end. It downloads the script first, so you can read it before it runs. Windows: use the agent prompt above, or npm or pip below.
+
 **Prefer the terminal?** Both routes end in the same setup: your text memory on this machine, and, if you say yes, your pictures and documents too.
 
 **npm**, the primary route (Node 18+). It installs SLM into a package-owned virtual environment:

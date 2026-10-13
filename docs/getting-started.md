@@ -66,6 +66,16 @@ screenshots and PDFs by describing them. Connect SuperLocalMemory to the agent
 I am using. When you finish, run slm doctor and tell me in plain words what works.
 ```
 
+**One line in Terminal** (macOS and Linux; no Python or npm needed beforehand):
+
+```bash
+curl -fsSLo get-slm.sh https://raw.githubusercontent.com/qualixar/superlocalmemory/main/scripts/get-slm.sh && sh get-slm.sh
+```
+
+It installs uv and Python 3.12 for SuperLocalMemory alone (never system-wide, never with sudo),
+installs SLM, sets it up, starts it, connects the AI tools it finds and opens the dashboard.
+`sh get-slm.sh --media` also turns on pictures and documents.
+
 **npm** (the primary route):
 
 ```bash

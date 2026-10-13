@@ -27,7 +27,7 @@ UNIX_ONLY = pytest.mark.skipif(
 )
 
 UV_URL = "https://astral.sh/uv/install.sh"
-UV_INSTALL_LINE = f"curl -LsSf {UV_URL} | sh"
+UV_INSTALL_LINE = f"download {UV_URL}, then run it with sh"
 INSTALL_LINE = "uv tool install --python 3.12 superlocalmemory"
 
 SHELLS = ["/bin/sh"] + (["dash"] if shutil.which("dash") else [])
@@ -307,7 +307,7 @@ def test_unknown_flag_is_refused(rig_with_uv: Rig) -> None:
         ("Linux", "i686", "32-bit"),
         ("Linux", "armv7l", "32-bit"),
         ("FreeBSD", "amd64", "not supported"),
-        ("MINGW64_NT-10.0", "x86_64", "PowerShell"),
+        ("MINGW64_NT-10.0", "x86_64", "agent prompt"),
     ],
 )
 def test_unsupported_platform_is_refused(tmp_path: Path, system, machine, needle) -> None:

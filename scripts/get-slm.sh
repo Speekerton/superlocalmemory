@@ -1,8 +1,8 @@
 #!/bin/sh
 # SuperLocalMemory one-line installer for macOS (Apple Silicon) and 64-bit Linux.
 #
-#   curl -fsSL https://raw.githubusercontent.com/qualixar/superlocalmemory/main/scripts/get-slm.sh | sh
-#   ... | sh -s -- --media        also turn on pictures and documents (needs 16 GB RAM)
+#   curl -fsSLo get-slm.sh https://raw.githubusercontent.com/qualixar/superlocalmemory/main/scripts/get-slm.sh && sh get-slm.sh
+#   sh get-slm.sh --media          also turn on pictures and documents (needs 16 GB RAM)
 #
 # No Python and no Node are needed.  The script installs `uv` (Astral's tool
 # installer) when it is missing, lets uv fetch its own Python 3.12 for
@@ -74,8 +74,8 @@ usage() {
     # Static text: when piped from curl, $0 is the shell, not this file.
     say "SuperLocalMemory one-line installer"
     say ""
-    say "  curl -fsSL https://raw.githubusercontent.com/qualixar/superlocalmemory/main/scripts/get-slm.sh | sh"
-    say "  ... | sh -s -- --media    also turn on pictures and documents (needs 16 GB RAM)"
+    say "  curl -fsSLo get-slm.sh https://raw.githubusercontent.com/qualixar/superlocalmemory/main/scripts/get-slm.sh && sh get-slm.sh"
+    say "  sh get-slm.sh --media    also turn on pictures and documents (needs 16 GB RAM)"
     say ""
     say "Environment: SLM_VERSION=<x.y.z> pins a release, SLM_MEDIA=1 is the same as --media."
 }
@@ -149,7 +149,7 @@ check_platform() {
             esac
             ;;
         MINGW* | MSYS* | CYGWIN*)
-            die "this looks like Windows. Open PowerShell and paste: irm https://raw.githubusercontent.com/qualixar/superlocalmemory/main/scripts/get-slm.ps1 | iex"
+            die "this looks like Windows. Paste the agent prompt from the README into your AI agent, or install with npm or pip (see the README)."
             ;;
         *) die "$os is not supported. SuperLocalMemory runs on Apple Silicon macOS, 64-bit Linux and 64-bit Windows." ;;
     esac
@@ -197,7 +197,7 @@ fetch_uv_installer() {
 
 install_uv() {
     if is_dry; then
-        printf 'DRY-RUN: curl -LsSf %s | sh\n' "$UV_INSTALL_URL"
+        printf 'DRY-RUN: download %s, then run it with sh\n' "$UV_INSTALL_URL"
         return 0
     fi
     TMPD=$(mktemp -d "${TMPDIR:-/tmp}/get-slm.XXXXXX") || die "I could not make a temporary folder."

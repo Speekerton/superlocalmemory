@@ -136,42 +136,48 @@ def apply(
                 f"ORDER BY rowid LIMIT {_BATCH}",
                 (cursor, _PROSPECTIVE),
             ).fetchall()
-            if not batch:
-                break
-            cursor = batch[-1][0]
+        if not batch:
+            break
+        cursor = batch[-1][0]
 
-            moves: list[tuple[str, int]] = []
-            for rowid, _fact_id, content in batch:
-                resolved = _resolve(content)
-                if resolved == _PROSPECTIVE:
-                    kept += 1
-                    continue
-                moves.append((resolved, rowid))
+        # The wording is read with the lock released: on a running store each
+        # acquire() is the process write lock, and classifying 500 rows inside
+        # it held a 27,689-fact store's lock for 4.72 s (14 Oct 2026) while a
+        # remember and the event log waited. The UPDATE below re-checks the row.
+        moves: list[tuple[str, int]] = []
+        for rowid, _fact_id, content in batch:
+            resolved = _resolve(content)
+            if resolved == _PROSPECTIVE:
+                kept += 1
+                continue
+            moves.append((resolved, rowid))
 
-            if moves:
-                active.execute("BEGIN IMMEDIATE")
-                try:
-                    # Conditional on the row still being what was read, so a
-                    # concurrent write is not clobbered.
-                    changed = 0
-                    for new_type, rowid in moves:
-                        cur = active.execute(
-                            f"UPDATE {_TABLE} SET fact_type = ? "
-                            f"WHERE rowid = ? AND fact_type = '{_PROSPECTIVE}'"
-                            f"{unconfirmed}",
-                            (new_type, rowid),
-                        )
-                        # Count what the guard let through, not what was
-                        # offered. A concurrent write can change the row
-                        # underneath, and a log line that reports the intention
-                        # as the outcome is how a receipt comes to overstate
-                        # what happened.
-                        changed += cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
-                    active.commit()
-                except Exception:
-                    active.rollback()
-                    raise
-                demoted += changed
+        if not moves:
+            continue
+        with acquire() as active:
+            active.execute("BEGIN IMMEDIATE")
+            try:
+                # Conditional on the row still being what was read, so a
+                # concurrent write is not clobbered.
+                changed = 0
+                for new_type, rowid in moves:
+                    cur = active.execute(
+                        f"UPDATE {_TABLE} SET fact_type = ? "
+                        f"WHERE rowid = ? AND fact_type = '{_PROSPECTIVE}'"
+                        f"{unconfirmed}",
+                        (new_type, rowid),
+                    )
+                    # Count what the guard let through, not what was
+                    # offered. A concurrent write can change the row
+                    # underneath, and a log line that reports the intention
+                    # as the outcome is how a receipt comes to overstate
+                    # what happened.
+                    changed += cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+                active.commit()
+            except Exception:
+                active.rollback()
+                raise
+        demoted += changed
 
     logger.info(
         "M048: re-read %d memories filed as plans; %d were, %d moved",

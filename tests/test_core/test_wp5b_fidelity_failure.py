@@ -97,7 +97,14 @@ def test_unreadable_sources_withhold_every_unchecked_derivative(
     tmp_path, mode_a_config, monkeypatch,
 ):
     db, results = _candidates(tmp_path)
-    db.execute("DROP TABLE memories")
+    # The sources become unreadable. Dropped with foreign keys off: with them on,
+    # DROP TABLE first deletes every row, the cascade into atomic_facts fires its
+    # FTS5 delete trigger in the middle of the schema change, and SQLite refuses
+    # with "database table is locked" -- the damage this test simulates is a
+    # missing table, not a cascade.
+    with db.raw_connection() as conn:
+        conn.execute("PRAGMA foreign_keys=OFF")
+        conn.execute("DROP TABLE memories")
     response = _recall(db, results, mode_a_config, monkeypatch)
     assert response.results == []
     assert response.abstained is True

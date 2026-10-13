@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import logging
 import re
-import time
 from typing import Any
 
 from superlocalmemory.retrieval import channel_status as chstat
@@ -203,7 +202,6 @@ def recall_keyword_fallback(
     tag_scope: dict | None = None
     from superlocalmemory.storage.models import RecallResponse
     response = RecallResponse(source_fidelity_status="degraded")
-    deadline = time.monotonic() + fidelity_budget_s
     try:
         db = engine._db
         pid = profile_id or engine.profile_id
@@ -220,8 +218,11 @@ def recall_keyword_fallback(
             candidates, facet_filter_error, project_scope, tag_scope = _apply_facets(
                 engine, db, pid, candidates, facets)
         from superlocalmemory.retrieval.fallback_fidelity import admit_fallback
+        # 4.2.3: the source check's own budget, counted from here. Counted from
+        # before the keyword query (0.59 s on 27k facts) it was spent already,
+        # and the check refused every row: the fallback answered nothing.
         candidates, response = admit_fallback(
-            candidates, db, pid, budget_s=deadline - time.monotonic())
+            candidates, db, pid, budget_s=fidelity_budget_s)
         if not has_facets:
             candidates, tier, note = _tiered(query, candidates, show_weak, include_related)
         for pos, d in enumerate(candidates[:limit], start=1):

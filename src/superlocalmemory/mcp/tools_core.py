@@ -1695,8 +1695,12 @@ def register_core_tools(server, get_engine: Callable) -> None:
             path = with_view(
                 "/api/corrections/" + urllib.parse.quote(case_id, safe="") + "/" + action)
             from superlocalmemory.cli.daemon import (
-                DaemonConflict, DaemonNotFound, DaemonRefused, DaemonUnprocessable,
+                DaemonConflict,
+                DaemonNotFound,
+                DaemonRefused,
+                DaemonUnprocessable,
             )
+
             try:
                 result = await asyncio.to_thread(
                     daemon_request, "POST", path, payload, preserve_conflict=True,

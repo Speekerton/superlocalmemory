@@ -1560,6 +1560,18 @@ def run_recall(
             engine=retrieval_engine, db=db), db, profile_id, response=response)
         _resettle_shown_after_bias(play_sink, profile_id, response.results,
                                    _shown_before_kind)
+
+    # A captured prompt is something the user asked an agent to do, not a fact
+    # about their work: last, so no earlier layer can lift it back above a
+    # memory an agent or the user saved (retrieval/request_memories).
+    if response.results:
+        from superlocalmemory.retrieval import request_memories
+
+        _shown_before_requests = _top_ids(response.results)
+        response.results = request_memories.settle_requests(
+            response.results, db, query, response.query_type)
+        _resettle_shown_after_bias(play_sink, profile_id, response.results,
+                                   _shown_before_requests)
     _mark("learning+ranking")
     # Deliberately no trust, Fisher, retention, lifecycle, popularity, or graph
     # mutation here.  Those state transitions require a separately authenticated

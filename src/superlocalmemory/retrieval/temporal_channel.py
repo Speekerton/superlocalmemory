@@ -23,6 +23,7 @@ from dateutil.parser import parse as dateutil_parse
 
 from superlocalmemory.encoding.temporal_parser import TemporalParser
 from superlocalmemory.retrieval.fact_cover import fact_table
+from superlocalmemory.retrieval.request_memories import demotes_requests, request_fact_ids
 from superlocalmemory.retrieval.scope_policy import authorized_topk, filter_authorized_results
 from superlocalmemory.retrieval.temporal_slice_cache import TemporalSliceCache
 from superlocalmemory.storage.database import _scope_where
@@ -33,6 +34,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _MAX_PROXIMITY_DAYS: float = 365.0
+#: Facts the recency fallback returns, and the most it reads to find them when
+#: captured prompts take some of the newest slots.
+_WANTED = 50
+_WIDEST = 3200
 _PROPER_RE = re.compile(r"\b([A-Z][a-z]+)\b")
 
 
@@ -146,6 +151,7 @@ class TemporalChannel:
                     profile_id,
                     include_global=include_global,
                     include_shared=include_shared,
+                    skip_requests=demotes_requests(query),
                 )
             if not entity_results:
                 return recent
@@ -314,11 +320,42 @@ class TemporalChannel:
         return [dict(r) for r in rows]
 
 
+    def _newest_rows(self, where: str, params: list, skip_requests: bool) -> list:
+        """The 50 newest visible, non-stub facts, minus captured prompts if asked.
+
+        The SQL stays answerable from ``idx_facts_recent`` alone (see
+        storage/recency_index.py: a join to ``memories`` would read every
+        row's 40 KB of vectors again, 5.8 s cold on a 22k-fact store), so
+        prompts are removed afterwards, from a batched lookup on the few rows
+        read. A burst of prompts can fill the first fifty; the read then widens
+        fourfold, up to ``_WIDEST``, instead of returning fewer than fifty.
+        """
+        limit = _WANTED
+        while True:
+            rows = self._db.execute(
+                "SELECT af.fact_id, af.created_at "
+                "FROM atomic_facts AS af "
+                f"WHERE {where}"
+                f"{self._db.visible_fact_clause('af', exclude_non_answer=True)} "
+                "  AND af.created_at >= datetime('now', '-90 days') "
+                "ORDER BY af.created_at DESC, af.fact_id ASC "
+                f"LIMIT {limit}",
+                (*params,),
+            )
+            if not skip_requests:
+                return rows
+            requests = request_fact_ids(self._db, (dict(r).get("fact_id") for r in rows))
+            kept = [r for r in rows if dict(r).get("fact_id") not in requests]
+            if len(kept) >= _WANTED or len(rows) < limit or limit >= _WIDEST:
+                return kept[:_WANTED]
+            limit = min(limit * 4, _WIDEST)
+
     def _recency_fallback(
         self,
         profile_id: str,
         include_global: bool | None,
         include_shared: bool | None,
+        skip_requests: bool = True,
     ) -> list[tuple[str, float]]:
         """Return recently created facts with Gaussian age-decay scoring.
 
@@ -359,16 +396,16 @@ class TemporalChannel:
         # The recency fallback is where these rows won before: they have no
         # temporal_events at all, so they reached the top through created_at
         # alone. Fifty slots, and 1,195 withheld rows all written recently.
-        rows = self._db.execute(
-            "SELECT af.fact_id, af.created_at "
-            "FROM atomic_facts AS af "
-            f"WHERE {where}"
-            f"{self._db.visible_fact_clause('af')} "
-            "  AND af.created_at >= datetime('now', '-90 days') "
-            "ORDER BY af.created_at DESC, af.fact_id ASC "
-            "LIMIT 50",
-            (*params,),
-        )
+        #
+        # Stored stubs (hook bookkeeping) are kept out of the SQL, not just out
+        # of the result: recall drops them only after these fifty slots are
+        # spent, so on a store where ~1,056 of 5,443 facts written in 7 days
+        # were bookkeeping, the newest fifty were mostly rows that were then
+        # thrown away, and "What am I working on?" was answered from what
+        # little was left. Captured prompts (the user's own instructions to an
+        # agent, not what they are working on) are left out too, unless the
+        # question asks about what they asked.
+        rows = self._newest_rows(where, params, skip_requests)
 
         best: dict[str, float] = {}
         for row in rows:

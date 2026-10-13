@@ -65,7 +65,7 @@ def test_refile_hidden_dry_run_changes_nothing_then_apply_is_undoable(store):
 
 def _tick(engine, idle=lambda: True):
     from superlocalmemory.core.health_repairs import run_safe_repairs
-    engine._memory_health_checked = 0.0
+    engine._memory_health_checked = None
     run_safe_repairs(engine, idle=idle)
 
 
@@ -230,3 +230,18 @@ def test_an_undone_automatic_sketch_repair_is_never_reapplied(tmp_path):
     finally:
         retrieval.close(wait=True)
         db.close()
+
+
+def test_first_idle_check_runs_on_a_host_that_booted_minutes_ago(store, monkeypatch):
+    """time.monotonic() counts from boot on Linux, so a fresh CI runner or a
+    just-restarted server reports a few minutes. The first check must still run:
+    "never checked" is not the same as "checked at second zero"."""
+    from superlocalmemory.core import health_repairs
+    monkeypatch.setattr(health_repairs.time, 'monotonic', lambda: 90.0)
+    health_repairs.run_safe_repairs(store, idle=lambda: True)
+    rows = [dict(r) for r in store._db.execute('SELECT * FROM memory_health_repairs')]
+    assert any(r['action'] == 'refile-hidden' and r['status'] == 'suggested' for r in rows)
+    # And the interval still throttles the next call.
+    store._db.execute('DELETE FROM memory_health_repairs')
+    health_repairs.run_safe_repairs(store, idle=lambda: True)
+    assert store._db.execute('SELECT COUNT(*) AS n FROM memory_health_repairs')[0]['n'] == 0

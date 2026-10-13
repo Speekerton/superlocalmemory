@@ -321,8 +321,12 @@ def _tick_action(engine, action, idle):
 
 
 def run_safe_repairs(engine, *, idle):
-    last = getattr(engine, '_memory_health_checked', 0.0)
-    if time.monotonic() - last < CHECK_INTERVAL_S:
+    # ``None`` means "never checked". A 0.0 sentinel is wrong here: the monotonic
+    # clock counts from boot on Linux, so on a host up for less than
+    # CHECK_INTERVAL_S (a fresh CI runner, a just-restarted server) ``now - 0.0``
+    # is still below the interval and the first check would be skipped.
+    last = getattr(engine, '_memory_health_checked', None)
+    if last is not None and time.monotonic() - last < CHECK_INTERVAL_S:
         return
     engine._memory_health_checked = time.monotonic()
     more = False
@@ -331,7 +335,7 @@ def run_safe_repairs(engine, *, idle):
             return
         more = _tick_action(engine, action, idle) or more
     if more:  # continue bounded automatic batches on the next idle tick
-        engine._memory_health_checked = 0.0
+        engine._memory_health_checked = None
 
 
 def _native_total(native):

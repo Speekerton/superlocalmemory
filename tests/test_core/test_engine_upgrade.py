@@ -29,6 +29,7 @@ def _managed_model_is_fitted(monkeypatch):
     take text at all (an answer-support fit) is the last tests' subject below."""
     monkeypatch.setattr(sr, "_BY_MODEL", {NOMIC.model_name: sr.ANSWER_SUPPORT_V2,
                                           EG2: sr.ANSWER_SUPPORT_V2})
+    monkeypatch.setattr(sr, "APPROVED_FOR_TEXT", frozenset({NOMIC.model_name, EG2}))
 
 
 def _plan(live=NOMIC, memories=1000, state="ready", **kw):
@@ -256,6 +257,7 @@ def test_an_installer_request_waits_while_the_model_has_no_answer_support_fit(wi
     recall cannot yet judge answers with (13 Oct 2026). The request is kept, so it
     goes ahead at the first start of a build that ships the fit."""
     monkeypatch.setattr(sr, "_BY_MODEL", {NOMIC.model_name: sr.ANSWER_SUPPORT_V2})
+    monkeypatch.setattr(sr, "APPROVED_FOR_TEXT", frozenset({NOMIC.model_name}))
     root, _state = wired
     _write(root, {"schema": 1, "engine_upgrade": {"requested": True, "choice_source": "npm"}})
     runner = _Runner()

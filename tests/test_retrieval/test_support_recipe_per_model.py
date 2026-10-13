@@ -32,6 +32,7 @@ GEMMA = "google/embeddinggemma-2"
 def no_gemma_fit(monkeypatch):
     """Whatever this build ships, measure the rule as if Gemma had no fit."""
     monkeypatch.setattr(sr, "_BY_MODEL", {NOMIC: sr.ANSWER_SUPPORT_V2})
+    monkeypatch.setattr(sr, "APPROVED_FOR_TEXT", frozenset({NOMIC}))
 
 
 def test_nomic_has_its_fitted_recipe():
@@ -78,6 +79,7 @@ def test_the_upgrade_plan_says_why_it_cannot_start(no_gemma_fit):
 
 def test_the_upgrade_plan_opens_once_the_model_is_fitted(monkeypatch):
     monkeypatch.setattr(sr, "_BY_MODEL", {NOMIC: sr.ANSWER_SUPPORT_V2, GEMMA: sr.ANSWER_SUPPORT_V2})
+    monkeypatch.setattr(sr, "APPROVED_FOR_TEXT", frozenset({NOMIC, GEMMA}))
     live = EmbeddingConfig(model_name=NOMIC, dimension=768, provider="sentence-transformers")
     assert engine_upgrade.plan(live, 1000, "ready", media_enabled=True)["available"] is True
 
@@ -125,6 +127,7 @@ def test_a_store_already_on_an_unfitted_model_is_told_how_to_go_back(no_gemma_fi
 
 def test_a_store_on_a_fitted_model_reads_as_before(monkeypatch):
     monkeypatch.setattr(sr, "_BY_MODEL", {NOMIC: sr.ANSWER_SUPPORT_V2, GEMMA: sr.ANSWER_SUPPORT_V2})
+    monkeypatch.setattr(sr, "APPROVED_FOR_TEXT", frozenset({NOMIC, GEMMA}))
     live = EmbeddingConfig(model_name=GEMMA, dimension=768, provider="slm-media")
     assert support_fit_guard.live_advice(live) is None
     assert engine_upgrade.plan(live, 1000, "ready")["reason"] == engine_upgrade._ALREADY
@@ -152,3 +155,43 @@ def test_doctor_passes_a_fitted_or_unrecorded_store(no_gemma_fit, tmp_path):
     from superlocalmemory.cli.doctor_models import answer_check_fit_finding
 
     assert answer_check_fit_finding(tmp_path / "missing.db")[0] == "PASS"
+
+
+
+# -- what 4.2.2 actually ships, unpatched ------------------------------------------
+
+def test_shipped_gemma_has_its_own_recipe_but_is_not_approved_for_text():
+    assert sr.for_model(GEMMA) is sr.ANSWER_SUPPORT_EG2_V1
+    assert sr.approved_for_text(NOMIC) and not sr.approved_for_text(GEMMA)
+    engine = SimpleNamespace(_embedder=SimpleNamespace(model_name=GEMMA))
+    assert recipe_for(engine) is sr.ANSWER_SUPPORT_EG2_V1
+
+
+def test_shipped_switch_to_gemma_is_refused_as_weaker_not_unmeasured():
+    target = EmbeddingConfig(model_name=GEMMA, dimension=768, provider="slm-media")
+    reason = support_fit_guard.refusal_for(target)
+    assert reason and "weaker" in reason and "force" in reason
+    live = EmbeddingConfig(model_name=NOMIC, dimension=768, provider="sentence-transformers")
+    assert engine_upgrade.plan(live, 1000, "ready", media_enabled=True)["available"] is False
+
+
+def test_shipped_store_already_on_gemma_answers_and_is_told_it_is_weaker():
+    live = EmbeddingConfig(model_name=GEMMA, dimension=768, provider="slm-media")
+    advice = support_fit_guard.live_advice(live)
+    assert advice and "weaker" in advice and "slm embedder rollback" in advice
+
+
+def test_the_gemma_recipe_keeps_a_real_answer_that_v2_refused():
+    """Measured, not made up: question r-code-1's expected memory on the Gemma
+    harness store (13 Oct 2026). v2 scored it 0.0165; eg2-v1 scores it 0.9995."""
+    from superlocalmemory.retrieval import support_gate
+
+    evidence = {"hub_corrected": 0.206152, "keyword_coverage": 0.75, "ce_raw": 9.7855,
+                "rare_miss": 0.0, "bm25_raw": 16.397183, "cosine": 0.876895,
+                "entity_hit": 1.0, "subject_coverage": 1.0}
+    query = {"nonsense_similarity": 0.598335, "orphan_terms": 0.0, "oov_phrase": False,
+             "query_terms": 4}
+    v2 = support_gate.probability(evidence, query, sr.ANSWER_SUPPORT_V2)
+    eg2 = support_gate.probability(evidence, query, sr.ANSWER_SUPPORT_EG2_V1)
+    assert v2 < sr.ANSWER_SUPPORT_V2.threshold
+    assert eg2 >= sr.ANSWER_SUPPORT_EG2_V1.threshold

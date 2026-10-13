@@ -48,6 +48,7 @@ def ctx(monkeypatch):
     # at all (an answer-support fit) is tested below and in test_support_recipe_per_model.
     monkeypatch.setattr(sr, "_BY_MODEL", {NOMIC.model_name: sr.ANSWER_SUPPORT_V2,
                                           EG2.model_name: sr.ANSWER_SUPPORT_V2})
+    monkeypatch.setattr(sr, "APPROVED_FOR_TEXT", frozenset({NOMIC.model_name, EG2.model_name}))
     app = FastAPI()
     app.include_router(routes.router)
     app.state.embedding_reindex = state["runner"]
@@ -161,6 +162,7 @@ def test_the_upgrade_path_does_not_shadow_the_other_routes():
 def test_no_upgrade_to_a_model_the_answer_check_was_not_fitted_on(ctx, monkeypatch):
     client, state = ctx
     monkeypatch.setattr(sr, "_BY_MODEL", {NOMIC.model_name: sr.ANSWER_SUPPORT_V2})
+    monkeypatch.setattr(sr, "APPROVED_FOR_TEXT", frozenset({NOMIC.model_name}))
     monkeypatch.setattr("superlocalmemory.server.rbac_enforce.require_manage", lambda request: {})
     plan = client.get(URL).json()
     assert plan["available"] is False and "not yet measured" in plan["reason"]

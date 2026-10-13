@@ -5,6 +5,49 @@ All notable changes to SuperLocalMemory will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.2] — Recall never refuses answers it has after a model change, and "What am I working on?" answers from your work
+
+A fix release. Upgrading never moves or deletes memory. Text stays on the model it uses today.
+
+### Fixes
+
+- **Moving text to the newer memory engine could make recall refuse answers it had.**
+  Recall decides "this is in your memory" with a check fitted on one text model
+  (nomic). After "Upgrade memory engine" (which an npm install also requested by
+  itself) moved text to EmbeddingGemma 2, that check scored correct memories far
+  below its bar, and recall said "That isn't in SuperLocalMemory" to questions it
+  had answered before. The check is now chosen by the text model in use, and
+  SuperLocalMemory no longer moves text to a model the check was not fitted for:
+  the Upgrade card says why, an install's upgrade request waits, and
+  `slm embedder switch` needs `--force`. Measured on the release harness (synthetic store, held-out questions): with the old check, EmbeddingGemma 2 refused all 203 real questions. Its own fitted check keeps every real question but refuses made-up ones less often than nomic does (144 of 156 against 151 of 156), so text stays on nomic and Gemma keeps serving pictures and documents. A store already on Gemma now gets its answers back with that check.
+- **If your text already moved,** the Upgrade card and `slm doctor` (new check
+  "Answer check fit") say so and how to go back: Roll back on the card, or
+  `slm embedder rollback`. Your previous vectors are kept, so it takes minutes, and
+  the rollback message now says that instead of promising a full re-index.
+- **A model switch kept its hub baselines.** Each memory carries a baseline that
+  stops a few "close to everything" memories from looking like answers. A switch
+  renamed the vector columns, a trigger followed the old column, and the clean-up
+  afterwards deleted every baseline (27,236 to 0 on one store). The trigger is now
+  re-bound on every switch, a store an earlier switch damaged is repaired by itself,
+  and the new model's baselines are measured before the switch finishes.
+- **`slm embedder calibrate` works on a real install.** It stopped on two settings
+  that only its own tests had (`config.profile_id`, `RetrievalEngine._channels`). It
+  is now tested against a real engine, and a test checks every setting it reads
+  exists.
+- **"What am I working on?" answers from your work.** The newest rows on a busy
+  store were the hooks' own bookkeeping ("[project] session ended …",
+  "File changed: …", "files: …") and the prompts you typed to an agent, so they
+  won a question about the present. Bookkeeping is now recognised in all its shapes,
+  flagged when it is saved, and the rows already stored are flagged once on upgrade
+  (nothing deleted; they stay listable). Your captured prompts stay searchable but
+  rank as requests: below what you and your agents saved, and never as the answer
+  to "what am I working on?". Ask "what did I ask for…" and they come back first.
+
+### Upgrading
+
+- The store's schema version moves to 62 (a data repair, no new table). Going back
+  to 4.2.1 needs `slm db prepare-downgrade` first, as for earlier releases.
+
 ## [4.2.1] — Each person sees only their own workspace, and moving to the newer memory engine finishes
 
 A fix release. Upgrading never moves or deletes memory.

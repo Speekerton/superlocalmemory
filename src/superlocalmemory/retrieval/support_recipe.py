@@ -164,7 +164,46 @@ ANSWER_SUPPORT_V2 = SupportRecipe(
     },
 )
 
-_RECIPES = {r.version: r for r in (ANSWER_SUPPORT_V1, ANSWER_SUPPORT_V2)}
+#: Fitted 13 October 2026 by scripts/quality/answerability_fit.py on the same
+#: corpus and split as v2, with the store built by EmbeddingGemma 2
+#: (answerability_eval.py --embedder gemma), 425 training and 278 held-out
+#: questions after dropping 20 measured while the model was still loading.
+#: "Answered today" is what retrieval put in the top 5 with the gate off: v2
+#: refused all 203 real questions on this model, so recall's own answers could
+#: not define it. The two cosine inputs come out far from v2 (hub_corrected
+#: 25.3 vs 12.7, nonsense_similarity -4.5 vs -40.3) and so do the imputations
+#: (nonsense similarity 0.65 vs 0.39): v2's nonsense term alone cost every
+#: Gemma answer about 10 logits. Threshold: lowest held-out real less 0.1.
+#:
+#: It keeps every real question but refuses less nonsense than nomic does, so
+#: it is NOT approved for moving text (see APPROVED_FOR_TEXT); it serves stores
+#: already on this model, where v2 answered nothing.
+ANSWER_SUPPORT_EG2_V1 = SupportRecipe(
+    version="answer-support-eg2-v1",
+    weights={"hub_corrected": 25.3271, "keyword_coverage": 3.0,
+             "cross_encoder": 0.0166, "log_bm25": 0.0, "entity_hit": 0.0,
+             "oov_phrase": 0.0, "rare_miss": -2.3851,
+             "nonsense_similarity": -4.5149, "orphan_terms": -2.4274,
+             "unframed_miss": -8.0912},
+    intercept=2.6995,
+    threshold=0.1414,  # logit -1.8039: lowest held-out real -1.7039 less 0.1
+    ce_clip=(-12.0, 10.0),
+    ce_missing=-9.65,
+    hub_missing_baseline=0.773,
+    hub_corrected_unmeasured=0.0,
+    nonsense_similarity_missing=0.65,
+    laya_unsupported=-1.5,  # prior, as v2
+    metadata_bonus=0.5,     # prior, as v2
+    fitted_on="answerability-corpus-v2/d21fd3d53039f6e6/embeddinggemma-2/answer-support-split-v1",
+    held_out={
+        "all": "real kept 74/74, nonsense abstain 144/156, no-answer abstain 2/46",
+        "legacy": "real kept 30/30, nonsense abstain 150/156",
+        "described": "real kept 44/44, nonsense abstain 144/156",
+        "nomic v2 on the same split": "real kept 78/78, nonsense abstain 151/156",
+    },
+)
+
+_RECIPES = {r.version: r for r in (ANSWER_SUPPORT_V1, ANSWER_SUPPORT_V2, ANSWER_SUPPORT_EG2_V1)}
 ACTIVE: SupportRecipe = ANSWER_SUPPORT_V2
 
 #: The text model each recipe was fitted on. Two of its inputs are raw cosines
@@ -174,7 +213,14 @@ ACTIVE: SupportRecipe = ANSWER_SUPPORT_V2
 #: scripts/quality/answerability_fit.py passed on the harness built with it.
 _BY_MODEL: dict[str, SupportRecipe] = {
     "nomic-ai/nomic-embed-text-v1.5": ANSWER_SUPPORT_V2,
+    "google/embeddinggemma-2": ANSWER_SUPPORT_EG2_V1,
 }
+
+#: Models whose recipe met the bar for carrying a store's text: on the held-out
+#: split, every real question kept AND nonsense refused at least as often as
+#: nomic does (151/156). Fitted is not approved: EmbeddingGemma 2 keeps every
+#: real question but refuses 144/156.
+APPROVED_FOR_TEXT: frozenset[str] = frozenset({"nomic-ai/nomic-embed-text-v1.5"})
 
 
 def _model_key(model: str) -> str:
@@ -198,5 +244,12 @@ def recipe(version: str) -> SupportRecipe:
     return _RECIPES[version]
 
 
-__all__ = ["ACTIVE", "ANSWER_SUPPORT_V1", "ANSWER_SUPPORT_V2", "FEATURES", "SupportRecipe",
-           "for_model", "recipe"]
+def approved_for_text(model: str) -> bool:
+    """``model``'s recipe met the bar for moving a store's text onto it."""
+    key = _model_key(model)
+    return bool(key) and any(key in (name, name.rsplit("/", 1)[-1]) for name in APPROVED_FOR_TEXT)
+
+
+__all__ = ["ACTIVE", "ANSWER_SUPPORT_EG2_V1", "ANSWER_SUPPORT_V1", "ANSWER_SUPPORT_V2",
+           "APPROVED_FOR_TEXT", "FEATURES", "SupportRecipe", "approved_for_text", "for_model",
+           "recipe"]

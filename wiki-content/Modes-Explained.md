@@ -78,7 +78,7 @@ The Settings pane offers two embedding providers: the default local model, or a 
 
 ### Changing the embedding model re-indexes in the background
 
-Vectors from different models cannot be compared, so a model change has to re-embed every memory. SLM does this inside the daemon without stopping: recall and remember keep using the old model and old vectors until the new space is complete, then both change in one transaction. The previous space is kept so one `slm embedder rollback` can return to it, and a daemon restart resumes the job where it stopped. A save that changes the vector width without going through this job is refused with HTTP 409 and the message points you to `slm embedder switch MODEL --dimension N`. The tuning variables are `SLM_REINDEX_BATCH` (32), `SLM_REINDEX_PAUSE_S` (0.02) and `SLM_REINDEX_DUTY_REST` (1.0). The full walkthrough, including the one-model upgrade, is on [Upgrade Memory Engine](Upgrade-Memory-Engine).
+Vectors from different models cannot be compared, so a model change has to re-embed every memory. SLM does this inside the daemon without stopping: recall and remember keep using the old model and old vectors until the new space is complete, then both change in one transaction. The previous space is kept so one `slm embedder rollback` can return to it, and a daemon restart resumes the job where it stopped. A save that changes the vector width without going through this job is refused with HTTP 409 and the message points you to `slm embedder switch MODEL --dimension N`. The tuning variables are `SLM_REINDEX_BATCH` (32), `SLM_REINDEX_PAUSE_S` (0.02) and `SLM_REINDEX_DUTY_REST` (1.0). The full walkthrough, including why text stays on its own model, is on [Embedding Models](Embedding-Models).
 
 ## Language
 

@@ -26,7 +26,7 @@ Some behaviour needs nothing from you: the journal and background enrichment, th
 
 Four commands give a quick picture of a running installation: `slm status` for mode, profile and data folder, `slm doctor` for dependencies, the embedding worker and the background service, `slm health` for the scoring and lifecycle layers, and `slm trace "a real question"` to see how a representative search was scored. The dashboard shows the same things in one place ([Dashboard Tour](Dashboard-Tour)). When something is off, [Health and Repair](Health-and-Repair) explains the checks and the repair tools, and [Troubleshooting](Troubleshooting) goes symptom by symptom.
 
-Protect the data folder with [Cloud Backup](Cloud-Backup), which covers local backups, encrypted cloud copies, restore points and how a restore keeps a safety copy. Keep software current with the steps in [Installation](Installation) and refresh host integrations with `slm upgrade-hosts` ([Host Integration Upgrades](Host-Upgrades)). To change the embedding engine or the reranker, including for another language, see [Upgrade Memory Engine](Upgrade-Memory-Engine).
+Protect the data folder with [Cloud Backup](Cloud-Backup), which covers local backups, encrypted cloud copies, restore points and how a restore keeps a safety copy. Keep software current with the steps in [Installation](Installation) and refresh host integrations with `slm upgrade-hosts` ([Host Integration Upgrades](Host-Upgrades)). To change the text embedding model, see [Embedding Models](Embedding-Models).
 
 ## Boundaries worth knowing
 

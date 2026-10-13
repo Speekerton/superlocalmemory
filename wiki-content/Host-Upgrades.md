@@ -42,7 +42,7 @@ The command ends with a line, "Apps to restart or reconnect", that names the hos
 
 ## Your memory store after an upgrade
 
-A separate safeguard covers data. An upgrade that changes the memory store first takes a verified copy; the restore points can be listed and used from the CLI (`slm db restore-points`, `slm db restore`), and there is no dashboard screen for them. A few minutes after SLM first starts on a new version it also checks the store once, read-only, and reports in the dashboard under Health > Memory store, with a Repair now button if something needs fixing ([Health and Repair](Health-and-Repair)). If you are moving to the newer embedding model, see [Upgrade Memory Engine](Upgrade-Memory-Engine).
+A separate safeguard covers data. An upgrade that changes the memory store first takes a verified copy; the restore points can be listed and used from the CLI (`slm db restore-points`, `slm db restore`), and there is no dashboard screen for them. A few minutes after SLM first starts on a new version it also checks the store once, read-only, and reports in the dashboard under Health > Memory store, with a Repair now button if something needs fixing ([Health and Repair](Health-and-Repair)).
 
 ## First-time setup instead
 

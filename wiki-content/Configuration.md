@@ -47,7 +47,7 @@ The Settings pane has a search box over every setting and 16 groups. "Save all c
 |---|---|
 | Operating Mode & LLM Provider | Mode A, B or C; provider (None, Ollama, OpenRouter, OpenAI, Anthropic), model, API key, base URL; a Test button. |
 | Answer check | On this Mac (Laya), Online with Jev, or Off; setup, repair, test, remove. See [Answer Check](Answer-Check). |
-| Embeddings & Retrieval | Default local model or a custom OpenAI-compatible endpoint (model, dimension, endpoint, key, Test); the background re-index panel; the Upgrade row. See [Upgrade Memory Engine](Upgrade-Memory-Engine). |
+| Embeddings & Retrieval | Default local model or a custom OpenAI-compatible endpoint (model, dimension, endpoint, key, Test); the background re-index panel; and, only for a store whose text an older release moved to the picture model, the memory-engine card with Roll back. See [Embedding Models](Embedding-Models). |
 | Storage Backends | Graph backend `auto`, `sqlite` or `cozo`; vector backend `auto`, `sqlite-vec` or `lancedb`; base directory (read-only). Saving reports whether a restart is needed. |
 | Memory Scope (auto-saves) | Default write scope (personal, shared, global) and whether recall includes shared and global memories. Both recall switches are off by default. |
 | Recall & Memory Behaviour (auto-saves, no restart) | Recall depth (`retrieval.top_k`, 1 to 200, shown as 20), the reranker switch (about 200 MB of RAM and about 200 ms), memory injection into prompts, the core-memory block and its size (0 to 50, default 5). |
@@ -135,6 +135,7 @@ Every variable below was found by searching the source. The default is stated on
 | `SLM_CACHE_DB` | Path of the active-brain cache database. | `active_brain_cache.db` in the data folder | `core/context_cache.py` |
 | `SLM_DERIVE_CACHE_MAX_MB` | Size cap of the derived cache. | 2048 | `cache/sqlite_store.py` |
 | `SLM_AUTO_PROMOTE_MIN_EDGES` | Graph edges before the scale engine auto-promotes. | 100000 | `core/backend_orchestrator.py` |
+| `SLM_VECTOR_HISTORY_DAYS` | How many days of old vector-store versions the background compaction keeps. Every saved memory writes a version, and every semantic search walks the versions, so a long history slows search. | 1/24 (one hour) | `core/maintenance_scheduler.py` |
 | `SLM_REINDEX_BATCH`, `SLM_REINDEX_PAUSE_S`, `SLM_REINDEX_DUTY_REST` | Batch size, pause between batches in seconds, and rest as a fraction of batch time during a model switch. | 32, 0.02, 1.0 | `core/embedding_reindex_steps.py` |
 | `SLM_EVOLUTION_BACKEND` | `claude-cli` runs skill evolution through the Claude CLI. | Anthropic API | `evolution/llm_dispatch.py` |
 | `SLM_EVO_AUTO_APPROVE` | `1` or `true` auto-approves skill evolutions. `EvolutionConfig` has no field for it, so the variable decides. | off | `evolution/skill_evolver.py` |

@@ -1,6 +1,8 @@
 # Pictures and Documents
 
-SLM can remember screenshots, photos and PDFs and find them later by describing what they show: "the slide with the quarterly numbers", "the error dialog from the deploy". A picture model runs on your computer, OCR reads the text inside pictures, and each PDF page is indexed by both its picture and its text. No generative model looks at your files. The feature is off until you turn it on, and turning it on does not touch your existing memories or their embeddings: pictures and pages are added next to them, in their own database.
+SLM can remember screenshots, photos and PDFs and find them later by describing what they show: "the slide with the quarterly numbers", "the error dialog from the deploy". A picture model (Google's EmbeddingGemma 2) runs on your computer, OCR reads the text inside pictures, and each PDF page is indexed by both its picture and its text. No generative model looks at your files. The feature is off until you turn it on, and turning it on does not touch your existing memories or their embeddings: pictures and pages are added next to them, in their own database.
+
+Text keeps its own model, so turning this on never changes how your text is searched ([Embedding Models](Embedding-Models)).
 
 Turn it on in the dashboard (**Documents & Images**), in the npm installer or upgrader, or with `slm media enable`. The first time, it downloads about 1.5 GB of models and tools into SLM's own folder.
 
@@ -10,8 +12,8 @@ Turn it on in the dashboard (**Documents & Images**), in the npm installer or up
 |---|---|
 | Memory (RAM) | 16 GB minimum. Computers sold as 16 GB report a little less, so the check passes from 15 GiB. |
 | Disk | About 1.5 GB for the models, plus what you save (up to 2 GB per profile). |
-| Systems | macOS on Apple Silicon, Windows x64, Linux x86_64. Python 3.12, 3.13 or 3.14. |
-| Not yet supported | Linux on ARM64 (Raspberry Pi, Graviton, Ampere) and Intel Macs. Text memory works there as before. |
+| Systems | macOS on Apple Silicon, Windows x64, Linux x86_64 and Linux ARM64 (aarch64) with a glibc such as Debian, Ubuntu or Fedora. Python 3.12, 3.13 or 3.14. |
+| Not supported | Windows on ARM and Intel Macs. Text memory works there as before. |
 
 Below 16 GB the switch is refused with the reason, because the picture model and a large PDF together can push a smaller machine into swapping. Your text memories keep working. If you accept that risk, set `SLM_MEDIA_ALLOW_LOW_RAM=1` in the environment SLM starts from and turn the feature on again; SLM logs a warning each time.
 
@@ -86,6 +88,7 @@ A PDF that cannot finish is marked failed with a plain-language reason: password
 | PDF pages | 500 (`SLM_DOC_MAX_PAGES`). A longer PDF is refused as a whole, not cut short. |
 | Reading a PDF | 30 seconds per page and 20 minutes per document; the reader is stopped past 1.6 GB of memory |
 | Text kept per page | 1,000,000 characters; each memory part holds up to 24,000 |
+| Picture and text reader memory | Checked twice a second while a request runs: past 4.5 GB the reader is stopped, that request fails with a plain message, and the next one starts a fresh reader. On Linux the reader also starts with a hard limit above that. Text over 8,000 characters, a picture file over 25 MB or a picture with more than 50 million pixels is refused before it is sent |
 | Library | 2 GB of pictures and PDFs per profile |
 
 ## Folders and Obsidian vaults

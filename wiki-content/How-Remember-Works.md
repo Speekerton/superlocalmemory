@@ -70,4 +70,4 @@ There is one case where a save is refused: when the admission journal's own queu
 
 ## What does not happen here
 
-In Mode A with the default local models, a save makes no call to a language model and no network call. Mode B and Mode C add model-based enrichment after the memory is already queryable, and a custom embedding endpoint, if you configure one, receives text during enrichment. See [Modes Explained](Modes-Explained) and [Privacy and Data Flow](Privacy-and-Data-Flow).
+In Mode A with the default local models, a save makes no language-model call and does not use the network. Mode B and Mode C add model-based enrichment after the memory is already queryable, and a custom embedding endpoint, if you configure one, receives text during enrichment. See [Modes Explained](Modes-Explained) and [Privacy and Data Flow](Privacy-and-Data-Flow).

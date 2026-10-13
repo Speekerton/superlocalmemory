@@ -48,4 +48,4 @@ Exports leave embeddings out unless you ask for them, stream to disk, and list w
 
 ## If the store itself is damaged
 
-Run `slm db integrity` (read-only, safe while SLM runs; add `--pages` to read every page). The dashboard's **Memory store** card under **Health** shows the same check, and **Repair now** takes a full backup copy first, then repairs. On a damaged keyword index (SQLite 3.44.0 to 3.46.0), `slm db repair --apply` also turns off the SQLite setting that caused it. See [[Troubleshooting]].
+Run `slm db integrity` (read-only, safe while SLM runs; add `--pages` to read every page). The dashboard's **Memory store** card under **Health** shows the same check, and **Repair now** takes a full backup copy first, then repairs. On a damaged keyword index (SQLite versions `3.44.0` to `3.46.0`), `slm db repair --apply` also turns off the SQLite setting that caused it. See [[Troubleshooting]].

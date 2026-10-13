@@ -4,4 +4,4 @@
 
 Part of [Qualixar](https://qualixar.com) | Created by [Varun Pratap Bhardwaj](https://varunpratap.com) | [GitHub](https://github.com/qualixar/superlocalmemory) · [CHANGELOG](https://github.com/qualixar/superlocalmemory/blob/main/CHANGELOG.md)
 
-> **Platform boundary:** Apple Silicon macOS, 64-bit Windows and 64-bit Linux. Intel Mac and 32-bit Windows are not supported, and pictures and documents are not yet available on Linux ARM64.
+> **Platform boundary:** Apple Silicon macOS, 64-bit Windows and 64-bit Linux. Linux covers x86_64 and ARM64. Intel Mac, 32-bit Windows and Windows on ARM are not supported.

@@ -10,7 +10,7 @@ This wiki is written to be read like a book, front to back or by chapter. It cov
 
 ## What SLM is
 
-AI assistants forget everything between sessions, and the memory tools that fix this usually send your data to a service you do not control. SLM keeps the memory in a SQLite database on your own computer and puts a governed engine in front of it. Agents in Claude Code, Codex, Cursor and other tools talk to that engine through MCP, the CLI or HTTP, and a dashboard shows what it knows and why.
+AI assistants forget everything between sessions, and the memory tools that fix this usually send your data to a service you do not control. SLM keeps the memory in SQLite on your own computer and puts a governed engine in front of it. Agents in Claude Code, Codex, Cursor and other tools talk to that engine through MCP, the CLI or HTTP, and a dashboard shows what it knows and why.
 
 Four ideas set it apart. **Memory is governed**: roles per workspace, default-deny access across profiles, an audit chain you can verify, erasure with a signed receipt, and trust that agents earn and lose. **Recall is honest**: five retrieval producers fuse into one ranking, results with no real evidence are dropped, and every recall says whether memory supports the question, holds only close matches, or does not have it ("That isn't in SuperLocalMemory."). An answer check that runs on your own Mac by default feeds that decision. **Memory behaves like memory**: facts fade, consolidate and connect over time instead of piling up. **It runs where you decide**: nothing leaves your computer unless you turn on a feature that sends it, and [Privacy and Data Flow](Privacy-and-Data-Flow) lists every one.
 
@@ -40,7 +40,7 @@ Developers who use AI coding agents and want decisions, conventions and fixes to
 
 **Connected systems.** [Bots That Talk](Bots-That-Talk) (SLM-Mesh and bot messages), [Web Access and Connected Apps](Web-Access-and-Connected-Apps), [Plugins, Skills and Hooks](Plugins-Skills-and-Hooks) (Claude Code, Cursor, Codex, Copilot, Hermes, Antigravity), [Bounded Loops](Bounded-Loops), [Framework Adapters](Framework-Adapters), [Optimize](Optimize) (caching and compression).
 
-**Operate and reference.** [Dashboard Tour](Dashboard-Tour), [Configuration](Configuration), [Upgrade Memory Engine](Upgrade-Memory-Engine), [CLI Reference](CLI-Reference), [MCP Tools](MCP-Tools), [Capabilities and Operations](Capabilities-and-Operations), [Troubleshooting](Troubleshooting), [FAQ](FAQ), [Research Foundations](Research-Foundations).
+**Operate and reference.** [Dashboard Tour](Dashboard-Tour), [Configuration](Configuration), [Embedding Models](Embedding-Models), [CLI Reference](CLI-Reference), [MCP Tools](MCP-Tools), [Capabilities and Operations](Capabilities-and-Operations), [Troubleshooting](Troubleshooting), [FAQ](FAQ), [Research Foundations](Research-Foundations).
 
 ## The product in one list
 

@@ -58,13 +58,13 @@ Cold memories do not need full-precision vectors. TurboQuant rotates each embedd
 
 ## Published benchmark numbers
 
-These are the LoCoMo results reported in the architecture paper (arXiv:2603.14588), and the project README states plainly that they are not a fresh run of the current package. They are kept here with the protocol each used, because a LoCoMo percentage means nothing without it.
+These are the historical LoCoMo results reported in the architecture paper (arXiv:2603.14588), and the project README states plainly that they are not a fresh run of the current package. They are kept here with the protocol each used, because a LoCoMo percentage means nothing without it.
 
 | Configuration | LoCoMo | Protocol |
 |---|---:|---|
 | Mode A, raw | 60.4% | 10 conversations, 1,276 scored questions; local embeddings, local retrieval, no language model anywhere in answer construction |
 | Mode A, retrieval | 74.8% | Same 10 conversations and 1,276 questions; local retrieval, then GPT-4.1-mini writes the answer |
-| Mode C | 87.7% | Conversation 30 only, 81 scored questions; cloud embeddings (text-embedding-3-large) with GPT-4.1-mini for the answer and the judge |
+| Mode C | 87.7% | Conversation 30 only (one conversation), 81 questions; cloud embeddings (text-embedding-3-large) with GPT-4.1-mini for the answer and the judge |
 
 The Mode A retrieval run reported 72.0% on single-hop, 70.3% on multi-hop, 80.0% on temporal and 85.0% on open-domain questions. The Mode C figure covers a single conversation and is not a full-dataset result. The three rows use different answer-construction models, so they are not three scores of one system and cannot be ranked against each other.
 

@@ -4,13 +4,13 @@ This page takes you from nothing to a working memory in about ten minutes: insta
 
 ## 1. Install
 
-You need Python 3.12 to 3.14 and, for the shortest route, Node.js 18 or later. Apple Silicon Macs, 64-bit Windows and 64-bit Linux are supported.
+The easiest way is to let your AI agent do it: paste the install prompt from [Installation](Installation#install) into Claude Code, Codex, Cursor or any agent that can run commands. On macOS and Linux a one-line installer needs no Python or Node. If you prefer to type the commands, the routes below need Python 3.12 to 3.14 and, for npm, Node.js 18 or later. Apple Silicon Macs, 64-bit Windows and 64-bit Linux are supported.
 
 ```bash
 npm install -g superlocalmemory
 ```
 
-If you prefer Python tools, `pipx install superlocalmemory` does the same job, or create a virtual environment and run `python -m pip install superlocalmemory`. Installing only puts the `slm` command on disk. It does not create your data folder, change any editor, start a background service or download a model. Platform notes, the other install routes and fixes for common errors are in [Installation](Installation).
+If you prefer Python tools, `pipx install superlocalmemory` does the same job, or create a virtual environment and run `python -m pip install superlocalmemory`. Installing the package only puts the `slm` command on disk. It does not create your data folder, change any editor, start a background service or download a model. Platform notes, the other install routes and fixes for common errors are in [Installation](Installation).
 
 ## 2. Choose a mode
 

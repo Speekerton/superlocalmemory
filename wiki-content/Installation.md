@@ -1,6 +1,6 @@
 # Installation
 
-SLM installs as a single `slm` command, either through npm (which gives it a private Python environment) or through pipx or pip (which put it in a Python environment you control). Installing only puts the program on disk. It does not create your data folder, edit an IDE, start a daemon or download a model. Those happen when you run `slm setup`, so you decide each step. SLM supports Apple Silicon Macs, 64-bit Windows and 64-bit Linux on Python 3.12 to 3.14.
+SLM installs as a single `slm` command, either through npm (which gives it a private Python environment) or through pipx or pip (which put it in a Python environment you control). Installing the package with npm, pipx or pip only puts the program on disk. It does not create your data folder, edit an IDE, start a daemon or download a model. Those happen when you run `slm setup`, so you decide each step. SLM supports Apple Silicon Macs, 64-bit Windows and 64-bit Linux on Python 3.12 to 3.14.
 
 ## What you need
 
@@ -22,16 +22,42 @@ On Apple Silicon, setup also installs the on-device answer check (about 1.1 GB) 
 | Linux x86_64 | Supported | Supported (16 GB RAM) |
 | Intel Mac | Not supported | Not supported |
 | 32-bit Windows | Not supported | Not supported |
-| Linux ARM64 (Raspberry Pi, Graviton, Ampere) | Text memory works as on other 64-bit Linux | Not supported yet |
+| Linux ARM64 (aarch64, with glibc: Debian, Ubuntu, Fedora) | Supported | Supported (16 GB RAM) |
+| Windows on ARM | Not supported | Not supported |
 
-The package metadata does not block an unsupported architecture, so an install on Intel Mac or 32-bit Windows fails later, where a pinned dependency has no build for it. On Linux ARM64 the project documents only images and documents as unsupported, and says text memory works there as before.
+The package metadata does not block an unsupported architecture, so an install on Intel Mac or 32-bit Windows fails later, where a pinned dependency has no build for it. The npm installer checks the Python it finds and says plainly when it cannot work (an Intel build on a Mac, 32-bit on Windows, Windows on ARM, 32-bit Linux, a Node running under Rosetta), with the repair command `npm rebuild -g superlocalmemory`.
 
 ## Install
 
-**npm, the shortest route.** This installs the command globally and builds a private Python environment (`.slm-venv`) inside the package, so it never touches your system Python.
+There are four ways to the same result. They all end with SLM set up on your computer and connected to your AI tools; they differ in who types the commands.
+
+**Let your AI agent install it.** Paste this into Claude Code, Codex, Cursor or any agent that can run commands. It follows the agent setup steps in the repository (`SETUP_FOR_AGENTS.md`), asks you one question before turning on anything optional (whether you also want to find pictures, screenshots and PDFs by describing them), connects SLM to the agent you are using, and finishes with `slm doctor`.
+
+```text
+Install SuperLocalMemory on this computer for me. Follow
+https://github.com/qualixar/superlocalmemory/blob/main/SETUP_FOR_AGENTS.md
+step by step and show me what each step printed. Ask me only one question,
+before turning on anything optional: whether I also want to find my pictures,
+screenshots and PDFs by describing them. Connect SuperLocalMemory to the agent
+I am using. When you finish, run slm doctor and tell me in plain words what works.
+```
+
+**One line in a terminal** (macOS and Linux). It needs no Python or Node beforehand. The script installs `uv` if it is missing, lets uv fetch its own Python for SLM, installs SLM, sets it up, starts it, connects the AI tools it finds and opens the dashboard. It never uses sudo and never touches the system Python. You download it first, so you can read it before it runs.
+
+```bash
+curl -fsSLo get-slm.sh https://raw.githubusercontent.com/qualixar/superlocalmemory/main/scripts/get-slm.sh && sh get-slm.sh
+sh get-slm.sh --media      # the same, and also turn on pictures and documents (needs 16 GB RAM)
+```
+
+A Windows version of the script exists in the repository (`scripts/get-slm.ps1`), but the supported Windows routes are the agent prompt, npm and pip.
+
+**npm** and **pip** are the terminal routes described next.
+
+**npm, the shortest terminal route.** This is the primary route: it installs the command globally and builds a private Python environment (`.slm-venv`) inside the package, so it never touches your system Python.
 
 ```bash
 npm install -g superlocalmemory
+npm install -g superlocalmemory --media    # also record a request to turn on pictures and documents
 ```
 
 The installer searches for `python3.14`, `python3.13`, `python3.12`, then `python3` and `python`. If your supported interpreter is somewhere unusual, set `SLM_PYTHON` to its path before you run the install. A path that is not a Python 3.12 to 3.14 is refused, and the installer does not quietly pick another.
@@ -42,7 +68,7 @@ The installer searches for `python3.14`, `python3.13`, `python3.12`, then `pytho
 pipx install superlocalmemory
 ```
 
-**pip in a virtual environment.** Use this when you also want the Python API. Keep the environment active whenever you run `slm`.
+**pip in a virtual environment, the other primary route.** Use this when you also want the Python API. Keep the environment active whenever you run `slm`.
 
 ```bash
 python3 -m venv .venv
@@ -65,7 +91,7 @@ cd superlocalmemory
 
 **macOS (Apple Silicon).** macOS ships an older Python, so install one first, for example `brew install python@3.12`. The on-device [answer check](Answer-Check) works only here.
 
-**Windows (x64).** Install a 64-bit Python 3.12 to 3.14 first. For the Claude Code plugin on native Windows, install SLM first with `pipx install superlocalmemory` or `pip install superlocalmemory`, so `slm` is on PATH before the plugin starts it.
+**Windows (x64).** Install a 64-bit Python 3.12 to 3.14 first. For the Claude Code plugin on native Windows, install SLM first with `pipx install superlocalmemory` or `python -m pip install superlocalmemory`, so `slm` is on PATH before the plugin starts it.
 
 **Linux (x86_64).** Install Python 3.12 or later with your package manager. On Ubuntu 22.04, use the deadsnakes archive: `sudo add-apt-repository ppa:deadsnakes/ppa && sudo apt install python3.12 python3.12-venv`. If the system Python cannot create virtual environments, install your distribution's `python3-venv` package. A virtual environment (`python3.12 -m venv ~/.slm-venv`) avoids conflicts with the system Python.
 
@@ -138,7 +164,7 @@ slm upgrade-hosts                           # preview which host integrations ar
 slm upgrade-hosts --host codex --apply      # refresh only what you reviewed
 ```
 
-A few minutes after SLM first starts on a new version it checks the memory store once, read-only, and shows the result under Health in the dashboard ([Health and Repair](Health-and-Repair)). Schema migrations are additive and forward-only. There is no downgrade of the schema; to go back, use a restore point (`slm db restore-points`, `slm db prepare-downgrade`) or restore a verified copy of the whole data folder. See [Host Upgrades](Host-Upgrades) and [Upgrade Memory Engine](Upgrade-Memory-Engine).
+A few minutes after SLM first starts on a new version it checks the memory store once, read-only, and shows the result under Health in the dashboard ([Health and Repair](Health-and-Repair)). Schema migrations are additive and forward-only. There is no downgrade of the schema; to go back, use a restore point (`slm db restore-points`, `slm db prepare-downgrade`) or restore a verified copy of the whole data folder. See [Host Upgrades](Host-Upgrades) and [Embedding Models](Embedding-Models).
 
 ## Uninstall
 

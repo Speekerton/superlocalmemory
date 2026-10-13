@@ -66,7 +66,7 @@ Credential redaction uses high-aggression secret detection and then collapses ev
 
 ## Telemetry
 
-No telemetry or analytics client was found in the code when this page was written. The only metrics surfaces are local: a read-only learning telemetry route and an optional Prometheus or OpenTelemetry exporter that you turn on yourself. Raw proxy traffic is captured to a local file only if you set `SLM_OPTIMIZE_CAPTURE`.
+When this page was written we found no analytics client and no sender of usage telemetry in the code. The only metrics surfaces are local: a read-only learning telemetry route and an optional Prometheus or OpenTelemetry exporter that you turn on yourself. Raw proxy traffic is captured to a local file only if you set `SLM_OPTIMIZE_CAPTURE`.
 
 ## Erasure, exports and the GDPR controls
 

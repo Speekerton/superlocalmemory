@@ -34,6 +34,7 @@
 * [Privacy and Data Flow](Privacy-and-Data-Flow)
 * [GDPR](GDPR-Compliance)
 * [Compliance](Compliance)
+* [Backup and Restore](Backup-and-Restore)
 * [Cloud Backup](Cloud-Backup)
 
 **Beyond text**
@@ -42,6 +43,7 @@
 
 **Connected systems**
 * [Bots That Talk (SLM-Mesh)](Bots-That-Talk)
+* [Connect Web Apps (steps)](Connect-Web-Apps)
 * [Web Access and Connected Apps](Web-Access-and-Connected-Apps)
 * [Bounded Loops](Bounded-Loops)
 * [Framework Adapters](Framework-Adapters)
@@ -50,7 +52,7 @@
 **Operate and reference**
 * [Dashboard Tour](Dashboard-Tour)
 * [Configuration](Configuration)
-* [Upgrade Memory Engine](Upgrade-Memory-Engine)
+* [Embedding Models](Embedding-Models)
 * [CLI Reference](CLI-Reference)
 * [MCP Tools](MCP-Tools)
 * [Capabilities and Operations](Capabilities-and-Operations)

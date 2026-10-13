@@ -97,7 +97,57 @@ def _use_data_dir(path: Path) -> None:
 
 # -- engine ------------------------------------------------------------------------
 
-def _config(profile: str, data_dir: Path):
+#: The text models this harness can measure. nomic is what SLM ships for text;
+#: EmbeddingGemma 2 runs in the managed model environment (``slm media enable``).
+#: The answer-support recipe is fitted per model, so each needs its own store.
+EMBEDDERS = ("nomic", "gemma")
+GEMMA_MODEL = "google/embeddinggemma-2"
+
+
+def _embedding_for(embedder: str, base):
+    """``base`` (the shipped nomic settings) re-pointed at ``embedder``."""
+    from dataclasses import replace
+
+    if embedder not in EMBEDDERS:
+        raise ValueError(f"unknown embedder {embedder!r}; choose from {', '.join(EMBEDDERS)}")
+    if embedder == "nomic":
+        return base
+    return replace(base, model_name=GEMMA_MODEL, dimension=768, provider="slm-media")
+
+
+def store_dir(cache: Path, digest: str, embedder: str) -> Path:
+    """One built store per corpus and model; nomic keeps the original path."""
+    return cache / digest if embedder == "nomic" else cache / f"{digest}-{embedder}"
+
+
+def _media_env_root() -> Path:
+    """The installed managed model environment: model files and worker only, read-only
+    use. The memory store under test is always the scratch folder, never this account's."""
+    return Path(os.environ.get("SLM_EVAL_MEDIA_ENV",
+                               Path.home() / ".superlocalmemory" / "runtimes" / "media"))
+
+
+def _offer_gemma(config, data_dir: Path) -> None:
+    """Hand the engine a Gemma embedder that runs the installed worker directly.
+
+    Outside the daemon the slm-media provider asks the running daemon for vectors,
+    and that daemon serves whatever model the account uses. A measurement must
+    never depend on it, so the harness drives the worker itself.
+    """
+    from superlocalmemory.core.embedding_live import offer_embedder
+    from superlocalmemory.runtimes.managed_text import ManagedTextEmbedder
+    from superlocalmemory.runtimes.media_env import media_env
+    from superlocalmemory.storage.embedding_spaces import signature_of
+
+    embedder = ManagedTextEmbedder(config.embedding, data_root=data_dir,
+                                   env=media_env(root=_media_env_root()))
+    if not embedder.is_available:
+        raise Refused(f"the managed model environment at {_media_env_root()} is not ready; "
+                      "run: slm media enable")
+    offer_embedder(config.db_path, signature_of(config.embedding), embedder)
+
+
+def _config(profile: str, data_dir: Path, embedder: str = "nomic"):
     from dataclasses import replace
 
     from superlocalmemory.core.config import LLMConfig, SLMConfig
@@ -106,16 +156,21 @@ def _config(profile: str, data_dir: Path):
     mode = Mode.A if profile == "a" else Mode.B
     config = SLMConfig.for_mode(mode, base_dir=data_dir,
                                 embedding_provider="sentence-transformers")
+    config.embedding = _embedding_for(embedder, config.embedding)
     config.llm = LLMConfig()  # no model server, ever
     config.retrieval = replace(config.retrieval, sufficiency_judge="off")
     return config
 
 
-def _engine(profile: str, data_dir: Path, warm_timeout_s: float = 300.0):
+def _engine(profile: str, data_dir: Path, warm_timeout_s: float = 300.0,
+            embedder: str = "nomic"):
     from superlocalmemory.core.engine import MemoryEngine
 
     _use_data_dir(data_dir)
-    engine = MemoryEngine(_config(profile, data_dir))
+    config = _config(profile, data_dir, embedder)
+    if embedder == "gemma":
+        _offer_gemma(config, data_dir)
+    engine = MemoryEngine(config)
     engine.initialize()
     return engine
 
@@ -155,11 +210,11 @@ def _backfill(engine) -> dict:
 
 # -- build ---------------------------------------------------------------------------
 
-def build_store(cache: Path, *, log=print) -> Path:
+def build_store(cache: Path, *, log=print, embedder: str = "nomic") -> Path:
     """Build the synthetic store once per corpus digest; return its data folder."""
     corpus = _load_corpus_module()
     digest = corpus.digest()
-    root = cache / digest
+    root = store_dir(cache, digest, embedder)
     data = root / "data"
     keymap_path = root / "keymap.json"
     if keymap_path.is_file():
@@ -168,7 +223,7 @@ def build_store(cache: Path, *, log=print) -> Path:
         shutil.rmtree(root)
     data.mkdir(parents=True)
     _refuse_own_store(data)
-    engine = _engine("a", data)
+    engine = _engine("a", data, embedder=embedder)
     keymap: dict[str, list[str]] = {}
     rows = corpus.corpus()
     t0 = time.monotonic()
@@ -382,7 +437,7 @@ def measure_conditions(engine, suite: str, memory_to_key: dict, names: list[str]
 
 def measure_profile(profile: str, store_root: Path, work: Path, *,
                     warm_timeout_s: float = 300.0, log=print, suite: str = "hand",
-                    conditions: list[str] | None = None) -> dict:
+                    conditions: list[str] | None = None, embedder: str = "nomic") -> dict:
     keymap = json.loads((store_root / "keymap.json").read_text(encoding="utf-8"))["keys"]
     data = work / f"data-{profile}"
     if data.exists():
@@ -391,7 +446,7 @@ def measure_profile(profile: str, store_root: Path, work: Path, *,
     _refuse_own_store(data)
     memory_to_key = _memory_ids(data, keymap)
     slices = _load_corpus_module().slice_of_key()
-    engine = _engine(profile, data)
+    engine = _engine(profile, data, embedder=embedder)
     rows: list[dict] = []
     latencies: list[float] = []
     try:
@@ -549,18 +604,19 @@ def gate_failures(report: dict) -> list[str]:
 
 def run(work: Path, profiles: list[str], cache: Path | None = None, *,
         warm_timeout_s: float = 300.0, log=print, suite: str = "hand",
-        conditions: list[str] | None = None) -> dict:
+        conditions: list[str] | None = None, embedder: str = "nomic") -> dict:
     _bootstrap()
     work.mkdir(parents=True, exist_ok=True)
     _refuse_own_store(work)
     corpus = _load_corpus_module()
-    store_root = build_store(cache or (work / "cache"), log=log)
+    store_root = build_store(cache or (work / "cache"), log=log, embedder=embedder)
     report = {"corpus_version": corpus.CORPUS_VERSION, "corpus_digest": corpus.digest(),
-              "top_k": TOP_K, "suite": suite, "profiles": []}
+              "top_k": TOP_K, "suite": suite, "embedder": embedder, "profiles": []}
     for profile in profiles:
         report["profiles"].append(measure_profile(profile, store_root, work,
                                                   warm_timeout_s=warm_timeout_s, log=log,
-                                                  suite=suite, conditions=conditions))
+                                                  suite=suite, conditions=conditions,
+                                                  embedder=embedder))
     report["gate_failures"] = gate_failures(report)
     return report
 
@@ -577,6 +633,9 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--conditions", default="",
                    help="also ask each condition gated and gate-off (merge rule): "
                         "warm,probes_cold,ce_absent,keyword_only")
+    p.add_argument("--embedder", default="nomic",
+                   help="text model to measure: nomic (shipped) or gemma (EmbeddingGemma 2, "
+                        "needs the managed model environment)")
     p.add_argument("--out", help="full report (JSON)")
     p.add_argument("--rows", help="per-question rows (JSON Lines)")
     return p
@@ -590,6 +649,9 @@ def main(argv: list[str] | None = None) -> int:
     if not profiles or any(p not in ("a", "b") for p in profiles):
         print("answerability-eval: --profiles takes a, b or a,b", file=sys.stderr)
         return 2
+    if args.embedder not in EMBEDDERS:
+        print(f"answerability-eval: --embedder takes {' or '.join(EMBEDDERS)}", file=sys.stderr)
+        return 2
     conditions = [c.strip() for c in args.conditions.split(",") if c.strip()]
     unknown = sorted(set(conditions) - set(_load_conditions_module().CONDITIONS))
     if unknown:
@@ -598,7 +660,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         report = run(Path(args.work), profiles, Path(args.cache) if args.cache else None,
                      warm_timeout_s=args.warm_timeout, log=lambda m: print(m, file=sys.stderr),
-                     suite=args.suite, conditions=conditions)
+                     suite=args.suite, conditions=conditions, embedder=args.embedder)
     except Refused as exc:
         print(f"answerability-eval: {exc}", file=sys.stderr)
         return 3

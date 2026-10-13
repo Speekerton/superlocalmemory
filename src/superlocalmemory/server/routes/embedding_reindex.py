@@ -178,6 +178,17 @@ def _live_config(request: Request) -> Any:
     return (config or SLMConfig.load()).embedding
 
 
+def unfitted_refusal(body: dict, target: Any) -> JSONResponse | None:
+    """409 when text would move to a managed model with no answer-support fit
+    (core/support_fit_guard.py), unless the caller passed ``force``."""
+    from superlocalmemory.core.support_fit_guard import refusal_for
+
+    reason = None if body.get("force") is True else refusal_for(target)
+    if reason is None:
+        return None
+    return JSONResponse({"error": "not_fitted", "detail": reason}, status_code=409)
+
+
 @router.post("")
 async def start_switch(request: Request):
     from superlocalmemory.server.rbac_enforce import require_global_manage
@@ -198,6 +209,9 @@ async def start_switch(request: Request):
 
     if sp.same_space(sp.signature_of(live), sp.signature_of(target)):
         return _invalid("no_change", f"{target.model_name} is already the embedding model")
+    refused = unfitted_refusal(body, target)
+    if refused is not None:
+        return refused
     response = await asyncio.to_thread(queue_if_new_space, request, live, target)
     return response or _invalid("no_change", f"{target.model_name} is already in use")
 

@@ -218,13 +218,15 @@ def recall_keyword_fallback(
             candidates, facet_filter_error, project_scope, tag_scope = _apply_facets(
                 engine, db, pid, candidates, facets)
         from superlocalmemory.retrieval.fallback_fidelity import admit_fallback
-        # 4.2.3: the source check's own budget, counted from here. Counted from
-        # before the keyword query (0.59 s on 27k facts) it was spent already,
-        # and the check refused every row: the fallback answered nothing.
-        candidates, response = admit_fallback(
-            candidates, db, pid, budget_s=fidelity_budget_s)
+        # 4.2.3: choose what would be shown first, then source-check only that,
+        # on the check's own budget. Checking all ~40 over-fetched rows, on a
+        # budget the keyword query had already spent (0.59 s on 27k facts),
+        # timed out and withheld every row: the fallback answered nothing.
         if not has_facets:
             candidates, tier, note = _tiered(query, candidates, show_weak, include_related)
+            candidates = candidates[:limit]
+        candidates, response = admit_fallback(
+            candidates, db, pid, budget_s=fidelity_budget_s)
         for pos, d in enumerate(candidates[:limit], start=1):
             results.append({
                 "fact_id": d.get("fact_id"),

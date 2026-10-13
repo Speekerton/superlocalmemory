@@ -1,178 +1,73 @@
 # Answer Check
 
-New in 4.1.18. Lets recall say "I don't have that" instead of guessing.
-Until you choose, it uses the on-device check only once an on-device install
-exists that passed its check; until then it behaves exactly as Off.
+Answer check lets your memory say "I don't have that" instead of guessing. Recall already ranks stored memories by relevance and returns the best matches. Answer check adds a second, separate judgment: it looks at the top few results and decides whether they actually answer the question, which is a different thing from whether they are related to it. A memory can be the closest match SLM has and still not answer what you asked. The check's verdict is reported on every recall it ran for, and it is one of the inputs to the support check that decides whether recall returns the results, returns only the closest labelled ones, or returns nothing with "That isn't in SuperLocalMemory." ([How Recall Works](How-Recall-Works)). The check alone hides nothing: with it off, recall still decides support from its other signals.
 
-Recall already ranks memories by relevance. Answer check adds a separate
-decision on top of the best few results: not "is this related" but "does
-this actually answer the question." Results are never hidden or removed —
-the response just also says, honestly, whether the top match is likely an
-answer or just the nearest thing on file. That distinction is the point of
-AI Reliability Engineering: an agent that can tell "related" from "answered"
-fails safely instead of confidently making things up.
+That distinction is the core of AI Reliability Engineering: an agent that knows the difference between "found something related" and "found the answer" fails safely instead of confidently making things up. It runs after the evidence floor, which only asks whether a result earned any real evidence at all; see [How Recall Works](How-Recall-Works).
 
-## The three choices (Settings → Answer check)
+## The three choices
 
-| Option | Where it runs | Needs |
+Open **Settings, Answer check**. Exactly one of these runs at a time.
+
+| Choice | Where it runs | What leaves your computer |
 |---|---|---|
-| **On this Mac** (recommended) | Locally, about 1.1 GB, one-time download; about 1.1 GB of memory while on | A Mac with Apple Silicon |
-| **Online with Jev** | A hosted provider you choose (TypeSafe or OpenRouter) | Your own key, plus explicit consent |
+| **On this Mac** (private, recommended) | A small model called Laya, about 1.1 GB downloaded once and about 1.1 GB of memory while it is on. Apple Silicon only | Nothing |
+| **Online with Jev** (needs a key) | A hosted provider you choose and pay directly, TypeSafe or OpenRouter, with your own key | Your question and the top 3 memories for it. Off until you add a key and tick a consent box |
 | **Off** | Nowhere | Nothing |
 
-Only one runs at a time — turning one on turns the others off. Before anyone
-chooses, the starting state (`auto`) runs the on-device check only once an
-install exists that passed its check, and otherwise behaves exactly as Off.
-It is never offered as a fourth option: the dashboard shows it as what it is
-doing, and once you pick one of the three your choice sticks. It never
-resolves to the online option by itself; that one always requires a
-deliberate choice, a saved key, and a ticked consent box.
+Until you choose, the check is in its starting state, called `auto`. Auto uses the on-device check whenever a working install exists that passed its own check; with no install it behaves exactly like Off. On Apple Silicon SLM installs the on-device model for you (see Setting it up), so there auto is normally on from the first day. **Auto never turns the online option on by itself, and it never resolves to Jev**, so data leaves your computer only when you chose that. Once you pick one of the three, your choice sticks: picking Off means a later setup does not turn the check back on until you pick On this Mac. Switching SLM's mode (A, B or C) never turns Jev back on.
 
-The settings live in one file for every mode (`answer_check.json` in the data
-folder), so switching Mode A/B/C never brings back a withdrawn consent or
-resets a choice. Withdrawing consent turns the online check off at once; SLM
-confirms it stopped before saying so.
+## What recall tells you
 
-## Reordering results (optional, online only)
+A recall response carries these fields, and the CLI and your assistant's session get one extra line when there is something to say. The first two come from the support check, the last three from the answer check.
 
-Inside **Online with Jev** there's one more switch: **Also use Jev to
-reorder results** — off by default, never turned on by an upgrade. When it's
-on, the same single request also asks Jev which of the top memories answers
-most directly, and recall puts them in that order; the answer check then
-looks at the three that now come first. It sends your question and the top
-20 memories (instead of 3), so it has its own notice:
+| Field | Meaning |
+|---|---|
+| `tier` | `supported`, `related` or `none`: whether a memory supports the question, only close ones exist, or nothing is in memory |
+| `abstained` | `true` when no memory supports the question, or when nothing confident was found at all |
+| `abstention_note` | The plain sentence for a person to read, for example "That isn't in SuperLocalMemory." |
+| `abstention_reason` | `unsupported` or `judged_insufficient` when memories were found but none answer it; `evidence_floor` or `no_candidates` when nothing confident was found in the first place |
+| `answer_confidence` | How confident the check is that the top results answer the question, 0.0 to 1.0 |
+| `answer_check_status` | What happened on this recall: `judged`, `off`, `skipped`, `busy`, `warming` or `unavailable` |
 
-> When on, each recall sends your question and its top 20 memories to
-> TypeSafe to choose the best order. Don't use this for client, confidential
-> or personal material.
+If no memory supports the question, recall returns no results (or only the labelled closest ones, for a person), and the assistant sees a line telling it to say it does not have the answer, or to ask, and not to present these memories as the answer. The instructions SLM ships for Claude Code, Codex, Cursor, Copilot, Antigravity and Hermes all say the same thing. A [bounded loop](Bounded-Loops) waiting on a memory honours it too: a recall the check calls insufficient can never pass that loop's gate.
 
-On a public benchmark of long conversations (LoCoMo, 1,531 questions), the
-memory that answers the question came first 62% of the time with reordering
-on, against 49% without it; it adds about 0.4 seconds to a recall.
+A check can be skipped, and skipping costs only the verdict. It is skipped for a context load or a system recall, when there are no results, when too little of the recall's time budget is left, or when the online option would have had to read another profile's memory. The check only ever sees the handful of results recall was already about to return. It never runs its own search and never sees more than you do. A picture with no readable text is reported as not judged, because a text model would only be scoring its label.
 
-Nothing is ever removed — only the order of the top results changes. A
-memory that is nothing but a credential is left out of the reorder
-entirely — never sent, never a reason to skip the rest. If the
-provider is slow, unreachable, or answers something unexpected, results come
-back in their usual order. It switches itself off (until you tick it again)
-when you leave the online option, remove the key, untick the Jev notice, or
-change provider. On this Mac never reorders. The System card shows
-"· reordering on" while it runs.
+## Reordering results with Jev (optional)
 
-## Setup
+Inside **Online with Jev** there is one more switch, **Also use Jev to reorder results**. It is off by default, upgrading never turns it on, and it has its own notice and its own consent because it sends more than the answer check alone. The same single request also asks Jev which of your top memories answers the question most directly, and recall puts them in that order. It sends your question and up to 20 memories instead of 3, each shortened and stripped of credential-shaped text first. Nothing is removed or hidden; only the order of the top results changes. If the provider is slow or answers something unexpected, recall returns the usual order as if the switch were off. Laya never reorders.
 
-Everything is dashboard-driven; there's no config file to hand-edit.
-**Settings → Answer check** has a **Set up** button for the on-device
-option (with a progress bar while it downloads), a **Remove** button, and
-an **Advanced — use an existing install** path for networks that block the
-download (checked in the background; it must be the `python` inside a Python
-environment, owned by you, not in a shared or temporary folder). The hosted
-option has provider selection, a key field (only the last 4 characters are
-ever shown back), **Test** (each test is one billed request), and a required
-consent checkbox. The dashboard's System card shows a one-line summary of
-which option is actually running. Changes need the dashboard's own
-credential, which it sends automatically.
+On the project's benchmark of long conversations (LoCoMo, 1,531 questions), the memory that answers the question came first 62 percent of the time with reordering on against 49 percent without it, and reordering adds about 0.4 seconds to a recall. That figure is from the project documentation; the repository's `docs/benchmarks.md` has the protocol.
 
-On Apple Silicon, the first-run setup wizard offers to install the
-on-device option for you (defaults to yes; once it passes its check, the
-answer check is on). Elsewhere, it points you to the same settings page for
-the hosted option. It is on by default: an unattended setup (`slm setup
---auto`, CI, no terminal) installs it too, and the first command after an
-upgrade offers it the same way. Opt out with `SLM_SKIP_LAYA=1` or
-`slm setup --no-laya`; a no is remembered.
+The reorder switches itself off, and stays off until you tick it again, when you switch to On this Mac or Off, remove the key, untick the Jev notice or change provider.
 
-The on-device model loads when the daemon starts, or the moment you switch
-the check on — never inside a one-shot CLI command.
+## Privacy, by choice
 
-## Privacy
+**On this Mac:** nothing about your questions or memories leaves the machine for this feature. The model runs in a local worker that is forbidden from using the network, and the only network use is the one-time setup download.
 
-> **Shared Macs:** on a Mac used by several people with separate accounts, another account can change these settings through the local service. See [Shared Macs](https://github.com/qualixar/superlocalmemory/blob/main/docs/SECURITY-encryption-at-rest.md#shared-macs-and-other-multi-user-computers).
+**Online with Jev:** each checked recall sends the question and the top 3 memories to the provider you chose. Known vendor key formats, a password in a connection URL and a value after a credential label such as `password=` or `token=` are stripped first. A hex string or UUID counts as a credential only when it follows a key-like label, so a commit id or checksum is sent as it is. Ordinary personal details are not stripped, so do not turn this on for stores that hold client, confidential or personal material. If what the check would read includes a memory owned by another profile, such as a shared or global result, the check is skipped for that recall: your consent to send covers your own memories, not a teammate's. The consent flag must be literally true; a hand-edited "true" string does not count. Withdrawing consent turns the online check off immediately, and SLM confirms it has actually stopped before saying so. See [Privacy and Data Flow](Privacy-and-Data-Flow).
 
-- **On this Mac**: nothing leaves the machine.
-- **Online with Jev**: each checked recall sends your question and the top
-  3 memories to the provider you chose — the top 20 if you also turned on
-  reordering. Known vendor key formats, connection-URL passwords, and
-  values after a credential label (`password=`, `token=`, `api_key: …`) are
-  stripped first; a hex string or UUID only counts as a credential after a
-  key-like label, so a commit id or record id is sent as it is. Personal
-  details are not stripped — don't use this option on sensitive stores. If
-  what the check would read includes a memory owned by another profile
-  (shared or global), the check is skipped for that recall instead of
-  sending it.
-- **Off**: unchanged from before this feature existed.
+## Setting it up
 
-The check only ever looks at results the recall was already about to
-return to you; it never runs its own search and never sees more than scope
-rules already allow.
+Everything is configured in the dashboard. Open **Settings, Answer check**. For **On this Mac**, press **Set up** and SLM downloads and verifies the model in the background with a progress bar, until the status reads Ready. **Remove** stops the model and frees the disk, and **Use an install you already have** lets you point at a Python install and model you already have. For **Online with Jev**, pick a provider, paste a key and save it (only the last four characters are ever shown back), press **Test** to send one real request, and tick the consent box, which spells out exactly what is sent. **On Apple Silicon the on-device check is installed by default.** Interactive setup asks "Set it up now? [Y/n]" with yes as the default. An unattended setup (`slm setup --auto`, CI, or any run without a terminal) installs it without asking, and says how to opt out. After an upgrade, the first `slm` command offers it the same way: it asks in a terminal, and without a terminal it starts the install in the background and logs it to `runtimes/laya/install-after-upgrade.log` in your data folder. The offer goes to the error stream, so it never corrupts a command's output or a hook's JSON. The check does not depend on Mode A, B or C; it runs in whichever mode you use.
 
-## What you'll see
+To opt out, run `slm setup --no-laya` or set `SLM_SKIP_LAYA=1` (`true`, `yes` and `on` also count; the old `SLM_INSTALL_LAYA=0` still works). Answering no once is remembered, so you are not asked again. SLM never installs it on hardware other than Apple Silicon, over an install you already have, or when you have set the check to Off or to the online option. While the model is still downloading or warming up, recall behaves as if the check were off, and the support check works from its other signals.
 
-Response fields: `abstained`, `abstention_reason` (`judged_insufficient` —
-found memories, none of them answer it; `evidence_floor` / `no_candidates` —
-nothing confident was found at all, unrelated to this feature),
-`answer_confidence`, `calibration_status`, `calibration_id`,
-`answer_check_status`, `reranker_status`, `local_reranker_status`. See
-[Retrieval Score Contract](Retrieval-Score-Contract).
+## The Answer Check tab
 
-Every recall carries `answer_check_status`: `judged` (a verdict applied),
-`off` (no check runs), `skipped` (on but not asked this time — loading
-context, the daemon's own start-up recalls, no results, too little of the
-recall's time left, or the online check would have had to read another
-profile's memory), `busy` (the on-device check was already answering
-another recall), `warming` (still loading), or `unavailable` (timeout,
-error, no key, or can't run here). Skipping costs the verdict only — recalls
-that only load context (session start, auto-loaded context, the per-prompt
-hook) and the daemon's own start-up recalls are never judged, sent, or
-billed. Only the exact weights this release measured can abstain; other
-weights still return a confidence, just never `abstained: true`.
+The dashboard's first tab shows the check at work: which check runs and why, a **Try it** box that shows what retrieval found next to what the check said and how long each took against the 3-second limit, how often it said "I don't have that" over 24 hours, 7 days or 30 days (shown only after at least 20 recalls were judged, with its 95 percent range), typical and slow timings, and a live list of recent checks.
 
-`reranker_status` names which step produced the final order —
-`jev_listwise` when the online check's optional reorder replaced it;
-`local_reranker_status` keeps the local reranker's own status for that
-recall, empty when nothing replaced it.
-
-CLI (`slm recall`, `slm trace`) and MCP (`session_init`'s `context`) add one
-plain-text line when the check has run:
-
-```
-Answer check: likely answered (confidence 0.91).
-```
-
-```
-Answer check: none of these memories answers the question (confidence 0.18).
-Say you don't have it, or ask — don't present these as the answer.
-```
-
-Agent instructions shipped for Claude Code, Codex, Cursor, Copilot,
-Antigravity, and Hermes all say the same thing: don't present an abstained
-set as the answer. A [bounded loop](Bounded-Loops)'s gate honors this too —
-a recall judged insufficient can never pass it, and each lap asks the check
-once, for the verdict only, never for the optional reorder.
-
-## Third-party attribution
-
-The on-device model, Laya, is downloaded separately at setup — it is not
-bundled with SLM. It's built by Convai Innovations, under the Apache
-License 2.0.
+The history keeps outcomes and timings only, never your question, any memory text, memory ids or agent names. It stays on this machine in `learning.db`, separately for each profile, for 30 days and at most 10,000 checks per profile. **Clear history** removes it; a data export includes it, and erasing a profile erases it too.
 
 ## Troubleshooting
 
-- **No Apple Silicon** → use Online with Jev, or leave it off.
-- **Download blocked by a company network** → Advanced — use an existing
-  install, pointed at a copy from another machine.
-- **Key test fails** → the message is plain: not accepted, no credit left,
-  or rate-limited — act on what it says.
-- **"Answer check runs in another SLM process"** → expected with more than
-  one SLM process using the same data folder; only one runs the model.
-- **"The saved key file was changed outside SLM"** → choose Remove key, then
-  paste the key again.
-- **Freeing the disk space** → the model and its environment (~1.1 GB) stay
-  in `runtimes/laya` in the data folder until you choose **Remove**;
-  switching to Online or Off, uninstalling SLM or downgrading leaves them.
-  After uninstalling, delete `~/.superlocalmemory/runtimes/laya` (that folder
-  only).
+| Problem | What to do |
+|---|---|
+| The Mac is not Apple Silicon | On this Mac needs Apple Silicon. Use Online with Jev, or leave the check off |
+| A company network blocks the download | Open **Use an install you already have** under the On this Mac panel and point it at a Python interpreter and model you already have, for example one copied from another machine. For the cache folder give either your `HF_HOME` or the `hub` folder inside it. SLM accepts only an interpreter it can trust: the `python` inside a Python environment, owned by you or the system, changeable by no other account, and not in a temporary folder or under `/Users/Shared` |
+| "The saved key file was changed outside SLM" | The key file no longer looks like the one SLM wrote, so SLM will not read it and the online option stays off. Choose **Remove key**, then paste your key again |
+| A key test fails | The result is in plain language: key not accepted (check or regenerate it), no credit left (top up with your provider), too many requests (wait a minute), or the service did not answer or could not be reached (try again shortly) |
+| "Answer check runs in another SLM process" | Expected, not an error. When several SLM processes share one data folder, only one runs the on-device model and the rest report their recalls as if the check were off. Recalls from the CLI, MCP tools and dashboard normally go through the daemon, which usually holds the model |
+| Reclaiming disk | The on-device model and its environment live in `runtimes/laya` in your data folder. **Remove** in the dashboard deletes it. Switching to Online with Jev or Off stops the model but keeps the files so you can switch back without a download. An install you pointed SLM at is never deleted by SLM |
 
-Full reference: [`docs/answer-check.md`](https://github.com/qualixar/superlocalmemory/blob/main/docs/answer-check.md).
-
----
-*Part of [Qualixar](https://qualixar.com) | Created by [Varun Pratap Bhardwaj](https://varunpratap.com)*
+Code: `core/answer_check_stage.py`, `core/judge_selection.py`, `retrieval/sufficiency.py`, `retrieval/answer_check_status.py`, `retrieval/laya_transport.py`, `retrieval/jev_judge.py`, `retrieval/jev_rerank.py`, `core/laya_worker.py`, `server/routes/answer_check.py`.

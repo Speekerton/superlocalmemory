@@ -32,9 +32,7 @@ In Mode A, core remember and recall make no model-provider call: no API key, no 
 
 ## Install
 
-Three ways in. All three end in the same setup: your text memory on this machine, and, if you say yes, your pictures and documents too.
-
-**1. Ask your agent.** Copy this into Claude Code, Codex, Cursor or any agent that can run commands:
+> **The easiest way: let your AI agent install it.** Copy the block below into Claude Code, Codex, Cursor or any agent that can run commands. It reads the setup guide, asks you one question, sets everything up and tells you what works. No terminal commands for you to learn.
 
 ```
 Install SuperLocalMemory on this computer for me. Follow
@@ -45,7 +43,9 @@ screenshots and PDFs by describing them. Connect SuperLocalMemory to the agent
 I am using. When you finish, run slm doctor and tell me in plain words what works.
 ```
 
-**2. npm**, the primary route (Node 18+). It installs SLM into a package-owned virtual environment:
+**Prefer the terminal?** Both routes end in the same setup: your text memory on this machine, and, if you say yes, your pictures and documents too.
+
+**npm**, the primary route (Node 18+). It installs SLM into a package-owned virtual environment:
 
 ```bash
 npm install -g superlocalmemory   # add --media to also turn on pictures and documents
@@ -53,7 +53,7 @@ slm setup                         # pick Mode A to keep everything on this machi
 slm connect claude-code           # or codex, cursor, windsurf, zed, claude-desktop, jetbrains, opencode ...
 ```
 
-**3. pip**, the other primary route (Python 3.12 to 3.14), in a Python virtual environment you activate:
+**pip**, the other primary route (Python 3.12 to 3.14), in a Python virtual environment you activate:
 
 ```bash
 python3 -m venv .venv

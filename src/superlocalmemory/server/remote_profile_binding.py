@@ -126,6 +126,9 @@ ACTIVE_ONLY_TOOLS: dict[str, str] = {}
 NEUTRAL_ARGUMENTS: frozenset[str] = frozenset({
     # ack: message ids a web app received; the broker acknowledges only the caller's own mail.
     "ack",
+    # budget_s (4.2.3): seconds a turn-blocking recall may take; it only shortens
+    # the recall's own clock and selects nothing.
+    "budget_s",
     "about", "action", "agent_id", "as_of", "assertion_id", "case_id", "category",
     "ccr_id", "content", "context", "correction", "depth", "duration_ms", "event_type",
     "event_valid_until", "expected_version", "fact_id", "fact_ids", "fast", "feedback",

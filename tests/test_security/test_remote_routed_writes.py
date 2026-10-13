@@ -155,6 +155,11 @@ def test_log_tool_event_is_logged_for_the_keys_profile(host) -> None:
 
 
 def test_correct_pattern_is_recorded_for_the_keys_profile(host) -> None:
+    from superlocalmemory.learning.behavioral import BehavioralPatternStore
+
+    # 4.2.3: a correction must name a pattern that exists in the key's profile.
+    BehavioralPatternStore(host.engine._db.db_path).record_pattern(
+        WORK, pattern_type="preference", data={"pattern_key": "pat-1"})
     out = host.call("correct_pattern", pattern_id="pat-1", correction="prefer tabs")
     assert out["success"] is True, out
     with sqlite3.connect(host.engine._db.db_path) as conn:

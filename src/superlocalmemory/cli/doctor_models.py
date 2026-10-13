@@ -30,8 +30,8 @@ def local_model_finding(config, installed: list[str], ram_gb: float | None = Non
 def answer_check_fit_finding(db_path) -> tuple[str, str, str]:
     """Is recall's answer check fitted for the text model this store runs on?
 
-    A store moved to the managed model by 4.2.0 / 4.2.1 (an npm install asked
-    for the upgrade) runs a check fitted on another model and can refuse
+    A store moved to the managed model by "Upgrade memory engine" (4.1.25 to
+    4.2.1) runs a check fitted on another model and can refuse
     answers it has (core/support_fit_guard.py). Read-only; never raises.
     """
     import json

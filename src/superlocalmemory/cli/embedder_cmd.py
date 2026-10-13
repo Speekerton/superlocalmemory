@@ -315,7 +315,7 @@ def register_embedder_parser(sub: Any) -> None:
                    help="switch text to a managed model the answer check is not yet fitted for")
     _json_flag(s)
     u = esub.add_parser(
-        "upgrade", help="move your memories to the newer memory engine (rolls back)"
+        "upgrade", help="not offered in this release: text stays on the text model (see docs)"
     )
     u.add_argument("--yes", "-y", action="store_true", help="do not ask")
     u.add_argument("--no-wait", action="store_true", help="return as soon as it is queued")

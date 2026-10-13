@@ -1,10 +1,12 @@
-/* od-engine-upgrade.js — "Upgrade memory engine", in the Embeddings group of Settings (4.1.25).
+/* od-engine-upgrade.js — the text search engine card, in the Embeddings group of Settings.
  *
- * Moves an existing store to the newer memory engine (the model that also reads pictures
- * and documents). The work is the ordinary background switch: this card shows the plan
- * (what changes, memory, disk, time), starts it, and hands the 202 body to the shared
- * progress panel (od-reindex.js), which shows progress, Cancel, and polls. Afterwards the
- * card offers one click back (Roll back) and "Free the old data".
+ * SuperLocalMemory uses two models: a text model (nomic) for every memory, and, when
+ * pictures and documents are on, EmbeddingGemma 2 for those. Moving TEXT to the picture
+ * model ("Upgrade memory engine", 4.1.25) is not offered from 4.2.2: recall's answer
+ * check is not calibrated for it. So this card stays hidden, except for a store whose
+ * text an earlier version already moved: it says so in the server's words and offers
+ * one click back (Roll back) and "Free the old data". The upgrade action below is kept,
+ * unwired, for the release that calibrates it.
  *
  * Exposes window.odEngineUpgrade:
  *   panel(post)  element for the Embeddings group; post(url, body) is the caller's
@@ -135,11 +137,7 @@
 
   function head() {
     var h = el('div');
-    var badge = el('span', 'badge', 'Preview');
-    badge.style.marginRight = '8px';
-    h.appendChild(badge);
-    var t = el('b', null, 'Upgrade memory engine');
-    h.appendChild(t);
+    h.appendChild(el('b', null, 'Text search engine'));
     return h;
   }
 
@@ -147,47 +145,35 @@
     return !!(status && status.previous_vectors_kept && String(status.live || '').indexOf(NEW_MODEL) === 0);
   }
 
-  function actions(plan, status, note) {
+  function hide() {
+    _body.textContent = '';
+    _root.style.display = 'none';
+  }
+
+  function actions(status, note) {
     var row = el('div');
     row.style.marginTop = '6px';
-    if (!plan.already) {
-      var go = button('Upgrade memory engine', 'btn sm primary', function (b) { start(plan, note, b); });
-      go.disabled = !plan.available || _busy;
-      row.appendChild(go);
-    }
-    if (plan.needs_media) {
-      row.appendChild(button('Turn on images & documents first', 'btn sm', openMediaPane));
-    }
     if (onNewEngine(status)) {
-      row.appendChild(button('Roll back', 'btn sm', function () { rollBack(note); }));
+      row.appendChild(button('Roll back', 'btn sm primary', function () { rollBack(note); }));
       row.appendChild(button('Free the old data', 'btn sm ghost', function () { freeOld(note); }));
     }
     return row;
   }
 
+  // Shown only when text already runs on the picture model (plan.already).
   function render(plan, status) {
+    if (!plan.already) { hide(); return; }
     _body.textContent = '';
     _root.style.display = '';
     _body.appendChild(head());
-    _body.appendChild(el('p', 'muted', plan.explain));
-    if (!plan.already) {
-      _body.appendChild(el('p', 'muted', 'From ' + plan.from.model + ' to ' + plan.to.model + '. ' + costText(plan)));
-    }
     if (plan.reason) _body.appendChild(message(plainReason(plan), false));
     var note = message('', false);
-    _body.appendChild(actions(plan, status, note));
+    _body.appendChild(actions(status, note));
     _body.appendChild(note);
   }
 
-  function renderProblem(res) {
-    if (res.status === 404) { _root.style.display = 'none'; return; }
-    _body.textContent = '';
-    _root.style.display = '';
-    _body.appendChild(head());
-    var d = res.data || {};
-    var text = typeof d.detail === 'string' ? d.detail : 'The upgrade is not available right now.';
-    _body.appendChild(message(text, false));
-  }
+  // Nothing a person can act on: an older daemon, a stopped one, a refusal.
+  function renderProblem() { hide(); }
 
   // -- loading ---------------------------------------------------------------
 
@@ -201,10 +187,9 @@
     _gen += 1;
     return Promise.all([api(API + '/upgrade'), api(API)]).then(function (both) {
       var plan = both[0], status = both[1];
-      if (!plan.ok || !plan.data.from) { renderProblem(plan); return; }
+      if (!plan.ok || !plan.data.from) { renderProblem(); return; }
       _busy = false;
       render(plan.data, status.ok ? status.data : null);
-      if (plan.data.media_enabled && plan.data.env_state === 'installing') schedule();
     });
   }
 

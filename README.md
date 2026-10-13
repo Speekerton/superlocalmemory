@@ -32,18 +32,43 @@ In Mode A, core remember and recall make no model-provider call: no API key, no 
 
 ## Install
 
-> **AI agents: installing a memory system for your user?** Follow [SETUP_FOR_AGENTS.md](https://github.com/qualixar/superlocalmemory/blob/main/SETUP_FOR_AGENTS.md) — numbered, non-interactive steps with the expected output of each: install, `slm init --auto`, `slm serve start`, `slm warmup`, connect the host, then call `session_init` at the start of every session and `remember` / `recall` as you work.
+Three ways in. All three end in the same setup: your text memory on this machine, and, if you say yes, your pictures and documents too.
 
+**1. Ask your agent.** Copy this into Claude Code, Codex, Cursor or any agent that can run commands:
 
-```bash
-npm install -g superlocalmemory   # primary route; or: pipx install superlocalmemory   (Python 3.12+, Node 18+ for npm)
-slm setup                         # pick Mode A to keep everything on this machine
-slm connect cursor                # or codex, windsurf, zed, claude-desktop, jetbrains, opencode ...
+```text
+Install SuperLocalMemory on this computer for me. Follow
+https://github.com/qualixar/superlocalmemory/blob/main/SETUP_FOR_AGENTS.md
+step by step and show me what each step printed. Ask me only one question,
+before turning on anything optional: whether I also want to find my pictures,
+screenshots and PDFs by describing them. Connect SuperLocalMemory to the agent
+I am using. When you finish, run slm doctor and tell me in plain words what works.
 ```
 
-**Claude Code:** `claude plugin marketplace add qualixar/superlocalmemory`, then `claude plugin install superlocalmemory@qualixar`.
+**2. npm**, the primary route (Node 18+). It installs SLM into a package-owned virtual environment:
 
-npm is the primary route: it installs SLM into a package-owned virtual environment (pipx does the same). The other primary route is pip in a Python virtual environment you activate: `python3 -m venv .venv`, activate it, then `python -m pip install superlocalmemory`. Repository clone: `./scripts/install.sh install` (macOS, Linux) or `.\scripts\install.ps1 -Action Install` (Windows). Runs on Windows, Linux and Apple Silicon macOS ([platforms](#platform-support)).
+```bash
+npm install -g superlocalmemory   # add --media to also turn on pictures and documents
+slm setup                         # pick Mode A to keep everything on this machine
+slm connect claude-code           # or codex, cursor, windsurf, zed, claude-desktop, jetbrains, opencode ...
+```
+
+**3. pip**, the other primary route (Python 3.12 to 3.14), in a Python virtual environment you activate (pipx works too: `pipx install superlocalmemory`):
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate         # Windows: .venv\Scripts\activate
+python -m pip install superlocalmemory
+slm setup
+slm connect claude-code
+slm media enable                  # optional: pictures and documents (about 1.5 GB; needs 16 GB of memory)
+```
+
+**Claude Code plugin:** `claude plugin marketplace add qualixar/superlocalmemory`, then `claude plugin install superlocalmemory@qualixar`. **Codex:** `slm connect codex`, then `slm codex install`.
+
+**Two models, one memory.** Text is searched with a small local text model (nomic). If you turn on pictures and documents, a second local model (Google's EmbeddingGemma 2) reads them, and one recall returns both. The picture model unloads after 30 minutes without use, so it holds no memory while you only work with text. Details: [pictures and documents](https://github.com/qualixar/superlocalmemory/blob/main/docs/pictures-and-documents.md), [getting started](https://github.com/qualixar/superlocalmemory/blob/main/docs/getting-started.md), [agent setup steps](https://github.com/qualixar/superlocalmemory/blob/main/SETUP_FOR_AGENTS.md).
+
+Repository clone: `./scripts/install.sh install` (macOS, Linux) or `.\scripts\install.ps1 -Action Install` (Windows). Runs on Windows, Linux and Apple Silicon macOS ([platforms](#platform-support)).
 
 ## 30-second example
 

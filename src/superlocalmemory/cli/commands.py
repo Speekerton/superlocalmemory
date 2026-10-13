@@ -4012,8 +4012,8 @@ def _cmd_doctor_checks(args: Namespace, state: dict) -> None:
 
     _stage("Answer check fit")
     # The text model this store runs on must be one recall's answer check was
-    # fitted for (core/support_fit_guard.py). 4.2.0 and 4.2.1 moved text to the
-    # managed model by themselves; such a store refuses answers it has.
+    # fitted for (core/support_fit_guard.py). "Upgrade memory engine" (4.1.25 to
+    # 4.2.1) moved text to the managed model; such a store refuses answers it has.
     try:
         from superlocalmemory.cli.doctor_models import answer_check_fit_finding
         _check("Answer check fit", *answer_check_fit_finding(slm_home / "memory.db"))

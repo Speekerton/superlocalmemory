@@ -13,15 +13,24 @@ A fix release. Upgrading never moves or deletes memory. Text stays on the model 
 
 - **Moving text to the newer memory engine could make recall refuse answers it had.**
   Recall decides "this is in your memory" with a check fitted on one text model
-  (nomic). After "Upgrade memory engine" (which an npm install also requested by
-  itself) moved text to EmbeddingGemma 2, that check scored correct memories far
+  (nomic). After "Upgrade memory engine" (the Settings card, or `slm embedder upgrade`)
+  moved text to EmbeddingGemma 2, that check scored correct memories far
   below its bar, and recall said "That isn't in SuperLocalMemory" to questions it
   had answered before. The check is now chosen by the text model in use, and
-  SuperLocalMemory no longer moves text to a model the check was not fitted for:
-  the Upgrade card says why, an install's upgrade request waits, and
-  `slm embedder switch` needs `--force`. Measured on the release harness (a synthetic store): with the old check, EmbeddingGemma 2 refused all 203 real questions. A check fitted for it found every real answer on questions it had not seen, but also answered questions with no answer (it refused 69% of made-up questions; nomic refuses 98.5%), so it is not used: text stays on nomic, and Gemma keeps serving pictures and documents.
-- **If your text already moved,** the Upgrade card and `slm doctor` (new check
-  "Answer check fit") say so and how to go back: Roll back on the card, or
+  SuperLocalMemory no longer moves text to a model the check was not fitted for,
+  whichever way it is asked (the Settings card, the embedding picker, the config file,
+  the CLI or MCP); only `slm embedder switch --force` does. Measured on the release harness (a synthetic store): with the old check, EmbeddingGemma 2 refused all 203 real questions. A check fitted for it found every real answer on questions it had not seen, but also answered questions with no answer (it refused 69% of made-up questions; nomic refuses 98.5%), so it is not used: text stays on nomic, and Gemma keeps serving pictures and documents.
+- **Two models, one memory.** Text is searched with the text model (nomic); if you
+  turn on pictures and documents, EmbeddingGemma 2 reads those, and one recall returns
+  both. The picture model unloads after 30 minutes unused. "Upgrade memory engine" is
+  no longer offered: the Settings card now appears only for a store whose text already
+  moved, the npm installer no longer offers it, and `slm embedder upgrade` is hidden.
+- **Install, three ways, the same result.** The README now has a prompt to paste into
+  any agent (Claude Code, Codex, Cursor, …), and the npm and pip commands. The agent
+  setup steps ask the person one question, whether to turn on pictures and documents,
+  and `npm install -g superlocalmemory --media` turns them on from the start.
+- **If your text already moved,** the Settings card, `slm doctor` (new check
+  "Answer check fit") and the MCP `health` tool say so and how to go back: Roll back on the card, or
   `slm embedder rollback`. Your previous vectors are kept, so it takes minutes, and
   the rollback message now says that instead of promising a full re-index.
 - **A model switch kept its hub baselines.** Each memory carries a baseline that

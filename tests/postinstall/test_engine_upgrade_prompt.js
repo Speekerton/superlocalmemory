@@ -123,8 +123,9 @@ test('plain words, no download, no network in the module', () => {
   assert.doesNotMatch(text, /re-?index/i);
 });
 
-test('the step is chained after the media step in the npm postinstall', () => {
+test('the npm postinstall never runs the step: text is not moved to the picture model (4.2.2)', () => {
   const source = fs.readFileSync(path.join(REPO_ROOT, 'scripts', 'postinstall.js'), 'utf8');
-  assert.match(source, /engine-upgrade\.js/);
-  assert.ok(source.indexOf('runMediaStep({ argv') < source.indexOf('runUpgradeStep()'));
+  assert.match(source, /runMediaStep\(\{ argv/, 'the pictures-and-documents choice stays');
+  assert.doesNotMatch(source, /runUpgradeStep\s*\(/);
+  assert.doesNotMatch(source, /require\(['"]\.\/postinstall\/engine-upgrade\.js['"]\)/);
 });

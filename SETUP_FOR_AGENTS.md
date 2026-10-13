@@ -25,14 +25,23 @@ multi-session projects coherent. Cost at Mode A: zero.
 
 ## Setup Checklist
 
-### Step 1 — Confirm install
+### Step 1 — Install, then confirm
+
+Use the first route this computer supports:
+
+```bash
+node --version      # 18 or later: npm install -g superlocalmemory
+pipx --version      # otherwise:   pipx install superlocalmemory
+python3 --version   # 3.12 to 3.14, no npm or pipx: python3 -m venv ~/.slm-venv,
+                    #   then ~/.slm-venv/bin/python -m pip install superlocalmemory
+```
+
+Never `sudo pip install` and never install into the system Python.
 
 ```bash
 slm --version
 ```
-Expected: `superlocalmemory 4.1.25` (or later)
-
-On failure: `pip install superlocalmemory` then re-run.
+Expected: `superlocalmemory 4.2.2` (or later)
 
 ---
 
@@ -124,6 +133,30 @@ still works via keyword search; only semantic recall needs the model.
 
 ---
 
+### Step 5b — Ask the user one question: pictures and documents
+
+This is the only choice to put to the user. Ask it in plain words, for example:
+
+> "Do you also want to find your pictures, screenshots and PDFs by describing them?
+> It adds a second local model (about 1.5 GB to download) and needs a computer with
+> 16 GB of memory. Your text memory works the same either way."
+
+- **Yes:** `slm media enable --yes`, then `slm media status` until it says `on`.
+- **No:** do nothing. The user can turn it on any time from the dashboard
+  (Documents & Images) or with `slm media enable`.
+
+How the two models share the work: text is always searched with the text model
+(nomic). Pictures and document pages are searched with EmbeddingGemma 2. One
+`recall` returns both. The picture model is unloaded after 30 minutes without use
+and loads again on the next picture or document search, so it does not hold memory
+while unused.
+
+Never run `slm embedder upgrade` or `slm embedder switch ... --force` for the user.
+Moving text to the picture model is not supported in this release: recall's answer
+check is not calibrated for it.
+
+---
+
 ### Step 6 — Connect your IDE / agent
 
 Auto-detect and configure all present IDEs:
@@ -204,12 +237,12 @@ Discipline:
 
 ---
 
-## Optional: pictures, PDFs and bot messages (4.1.25)
+## Optional: pictures, PDFs and bot messages
 
 Both are opt-in. Ask the user before you turn anything on.
 
-- **Pictures and PDFs.** Needs 16 GB of memory and a 1.5 GB download. `slm media status`
-  shows whether it is on; the user turns it on with `slm media enable`. Then
+- **Pictures and PDFs.** Asked in Step 5b. Needs 16 GB of memory and a 1.5 GB download.
+  `slm media status` shows whether it is on; `slm media enable` turns it on. Then
   `recall` also returns saved pictures and PDF pages, and the MCP tools
   `remember_media`, `remember_document`, `get_media` and `media_status` appear in the
   `full` tool set after the MCP server restarts. A web app uses `media_upload_link`
@@ -257,6 +290,7 @@ slm doctor                 Full pre-flight diagnostics
 slm hooks status           Check Claude Code hook wiring
 slm health                 Math layer health
 slm media status           Are pictures and documents on (off by default)
+slm media enable --yes     Turn them on (the user's choice, Step 5b)
 slm team status            Company-mode login requirement
 slm restart                Nuclear restart (kill orphans, start fresh)
 ```

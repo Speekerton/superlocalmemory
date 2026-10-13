@@ -58,112 +58,42 @@ function setup(initial = {}, extra = []) {
     return h;
 }
 
-describe('upgrade memory engine card', () => {
-    it('available: New badge, plain explanation, the numbers, an enabled button', async () => {
-        const h = setup();
-        await h.mount();
-        const card = h.document.getElementById('od-engine-upgrade');
-        assert.ok(card.querySelector('.badge'), 'a New badge like the what\'s-new card');
-        assert.equal(card.querySelector('.badge').textContent, 'Preview');  // matches the README: a preview in 4.1.25
-        const t = h.text();
-        assert.match(t, /Upgrade memory engine/);
-        assert.match(t, /Recall keeps working/);
-        assert.match(t, /1200 memories/);
-        assert.match(t, /about 10 minutes/);
-        assert.match(t, /2\.9 GB/);
-        assert.doesNotMatch(t, /re-?index/i);
-        assert.equal(h.btn('Upgrade memory engine').disabled, false);
-        assert.equal(h.btn('Turn on images'), undefined);
-    });
+const ON_GEMMA = { plan: { available: false, already: true,
+    reason: 'Text search runs on google/embeddinggemma-2, and recall\'s answer check is not calibrated for it yet.' },
+    status: { live: 'google/embeddinggemma-2::768', previous: 'nomic::768', previous_vectors_kept: true } };
 
-    it('declined confirm sends nothing; confirm shows RAM, disk and time', async () => {
+describe('text search engine card (two-model design, 4.2.2)', () => {
+    it('text on the text model: the card is hidden and offers nothing', async () => {
         const h = setup();
-        await h.mount();
-        h.confirmAnswer = false;
-        h.btn('Upgrade memory engine').click();
-        await flushPromises();
-        assert.equal(h.confirms.length, 1);
-        assert.match(h.confirms[0].consequence, /2\.9 GB/);
-        assert.match(h.confirms[0].consequence, /about 10 minutes/);
+        const panel = await h.mount();
+        assert.equal(panel.style.display, 'none');
+        assert.equal(h.btn('Upgrade memory engine'), undefined);
         assert.equal(writes(h).length, 0);
     });
 
-    it('confirm posts the upgrade and hands the 202 body to the shared progress panel', async () => {
-        const h = setup();
-        await h.mount();
-        h.btn('Upgrade memory engine').click();
-        await flushPromises();
-        const w = writes(h);
-        assert.equal(w.length, 1);
-        assert.equal(w[0].url, API + '/upgrade');
-        assert.equal(h.state.tracked.length, 1);
-        assert.equal(h.state.tracked[0].job.job_id, 4);
-        assert.equal(h.btn('Upgrade memory engine').disabled, true);
+    it('even a plan the server marks available is never offered', async () => {
+        const h = setup({ plan: { available: true } });
+        const panel = await h.mount();
+        assert.equal(panel.style.display, 'none');
+        assert.equal(h.document.querySelectorAll('#od-engine-upgrade button').length, 0);
+        assert.equal(h.timers.length, 0, 'nothing to poll for');
     });
 
-    it('images off: the upgrade is disabled, the reason is plain words, and one button opens the images pane', async () => {
-        const h = setup({ plan: { available: false, needs_media: true, media_enabled: false, env_state: 'not_installed',
-            turn_on_command: 'slm media enable',
-            reason: 'Turn on images and documents first (about 1.5 GB): slm media enable' } });
-        await h.mount();
-        assert.equal(h.btn('Upgrade memory engine').disabled, true);
-        assert.match(h.text(), /Turn on images and documents first \(about 1\.5 GB\)\./);
-        assert.ok(!/slm media enable/.test(h.text()), 'no developer command in the card');
-        const seen = [];
-        h.window.slmNavigate = p => seen.push(p);
-        h.btn('Turn on images & documents first').click();
-        await flushPromises();
-        assert.deepEqual(seen, ['media-pane']);
-        assert.equal(writes(h).length, 0, 'the pane owns the turn-on flow, with its memory check and confirmation');
-        assert.equal(h.confirms.length, 0);
-    });
-
-    it('not set up yet: the "Run:" developer hint is dropped too', async () => {
-        const h = setup({ plan: { available: false, needs_media: true, media_enabled: false, env_state: 'not_installed',
-            turn_on_command: 'slm media enable',
-            reason: 'Images and documents are not set up yet. Run: slm media enable' } });
-        await h.mount();
-        assert.match(h.text(), /Images and documents are not set up yet\./);
-        assert.ok(!/slm media enable|Run:/.test(h.text()));
-    });
-
-    it('while images are being set up: shows the reason, no turn-on button, and stops polling when ready', async () => {
-        const h = setup({ plan: { available: false, needs_media: false, media_enabled: true, env_state: 'installing',
-            reason: 'Images and documents are still being set up. Try again when they finish.' } });
-        await h.mount();
-        assert.match(h.text(), /still being set up/);
-        assert.equal(h.btn('Turn on images'), undefined);
-        assert.equal(h.timers.length, 1, 'polls while it installs');
-        h.state.plan = { ...PLAN };
-        await h.tick();
-        assert.equal(h.btn('Upgrade memory engine').disabled, false, 'offered once the environment is ready');
-        assert.equal(h.timers.length, 0, 'polling stops when ready');
-    });
-
-    it('already upgraded: says so, no upgrade button', async () => {
-        const h = setup({ plan: { available: false, already: true, reason: 'Your memories already use the new engine.' } });
-        await h.mount();
-        assert.match(h.text(), /already use the new engine/);
+    it('text already on the picture model: the server\'s words and a way back', async () => {
+        const h = setup(ON_GEMMA);
+        const panel = await h.mount();
+        assert.notEqual(panel.style.display, 'none');
+        assert.match(h.text(), /Text search engine/);
+        assert.match(h.text(), /not calibrated/);
         assert.equal(h.btn('Upgrade memory engine'), undefined);
-    });
-
-    it('roll back and free-the-old-data appear only on the new engine with the previous one kept', async () => {
-        const h = setup({ plan: { available: false, already: true, reason: 'Your memories already use the new engine.' },
-            status: { live: 'google/embeddinggemma-2::768', previous: 'nomic::768', previous_vectors_kept: true } });
-        await h.mount();
-        assert.ok(h.btn('Roll back'));
         h.btn('Roll back').click();
         await flushPromises();
         assert.equal(writes(h)[0].url, API + '/rollback');
         assert.equal(h.state.tracked.length, 1);
-
-        const g = setup({ status: { live: 'nomic::768', previous: 'old::8', previous_vectors_kept: true } });
-        await g.mount();
-        assert.equal(g.btn('Roll back'), undefined);
     });
 
-    it('free the old data asks first, then calls forget-previous and refreshes', async () => {
-        const h = setup({ status: { live: 'google/embeddinggemma-2::768', previous: 'nomic::768', previous_vectors_kept: true } });
+    it('free the old data asks first, then calls forget-previous', async () => {
+        const h = setup(ON_GEMMA);
         await h.mount();
         h.confirmAnswer = false;
         h.btn('Free the old').click();
@@ -175,42 +105,23 @@ describe('upgrade memory engine card', () => {
         assert.equal(writes(h)[0].url, API + '/forget-previous');
     });
 
-    it('a refusal shows the daemon\'s words; a running job goes to the shared panel', async () => {
-        const h = setup({}, []);
-        h.calls.length = 0;
-        await h.mount();
-        h.state.plan = { ...PLAN };
-        const routes = h.calls;
-        // swap the upgrade route to refuse
-        h.window.fetch = (url, init) => (init && init.method === 'POST' && String(url).endsWith('/upgrade'))
-            ? Promise.resolve({ ok: false, status: 409, json: async () => ({ error: 'reindex_running', detail: 'Another change is running' }) })
-            : h.window.fetch0(url, init);
-        h.btn('Upgrade memory engine').click();
-        await flushPromises();
-        assert.match(h.text(), /Another change is running/);
-        assert.equal(h.state.conflicts.length, 1);
-        assert.ok(routes);
-    });
-
     it('server text is never parsed as HTML', async () => {
-        const h = setup({ plan: { available: false, reason: '<img src=x onerror=alert(1)>' } });
+        const h = setup({ plan: { ...ON_GEMMA.plan, reason: '<img src=x onerror=alert(1)>' },
+            status: ON_GEMMA.status });
         await h.mount();
         assert.equal(h.document.querySelectorAll('#od-engine-upgrade img').length, 0);
         assert.match(h.text(), /<img src=x/);
     });
 
-    it('no such route (older daemon) hides the card; a stopped daemon explains', async () => {
-        const h = setup({ planStatus: 404 });
-        const panel = await h.mount();
-        assert.equal(panel.style.display, 'none');
-        const g = setup({ planStatus: 409, plan: { error: 'daemon_required', detail: 'start it with: slm serve' } });
-        const p2 = await g.mount();
-        assert.notEqual(p2.style.display, 'none');
-        assert.match(g.text(), /slm serve/);
-        assert.equal(g.btn('Upgrade memory engine'), undefined);
+    it('an older or stopped daemon hides the card', async () => {
+        for (const planStatus of [404, 409]) {
+            const h = setup({ planStatus, plan: { error: 'daemon_required', detail: 'start it with: slm serve' } });
+            const panel = await h.mount();
+            assert.equal(panel.style.display, 'none');
+        }
     });
 
-    it('the Settings Embeddings group carries the card and refreshes it when it opens', async () => {
+    it('the Settings Embeddings group carries the card and reads the plan when it opens', async () => {
         const h = buildHarness(['mount'], { ok: true, status: 200, json: {} });
         const urls = [];
         h.window.fetch = async (url, o = {}) => {

@@ -39,8 +39,8 @@ def live_advice(live: Any) -> str | None:
     """What to tell a store whose text ALREADY runs on a managed model that is not
     approved for text.
 
-    4.2.0 and 4.2.1 moved text to the managed model by themselves after an npm
-    install. Rolling back is the person's call, never automatic: their previous
+    4.1.25 to 4.2.1 offered "Upgrade memory engine" (the dashboard card and
+    slm embedder upgrade), which moved text there. Rolling back is the person's call, never automatic: their previous
     vectors are kept, so it takes minutes.
     """
     if refusal_for(live) is None:

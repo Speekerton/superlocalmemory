@@ -51,9 +51,35 @@ cross-client behavior for every product that implements MCP.
 
 ## Install
 
-```bash
-npm install -g superlocalmemory
+There are three ways in, and all three end in the same setup.
+
+**Ask your agent.** Paste this into Claude Code, Codex, Cursor or any agent that can run
+commands. It follows [SETUP_FOR_AGENTS.md](../SETUP_FOR_AGENTS.md) and asks you one
+question:
+
+```text
+Install SuperLocalMemory on this computer for me. Follow
+https://github.com/qualixar/superlocalmemory/blob/main/SETUP_FOR_AGENTS.md
+step by step and show me what each step printed. Ask me only one question,
+before turning on anything optional: whether I also want to find my pictures,
+screenshots and PDFs by describing them. Connect SuperLocalMemory to the agent
+I am using. When you finish, run slm doctor and tell me in plain words what works.
 ```
+
+**npm** (the primary route):
+
+```bash
+npm install -g superlocalmemory           # text memory
+npm install -g superlocalmemory --media   # text memory, plus pictures and documents
+```
+
+**pip** in a virtual environment, as shown under Prerequisites above.
+
+**Two models, one memory.** Text is always searched with the text model (nomic). With
+pictures and documents on, a second local model (EmbeddingGemma 2, about 1.5 GB, needs
+16 GB of memory) reads them, and one recall returns both. It unloads after 30 minutes
+unused. You can turn it on later from the dashboard (Documents & Images) or with
+`slm media enable`. See [Pictures and documents](pictures-and-documents.md).
 
 This installs the `slm` command globally and gives it a private Python
 environment inside the package. The package carries every adapter folder

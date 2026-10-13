@@ -56,6 +56,10 @@ def recall_budget_s() -> float:
 #: A call budget is never allowed below this: the keyword fallback still has to run.
 RECALL_BUDGET_FLOOR_S = 2.0
 
+#: A short-clock recall still running this long before its deadline starts the
+#: keyword fallback beside it (the fallback measured 67-455 ms on 27k facts).
+FALLBACK_LEAD_S = 1.0
+
 
 def parse_budget_s(raw: Any) -> float | None:
     """A caller's recall budget in seconds, or ``None`` when absent or unusable.
@@ -299,8 +303,10 @@ def is_explicit(call: RecallCall) -> bool:
     ``fast`` (skip the internal agentic round, the agent default) does not
     matter here: an agent's recall tool is fast and explicit.
     """
+    # depth 0 is how much to show, not who is waiting: an agent's glance is a
+    # question. The prompt hook says it is one with answer_check=skip (4.2.3).
     return not (call.skip_answer_check or call.context_load
-                or call.budget_s is not None or call.depth == 0)
+                or call.budget_s is not None)
 
 
 def busy(call: RecallCall, snapshot: Any, *, retry_after_s: float) -> dict:
@@ -428,14 +434,28 @@ async def _run_admitted(engine, call, app_state, runtime, snapshot,
                 remaining_deadline(max(0.0, worker_deadline - loop.time()) + EXPLICIT_RUN_GRACE_S),
                 remaining_deadline(EXPLICIT_CEILING_S) - 1.0)
             public_deadline = max(public_deadline, run_deadline + 0.15)
-        response = await wait_until(future, run_deadline)
+        hedge = None
+        if explicit:
+            response = await wait_until(future, run_deadline)
+        else:
+            # Delayed hedge: a short-clock run still going near its deadline
+            # starts the keyword fallback beside it, so an overrun answers with
+            # keyword matches instead of nothing (4.2.3: a 2.5 s recall on a big
+            # store left the fallback ~0.2 s and the prompt hook injected none).
+            lead = min(FALLBACK_LEAD_S, max(0.0, worker_deadline - loop.time()) * 0.5)
+            response = await wait_until(future, worker_deadline - lead)
+            if response is None:
+                hedge = submit(loop, hold, runtime, app_state, engine,
+                               _fallback, engine, call, app_state)
+                response = await wait_until(future, worker_deadline)
         if response is None:
             if explicit:
                 logger.warning("Explicit recall overran its run budget; reporting busy")
                 return busy(call, snapshot, retry_after_s=_retry_after())
-            logger.warning("Recall deadline reached; trying unjudged keyword fallback")
+            logger.warning("Recall deadline reached; serving unjudged keyword fallback")
             return await _bounded_fallback(
-                    engine, call, app_state, public_deadline, snapshot, hold, runtime)
+                    engine, call, app_state, public_deadline, snapshot, hold, runtime,
+                    started=hedge)
         minimal = _minimal_envelope(call, response, snapshot)
         envelope = submit(loop, hold, runtime, app_state, engine, _envelope,
                           engine, call, response, snapshot)
@@ -476,12 +496,14 @@ def _minimal_envelope(call, response, snapshot):
     }
 
 
-async def _bounded_fallback(engine, call, app_state, deadline, snapshot, hold, runtime):
+async def _bounded_fallback(engine, call, app_state, deadline, snapshot, hold, runtime,
+                            started=None):
     from superlocalmemory.server.recall_deadline import submit, timed_out, unjudged, wait_until
     from superlocalmemory.server.recall_ingress import fallback_deadline
 
-    future = submit(asyncio.get_running_loop(), hold, runtime, app_state, engine,
-                    _fallback, engine, call, app_state)
+    future = started if started is not None else submit(
+        asyncio.get_running_loop(), hold, runtime, app_state, engine,
+        _fallback, engine, call, app_state)
     # The fallback keeps its floor even after a budget shortened below it.
     result = await wait_until(future, fallback_deadline(deadline, RECALL_BUDGET_FLOOR_S))
     return unjudged(result) if result is not None else timed_out(call, snapshot)

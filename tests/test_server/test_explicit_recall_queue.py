@@ -48,7 +48,7 @@ def test_the_classes():
     assert recall_core.is_explicit(_call(fast=False))
     assert not recall_core.is_explicit(_call(skip_answer_check=True))  # a hook
     assert not recall_core.is_explicit(_call(context_load=True))
-    assert not recall_core.is_explicit(_call(depth=0))
+    assert recall_core.is_explicit(_call(depth=0))  # an agent's glance (4.2.3)
     assert not recall_core.is_explicit(_call(budget_s=2.5))  # a relayed call
 
 

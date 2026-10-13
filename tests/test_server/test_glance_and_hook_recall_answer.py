@@ -109,3 +109,21 @@ def test_session_init_gets_the_full_clock_but_is_never_judged():
                            "query_string": b"q=x&answer_check=context"})
     # A relayed context load still answers inside its relay's budget.
     assert not recall_core.is_explicit(_call(context_load=True, budget_s=2.5))
+
+
+def test_a_slow_keyword_fallback_on_a_loaded_machine_still_answers(monkeypatch):
+    # Measured on the author's store with the machine loaded: 1.3 s of a 3 s
+    # budget. Started a second before the deadline it lost; it must win.
+    def slow_engine(*a):
+        time.sleep(2.0)
+        return object()
+
+    def keyword(*a, **kw):
+        time.sleep(0.45)
+        return dict(KEYWORD)
+
+    monkeypatch.setattr(recall_core, "_engine_call", slow_engine)
+    monkeypatch.setattr(recall_fallback, "recall_keyword_fallback", keyword)
+    monkeypatch.setattr(recall_core, "effective_budget_s", lambda call: 1.0)
+    out = _under_ingress_clock(_call(fast=False, skip_answer_check=True), 1.0)
+    assert out["results"] == KEYWORD["results"] and out["_elapsed"] < 1.05

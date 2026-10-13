@@ -56,9 +56,11 @@ def recall_budget_s() -> float:
 #: A call budget is never allowed below this: the keyword fallback still has to run.
 RECALL_BUDGET_FLOOR_S = 2.0
 
-#: A short-clock recall still running this long before its deadline starts the
-#: keyword fallback beside it (the fallback measured 67-455 ms on 27k facts).
-FALLBACK_LEAD_S = 1.0
+#: A short-clock recall still running after this long (or 40% of its budget,
+#: if sooner) starts the keyword fallback beside it. A small store answers
+#: first and never pays for it; on 27k facts the fallback measured 0.07-0.5 s
+#: idle and 1.3 s on a loaded machine, so it needs most of the budget.
+HEDGE_AFTER_S = 1.0
 
 
 def parse_budget_s(raw: Any) -> float | None:
@@ -446,8 +448,9 @@ async def _run_admitted(engine, call, app_state, runtime, snapshot,
             # starts the keyword fallback beside it, so an overrun answers with
             # keyword matches instead of nothing (4.2.3: a 2.5 s recall on a big
             # store left the fallback ~0.2 s and the prompt hook injected none).
-            lead = min(FALLBACK_LEAD_S, max(0.0, worker_deadline - loop.time()) * 0.5)
-            response = await wait_until(future, worker_deadline - lead)
+            left = max(0.0, worker_deadline - loop.time())
+            response = await wait_until(
+                future, loop.time() + min(HEDGE_AFTER_S, left * 0.4))
             if response is None:
                 hedge = submit(loop, hold, runtime, app_state, engine,
                                _fallback, engine, call, app_state)

@@ -9,7 +9,11 @@ from superlocalmemory.retrieval.query_embedding import embed_as_query
 
 def raw_semantic(engine, question, top_k):
     retrieval = engine._retrieval_engine
-    channel = retrieval._channels.get("semantic")
+    # RetrievalEngine holds its channels as named attributes (_semantic, _bm25,
+    # ...); it has never had a `_channels` dict. 4.2.1 read one, and every
+    # calibration on a real install died at 40/48 on the first absent-answer
+    # sample because the stand-in engines in its tests invented the dict.
+    channel = retrieval._semantic
     embedder = getattr(engine, "_embedder", None)
     if channel is None or embedder is None:
         return [], []

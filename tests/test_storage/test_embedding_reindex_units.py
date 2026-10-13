@@ -468,9 +468,10 @@ def test_a_copying_batch_yields_to_recall_and_rests(store, monkeypatch):
     finally:
         runner.stop()
     job = runner.status()["job"]
-    # Two calls: the probe at the request and the probe at the job's start;
-    # every memory's vector was copied, none embedded.
-    assert job["state"] == "activated" and job["copied"] == 20 and old.calls == 2, (job, old.calls)
+    # Three calls: the probe at the request, the probe at the job's start and the
+    # one batch of hub probe texts the baselines are measured against; every
+    # memory's vector was copied, none embedded.
+    assert job["state"] == "activated" and job["copied"] == 20 and old.calls == 3, (job, old.calls)
     assert len(yields) >= 4, "copy-only batches did not yield to recall"
     assert len([r for r in rests if r > 0]) >= 4, "copy-only batches ran back to back"
 

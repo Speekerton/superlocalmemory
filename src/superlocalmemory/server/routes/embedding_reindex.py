@@ -77,7 +77,24 @@ def _conflict(exc: Any) -> JSONResponse:
     }, status_code=409)
 
 
+def _rollback_detail(job: dict) -> str:
+    """A rollback copies the previous model's vectors back for every unchanged
+    memory (no model call) and embeds only what is new or edited. 4.2.1 said
+    "re-indexing 27415 memories" for it, which read as the multi-hour job a
+    forward switch is; the author's finished in minutes."""
+    reusable = job.get("reusable")
+    reuse = (f"up to {reusable} of the {job['total']} memories have" if reusable
+             else f"memories that have not changed since the switch ({job['total']} in all) have")
+    return (f"going back to {job['to']}: {reuse} the vectors it already made, copied back "
+            "with no model call, so this is much shorter than a full re-index; only "
+            f"memories added or edited since are embedded again. Recall keeps using "
+            f"{job['from']} until it is done. Progress: slm embedder status")
+
+
 def _accepted(job: dict) -> JSONResponse:
+    if job.get("kind") == "rollback":
+        return JSONResponse({"success": True, "accepted": True, "job": job,
+                             "detail": _rollback_detail(job)}, status_code=202)
     return JSONResponse({"success": True, "accepted": True, "job": job,
                          "detail": (f"re-indexing {job['total']} memories with "
                                     f"{job['to']} in the background; recall keeps using "

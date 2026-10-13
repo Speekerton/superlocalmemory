@@ -150,6 +150,8 @@ def _drop_staged_fact(conn: Any, fact_id: str) -> None:
     if row is not None:
         conn.execute(f"DELETE FROM {sp.NEXT_VEC} WHERE rowid = ?", (int(row[0]),))
         conn.execute(f"DELETE FROM {sp.NEXT_MAP} WHERE fact_id = ?", (fact_id,))
+    if sp.table_exists(conn, sp.NEXT_HUB):  # a re-staged vector invalidates its baseline
+        conn.execute(f"DELETE FROM {sp.NEXT_HUB} WHERE fact_id = ?", (fact_id,))
 
 
 def write_batch(conn: Any, job: dict, rows: list[StagedRow], *, cursor: int | None,
@@ -206,6 +208,40 @@ def _rebuild_projection(conn: Any, source: str, model_name: str, dimension: int)
                  f"SELECT fact_id, profile_id, vec_rowid FROM {source}")
 
 
+def _space_name(signature: str) -> str:
+    """The ``space`` string ``hub_baseline.space_of`` reads back for this model."""
+    from superlocalmemory.storage.embedding_migrator import _normalize_signature
+
+    return _normalize_signature(signature)
+
+
+def land_hub_baselines(conn: Any, signature: str) -> int:
+    """Publish the staged space's hub baselines as the live ones, in the swap's
+    own transaction. Returns the rows written; 0 when none were staged.
+
+    A baseline is a number about one memory's vector in one space, so it lands
+    exactly when that vector does. Memories with no staged baseline keep
+    whatever row they had (read only for its own space) until the backfill
+    measures them.
+    """
+    if not (sp.table_exists(conn, sp.NEXT_HUB) and sp.table_exists(conn, "fact_hub_baseline")):
+        return 0
+    conn.execute(
+        "INSERT INTO fact_hub_baseline (fact_id, profile_id, space, probe_version, "
+        "baseline_mean, baseline_topk, computed_at) "
+        f"SELECT h.fact_id, f.profile_id, ?, h.probe_version, h.baseline_mean, h.baseline_topk, ? "
+        f"FROM {sp.NEXT_HUB} h JOIN atomic_facts f ON f.fact_id = h.fact_id "
+        f"JOIN {sp.NEXT_MAP} m ON m.fact_id = h.fact_id WHERE true "
+        "ON CONFLICT(fact_id) DO UPDATE SET profile_id = excluded.profile_id, "
+        "space = excluded.space, probe_version = excluded.probe_version, "
+        "baseline_mean = excluded.baseline_mean, baseline_topk = excluded.baseline_topk, "
+        "computed_at = excluded.computed_at",
+        (_space_name(signature), time.time()))
+    return int(conn.execute(
+        "SELECT COUNT(*) FROM fact_hub_baseline WHERE space = ?", (_space_name(signature),)
+    ).fetchone()[0])
+
+
 def _timed(timings: dict, name: str, started: float) -> float:
     now = time.perf_counter()
     timings[name] = round((now - started) * 1000, 1)
@@ -256,6 +292,8 @@ def activate(conn: Any, job: dict, *, model_name: str, dimension: int,
     mark = _timed(timings, "projection_ms", mark)
     timings["columns_swapped"] = len(slots.swap(conn))
     mark = _timed(timings, "columns_ms", mark)
+    timings["hub_baselines"] = land_hub_baselines(conn, job["to_signature"])
+    mark = _timed(timings, "hub_baselines_ms", mark)
     if probe is not None and conn.execute(
             f"SELECT rowid FROM {sp.LIVE_VEC} WHERE embedding MATCH ? AND profile_id = ? "
             "AND k = 1", (probe[0], probe[1])).fetchone() is None:
@@ -263,6 +301,7 @@ def activate(conn: Any, job: dict, *, model_name: str, dimension: int,
     staged = int(conn.execute(f"SELECT COUNT(*) FROM {sp.NEXT_MAP}").fetchone()[0])
     change_log.stop(conn)
     conn.execute(f"DROP TABLE {sp.NEXT_MAP}")
+    conn.execute(f"DROP TABLE IF EXISTS {sp.NEXT_HUB}")
     sp.ensure_side_tables(conn)  # the trigger needs the (empty) table
     sp.write_space(conn, job["to_signature"], live_cfg, job["from_signature"], prev_cfg,
                    job["job_id"])
@@ -286,10 +325,13 @@ def reverse(conn: Any, job: dict, *, model_name: str, dimension: int,
     slots.swap(conn)  # the old values are still in the twins: nothing cleared them yet
     conn.execute(f"DELETE FROM {sp.PREV_MAP}")
     sp.drop_vec(conn, sp.NEXT_VEC)
+    if sp.table_exists(conn, "fact_hub_baseline"):  # measured in the space just undone
+        conn.execute("DELETE FROM fact_hub_baseline WHERE space = ?",
+                     (_space_name(job["to_signature"]),))
     sp.write_space(conn, job["from_signature"], live_cfg)
     sp.drop_side_tables_if_unused(conn)
 
 
 __all__ = ["NotCaughtUp", "StagedRow", "activate", "quick_verify", "content_hash", "count_facts",
-           "drop_gone", "facts_after", "fisher_blobs", "reverse", "staged_diff",
-           "write_batch"]
+           "drop_gone", "facts_after", "fisher_blobs", "land_hub_baselines", "reverse",
+           "staged_diff", "write_batch"]

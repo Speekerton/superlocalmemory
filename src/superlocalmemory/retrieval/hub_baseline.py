@@ -200,6 +200,20 @@ def warm_probes(embedder: Any) -> bool:
         return False
 
 
+def embed_probes(embedder: Any) -> np.ndarray | None:
+    """The probe vectors for ``embedder``, embedded now and not cached: a
+    re-index measures a space that is not live yet, so the process-wide bank
+    (keyed by the live space) must not learn it. None when the model cannot."""
+    try:
+        vectors = embedder.embed_batch(list(probe_texts()))
+    except Exception as exc:  # a switch is never failed for an accuracy aid
+        logger.warning("hub probes could not be embedded for the new model: %s", exc)
+        return None
+    if not vectors or any(v is None for v in vectors):
+        return None
+    return _unit_rows(vectors)
+
+
 def baselines(vectors: Sequence[Sequence[float]], probes: np.ndarray,
               top_k: int = TOP_K) -> list[tuple[float, float]]:
     """``(mean over all probes, mean of the top_k closest)`` per vector."""
@@ -264,6 +278,24 @@ def _write(db: Any, rows: list[tuple[str, str, str, str, float, float]]) -> None
                 "baseline_topk = excluded.baseline_topk, computed_at = excluded.computed_at",
                 (fact_id, profile_id, space, version, mean, topk, now),
             )
+
+
+def ensure_reembed_trigger(db: Any) -> bool:
+    """Rebind the re-embed trigger to the live vector column; True if it had to
+    be. A switch before 4.2.2 left it on ``embedding_next``, where the clear of
+    the replaced vectors deleted every baseline (storage/hub_baseline_trigger)."""
+    from superlocalmemory.storage import hub_baseline_trigger as trigger
+
+    try:
+        rows = db.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ?", (trigger.NAME,))
+        if rows and trigger.is_bound(rows[0]["sql"]):
+            return False
+        with db.raw_connection() as conn:  # commits on exit
+            return trigger.rebind(conn)
+    except Exception as exc:  # fail-open: the baselines are an aid, not a gate
+        logger.debug("hub baseline trigger check skipped: %s", exc)
+        return False
 
 
 def table_ready(db: Any) -> bool:
@@ -381,6 +413,7 @@ class Backfill:
         yields the shared embedder to recall (``recall_gate.background_work``)."""
         from superlocalmemory.core.recall_gate import background_work
 
+        ensure_reembed_trigger(self._db)
         batches, cursor = 0, 0
         while not self._stop.is_set() and (max_batches is None or batches < max_batches):
             with background_work():

@@ -13,8 +13,9 @@ statements per column (32 ms measured on that store) -- the old values end in
 ``*_next`` and are cleared in the background afterwards.
 
 A rename fires no trigger and rewrites the triggers that name the column, so
-:func:`swap` re-creates the vector change-log trigger and logs a vector change
-for every fact, which every change-tracked cache reads.
+:func:`swap` re-creates the vector change-log trigger and the hub-baseline
+trigger, and logs a vector change for every fact, which every change-tracked
+cache reads.
 """
 
 from __future__ import annotations
@@ -68,6 +69,15 @@ def _recreate_vector_trigger(conn: Any) -> None:
         "SELECT NEW.profile_id, NEW.fact_id, 'v' UNION SELECT OLD.profile_id, OLD.fact_id, 'v'"))
 
 
+def _rebind_hub_baseline_trigger(conn: Any) -> None:
+    """The hub-baseline trigger names ``embedding`` too, and a rename carries it
+    to the twin (see ``hub_baseline_trigger``): left there, the background clear
+    of the twin deleted every baseline the switch had just published."""
+    from superlocalmemory.storage import hub_baseline_trigger
+
+    hub_baseline_trigger.rebind(conn)
+
+
 def _log_every_vector_changed(conn: Any) -> None:
     from superlocalmemory.storage import fact_search_changes as fsc
 
@@ -92,6 +102,7 @@ def swap(conn: Any) -> list[str]:
         conn.execute(f"ALTER TABLE atomic_facts RENAME COLUMN {column}{_SWAP_SUFFIX} TO {twin}")
         swapped.append(column)
     _recreate_vector_trigger(conn)
+    _rebind_hub_baseline_trigger(conn)
     _log_every_vector_changed(conn)
     return swapped
 

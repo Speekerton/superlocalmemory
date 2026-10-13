@@ -292,6 +292,7 @@ def build(
     ce_batch_norm: float | None = None,
     hub_baseline: float | None = None,
     hub_baseline_mean: float | None = None,
+    hub_baseline_source: str | None = None,
     rare: Sequence[str] = (),
 ) -> dict:
     """Every evidence feature for one result, as plain JSON-safe values."""
@@ -306,6 +307,13 @@ def build(
     return {
         "cosine": _r(cos),
         "hub_baseline": _r(hub_baseline),
+        # Where the baseline came from: "stored" (the live space's row),
+        # "measured" (from the stored vector, on the spot) or "missing". A
+        # missing one is what the gate imputes (support_recipe
+        # hub_missing_baseline, a constant fitted on one model), so a caller
+        # reading the evidence can see which memories were judged on it.
+        "hub_baseline_source": hub_baseline_source or (
+            "missing" if hub_baseline is None else "stored"),
         "hub_corrected": _corrected(cos, hub_baseline),
         "hub_baseline_mean": _r(hub_baseline_mean),
         "hub_corrected_mean": _corrected(cos, hub_baseline_mean),

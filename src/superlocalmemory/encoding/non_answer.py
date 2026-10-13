@@ -8,6 +8,17 @@ ULID; a plain number needs 12+ digits, so a receipt number or a date stamp is
 never one), or session boilerplate with its timestamp. Anything a person could
 mean ("use port 8765", "memory id: grandma-recipe") stays answer material.
 A user's decision ("this is an answer") is stored and always wins.
+
+The hooks' own lines are stubs too, matched only as the WHOLE text and in the
+writer's exact shape (hooks/hook_handlers.py and the agents' slm-checkpoint):
+the Stop hook's "[project] session ended <date> <time>" with its optional
+"| files: ..." tail, the Write/Edit hook's "File changed: <name>", a bare
+"files: a.py, b.md" list (what a stored summary splits into) and the
+Codex/agents "[agent] session ended (reason) at <date> <time> in <project>."
+A summary that carries a branch, commits or the agent's last action is real
+content and is not matched. Measured on one real store, about 1,056 of 5,443
+facts written in 7 days were such lines, and they answered "what am I
+working on?" with bookkeeping.
 """
 
 from __future__ import annotations
@@ -18,6 +29,19 @@ _EMPTY = re.compile(r'^[\s\[\]{}(),;:]*$')
 _DATE = r'\d{4}-\d{2}-\d{2}(?:[T ]\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?'
 _SESSION = re.compile(r'^(?:\[\]\s*)?session\s+(?:ended|closed)(?:\s+at)?\s+'
                       + _DATE + r'[.!]?$', re.I)
+# "[Agentic_official] session ended 2026-10-13 09:54 | files: NOTICE, formats.md"
+_HOOK_SESSION = re.compile(
+    r'^\[[^\]\n]{1,200}\]\s+session\s+ended\s+' + _DATE
+    + r'(?:\s*\|\s*files:\s*[^|\n]+)?$', re.I)
+# "[codex] session ended (exit) at 2026-10-13 11:01 in my project." plus the id
+# segments the checkpoint appends; a "last_action:" segment is real content.
+_AGENT_CHECKPOINT = re.compile(
+    r'^\[[^\]\n]{1,200}\]\s+session\s+ended\s+\([^)\n]{0,100}\)\s+at\s+' + _DATE
+    + r'\s+in\s+[^|\n]{1,300}?\.(?:\s*\|\s*(?:transcript|session_id):\s*[^|\n]+)*$', re.I)
+# The hook writes a basename; a name with a space is left as an answer (harmless).
+_BASENAME = r'[\w@+~#%=.-]+'
+_FILE_CHANGED = re.compile(r'^File changed:\s*' + _BASENAME + '$')
+_FILE_LIST = re.compile(r'^files:\s*(?=[^\n]*\.\w)' + _BASENAME + r'(?:,\s*' + _BASENAME + ')*$')
 _MACHINE_ID = (r'(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
                r'|(?=[0-9]*[a-f])[0-9a-f]{8,}'  # hex: a letter a-f, so not a plain number
                r'|[0-9]{12,}'
@@ -35,7 +59,12 @@ def is_empty_structure(text: str) -> bool:
 def is_stub(text: str) -> bool:
     value = (text or '').strip()
     return bool(value and (_EMPTY.fullmatch(value) or _SESSION.fullmatch(value)
-                           or _RECEIPT.fullmatch(value)))
+                           or _RECEIPT.fullmatch(value) or _hook_line(value)))
+
+
+def _hook_line(value: str) -> bool:
+    return bool(_HOOK_SESSION.fullmatch(value) or _AGENT_CHECKPOINT.fullmatch(value)
+                or _FILE_CHANGED.fullmatch(value) or _FILE_LIST.fullmatch(value))
 
 
 def _columns(db) -> frozenset:

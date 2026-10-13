@@ -190,6 +190,9 @@ from superlocalmemory.storage.migrations import (
 from superlocalmemory.storage.migrations import (
     M061_fact_hub_baseline as _M061,
 )
+from superlocalmemory.storage.migrations import (
+    M062_hook_bookkeeping_is_flagged as _M062,
+)
 
 # Order matters: M003 creates the log table. The runner handles M003's own
 # bootstrap (it can't record itself before it exists).
@@ -402,4 +405,9 @@ DEFERRED_MIGRATIONS: list[Migration] = [
     # M061 adds the hub-baseline table recall reads (retrieval/hub_baseline.py).
     # Deferred: its delete trigger watches atomic_facts.
     Migration(name=_M061.NAME, db_target="memory", ddl=_M061.DDL),
+    # M062 flags the hooks' bookkeeping already stored (atomic_facts.non_answer,
+    # a column M060 adds). Deferred: it reads atomic_facts, which engine init
+    # creates.
+    Migration(name=_M062.NAME, db_target="memory", ddl=_M062.DDL,
+              dependencies=(_M060.NAME,)),
 ]

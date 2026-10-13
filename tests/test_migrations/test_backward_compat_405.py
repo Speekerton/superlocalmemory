@@ -166,7 +166,9 @@ import pytest
 #: 61 as of 4.1.25: +M060 memory description (two columns, ledger tables) and
 #: +M061_fact_hub_baseline (deferred, memory.db, one new table and its
 #: triggers); both additive, downgrade floor 51.
-_EXPECTED_SCHEMA_VERSION: int = 61
+#: 62 as of 4.2.2: +M062_hook_bookkeeping_is_flagged (deferred, memory.db; no
+#: schema change, sets an existing flag column), downgrade floor 51.
+_EXPECTED_SCHEMA_VERSION: int = 62
 
 #: Total migrations in the MIGRATIONS + DEFERRED_MIGRATIONS catalogue.
 #: M001–M043 with M008 absent = 42 total.
@@ -190,7 +192,8 @@ _EXPECTED_SCHEMA_VERSION: int = 61
 # 57 as of WP-4b: +M056, M057, M058 (deferred, memory.db, additive).
 # 60 as of 4.1.25: +M060_memory_description and +M061_fact_hub_baseline
 # (both deferred, memory.db, additive).
-_EXPECTED_MIGRATION_COUNT: int = 60
+# 61 as of 4.2.2: +M062_hook_bookkeeping_is_flagged (deferred, memory.db).
+_EXPECTED_MIGRATION_COUNT: int = 61
 
 #: Path to an installed reference package's migrations directory, if one exists.
 #:

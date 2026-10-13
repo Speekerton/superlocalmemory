@@ -65,7 +65,9 @@ from pathlib import Path
 #: M059 (erasure visibility), M060 (memory description: two atomic_facts
 #: columns and the enrichment ledger tables) and M061 (one new memory.db table
 #: of hub baselines and its triggers) are additive, with ``DOWNGRADE_FLOOR`` 51.
-SUPPORTED_SCHEMA_VERSION: int = 61
+#: M062 sets an existing flag column on rows the stub rule recognises (no schema
+#: change); the ceiling follows it by the same convention, floor 51.
+SUPPORTED_SCHEMA_VERSION: int = 62
 
 
 class SchemaVersionError(RuntimeError):

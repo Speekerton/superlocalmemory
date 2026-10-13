@@ -5,6 +5,55 @@ All notable changes to SuperLocalMemory will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.5] — Every sentence you save can be found, and saves no longer hold up the store
+
+No migration. Nothing is moved or deleted. Older memories gain facts in the
+background (below), each one listed for exact undo.
+
+### Every sentence is findable
+
+- **A long memory kept only a few of its sentences as facts.** A 767-character
+  launch note was saved as the whole note plus four facts, its first two
+  bullets; asking "Product Hunt license fix" found nothing, because that line
+  lived only inside the whole-note fact. Three hard-coded limits of five facts
+  per memory overrode the configured ten. The configured limit is back, and
+  after extraction every sentence or bullet that no extracted fact already
+  holds is kept as a fact of its own, word for word (up to 40 per memory;
+  greetings, fragments and markup lines are skipped). Word-for-word text cannot
+  misstate what was saved, so it needs no model call.
+- **Memories saved before this release** gain the same, up to ten facts each,
+  newest first, in small batches while the service is idle, giving way to
+  every recall. It only touches memories whose full text is already searchable,
+  so nothing becomes findable that was not before; anything erased, archived,
+  corrected or held for review is left alone. Each added fact is listed in
+  `backfill/coverage-backfill.jsonl` in the data folder.
+
+### Saves no longer hold up the store
+
+On a copy of a 27,700-fact store, two steps of every save scanned the whole
+store while holding the write lock, so under load other writes waited, mesh
+heartbeats failed with "database is locked" and accepted memories retried:
+
+| Step, same store | 4.2.4 | 4.2.5 |
+|---|---|---|
+| Duplicate check on each save | 1.3-1.7 s (5-30 s under load) | under 1 ms |
+| Keeping a scene's member list (1,607 members) | 4.26 s | 16 ms |
+| Lock holds over 1.5 s while 52 memories were saved (load 25-53) | 41, longest 5.9 s | 0 |
+
+- A write whose caller has already given up now stops at its deadline and lets
+  go of the lock, instead of finishing work that is rolled back anyway.
+- The background re-read of upcoming plans reads and classifies outside the
+  write lock; it locks only for its own update.
+
+### Fixes
+
+- **`slm doctor` warned about memories saved minutes ago** as "missing from the
+  search index". They are indexed in the background, a minute or two behind
+  on a busy machine. Memories from the last ten minutes are now reported as
+  being indexed; older ones still warn.
+- **Repair checks were skipped on a machine up less than half an hour.** "Never
+  checked" was stored as 0 and compared with a clock that counts from boot.
+
 ## [4.2.4] — Recall in under a second on large memories, with the answer check on every question
 
 A performance release. Nothing is moved or deleted. One data-only migration

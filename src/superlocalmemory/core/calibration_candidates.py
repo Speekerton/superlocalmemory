@@ -17,10 +17,10 @@ def raw_semantic(engine, question, top_k):
     if not vector:
         return [], []
     hits = channel.search(
-        vector, engine._config.profile_id, top_k=top_k, include_global=False, include_shared=False
+        vector, engine.profile_id, top_k=top_k, include_global=False, include_shared=False
     )
     facts = engine._db.get_facts_by_ids(
-        [fact_id for fact_id, _ in hits], profile_id=engine._config.profile_id
+        [fact_id for fact_id, _ in hits], profile_id=engine.profile_id
     )
     by_id = {fact.fact_id: fact for fact in facts}
     visible = [(by_id[fact_id], score) for fact_id, score in hits if fact_id in by_id]
@@ -31,7 +31,7 @@ def source_score(engine, question, source_id):
     """A positive label belongs to its source vector, never the best noise hit."""
     import numpy as np
 
-    facts = engine._db.get_facts_by_ids([source_id], profile_id=engine._config.profile_id)
+    facts = engine._db.get_facts_by_ids([source_id], profile_id=engine.profile_id)
     fact = next((f for f in facts if f.fact_id == source_id), None)
     if fact is None or not fact.embedding:
         return []

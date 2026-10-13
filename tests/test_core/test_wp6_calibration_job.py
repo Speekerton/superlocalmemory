@@ -42,11 +42,12 @@ def _engine(root):
     retrieval = SimpleNamespace(_sufficiency_judge=judge, _channels={"semantic": channel})
     config = SimpleNamespace(
         base_dir=root,
-        profile_id="default",
+        active_profile="default",  # the real SLMConfig field; it has no profile_id
         embedding=EmbeddingConfig(),
         retrieval=SimpleNamespace(min_semantic_evidence=0.6),
     )
     engine = SimpleNamespace(
+        profile_id="default",
         _config=config,
         _db=db,
         _retrieval_engine=retrieval,

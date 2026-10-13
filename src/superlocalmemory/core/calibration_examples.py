@@ -56,7 +56,7 @@ def local_question(model: str, fact: str, absent_subject: str = "", stop=None) -
 def build_examples(engine, model, samples, stop):
     from superlocalmemory.core.calibration_control import await_idle
 
-    profile = engine._config.profile_id
+    profile = engine.profile_id
     with stop.operation():
         facts = engine._db.get_all_facts(profile, limit=samples * 4)
     import random

@@ -23,7 +23,7 @@ class CancelToken:
         self._progress = progress
         from superlocalmemory.storage.embedding_spaces import signature_of
 
-        self._snapshot = (signature_of(engine._config.embedding), engine._config.profile_id)
+        self._snapshot = (signature_of(engine._config.embedding), engine.profile_id)
         self._judge = engine._retrieval_engine._sufficiency_judge
 
     @contextmanager
@@ -44,7 +44,7 @@ class CancelToken:
         engine = self._engine
         return (
             self._current_engine() is not engine
-            or (signature_of(engine._config.embedding), engine._config.profile_id) != self._snapshot
+            or (signature_of(engine._config.embedding), engine.profile_id) != self._snapshot
             or engine._retrieval_engine._sufficiency_judge is not self._judge
         )
 

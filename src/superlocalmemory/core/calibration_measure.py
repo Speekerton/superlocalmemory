@@ -35,7 +35,7 @@ def _sample(engine, judge, example, stop, *, baseline=None):
         from superlocalmemory.storage.models import Mode
 
         response = engine._retrieval_engine.recall(
-            example["question"], engine._config.profile_id, mode=Mode.A, limit=judge.top_k
+            example["question"], engine.profile_id, mode=Mode.A, limit=judge.top_k
         )  # local channels only: no LLM expansion, bandit plays, hooks or outcomes
         raw_facts, scores = raw_semantic(engine, example["question"], judge.top_k)
         if example["answered"]:

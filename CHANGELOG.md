@@ -5,6 +5,45 @@ All notable changes to SuperLocalMemory will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.4] — Recall in under a second on large memories, with the answer check on every question
+
+A performance release. Nothing is moved or deleted. One data-only migration
+(M063) stores blank temporal dates as NULL.
+
+Measured on a real store of 27,000 memories and 16,800 entities, the same 24
+questions, through the daemon's recall endpoint:
+
+| | 4.2.3 | 4.2.4 |
+|---|---|---|
+| Median recall, idle machine | 5.29 s | 0.41 s |
+| 90th percentile, idle | 7.02 s | 0.55 s |
+| Three agents recalling at once (median / p90) | — | 0.72 s / 0.90 s |
+| While the Mode B language model works (median / p90) | — | 2.15 s / 2.92 s |
+| Questions whose answer check ran | 0 of 24 | 24 of 24 |
+
+### Fixes
+
+- **The answer check now runs on every question.** It was held to the
+  three-second budget while the question itself may run longer, so on a large
+  store it was skipped ("budget_exhausted") on nearly every recall, though it
+  takes 30-140 ms. It now shares the question's own time.
+- **Entity name lookups were rebuilt on almost every recall.** They were kept
+  only while nothing at all had been saved, so any save, hook note or access
+  count threw them away; on a store with 16,800 entities that cost up to several
+  seconds of a recall. They are now kept while the entities themselves are
+  unchanged, grow in place when new entities arrive, and are built when the
+  service starts instead of inside the first recall.
+- **The time-based search never reused its work** on a store holding a blank
+  date: one empty date switched its cache off for good. Blank dates are now
+  stored as no date (migration M063 cleans the existing ones).
+- **Concurrent recalls queued behind each other** in one search layer (the
+  associative "Hopfield" layer) on large stores. They now run side by side.
+- **The vector store kept a week of history**, one version per saved memory:
+  a busy store reached 7,194 versions and 4.1 GB, and every semantic search
+  walked them. It now keeps an hour (`SLM_VECTOR_HISTORY_DAYS` still sets it).
+  A store that already grew can be shrunk at once with SuperLocalMemory
+  stopped: `slm db compact --offline`.
+
 ## [4.2.3] — Recall answers on large memories from every agent, hook and harness
 
 A fix release. Nothing is moved or deleted, and no setting changes.

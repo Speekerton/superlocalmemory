@@ -65,6 +65,33 @@ def test_wording_is_classified_while_the_write_lock_is_free(tmp_path, monkeypatc
     assert left == 0
 
 
+def test_reading_the_batches_does_not_take_the_write_lock(tmp_path) -> None:
+    """Finding plans reads the table in rowid order; with few plans that is the
+    whole table. Only a batch with something to move may take the lock."""
+    path = tmp_path / "memory.db"
+    with sqlite3.connect(path) as conn:
+        conn.execute(_DDL)
+        conn.executemany(
+            "INSERT INTO atomic_facts (fact_id, content, fact_type) VALUES (?, ?, 'prospective')",
+            [(f"f{i}", "We will ship the fix next Tuesday") for i in range(1_200)])
+    lock = get_write_lock(path)
+    opened = []
+
+    @contextlib.contextmanager
+    def opener():
+        opened.append(1)
+        with lock:
+            conn = sqlite3.connect(path)
+            try:
+                yield conn
+                conn.commit()
+            finally:
+                conn.close()
+
+    M048.apply(open_connection=opener)
+    assert len(opened) == 1  # the schema probe; every plan stayed a plan
+
+
 def test_a_row_changed_between_read_and_write_is_not_overwritten(tmp_path, monkeypatch) -> None:
     path = tmp_path / "memory.db"
     with sqlite3.connect(path) as conn:

@@ -99,6 +99,16 @@ def _held(conn: sqlite3.Connection):
     yield conn
 
 
+@contextlib.contextmanager
+def _read_only(path: str):
+    """A short read-only connection: it never takes the store's write lock."""
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=10.0)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
 def apply(
     conn: sqlite3.Connection | None = None,
     *,
@@ -120,6 +130,13 @@ def apply(
 
     with acquire() as probe:
         existing = {r[1] for r in probe.execute(f"PRAGMA table_info({_TABLE})")}
+        main = next((r[2] for r in probe.execute("PRAGMA database_list") if r[1] == "main"), "")
+    # Batches are READ without the write lock: finding 500 plans in rowid order
+    # reads the whole table when plans are few, and inside the process write
+    # lock that held a 27,689-fact store for 3.1 s (14 Oct 2026). Only the
+    # guarded UPDATE needs the lock. The migration runner's own connection is
+    # used as is.
+    read = acquire if conn is not None or not main else (lambda: _read_only(main))
     if "fact_type" not in existing or "content" not in existing:
         logger.info("M048: %s has no fact_type/content; nothing to re-read", _TABLE)
         return
@@ -129,7 +146,7 @@ def apply(
     demoted = 0
     kept = 0
     while True:
-        with acquire() as active:
+        with read() as active:
             batch = active.execute(
                 f"SELECT rowid, fact_id, content FROM {_TABLE} "
                 f"WHERE rowid > ? AND fact_type = ?{unconfirmed} "

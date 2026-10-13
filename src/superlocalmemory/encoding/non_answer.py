@@ -29,9 +29,11 @@ _EMPTY = re.compile(r'^[\s\[\]{}(),;:]*$')
 _DATE = r'\d{4}-\d{2}-\d{2}(?:[T ]\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?'
 _SESSION = re.compile(r'^(?:\[\]\s*)?session\s+(?:ended|closed)(?:\s+at)?\s+'
                       + _DATE + r'[.!]?$', re.I)
-# "[Agentic_official] session ended 2026-10-13 09:54 | files: NOTICE, formats.md"
+# "[Agentic_official] session ended 2026-10-13 09:54 | files: NOTICE, formats.md".
+# The "[project]" is optional: ingestion also derives the same line without it
+# ("session ended 2026-10-13 09:54 | files: ..."), and that copy was unflagged.
 _HOOK_SESSION = re.compile(
-    r'^\[[^\]\n]{1,200}\]\s+session\s+ended\s+' + _DATE
+    r'^(?:\[[^\]\n]{1,200}\]\s+)?session\s+ended\s+' + _DATE
     + r'(?:\s*\|\s*files:\s*[^|\n]+)?$', re.I)
 # "[codex] session ended (exit) at 2026-10-13 11:01 in my project." plus the id
 # segments the checkpoint appends; a "last_action:" segment is real content.

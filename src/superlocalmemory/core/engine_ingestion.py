@@ -249,6 +249,7 @@ def build_immediate_admission_handler(
             )
 
         from superlocalmemory.core.kind_assignment import assign_kinds, store_fact_keeping_kind
+        from superlocalmemory.encoding.non_answer import is_stub, mark
 
         # A kind declared on the save is confirmed on the searchable fact now.
         fact = assign_kinds([fact], metadata=metadata, source_type=request.source_type,
@@ -310,7 +311,17 @@ def build_immediate_admission_handler(
                 db.execute('UPDATE memories SET metadata_json=? WHERE memory_id=? AND profile_id=?',
                            (json.dumps({**existing_metadata, **additions}),
                             fact.memory_id, request.profile_id))
-        return [store_fact_keeping_kind(db, fact, metadata=metadata, request=request)]
+        stored = store_fact_keeping_kind(db, fact, metadata=metadata, request=request)
+        # Flagged by the save that writes it, in the same transaction. Waiting
+        # for background enrichment left 261 of 291 bare "session ended" rows
+        # unflagged on one real store, and recall can only drop what it was
+        # told is a stub. Marking the id the store returned (not the one
+        # submitted) also catches the same words folding onto a row an older
+        # version stored without the flag, which the dedup path returns early
+        # from. ``mark`` leaves a row the user has decided about alone.
+        if is_stub(fact_content):
+            mark(db, stored, request.profile_id, fact_content)
+        return [stored]
 
     return write_queryable
 

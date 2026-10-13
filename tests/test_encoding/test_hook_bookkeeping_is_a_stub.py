@@ -86,6 +86,8 @@ def test_the_file_change_hook_line_is_a_stub(hook_outputs):
     '[Agentic_official] session ended 2026-10-13 11:01',
     '[Agentic_official] session ended 2026-10-13 09:54 | files: NOTICE, formats.md',
     '[superlocalmemory] session ended 2026-10-04 18:20 | files: a.py',
+    # ingestion derives a copy of the line without its "[project]" prefix
+    'session ended 2026-10-13 09:54 | files: NOTICE, formats.md',
     'File changed: NOTICE',
     'File changed: polish-and-review.md',
     'files: index.html, polish-and-review.md',

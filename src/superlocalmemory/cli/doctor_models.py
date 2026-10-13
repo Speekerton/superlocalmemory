@@ -25,3 +25,35 @@ def local_model_finding(config, installed: list[str], ram_gb: float | None = Non
             f"Choose {best} explicitly with slm setup; no model was changed.",
         )
     return ("PASS", f"{chosen} is installed; no better installed recommendation", "")
+
+
+def answer_check_fit_finding(db_path) -> tuple[str, str, str]:
+    """Is recall's answer check fitted for the text model this store runs on?
+
+    A store moved to the managed model by 4.2.0 / 4.2.1 (an npm install asked
+    for the upgrade) runs a check fitted on another model and can refuse
+    answers it has (core/support_fit_guard.py). Read-only; never raises.
+    """
+    import json
+    import sqlite3
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from superlocalmemory.core.support_fit_guard import live_advice
+
+    path = Path(db_path)
+    if not path.is_file():
+        return "PASS", "no memory store yet", ""
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        try:
+            row = conn.execute("SELECT live_config FROM embedding_space WHERE id = 1").fetchone()
+        finally:
+            conn.close()
+        live = json.loads(row[0]) if row and row[0] else {}
+    except (sqlite3.Error, ValueError):
+        return "PASS", "embedding space not recorded", ""
+    advice = live_advice(SimpleNamespace(**live)) if live else None
+    if advice:
+        return "WARN", advice, "slm embedder rollback"
+    return "PASS", f"fitted for {live.get('model_name') or 'the configured model'}", ""

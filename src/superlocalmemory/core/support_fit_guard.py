@@ -36,4 +36,19 @@ def refusal_for(target: Any) -> str | None:
             "(slm embedder switch --force).")
 
 
-__all__ = ["MANAGED_PROVIDER", "refusal_for"]
+def live_advice(live: Any) -> str | None:
+    """What to tell a store whose text ALREADY runs on an unfitted managed model.
+
+    4.2.0 and 4.2.1 moved text to the managed model by themselves after an npm
+    install, before any recipe was fitted for it. Rolling back is the person's
+    call, never automatic: their previous vectors are kept, so it takes minutes.
+    """
+    if refusal_for(live) is None:
+        return None
+    model = str(getattr(live, "model_name", "") or "")
+    return (f"Text search runs on {model}, which recall's answer check is not yet measured for, "
+            "so recall may say a memory is not there when it is. Go back to the previous engine "
+            "(Roll back below, or: slm embedder rollback). Your memories are kept either way.")
+
+
+__all__ = ["MANAGED_PROVIDER", "live_advice", "refusal_for"]

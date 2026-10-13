@@ -4010,6 +4010,16 @@ def _cmd_doctor_checks(args: Namespace, state: dict) -> None:
                 f"enabled [{_surface_str}] {_stats}",
             )
 
+    _stage("Answer check fit")
+    # The text model this store runs on must be one recall's answer check was
+    # fitted for (core/support_fit_guard.py). 4.2.0 and 4.2.1 moved text to the
+    # managed model by themselves; such a store refuses answers it has.
+    try:
+        from superlocalmemory.cli.doctor_models import answer_check_fit_finding
+        _check("Answer check fit", *answer_check_fit_finding(slm_home / "memory.db"))
+    except Exception as exc:  # noqa: BLE001 - one check never stops the doctor
+        _check("Answer check fit", "WARN", f"could not read: {type(exc).__name__}")
+
     _stage("Memory answer-ability")
     # Memory answer-ability.
     #

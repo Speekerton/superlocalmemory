@@ -111,3 +111,44 @@ def test_the_cli_sends_force_only_when_asked(monkeypatch):
     embedder_cmd.cmd_embedder(Namespace(**base, force=True))
     assert "force" not in bodies[0]
     assert bodies[1]["force"] is True
+
+
+# -- a store that already moved (4.2.0 / 4.2.1 upgraded by itself after an npm install) --
+
+def test_a_store_already_on_an_unfitted_model_is_told_how_to_go_back(no_gemma_fit):
+    live = EmbeddingConfig(model_name=GEMMA, dimension=768, provider="slm-media")
+    p = engine_upgrade.plan(live, 1000, "ready", media_enabled=True)
+    assert p["already"] is True and p["available"] is False
+    assert "slm embedder rollback" in p["reason"]
+    assert p["reason"] == support_fit_guard.live_advice(live)
+
+
+def test_a_store_on_a_fitted_model_reads_as_before(monkeypatch):
+    monkeypatch.setattr(sr, "_BY_MODEL", {NOMIC: sr.ANSWER_SUPPORT_V2, GEMMA: sr.ANSWER_SUPPORT_V2})
+    live = EmbeddingConfig(model_name=GEMMA, dimension=768, provider="slm-media")
+    assert support_fit_guard.live_advice(live) is None
+    assert engine_upgrade.plan(live, 1000, "ready")["reason"] == engine_upgrade._ALREADY
+
+
+def test_doctor_warns_a_store_on_an_unfitted_model(no_gemma_fit, tmp_path):
+    import json
+    import sqlite3
+
+    from superlocalmemory.cli.doctor_models import answer_check_fit_finding
+
+    db = tmp_path / "memory.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE embedding_space (id INTEGER PRIMARY KEY, live_signature TEXT, "
+                 "live_config TEXT)")
+    conn.execute("INSERT INTO embedding_space VALUES (1, ?, ?)", (f"{GEMMA}::768", json.dumps(
+        {"model_name": GEMMA, "provider": "slm-media", "dimension": 768})))
+    conn.commit()
+    conn.close()
+    status, detail, fix = answer_check_fit_finding(db)
+    assert status == "WARN" and GEMMA in detail and fix == "slm embedder rollback"
+
+
+def test_doctor_passes_a_fitted_or_unrecorded_store(no_gemma_fit, tmp_path):
+    from superlocalmemory.cli.doctor_models import answer_check_fit_finding
+
+    assert answer_check_fit_finding(tmp_path / "missing.db")[0] == "PASS"

@@ -274,6 +274,17 @@ class ScopeConfig:
 # Encoding Config
 # ---------------------------------------------------------------------------
 
+def _load_coverage_settings(encoding: "EncodingConfig", section: object) -> None:
+    """The two coverage limits from config.json; anything but a whole number
+    of 0 or more keeps the default."""
+    if not isinstance(section, dict):
+        return
+    for key in ("coverage_facts_per_memory", "coverage_backfill_per_memory"):
+        value = section.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            setattr(encoding, key, value)
+
+
 @dataclass
 class EncodingConfig:
     """Configuration for the encoding (memory creation) pipeline."""
@@ -283,8 +294,9 @@ class EncodingConfig:
     max_facts_per_chunk: int = 10  # V3.3.11: increased from 5 to preserve more details
     # 4.2.5: verbatim facts per memory for sentences extraction missed (0 = off)
     coverage_facts_per_memory: int = 40
-    # 4.2.5: the same, for memories saved before it (the daemon backfill)
-    coverage_backfill_per_memory: int = 10
+    # 4.2.5: the same, for memories saved before it (the daemon backfill);
+    # config.json "encoding" turns it on, e.g. 10
+    coverage_backfill_per_memory: int = 0  # off until measured on a large store
     min_fact_confidence: float = 0.3
 
     # Entity resolution
@@ -1453,6 +1465,7 @@ class SLMConfig:
 
         # V3.3 config fields (additive — defaults work if missing from JSON)
         config.hopfield = load_hopfield_config(data.get("hopfield"))
+        _load_coverage_settings(config.encoding, data.get("encoding"))
         fg = data.get("forgetting", {})
         if fg:
             config.forgetting = ForgettingConfig(**{

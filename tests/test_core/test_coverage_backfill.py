@@ -144,7 +144,9 @@ def test_the_daemon_scheduler_runs_it_with_its_writer(tmp_path, monkeypatch):
     db = _db(tmp_path / "memory.db")
     _memory(db)
     written: list[AtomicFact] = []
-    scheduler = MaintenanceScheduler(db, SLMConfig(), fact_writer=written.append)
+    config = SLMConfig()
+    config.encoding.coverage_backfill_per_memory = 10  # turned on, as config.json does
+    scheduler = MaintenanceScheduler(db, config, fact_writer=written.append)
     scheduler._running = True
     scheduler._coverage_pass()
     assert LICENSE in [f.content for f in written]
@@ -193,3 +195,26 @@ def test_a_cap_of_zero_turns_the_pass_off(tmp_path, monkeypatch):
     scheduler._coverage_pass()
     assert written == []
     assert not (tmp_path / "data" / "backfill").exists()  # not even a scan
+
+
+def test_the_backfill_is_off_by_default_and_config_json_turns_it_on(tmp_path):
+    from superlocalmemory.core.config import SLMConfig
+
+    assert SLMConfig().encoding.coverage_backfill_per_memory == 0
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"mode": "a", "encoding": {
+        "coverage_backfill_per_memory": 10, "coverage_facts_per_memory": 30}}), encoding="utf-8")
+    loaded = SLMConfig.load(path)
+    assert loaded.encoding.coverage_backfill_per_memory == 10
+    assert loaded.encoding.coverage_facts_per_memory == 30
+
+
+def test_a_bad_coverage_setting_keeps_the_default(tmp_path):
+    from superlocalmemory.core.config import SLMConfig
+
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"mode": "a", "encoding": {
+        "coverage_backfill_per_memory": -3, "coverage_facts_per_memory": "lots"}}), encoding="utf-8")
+    loaded = SLMConfig.load(path)
+    assert loaded.encoding.coverage_backfill_per_memory == 0
+    assert loaded.encoding.coverage_facts_per_memory == 40

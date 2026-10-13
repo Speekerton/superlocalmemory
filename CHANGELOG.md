@@ -7,8 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [4.2.5] — Every sentence you save can be found, and saves no longer hold up the store
 
-No migration. Nothing is moved or deleted. Older memories gain facts in the
-background (below), each one listed for exact undo.
+No migration. Nothing is moved or deleted.
 
 ### Every sentence is findable
 
@@ -21,11 +20,16 @@ background (below), each one listed for exact undo.
   holds is kept as a fact of its own, word for word (up to 40 per memory;
   greetings, fragments and markup lines are skipped). Word-for-word text cannot
   misstate what was saved, so it needs no model call.
-- **Memories saved before this release** gain the same, up to ten facts each,
-  newest first, in small batches while the service is idle, giving way to
-  every recall. It only touches memories whose full text is already searchable,
-  so nothing becomes findable that was not before; anything erased, archived,
-  corrected or held for review is left alone. Each added fact is listed in
+- **Memories saved before this release can gain the same**, and this is off
+  by default. On a 27,700-fact store it adds about 14,800 facts (half again
+  the store), and its effect on recall time has not yet been measured on a
+  quiet machine, so it is not switched on for everyone. To turn it on, add
+  `"encoding": {"coverage_backfill_per_memory": 10}` to `config.json` in the
+  data folder and run `slm restart`. It then adds up to ten facts per memory,
+  newest first, in small batches that give way to every recall. It only
+  touches memories whose full text is already searchable, so nothing becomes
+  findable that was not before; anything erased, archived, corrected or held
+  for review is left alone. Each added fact is listed in
   `backfill/coverage-backfill.jsonl` in the data folder.
 
 ### Saves no longer hold up the store

@@ -63,6 +63,10 @@ class MemoryHealth:
     #: Memories that HAVE a stored embedding but no vector in the search index
     #: (it was lost or rejected). They are what a restart repopulates.
     missing_projection: int = 0
+    #: Memories saved inside the last INDEXING_GRACE_MINUTES that are not yet
+    #: findable by meaning: the background materializer has not reached them.
+    #: Reported, never warned on; older ones count as missing above.
+    indexing: int = 0
     #: Whether ``findable_by_meaning`` was read from the vector index itself.
     #: ``False`` when the index could not be opened here, in which case the figure
     #: is the bookkeeping beside the index and is not a claim about search.
@@ -75,7 +79,7 @@ class MemoryHealth:
         """Share of live memories findable by meaning, 0.0-1.0."""
         if self.live_facts <= 0:
             return 1.0
-        return self.findable_by_meaning / self.live_facts
+        return min(1.0, (self.findable_by_meaning + self.indexing) / self.live_facts)
 
     @property
     def healthy(self) -> bool:
@@ -87,6 +91,18 @@ class MemoryHealth:
             and self.missing_projection == 0
             and self.inconsistently_hidden == 0
         )
+
+
+#: A memory younger than this that is not findable yet is being indexed; the
+#: materializer embeds and indexes saves in the background, a minute or two
+#: behind on a loaded machine (13 Oct 2026: 10 of 27,232, all < 30 min old).
+INDEXING_GRACE_MINUTES = 10
+
+
+def _settled_after() -> str:
+    from datetime import UTC, datetime, timedelta
+
+    return (datetime.now(UTC) - timedelta(minutes=INDEXING_GRACE_MINUTES)).isoformat()
 
 
 def _open_for_measure(db_path: str | Path) -> tuple[sqlite3.Connection, bool]:
@@ -130,14 +146,25 @@ def measure(db_path: str | Path) -> MemoryHealth:
             _count(conn, "SELECT COUNT(*) FROM atomic_facts WHERE quarantined = 1")
             if has_q else 0
         )
+        # A memory saved inside the grace window is still being indexed; only
+        # older ones are missing. created_at is ISO-8601 UTC, so it sorts.
+        recent = (f"created_at >= '{_settled_after()}'"
+                  if _has_column(conn, "atomic_facts", "created_at") else "0")
+        settled = f"{live_clause} AND NOT ({recent})"
         missing_vec = _count(
             conn,
             f"SELECT COUNT(*) FROM atomic_facts "
-            f"WHERE embedding IS NULL AND {live_clause}",
+            f"WHERE embedding IS NULL AND {settled}",
         )
 
         findable, verified = _findable(conn, live_clause, index_readable, unavailable)
-        projection_gap = max(0, live - missing_vec - findable) if verified else 0
+        indexing = 0
+        projection_gap = 0
+        if verified:
+            settled_findable, _ = _findable(conn, settled, index_readable, [])
+            settled_live = _count(conn, f"SELECT COUNT(*) FROM atomic_facts WHERE {settled}")
+            projection_gap = max(0, settled_live - missing_vec - settled_findable)
+            indexing = max(0, (live - settled_live) - (findable - settled_findable))
 
         display = (
             _count(conn, "SELECT COUNT(*) FROM consolidated_summaries")
@@ -172,6 +199,7 @@ def measure(db_path: str | Path) -> MemoryHealth:
             hidden_by_forgetting=hidden,
             inconsistently_hidden=inconsistent,
             missing_projection=projection_gap,
+            indexing=indexing,
             index_verified=verified,
             unavailable=tuple(unavailable),
         )
@@ -239,7 +267,11 @@ def describe(health: MemoryHealth) -> list[str]:
         )
     elif health.live_facts:
         pct = 100.0 * health.reachability
-        if health.findable_by_meaning >= health.live_facts:
+        if health.indexing and health.findable_by_meaning + health.indexing >= health.live_facts:
+            lines.append(
+                f"{health.findable_by_meaning:,} of them can be found by asking a question."
+            )
+        elif health.findable_by_meaning >= health.live_facts:
             # "All" only when the counts actually agree. The threshold used to
             # be reachability >= 0.99, which printed "All of them can be found
             # by asking a question (5,199 indexed)" on a store of 5,205 — a
@@ -266,6 +298,12 @@ def describe(health: MemoryHealth) -> list[str]:
                 f"will miss them. This repairs itself as the service runs; if "
                 f"it does not, the embedding model is unavailable."
             )
+
+    if health.indexing:
+        lines.append(
+            f"{health.indexing:,} memories saved in the last few minutes are still "
+            f"being indexed; they can be found by matching words until then."
+        )
 
     if health.missing_projection:
         lines.append(
@@ -393,7 +431,8 @@ def _prefixed(clause: str, prefix: str) -> str:
     than an error, and a wrong count in a health report is the one thing this
     module must not produce.
     """
-    return re.sub(r"\bquarantined\b", f"{prefix}.quarantined", clause)
+    # created_at: embedding_metadata has one too (the grace-window clause).
+    return re.sub(r"\b(quarantined|created_at)\b", rf"{prefix}.\1", clause)
 
 
 def _count(conn: sqlite3.Connection, sql: str) -> int:

@@ -39,6 +39,9 @@ def store(tmp_path):
         db.store_fact(AtomicFact(fact_id=f"f{i}", memory_id=f"m{i}", profile_id="p",
                                  content=f"fact {i}", embedding=[0.1 * (i + 1)] * DIM))
         assert vectors.upsert(f"f{i}", "p", [0.1 * (i + 1)] * DIM)
+    # Settled memories: a fact saved moments ago is still being indexed
+    # (test_recent_memories_are_being_indexed_not_missing.py).
+    db.execute("UPDATE atomic_facts SET created_at = '2026-01-01T00:00:00+00:00'")
     return path, vectors
 
 

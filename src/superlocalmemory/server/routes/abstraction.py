@@ -310,6 +310,7 @@ def get_memory_health() -> JSONResponse:
             "hidden_by_forgetting": health.hidden_by_forgetting,
             "inconsistently_hidden": health.inconsistently_hidden,
             "missing_projection": health.missing_projection,
+            "indexing": health.indexing,
             "index_verified": health.index_verified,
             "reachability": round(health.reachability, 4),
             "healthy": health.healthy,

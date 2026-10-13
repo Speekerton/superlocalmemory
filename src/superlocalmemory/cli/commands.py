@@ -4042,6 +4042,7 @@ def _cmd_doctor_checks(args: Namespace, state: dict) -> None:
             "hidden_by_forgetting": _h.hidden_by_forgetting,
             "inconsistently_hidden": _h.inconsistently_hidden,
             "missing_projection": _h.missing_projection,
+            "indexing": _h.indexing,
             "index_verified": _h.index_verified,
             "reachability": round(_h.reachability, 4),
             "healthy": _h.healthy,

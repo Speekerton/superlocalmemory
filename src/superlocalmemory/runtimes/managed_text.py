@@ -33,6 +33,18 @@ _OPEN: "weakref.WeakSet[ManagedTextEmbedder]" = weakref.WeakSet()
 _OPEN_LOCK = threading.Lock()
 
 
+def _fit(texts: list[str]) -> list[str]:
+    """Each text cut to what the worker accepts.
+
+    The model reads about two thousand tokens, roughly the worker's character
+    limit, so the cut drops only what it would never see; nomic truncates the
+    same way. Refusing instead stopped a whole re-index at the first long memory.
+    """
+    from superlocalmemory.runtimes.worker_limits import MAX_TEXT_CHARS
+
+    return [t if len(t) <= MAX_TEXT_CHARS else t[:MAX_TEXT_CHARS] for t in texts]
+
+
 class ManagedTextEmbedder:
     def __init__(self, config: Any, *, data_root: str | Path | None = None, env: Any = None,
                  client_supplier: Callable[[], Any] | None = None) -> None:
@@ -134,7 +146,7 @@ class ManagedTextEmbedder:
                     "Run slm media enable to finish or repair setup, then retry the switch.")
             return [None] * len(texts)
         try:
-            vectors = client.embed_texts(texts, prompt=prompt)
+            vectors = client.embed_texts(_fit(texts), prompt=prompt)
         except MediaWorkerError as exc:
             if strict:
                 raise

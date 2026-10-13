@@ -154,14 +154,19 @@ def test_the_daemon_scheduler_runs_it_with_its_writer(tmp_path, monkeypatch):
 
 
 def test_a_second_process_waits_its_turn(tmp_path):
-    import fcntl
+    import os
+
+    from superlocalmemory.core.coverage_backfill import _try_lock, _unlock
 
     db = _db(tmp_path / "memory.db")
     _memory(db)
-    tmp_path.mkdir(exist_ok=True)
-    with (tmp_path / "coverage-backfill.lock").open("a") as held:
-        fcntl.flock(held, fcntl.LOCK_EX)
+    fd = os.open(tmp_path / "coverage-backfill.lock", os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        assert _try_lock(fd)
         assert _run(db, tmp_path)[1] == []
+        _unlock(fd)
+    finally:
+        os.close(fd)
     assert len(_run(db, tmp_path)[1]) == 2
 
 

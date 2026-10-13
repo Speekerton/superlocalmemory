@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 from collections.abc import Callable
 from dataclasses import replace
@@ -98,6 +99,34 @@ def pending(execute: Callable, limit: int = DEFAULT_LIMIT,
         before_rowid = rows[-1]["rid"]
 
 
+def _try_lock(fd: int) -> bool:
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except OSError:
+        return False
+
+
+def _unlock(fd: int) -> None:
+    if os.name == "nt":
+        import msvcrt
+
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
 class CoverageBackfill:
     """Bounded, resumable, undoable. ``write`` stores one prebuilt fact with
     full enrichment (the engine's ``run_store_fact_direct``)."""
@@ -121,7 +150,7 @@ class CoverageBackfill:
 
     def _state(self) -> dict:
         try:
-            return json.loads((self._dir / STATE).read_text())
+            return json.loads((self._dir / STATE).read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return {"before_rowid": _TOP, "finished": False}
 
@@ -129,7 +158,7 @@ class CoverageBackfill:
         self._dir.mkdir(parents=True, exist_ok=True)
         tmp = self._dir / (STATE + ".tmp")
         tmp.write_text(json.dumps({"before_rowid": before_rowid, "finished": finished,
-                                   "written": self.written}))
+                                   "written": self.written}), encoding="utf-8")
         tmp.replace(self._dir / STATE)
 
     def _record(self, fact: AtomicFact) -> None:
@@ -141,18 +170,17 @@ class CoverageBackfill:
     def run_until_done(self) -> int:
         """Run in the calling thread; return the facts added. One runner at a
         time across processes: a CLI engine and the daemon never both add."""
-        import fcntl
-
         self._dir.mkdir(parents=True, exist_ok=True)
-        with (self._dir / LOCK).open("a") as lock:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError:
+        fd = os.open(self._dir / LOCK, os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            if not _try_lock(fd):
                 return 0
             try:
                 return self._run_locked()
             finally:
-                fcntl.flock(lock, fcntl.LOCK_UN)
+                _unlock(fd)
+        finally:
+            os.close(fd)
 
     def _run_locked(self) -> int:
         from superlocalmemory.core.recall_gate import background_work

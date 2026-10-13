@@ -1190,9 +1190,12 @@ slm embedder forget-previous   # free the previous engine's vectors (ends rollba
 ```
 
 Moves existing memories onto the same on-device model that reads pictures, in the
-background, with recall working throughout and one-click rollback. It is opt-in
-and never starts on its own; the same action is the **Upgrade memory engine**
-card in Settings. If it cannot run, the command prints the reason.
+background, with recall working throughout and one-click rollback. The same action
+is the **Upgrade memory engine** card in Settings. An install that chose it records a
+request the service acts on at its next start, only when the upgrade can run. If it
+cannot run, the command prints the reason.
+
+**Not available for text yet.** Recall decides "this is in your memory" with an answer check fitted per text model. Measured on the release harness, the check for EmbeddingGemma 2 keeps every real answer but refuses made-up questions less often than the current engine does (144 of 156 against 151 of 156), so the card and the command say why and do not start. `slm embedder switch google/embeddinggemma-2 --provider slm-media --force` moves text anyway. If an earlier version already moved your text, the card and `slm doctor` say so; **Roll back** (or `slm embedder rollback`) goes back in minutes, because the previous vectors are kept. Pictures and documents use EmbeddingGemma 2 either way.
 
 ### `slm embedder calibrate|calibration-status|calibration-cancel`
 

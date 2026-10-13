@@ -201,6 +201,11 @@ def register_v3_tools(server, get_engine: Callable) -> None:
                 "model": engine._config.embedding.model_name,
             }
 
+            # Recall's answer check for this text model: the same fact and advice
+            # the dashboard card and slm doctor show (core/support_fit_guard).
+            from superlocalmemory.core.support_fit_guard import answer_check_status
+            status["components"]["answer_check"] = answer_check_status(engine._config.embedding)
+
             # LLM
             status["components"]["llm"] = {
                 "status": "ok" if engine._llm else "disabled",

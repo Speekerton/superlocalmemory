@@ -127,7 +127,7 @@ def target_config(live: Any, body: dict) -> Any:
 
 
 def queue_if_new_space(request: Request, live: Any, target: Any, *,
-                       force: bool = False) -> JSONResponse | None:
+                       force: bool = False, allow_unapproved: bool = False) -> JSONResponse | None:
     """None: apply the save as before. Otherwise the response to send instead.
 
     Same space (or a renamed alias) -> None. No daemon runner (direct use) ->
@@ -146,7 +146,7 @@ def queue_if_new_space(request: Request, live: Any, target: Any, *,
         _declare_equivalent(runner, target)
         return None
     try:
-        return _accepted(runner.request_switch(target))
+        return _accepted(runner.request_switch(target, allow_unapproved=allow_unapproved))
     except NoChange:
         return None
     except JobConflict as exc:
@@ -229,7 +229,8 @@ async def start_switch(request: Request):
     refused = unfitted_refusal(body, target)
     if refused is not None:
         return refused
-    response = await asyncio.to_thread(queue_if_new_space, request, live, target)
+    response = await asyncio.to_thread(queue_if_new_space, request, live, target,
+                                       allow_unapproved=body.get("force") is True)
     return response or _invalid("no_change", f"{target.model_name} is already in use")
 
 

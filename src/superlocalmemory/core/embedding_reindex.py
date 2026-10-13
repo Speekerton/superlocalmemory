@@ -134,7 +134,16 @@ class ReindexRunner:
         return str(row["live_signature"]), json.loads(row["live_config"])
 
     def request_switch(self, target: Any, *, kind: str = "switch",
-                       prebuilt: Any = None) -> dict:
+                       prebuilt: Any = None, allow_unapproved: bool = False) -> dict:
+        if kind == "switch" and not allow_unapproved:
+            # The one door every switch passes (dashboard, CLI, MCP, installer,
+            # a config file): text never moves to a managed model whose answer
+            # check is not approved (core/support_fit_guard). A rollback goes back.
+            from superlocalmemory.core.support_fit_guard import refusal_for
+
+            reason = refusal_for(target)
+            if reason:
+                raise Refused(reason)
         target_sig = sp.signature_of(target)
         with self._api_lock:
             conn = self._conn()
@@ -274,6 +283,11 @@ class ReindexRunner:
         try:
             return self.request_switch(target)
         except NoChange:
+            return None
+        except Refused as exc:
+            self.notice = (f"{target.model_name} was named in the configuration and was not "
+                           f"adopted: {exc}")
+            logger.warning(self.notice)
             return None
         except JobConflict as exc:
             self.notice = (f"{target.model_name} was named in the configuration while {exc}; "

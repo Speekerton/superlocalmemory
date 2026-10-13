@@ -64,4 +64,16 @@ def live_advice(live: Any) -> str | None:
             "(Roll back below, or: slm embedder rollback). Your memories are kept either way.")
 
 
-__all__ = ["MANAGED_PROVIDER", "live_advice", "refusal_for"]
+def answer_check_status(live: Any) -> dict:
+    """The answer check for the live text model, as every surface reports it
+    (MCP ``health``; the dashboard card and ``slm doctor`` show ``live_advice``)."""
+    from superlocalmemory.retrieval import support_recipe
+
+    model = str(getattr(live, "model_name", "") or "")
+    advice = live_advice(live) or ""
+    recipe = support_recipe.for_model(model) or support_recipe.ACTIVE
+    return {"status": "warn" if advice else "ok", "model": model, "recipe": recipe.version,
+            "approved_for_text": support_recipe.approved_for_text(model), "advice": advice}
+
+
+__all__ = ["MANAGED_PROVIDER", "answer_check_status", "live_advice", "refusal_for"]

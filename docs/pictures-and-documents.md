@@ -2,7 +2,7 @@
 
 Pictures and documents are off until you turn them on, in the dashboard (the Documents & Images pane) or with `slm media enable`. Turning them on downloads about 1.5 GB of models and tools into SLM's own folder. It does not change your existing memories or their embeddings: pictures and PDF pages are added next to them.
 
-The **Upgrade memory engine (preview)** card is a separate, optional step. It re-reads every memory with the model that also reads pictures, so text and pictures share one search space. See [Upgrading the memory engine](#upgrading-the-memory-engine-preview) below.
+The **Upgrade memory engine (preview)** card is a separate, optional step, and not available for text yet (see below). It re-reads every memory with the model that also reads pictures, so text and pictures share one search space. See [Upgrading the memory engine](#upgrading-the-memory-engine-preview) below.
 
 ## What your computer needs
 
@@ -49,6 +49,8 @@ Treat a link like a password for one upload: anyone who has it before it is used
 A connected folder can include pictures and PDFs. Files found while pictures and documents were off are listed as skipped, and are read automatically on the next scan once the feature is ready.
 
 ## Upgrading the memory engine (preview)
+
+**Not available for text yet.** Recall decides "this is in your memory" with an answer check fitted per text model. Measured on the release harness, the check for EmbeddingGemma 2 keeps every real answer but refuses made-up questions less often than the current engine does (144 of 156 against 151 of 156), so the card and the command say why and do not start. `slm embedder switch google/embeddinggemma-2 --provider slm-media --force` moves text anyway. If an earlier version already moved your text, the card and `slm doctor` say so; **Roll back** (or `slm embedder rollback`) goes back in minutes, because the previous vectors are kept. Pictures and documents use EmbeddingGemma 2 either way.
 
 The card in Settings shows the number of memories, a rough time estimate (not measured on your computer), and the memory and disk the upgrade needs. While it runs, recall keeps using the current engine. When it finishes, both switch in one step.
 

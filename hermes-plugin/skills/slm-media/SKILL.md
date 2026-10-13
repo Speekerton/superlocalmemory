@@ -245,7 +245,7 @@ Rules for reading them:
   personal data. Folders connected with `slm sources` are never shown to web
   apps. A web app cannot change, delete, pin or replace a memory it is not
   allowed to see: it is answered as if that memory did not exist.
-- Pictures saved before 4.2.0 are re-checked in the background and become
+- Pictures saved before picture search arrived are re-checked in the background and become
   visible to web apps once their text is clean. They stay fully searchable on
   this computer.
 

@@ -356,9 +356,14 @@ def _a_killed_daemon_keeps_the_old_space_and_resumes_the_job(lane):
     assert job["state"] == "activated", job
     total = lane.rows("SELECT COUNT(*) FROM atomic_facts")[0][0]
     # Resuming re-does at most one batch (4) plus a probe per start (2); starting
-    # over would re-embed everything done before the kill (>= 24).
-    assert EMBEDDED["stub-third"] < total + done_before_kill / 2, (
-        f"the job restarted from zero: {EMBEDDED['stub-third']} texts for {total} memories, "
+    # over would re-embed everything done before the kill (>= 24). The 96 hub
+    # probe texts (retrieval/hub_baseline.py) are embedded once, by the run that
+    # reaches the baseline stage, and are not memories.
+    from superlocalmemory.retrieval.hub_baseline import probe_texts
+
+    memories_embedded = EMBEDDED["stub-third"] - len(probe_texts())
+    assert memories_embedded < total + done_before_kill / 2, (
+        f"the job restarted from zero: {memories_embedded} texts for {total} memories, "
         f"{done_before_kill} done before the kill")
     assert lane.vec_dimension() == 512
     assert _which(lane.probe_top()) == "ALPHA"

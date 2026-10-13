@@ -238,6 +238,9 @@ _SQLITE_BUSY_CODES = {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}
 #: a wait handed the caller's whole budget could outlast both the caller and
 #: stop() on a machine whose sleeps overrun.
 _WAIT_SLICE_S = 0.05
+#: SQLite VM instructions between deadline checks of a running mutation: a
+#: clock read per ~10k instructions, well under a millisecond apart.
+_PROGRESS_STEPS = 10_000
 
 
 @dataclass(slots=True)
@@ -764,13 +767,23 @@ class WriteCoordinator:
             if item.error is not None:
                 conn.rollback()
                 return
-            if item.command is not None:
-                item.result = self._execute_command(conn, item.command)
-            else:
-                if item.sql is None:  # pragma: no cover - execution invariant
-                    raise WriteCoordinatorError("missing coordinator SQL command")
-                cursor = conn.execute(item.sql, item.parameters)
-                item.rows = cursor.fetchall()
+            # A mutation still running when its caller gives up is rolled back
+            # anyway (below); stop it there instead of finishing it under the
+            # write lock. Live daemon, 13 Oct 2026: a remember retried every
+            # 5 s, each attempt re-running a multi-second statement to the end
+            # inside BEGIN IMMEDIATE while mesh, events and the materializer
+            # waited. Never set across COMMIT (removed below and in finally).
+            conn.set_progress_handler(lambda: self._expired(item), _PROGRESS_STEPS)
+            try:
+                if item.command is not None:
+                    item.result = self._execute_command(conn, item.command)
+                else:
+                    if item.sql is None:  # pragma: no cover - execution invariant
+                        raise WriteCoordinatorError("missing coordinator SQL command")
+                    cursor = conn.execute(item.sql, item.parameters)
+                    item.rows = cursor.fetchall()
+            finally:
+                conn.set_progress_handler(None, 0)
             with self._condition:
                 if item.cancelled or time.monotonic() >= item.deadline:
                     item.error = WriteDeadlineExceededError(
@@ -790,14 +803,24 @@ class WriteCoordinator:
             item.error = exc
         except sqlite3.Error as exc:
             conn.rollback()
-            if self._is_busy(exc):
+            if self._expired(item):  # interrupted at its deadline (or failed after it)
+                item.error = WriteDeadlineExceededError(
+                    "canonical write expired during its mutation"
+                )
+                item.error.__cause__ = exc
+            elif self._is_busy(exc):
                 item.error = QueueOverloadedError("canonical writer is temporarily busy")
             else:
                 item.error = WriteCoordinatorError("canonical write command was rejected")
                 item.error.__cause__ = exc
         except BaseException as exc:
             conn.rollback()
-            item.error = WriteCoordinatorError("canonical write command failed")
+            if self._expired(item):  # a handler that wrapped the interrupt
+                item.error = WriteDeadlineExceededError(
+                    "canonical write expired during its mutation"
+                )
+            else:
+                item.error = WriteCoordinatorError("canonical write command failed")
             item.error.__cause__ = exc
         finally:
             self._process_write_lock.release()
@@ -809,6 +832,11 @@ class WriteCoordinator:
                     self._writer_stalled = False
                     self._stall_logged_once = False
             item.completion.set()
+
+    @staticmethod
+    def _expired(item: _Execution) -> bool:
+        """The caller has given up: its mutation can only be rolled back."""
+        return item.cancelled or time.monotonic() >= item.deadline
 
     def _check_still_wanted(self, item: _Execution, waiting_for: str, *, waited: bool) -> float:
         """Seconds the item may still wait; raises once it must stop waiting.

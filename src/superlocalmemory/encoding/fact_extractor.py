@@ -298,10 +298,48 @@ def _signal_from_fact_type(ft: FactType) -> SignalType:
     return mapping.get(ft, SignalType.FACTUAL)
 
 
+#: Model requests per save; the coverage pass keeps what they do not reach.
+_MAX_EXTRACTION_CHUNKS = 5
+
+
 def _is_filler(text: str) -> bool:
     """Return True if text is a greeting, filler, or social pleasantry."""
     low = text.strip().lower()
     return any(low.startswith(prefix) for prefix in _FILLER_PREFIXES)
+
+
+def sentence_fact(
+    normalized: str,
+    session_id: str,
+    session_date: str | None,
+    entity_freq: dict[str, int],
+) -> AtomicFact:
+    """One source sentence as a typed, dated, scored fact (no model call)."""
+    entities = _extract_entities(normalized)
+    fact_type = _classify_sentence(normalized)
+    raw_date = _extract_date_string(normalized)
+    referenced_date = _try_parse_date(raw_date, session_date) if raw_date else None
+    interval_start, interval_end = _extract_interval(normalized, session_date)
+    importance = _score_importance(
+        normalized,
+        entities,
+        entity_freq,
+        referenced_date is not None or interval_start is not None,
+    )
+    return AtomicFact(
+        fact_id=_new_id(),
+        content=normalized,
+        fact_type=fact_type,
+        entities=entities,
+        observation_date=session_date,
+        referenced_date=referenced_date,
+        interval_start=interval_start,
+        interval_end=interval_end,
+        confidence=0.7 if fact_type == FactType.SEMANTIC else 0.6,
+        importance=importance,
+        session_id=session_id,
+        signal_type=_signal_from_fact_type(fact_type),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -408,7 +446,10 @@ class FactExtractor:
         all_facts: list[AtomicFact] = []
         review_candidates: list[AtomicFact] = []
 
-        for chunk in chunks[:5]:
+        cap = self._config.max_facts_per_chunk
+        # At most five model requests per save; sentences the extractor does
+        # not reach are kept by the coverage pass (encoding.coverage_facts).
+        for chunk in chunks[:_MAX_EXTRACTION_CHUNKS]:
             chunk_facts = self._extract_chunk(
                 chunk,
                 session_id,
@@ -418,13 +459,10 @@ class FactExtractor:
             )
             all_facts.extend(chunk_facts)
             review_candidates.extend(getattr(chunk_facts, "review_candidates", ()))
-            if len(self._deduplicate(all_facts)) >= 5:
+            if len(self._deduplicate(all_facts)) >= cap:
                 break
 
-        return FactExtraction(
-            self._deduplicate(all_facts)[: min(5, self._config.max_facts_per_chunk)],
-            review_candidates,
-        )
+        return FactExtraction(self._deduplicate(all_facts)[:cap], review_candidates)
 
     # ------------------------------------------------------------------
     # Chunk-level dispatch
@@ -504,7 +542,7 @@ class FactExtractor:
 
         # Cap at max_facts_per_chunk, keeping highest importance
         facts.sort(key=lambda f: f.importance, reverse=True)
-        return facts[: min(5, self._config.max_facts_per_chunk)]
+        return facts[: self._config.max_facts_per_chunk]
 
     def _local_fact(
         self,
@@ -513,31 +551,7 @@ class FactExtractor:
         session_date: str | None,
         entity_freq: dict[str, int],
     ) -> AtomicFact:
-        entities = _extract_entities(normalized)
-        fact_type = _classify_sentence(normalized)
-        raw_date = _extract_date_string(normalized)
-        referenced_date = _try_parse_date(raw_date, session_date) if raw_date else None
-        interval_start, interval_end = _extract_interval(normalized, session_date)
-        importance = _score_importance(
-            normalized,
-            entities,
-            entity_freq,
-            referenced_date is not None or interval_start is not None,
-        )
-        return AtomicFact(
-            fact_id=_new_id(),
-            content=normalized,
-            fact_type=fact_type,
-            entities=entities,
-            observation_date=session_date,
-            referenced_date=referenced_date,
-            interval_start=interval_start,
-            interval_end=interval_end,
-            confidence=0.7 if fact_type == FactType.SEMANTIC else 0.6,
-            importance=importance,
-            session_id=session_id,
-            signal_type=_signal_from_fact_type(fact_type),
-        )
+        return sentence_fact(normalized, session_id, session_date, entity_freq)
 
     # ------------------------------------------------------------------
     # Mode B/C: LLM-based extraction

@@ -117,7 +117,9 @@ def test_extraction_caps_and_collapses_near_duplicates():
         ]
     )
     assert len(facts) == 2
-    assert len(extract(" ".join(f"The relay uses channel {i}." for i in range(20)))) <= 5
+    # The configured cap (4.2.5): a hard-coded five overrode it from 11 Oct.
+    cap = EncodingConfig().max_facts_per_chunk
+    assert len(extract(" ".join(f"The relay uses channel {i}." for i in range(20)))) <= cap
 
 
 def test_long_llm_input_is_bounded():

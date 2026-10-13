@@ -693,6 +693,8 @@ def run_store(
         facts, content, record, queryable_facts,
         getattr(config.store, "max_verbatim_chars", 24000),
         db=db,
+        max_derived=config.encoding.max_facts_per_chunk,
+        coverage_limit=config.encoding.coverage_facts_per_memory,
     )
 
     if not facts:

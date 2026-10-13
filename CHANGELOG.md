@@ -5,6 +5,44 @@ All notable changes to SuperLocalMemory will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.1] — Each person sees only their own workspace, and moving to the newer memory engine finishes
+
+A fix release. Upgrading never moves or deletes memory.
+
+### Security
+
+- **Recall Lab, Memories search and memory chat stay in the signed-in person's
+  workspace.** These three dashboard requests checked that a signed-in person could
+  read their workspace, then searched the machine's active workspace instead. With
+  more than one workspace, someone signed in to one could read another's memories.
+  They now search only the workspace that was checked, and a test signs in two people
+  in two workspaces and fails if either sees the other's memories. Saved views, the
+  REST `/recall` route, MCP and the CLI were not affected.
+
+### Fixes
+
+- **Moving to the newer memory engine no longer stops at a long memory.** A memory
+  over 8,000 characters made the EmbeddingGemma 2 worker refuse its batch, and the
+  whole re-index stopped. It is now embedded from its start (the model reads about
+  that much anyway), the same way the previous engine handled it.
+- **Hermes plugin keeps working after an SLM upgrade.** It refused every `/slm`
+  command unless SLM was exactly the release it shipped with. It now works with that
+  release and every newer one of the same major version, and its message says how to
+  move a pinned plugin ([Hermes](docs/hermes.md#upgrade)).
+- **Recall Lab:** clicking a result opens the whole memory, not the shortened text.
+- **Dashboard:** a source opened from "Ask your memory" opens that memory in the
+  Memories tab. Settings no longer comes up blank after moving between panes.
+- **Choose folder:** while remote access is on, folders cannot be connected; the page
+  now says so next to the button before anyone clicks, instead of after a click below
+  the fold.
+- **Sign-in:** when every person must sign in (company mode), a signed-out visitor
+  gets one sign-in screen instead of panes that never load, and a signed-in person
+  sees who they are, their role and workspace, with Sign out. On a personal computer
+  nothing changes: the owner never signs in. Governance says so plainly, and the first
+  person you add starts as an admin. There is no default account or password.
+- **README:** the product film follows the twelve superpowers; the architecture
+  diagram is redrawn.
+
 ## [4.2.0] — Recall that says "That isn't in SuperLocalMemory", memory that looks after itself, pictures and documents
 
 This release changes what recall does when memory cannot answer, adds a Memory

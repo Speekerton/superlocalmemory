@@ -288,4 +288,4 @@ answered. To also surface shared or global facts, call `recall` with
 
 ---
 
-*SuperLocalMemory v4.2.0 · Qualixar · AGPL-3.0-or-later*
+*SuperLocalMemory v4.2.1 · Qualixar · AGPL-3.0-or-later*

@@ -161,4 +161,4 @@ anything but `core` or `mesh`.
 
 ---
 
-*SuperLocalMemory v4.2.2 · Qualixar · AGPL-3.0-or-later*
+*SuperLocalMemory v4.2.3 · Qualixar · AGPL-3.0-or-later*

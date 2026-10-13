@@ -466,7 +466,23 @@ def _prestage_recall(query: str, limit: int, profile_id: str, as_of: str | None 
         target or getattr(engine, "profile_id", "default"),
     )
     if ctx is None:
-        return _memories_from(engine.recall(query, **kwargs))
+        from superlocalmemory.core.engine_capabilities import CapabilityError
+
+        try:
+            return _memories_from(engine.recall(query, **kwargs))
+        except CapabilityError:
+            # 4.2.3: an MCP stdio process holds a light engine that may not
+            # recall in-process, so every prestage_context said recall_error.
+            # Recall through the worker pool, as session_init does. A
+            # point-in-time view is not forwarded there: refuse, never serve now.
+            if as_of is not None:
+                raise
+            from superlocalmemory.core.answer_check_scope import context_load
+            from superlocalmemory.mcp._pool_adapter import pool_recall
+
+            with context_load():
+                return _memories_from(pool_recall(
+                    query, limit=limit, **({"profile_id": target} if target else {})))
     with visibility.use(ctx):
         return _memories_from(engine.recall(query, **kwargs))
 

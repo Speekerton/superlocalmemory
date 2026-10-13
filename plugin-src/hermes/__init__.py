@@ -195,7 +195,10 @@ class SlmHermesPlugin:
         if not session_id or not query:
             return None
         timeout = 5 if self._mode() == "remote" else 3  # the 3 s recall ceiling plus network
-        result = self._mcp("recall", {"query": query, "session_id": session_id, "agent_id": "hermes", "limit": 5}, timeout=timeout)
+        # 4.2.3: a prefetch blocks the turn, so it names its budget and gets
+        # keyword matches in time instead of a long full recall it abandons.
+        result = self._mcp("recall", {"query": query, "session_id": session_id, "agent_id": "hermes", "limit": 5,
+                                      "budget_s": timeout - 0.5}, timeout=timeout)
         if not result.get("ok"):
             return None
         rendered = _redact(result.get("result"), 6_000)

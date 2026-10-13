@@ -1,6 +1,6 @@
 ---
 name: slm-loop
-description: Gate-verified bounded loops with SuperLocalMemory as the durable ledger. Use when a task has a checkable acceptance condition and you must iterate until an INDEPENDENT gate passes — never stopping because the agent believes it is done. `slm_loop_run` (MCP) waits, under hard bounds, for a recall gate to pass; `slm loop demo` shows the control flow keyless; `slm loop history` and `slm loop show <run_id>` (or `slm_loop_history` / `slm_loop_show`) inspect past runs, whose every lap is stored as queryable SLM memory (tag `loop:<name>`). Terminal statuses are DONE / HALT / PAUSE / KILLED / ERROR — report them exactly, never converting HALT/PAUSE/ERROR into success.
+description: Gate-verified bounded loops with SuperLocalMemory as the durable ledger. Use when a task has a checkable acceptance condition and you must iterate until an INDEPENDENT gate passes — never stopping because the agent believes it is done. `slm_loop_run` (MCP) waits, under hard bounds, for an independently executed check registered by the operator to pass; `slm loop demo` shows the control flow keyless; `slm loop history` and `slm loop show <run_id>` (or `slm_loop_history` / `slm_loop_show`) inspect past runs, whose every lap is stored as queryable SLM memory (tag `loop:<name>`). Terminal statuses are DONE / HALT / PAUSE / KILLED / ERROR — report them exactly, never converting HALT/PAUSE/ERROR into success.
 when_to_use: "run a bounded loop, gate-verified task, iterate until tests pass, verify against an independent gate, don't trust the agent's own done claim, slm loop, convergence loop, loop until green, loop ledger, wait for another agent's result"
 allowed-tools: slm_loop_run, slm_loop_history, slm_loop_show, recall, report_outcome, get_soft_prompts, skill_health, skill_lineage, evolve_skill, observe_bounded_loop_evidence, Bash
 ---
@@ -26,7 +26,7 @@ subprocess or sandbox machinery. What each surface gives you:
 
 | Surface | What it does |
 |---|---|
-| `slm_loop_run` (MCP) | A *watcher*: each lap is a recall of `gate_query`; the loop ends when a confident match appears, or a bound trips. Use it to wait for a verification or coordination memory another agent will write (for example "build passed"). |
+| `slm_loop_run` (MCP) | A *watcher* for a registered check. DONE needs `gate_contract={"job_id": ...}`: a job the operator registered with `superlocalmemory.loops.receipt_jobs.register_job` and executed with `run_registered_check`. Each lap's recall of `gate_query` only locates context; a matching memory alone never passes. Without a registered job the run ends HALT ("operator-registered job_id required"), which is the correct, honest outcome. |
 | `slm loop demo` (CLI) | A keyless convergence demo: a stub proposer, a deterministic gate that passes on lap 3, every lap recorded. Proves the engine and ledger work end to end. |
 | `slm loop history`, `slm loop show` / `slm_loop_history`, `slm_loop_show` | Read the ledger of past runs. |
 | `superlocalmemory.loops.run_bounded_loop` (Python) | The engine itself, for code that supplies its own runner and gate callables. |
@@ -62,6 +62,7 @@ slm_loop_run(
   max_tokens: int = 0,          # optional token budget; 0 disables
   no_progress_window: int = 0,  # halt after N no-change laps; leave 0 for a watcher
   require_support: bool = False,# pass only if the answer check ran and judged it sufficient
+  gate_contract: dict | None = None,  # {"job_id": <operator registration>}; required for DONE
 )
 ```
 
@@ -170,4 +171,4 @@ Guides: `docs/skill-evolution.md`, `docs/bounded-loops-bridge.md`.
 
 ---
 
-SuperLocalMemory v4.2.2 · Qualixar · AGPL-3.0-or-later
+SuperLocalMemory v4.2.3 · Qualixar · AGPL-3.0-or-later

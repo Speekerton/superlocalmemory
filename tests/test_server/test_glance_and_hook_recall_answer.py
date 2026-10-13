@@ -98,3 +98,14 @@ def test_a_hook_whose_recall_finishes_gets_the_full_answer(monkeypatch):
 
     out = _under_ingress_clock(_call(fast=False, skip_answer_check=True), 1.0)
     assert out["results"] == [{"content": "full"}]
+
+
+def test_session_init_gets_the_full_clock_but_is_never_judged():
+    # session_init is the first call of every session; on the author's store
+    # its recall timed out on every channel under the hook's clock (4.2.2).
+    call = _call(context_load=True, skip_answer_check=True)
+    assert recall_core.is_explicit(call)
+    assert explicit_scope({"type": "http", "path": "/recall",
+                           "query_string": b"q=x&answer_check=context"})
+    # A relayed context load still answers inside its relay's budget.
+    assert not recall_core.is_explicit(_call(context_load=True, budget_s=2.5))

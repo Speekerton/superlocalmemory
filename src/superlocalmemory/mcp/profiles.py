@@ -119,9 +119,9 @@ _PROFILE_FULL: frozenset[str] = frozenset({
     # and a view is a convenience over recall, which core already has.
     "run_view", "manage_view",
     # prestage_context remains registered but deliberately raw-server-only.
-}) | _PROFILE_FULL_MESH | _PROFILE_KINDS | _media_tools_if_enabled()  # 57 (+5 while images are on)
+}) | _PROFILE_FULL_MESH | _PROFILE_KINDS | _media_tools_if_enabled()  # 58 (+5 while images are on)
 
-_PROFILE_POWER: frozenset[str] = _PROFILE_FULL | frozenset({  # 69
+_PROFILE_POWER: frozenset[str] = _PROFILE_FULL | frozenset({  # 70 (+5 while images are on)
     "get_version", "get_mode", "health", "consistency_check", "recall_trace",
     "get_lifecycle_status", "set_retention_policy", "compact_memories",
     "get_behavioral_patterns", "audit_trail", "quantize", "get_retention_stats",

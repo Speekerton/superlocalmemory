@@ -181,3 +181,32 @@ async def test_a_relayed_request_reaches_a_real_mcp_tool_with_its_deadline():
     result = json.loads(json.loads(response.body)["result"]["content"][0]["text"])
     assert abs(result["deadline"] - (int(now * 1000) + 16_000)) < 1500, result
     assert 13.0 < result["budget"] <= 16.0, result
+
+
+# -- 4.2.3: a turn-blocking caller names its own budget (Hermes prefetch) -------
+
+def test_a_callers_own_budget_is_sent(recall_tool):
+    tool, seen = recall_tool
+    asyncio.run(tool("q", budget_s=2.5))
+    assert seen[0]["budget_s"] == 2.5
+
+
+def test_a_callers_budget_only_shortens_the_relays(recall_tool):
+    tool, seen = recall_tool
+    with request_deadline(_now_ms() + 1_000):
+        asyncio.run(tool("q", budget_s=5.0))
+    assert seen[0]["budget_s"] <= 1.0
+
+
+def test_no_budget_keeps_a_question_on_the_full_clock(recall_tool):
+    tool, seen = recall_tool
+    for bad in (0, -1, float("nan")):
+        asyncio.run(tool("q", budget_s=bad))
+    assert all("budget_s" not in kw for kw in seen)
+
+
+def test_the_hermes_prefetch_names_a_budget_inside_its_timeout():
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parents[2] / "plugin-src" / "hermes" / "__init__.py").read_text()
+    assert '"budget_s": timeout - 0.5' in src

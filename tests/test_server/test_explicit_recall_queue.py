@@ -47,7 +47,7 @@ def test_the_classes():
     assert recall_core.is_explicit(_call())  # an agent's tool: fast and explicit
     assert recall_core.is_explicit(_call(fast=False))
     assert not recall_core.is_explicit(_call(skip_answer_check=True))  # a hook
-    assert not recall_core.is_explicit(_call(context_load=True))
+    assert recall_core.is_explicit(_call(context_load=True))  # session_init waits (4.2.3)
     assert recall_core.is_explicit(_call(depth=0))  # an agent's glance (4.2.3)
     assert not recall_core.is_explicit(_call(budget_s=2.5))  # a relayed call
 
@@ -59,7 +59,7 @@ def test_ingress_reads_the_class_from_the_request():
     assert explicit_scope(scope("/recall", b"q=x"))
     assert explicit_scope(scope("/api/v3/recall/trace"))
     assert not explicit_scope(scope("/recall", b"q=x&answer_check=skip&depth=0"))
-    assert not explicit_scope(scope("/recall", b"q=x&answer_check=context"))
+    assert explicit_scope(scope("/recall", b"q=x&answer_check=context"))  # 4.2.3
     assert not explicit_scope(scope("/recall", b"q=x&budget_s=4"))
 
 

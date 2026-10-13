@@ -90,3 +90,37 @@ def test_the_bridge_reads_a_recall_response_and_a_plain_list() -> None:
                                           "source": "recall"}]
     assert _memories_from([{"fact_id": "f2", "content": "d", "score": 0.1}])[0]["id"] == "f2"
     assert _memories_from(SimpleNamespace(results=None)) == []
+
+
+# -- 4.2.3: a light engine (every MCP stdio process) recalls through the pool --
+
+def test_a_light_engine_recalls_through_the_pool(monkeypatch):
+    """The end-to-end sweep found every prestage_context said recall_error: the
+    stdio process holds a light engine that refuses in-process recall."""
+    from superlocalmemory.core.engine_capabilities import CapabilityError
+    from superlocalmemory.mcp import _pool_adapter
+    from superlocalmemory.mcp import server as mcp_server
+
+    class _Light:
+        profile_id = "work"
+        _db = None
+
+        def recall(self, *a, **k):
+            raise CapabilityError("route through WorkerPool")
+
+    seen = []
+
+    def pool(query, limit=10, **kw):
+        seen.append(kw)
+        return RecallResponse(query=query, results=[RetrievalResult(
+            fact=AtomicFact(fact_id="f1", profile_id="work", content="the ferry leaves at nine"),
+            score=0.8)])
+
+    monkeypatch.setattr(mcp_server, "get_engine", lambda: _Light())
+    monkeypatch.setattr(_pool_adapter, "pool_recall", pool)
+    rows = mcp_server._prestage_recall("ferry", 5, "")
+    assert rows and rows[0]["text"] == "the ferry leaves at nine"
+    assert seen == [{}]
+    assert mcp_server._prestage_recall("ferry", 5, "work") and seen[-1] == {"profile_id": "work"}
+    with pytest.raises(CapabilityError):
+        mcp_server._prestage_recall("ferry", 5, "", as_of="2026-01-01T00:00:00+00:00")

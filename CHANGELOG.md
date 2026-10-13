@@ -5,6 +5,45 @@ All notable changes to SuperLocalMemory will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.3] — Recall answers on large memories from every agent, hook and harness
+
+A fix release. Nothing is moved or deleted, and no setting changes.
+
+### Fixes
+
+- **A quick look at memory came back empty on large stores.** An agent's
+  `recall` at `depth=0` (the cheap one-line glance the tool suggests starting
+  with) was treated like the prompt hook and given its three-second limit. On a
+  store where full recall takes about 2.5 seconds (27,000 memories), it timed
+  out and returned nothing, with every search channel marked "timeout". A
+  glance is now a question like any other and waits for the full answer.
+- **`session_init` lost its search on large stores.** The first call every
+  agent makes loaded only pinned rules: its search ran under the same short
+  limit and timed out. It now gets the full time. It is still never judged by
+  the answer check.
+- **When the prompt hook ran out of time it injected nothing.** The keyword
+  backup only started after the full search was given up, with about 0.2
+  seconds left, so it never finished. Now, when a hook's search is still running
+  a second before its limit, the keyword backup starts beside it, and whichever
+  is ready first answers. The hook still never holds up a prompt longer than
+  before. This is the same for every harness (Claude Code, Codex, Cursor,
+  Copilot, Antigravity, Hermes).
+- **Hermes prefetch gave up before recall answered.** Hermes waits 3 seconds
+  for the memory it adds to each turn, but asked for a full recall. It now sends
+  its time budget (`budget_s`, a new optional `recall` parameter), and recall
+  answers inside it.
+- **`prestage_context` always said `recall_error`.** It recalled inside the
+  MCP process, which may not; it now recalls through the memory service, as
+  `session_init` does.
+- **Smaller tool fixes found by an end-to-end run of every MCP tool:**
+  `skill_lineage` reports an empty history instead of an error on a store where
+  no skill has evolved; `correct_pattern` refuses a pattern that does not exist
+  instead of reporting success; `review_correction` no longer tells an agent to
+  retry a review the memory service refused (an unknown or settled case).
+- **Docs:** the `slm-loop` skill and the MCP tool reference now say what
+  `slm_loop_run` needs to finish: an operator-registered check
+  (`gate_contract`). A matching memory alone never ends a loop.
+
 ## [4.2.2] — Recall never refuses answers it has after a model change, and "What am I working on?" answers from your work
 
 A fix release. Upgrading never moves or deletes memory. Text stays on the model it uses today.

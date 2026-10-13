@@ -555,8 +555,11 @@ a failure leaves the original content unchanged.
 ## Bounded-loop tools
 
 A bounded loop ends only when an independent gate passes, never because the
-agent says it is done. Over MCP the gate is an SLM recall: the loop converges
-on the first lap where a recall of `gate_query` returns a confident match.
+agent says it is done. Over MCP the gate is an independently executed check
+the operator registered (`gate_contract={"job_id": ...}`, see
+`superlocalmemory.loops.receipt_jobs.register_job`); each lap's recall of
+`gate_query` only locates context, and a matching memory alone never passes.
+Without a registered job the run ends HALT.
 The `slm loop` CLI, the `/slm-loop` command and these tools share one durable
 ledger.
 
@@ -578,6 +581,7 @@ to the provider that may be billed. It is host-only for Web access.
 | `poll_interval_s` | number | Seconds between laps (default 1.0, minimum 0.25) |
 | `max_tokens` | integer | Token budget (0 disables) |
 | `no_progress_window` | integer | Halt after this many no-change laps (0 disables) |
+| `gate_contract` | object | `{"job_id": ...}` of an operator-registered check; required for DONE |
 | `require_support` | boolean | Pass only if the answer check ran and judged the memories sufficient (`answerability == "supported"`) |
 
 The result reports `status` (`DONE`, `HALT`, `PAUSE`, `KILLED` or `ERROR`),

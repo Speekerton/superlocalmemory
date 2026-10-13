@@ -265,5 +265,11 @@ def register_evolution_tools(server, get_engine: Callable) -> None:
                 "tree": tree,
             }
         except Exception as exc:
+            # 4.2.3: a store where evolution never ran has no log table yet;
+            # that is an empty lineage, not a failure.
+            if "no such table" in str(exc):
+                return {"success": True, "lineage": [], "lineage_count": 0, "tree": {},
+                        "note": "No skill has evolved in this profile yet."}
             logger.debug("skill_lineage failed: %s", exc)
-            return {"lineage": [], "lineage_count": 0, "tree": {}, "error": str(exc)}
+            return {"success": False, "lineage": [], "lineage_count": 0, "tree": {},
+                    "error": str(exc)}

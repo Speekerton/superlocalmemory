@@ -15,9 +15,9 @@ def is_recall(scope):
 def explicit_scope(scope):
     """The request is a question someone waits on (``recall_core.is_explicit``).
 
-    Hook and context loads say so in the query string (``answer_check=skip`` or
-    ``context``, or a ``budget_s``); they keep the short clock. ``depth=0`` is
-    only how much to show: an agent's glance is a question (4.2.3).
+    The prompt hook says so in the query string (``answer_check=skip``), a
+    relayed call with a ``budget_s``; they keep the short clock. ``depth=0``
+    and ``answer_check=context`` (session_init) are waited on too (4.2.3).
     """
     if scope.get("path", "").rstrip("/") != "/recall":
         return True
@@ -25,7 +25,7 @@ def explicit_scope(scope):
 
     params = parse_qs((scope.get("query_string") or b"").decode("latin-1"))
     first = {k: (v[0] if v else "") for k, v in params.items()}
-    if first.get("answer_check", "").strip().lower() in ("skip", "context"):
+    if first.get("answer_check", "").strip().lower() == "skip":
         return False
     if first.get("budget_s", "").strip():
         return False

@@ -303,10 +303,14 @@ def is_explicit(call: RecallCall) -> bool:
     ``fast`` (skip the internal agentic round, the agent default) does not
     matter here: an agent's recall tool is fast and explicit.
     """
-    # depth 0 is how much to show, not who is waiting: an agent's glance is a
-    # question. The prompt hook says it is one with answer_check=skip (4.2.3).
-    return not (call.skip_answer_check or call.context_load
-                or call.budget_s is not None)
+    # depth 0 is how much to show, and a context load (session_init, slm
+    # context) only skips the answer check: someone waits on both, so both
+    # get the full clock. Only the prompt hook (answer_check=skip, it blocks
+    # typing) and a relayed budget keep the short one (4.2.3: on a 27k-fact
+    # store both came back empty, every channel "timeout").
+    if call.context_load:
+        return call.budget_s is None
+    return not (call.skip_answer_check or call.budget_s is not None)
 
 
 def busy(call: RecallCall, snapshot: Any, *, retry_after_s: float) -> dict:

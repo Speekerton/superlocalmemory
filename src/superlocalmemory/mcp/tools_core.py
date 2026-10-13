@@ -583,6 +583,7 @@ def register_core_tools(server, get_engine: Callable) -> None:
         include_related: bool = False,
         depth: int = 1,
         max_tokens: int = 0,
+        budget_s: float = 0,
     ) -> dict:
         """Search memories through hybrid retrieval, RRF fusion, and reranking.
 
@@ -594,6 +595,10 @@ def register_core_tools(server, get_engine: Callable) -> None:
         neighbours, facts about the same entities, the correction that replaced
         it). Start at 0 or 1; drill into one result with ``expand``.
         ``max_tokens`` caps the returned results; it is never exceeded.
+        ``budget_s`` (seconds, optional) is for a recall that blocks a turn,
+        such as a per-message prefetch: it answers inside that time, with
+        unchecked keyword matches when full recall cannot finish. Leave it
+        unset for a question; recall then waits for the full answer.
         If ``warming_up`` is true, tell the user SuperLocalMemory is still
         warming up and to retry shortly; do not conclude the memory is absent.
         ``code: RECALL_BUSY`` means every recall slot is serving other agents:
@@ -768,6 +773,14 @@ def register_core_tools(server, get_engine: Callable) -> None:
             # worker thread below is not it). No deadline -> nothing is sent.
             from superlocalmemory.mcp.request_deadline import remaining_budget_s
             _budget_s = remaining_budget_s()
+            # 4.2.3: a turn-blocking caller (Hermes prefetch) names its own
+            # budget; it can only shorten the relay's, never lengthen it.
+            try:
+                _own = float(budget_s or 0)
+            except (TypeError, ValueError):
+                _own = 0.0
+            if _own > 0 and _own == _own:
+                _budget_s = min(_own, _budget_s) if _budget_s is not None else _own
 
             def _recall_via_daemon_pool():
                 pool = choose_pool()
@@ -1443,6 +1456,18 @@ def register_core_tools(server, get_engine: Callable) -> None:
             )
             from superlocalmemory.learning.behavioral import BehavioralPatternStore
             store = BehavioralPatternStore(engine._db.db_path)
+            # 4.2.3: a correction must name a pattern that exists (its id or
+            # its key, as get_behavioral_patterns lists them); an unknown one
+            # used to return success and record an annotation for nothing.
+            wanted = str(pattern_id or "").strip()
+            known = store.get_patterns(pid, limit=100000)
+            if not wanted or not any(
+                    wanted in (str(p.get("id", "")), str(p.get("pattern_key", "")))
+                    for p in known):
+                authorization.complete()
+                return {"success": False, "retryable": False,
+                        "error": f"no behavioral pattern {wanted!r} in this profile; "
+                                 "use get_behavioral_patterns for ids"}
             # The store's write is record_pattern; the pattern key travels in
             # its data. (Before 4.1.21 this called a method the store does not
             # have, so every correction failed.)
@@ -1669,13 +1694,37 @@ def register_core_tools(server, get_engine: Callable) -> None:
 
             path = with_view(
                 "/api/corrections/" + urllib.parse.quote(case_id, safe="") + "/" + action)
-            result = await asyncio.to_thread(daemon_request, "POST", path, payload)
+            from superlocalmemory.cli.daemon import (
+                DaemonConflict, DaemonNotFound, DaemonRefused, DaemonUnprocessable,
+            )
+            try:
+                result = await asyncio.to_thread(
+                    daemon_request, "POST", path, payload, preserve_conflict=True,
+                    preserve_not_found=True, preserve_unprocessable=True)
+            except (DaemonConflict, DaemonNotFound, DaemonRefused,
+                    DaemonUnprocessable) as refused:
+                # 4.2.3: an unknown, settled or forbidden case is an answer;
+                # retrying cannot help, so the agent is told not to.
+                return {"success": False, "retryable": False,
+                        "error": f"the correction review was refused: {refused}"}
             if isinstance(result, dict) and result.get("success"):
                 return result
+            if isinstance(result, dict):
+                # 4.2.3: the daemon answered and refused (an unknown or settled
+                # case). Retrying cannot help, so say so and pass its reason on.
+                detail = result.get("detail") or result.get("error") or ""
+                if isinstance(detail, dict):
+                    detail = detail.get("message") or detail.get("code") or ""
+                return {
+                    "success": False,
+                    "retryable": False,
+                    "error": "the correction review was refused"
+                             + (f": {detail}" if detail else ""),
+                }
             return {
                 "success": False,
                 "retryable": True,
-                "error": "resident daemon rejected the correction review",
+                "error": "resident daemon did not answer the correction review",
             }
         except Exception:
             logger.exception("review_correction failed")

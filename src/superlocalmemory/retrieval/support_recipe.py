@@ -167,6 +167,31 @@ ANSWER_SUPPORT_V2 = SupportRecipe(
 _RECIPES = {r.version: r for r in (ANSWER_SUPPORT_V1, ANSWER_SUPPORT_V2)}
 ACTIVE: SupportRecipe = ANSWER_SUPPORT_V2
 
+#: The text model each recipe was fitted on. Two of its inputs are raw cosines
+#: (hub_corrected, nonsense_similarity), and every model has its own cosine
+#: scale: v2 on EmbeddingGemma 2 scored a correct memory 0.008 against its 0.30
+#: bar on a real store (13 Oct 2026). A model is listed here only after
+#: scripts/quality/answerability_fit.py passed on the harness built with it.
+_BY_MODEL: dict[str, SupportRecipe] = {
+    "nomic-ai/nomic-embed-text-v1.5": ANSWER_SUPPORT_V2,
+}
+
+
+def _model_key(model: str) -> str:
+    """``org/name::768`` and a bare ``name`` both name the same model."""
+    return (model or "").split("::", 1)[0].strip().lower()
+
+
+def for_model(model: str) -> SupportRecipe | None:
+    """The recipe fitted on ``model``; None when no fit exists for it."""
+    key = _model_key(model)
+    if not key:
+        return None
+    for name, fitted in _BY_MODEL.items():
+        if key in (name, name.rsplit("/", 1)[-1]):
+            return fitted
+    return None
+
 
 def recipe(version: str) -> SupportRecipe:
     """The recipe named ``version``; KeyError for one this build does not have."""
@@ -174,4 +199,4 @@ def recipe(version: str) -> SupportRecipe:
 
 
 __all__ = ["ACTIVE", "ANSWER_SUPPORT_V1", "ANSWER_SUPPORT_V2", "FEATURES", "SupportRecipe",
-           "recipe"]
+           "for_model", "recipe"]

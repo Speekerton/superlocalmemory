@@ -92,9 +92,13 @@ def _reason(already: bool, job_running: bool, media_enabled: bool, env_state: st
 def plan(live: Any, fact_count: int, env_state: str, *, media_enabled: bool = True,
          job_running: bool = False) -> dict[str, Any]:
     """What an upgrade would do, whether it can start now, and why not when it cannot."""
+    from superlocalmemory.core.support_fit_guard import refusal_for
+
     target = upgrade_target(live)
     already = live.provider == PROVIDER and live.model_name == target.model_name
     reason = _reason(already, job_running, media_enabled, env_state)
+    if reason == "":
+        reason = refusal_for(target) or ""
     memories = max(int(fact_count), 0)
     new_mb, kept_mb = _mb(memories, target.dimension), _mb(memories, live.dimension)
     minutes = _minutes(memories)

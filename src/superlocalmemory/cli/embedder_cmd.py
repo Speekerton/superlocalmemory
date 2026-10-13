@@ -130,6 +130,8 @@ def _switch(args: Namespace) -> None:
             _fail(args, "switch", str(exc), "INVALID")
     if args.endpoint:
         body["api_endpoint"] = args.endpoint
+    if getattr(args, "force", False):
+        body["force"] = True  # past the answer-support fit check (core/support_fit_guard.py)
     data = _request(args, "switch", "POST", "", body)
     job = data["job"]
     if not getattr(args, "json", False) and not args.no_wait:
@@ -309,6 +311,8 @@ def register_embedder_parser(sub: Any) -> None:
     )
     s.add_argument("--endpoint", default="", help="OpenAI-compatible endpoint URL")
     s.add_argument("--no-wait", action="store_true", help="return as soon as it is queued")
+    s.add_argument("--force", action="store_true",
+                   help="switch text to a managed model the answer check is not yet fitted for")
     _json_flag(s)
     u = esub.add_parser(
         "upgrade", help="move your memories to the newer memory engine (rolls back)"

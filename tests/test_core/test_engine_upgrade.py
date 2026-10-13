@@ -14,12 +14,21 @@ import pytest
 from superlocalmemory.core import engine_upgrade as eu
 from superlocalmemory.core.config import EmbeddingConfig
 from superlocalmemory.runtimes import features as feat
+from superlocalmemory.retrieval import support_recipe as sr
 from superlocalmemory.runtimes import media_models
 
 EG2 = "google/embeddinggemma-2"
 NOMIC = EmbeddingConfig(provider="sentence-transformers", model_name="nomic-ai/nomic-embed-text-v1.5",
                         dimension=768, ollama_model="nomic-embed-text")
 EG2_LIVE = EmbeddingConfig(provider="slm-media", model_name=EG2, dimension=768)
+
+
+@pytest.fixture(autouse=True)
+def _managed_model_is_fitted(monkeypatch):
+    """These tests are about the plan and the pick-up. Whether the managed model may
+    take text at all (an answer-support fit) is the last tests' subject below."""
+    monkeypatch.setattr(sr, "_BY_MODEL", {NOMIC.model_name: sr.ANSWER_SUPPORT_V2,
+                                          EG2: sr.ANSWER_SUPPORT_V2})
 
 
 def _plan(live=NOMIC, memories=1000, state="ready", **kw):
@@ -240,3 +249,16 @@ def test_the_daemon_start_calls_the_pickup_after_the_media_request():
 
     source = inspect.getsource(unified_daemon)
     assert source.index("_features.apply_requested(source=\"npm\")") < source.index("apply_on_start")
+
+
+def test_an_installer_request_waits_while_the_model_has_no_answer_support_fit(wired, monkeypatch):
+    """npm records "upgrade" at install; a store must not move its text to a model
+    recall cannot yet judge answers with (13 Oct 2026). The request is kept, so it
+    goes ahead at the first start of a build that ships the fit."""
+    monkeypatch.setattr(sr, "_BY_MODEL", {NOMIC.model_name: sr.ANSWER_SUPPORT_V2})
+    root, _state = wired
+    _write(root, {"schema": 1, "engine_upgrade": {"requested": True, "choice_source": "npm"}})
+    runner = _Runner()
+    assert eu.apply_on_start(_app(runner), _config(), data_root=root) == "waiting"
+    assert runner.switched == []
+    assert feat.read_features(root)["engine_upgrade"]["requested"] is True

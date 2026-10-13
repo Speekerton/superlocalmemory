@@ -83,7 +83,16 @@ def assess(retrieval_engine: Any, query: str, response: Any, verdict: Any,
     status = (getattr(response, "local_reranker_status", "")
               or getattr(response, "reranker_status", None))
     return support_gate.assess(results, response.query_evidence or {}, verdict=verdict,
-                               reranker_status=status)
+                               recipe=recipe_for(retrieval_engine), reranker_status=status)
+
+
+def recipe_for(retrieval_engine: Any):
+    """The recipe fitted on the live text model; today's recipe for any model
+    without its own fit, so no other model's recall changes."""
+    from superlocalmemory.retrieval import support_recipe
+
+    model = getattr(getattr(retrieval_engine, "_embedder", None), "model_name", "") or ""
+    return support_recipe.for_model(str(model)) or support_recipe.ACTIVE
 
 
 def _small_store(db: Any, profile_id: str) -> bool:

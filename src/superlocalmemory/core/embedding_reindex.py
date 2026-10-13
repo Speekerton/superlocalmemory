@@ -23,8 +23,10 @@ import time
 from pathlib import Path
 from typing import Any
 
+from superlocalmemory.core import embedding_reindex_baselines as baselines
 from superlocalmemory.core import embedding_reindex_secrets as secrets
 from superlocalmemory.core import embedding_reindex_steps as steps
+from superlocalmemory.retrieval import hub_baseline
 from superlocalmemory.storage import embedding_canonical_slots as slots
 from superlocalmemory.storage import embedding_change_log as change_log
 from superlocalmemory.storage import embedding_spaces as sp
@@ -99,6 +101,8 @@ class ReindexRunner:
         self.quiet: dict | None = None
         #: job id -> change-log position of the last full diff that found nothing
         self.clean_marks: dict[int, int] = {}
+        #: job id -> the target model's probe vectors (None: it could not embed them)
+        self._probes: dict[int, Any] = {}
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -175,12 +179,24 @@ class ReindexRunner:
             raise Refused(f"the previous model {prev.model_name} is not available ({exc}); "
                           "make it available again, then retry the rollback") from exc
         try:
-            return self.request_switch(prev, kind="rollback", prebuilt=embedder)
+            view = self.request_switch(prev, kind="rollback", prebuilt=embedder)
+            return {**view, "reusable": self._reusable_vectors()}
         except BaseException:
             for key in [k for k, v in self._prebuilt.items() if v is embedder]:
                 self._prebuilt.pop(key, None)
             steps.close_embedder(embedder)
             raise
+
+    def _reusable_vectors(self) -> int:
+        """Vectors the previous space still holds: the most a rollback can copy
+        back (a memory edited since the switch is embedded again)."""
+        conn = self._conn()
+        try:
+            if not sp.table_exists(conn, sp.PREV_MAP):
+                return 0
+            return int(conn.execute(f"SELECT COUNT(*) FROM {sp.PREV_MAP}").fetchone()[0])
+        finally:
+            conn.close()
 
     def cancel(self) -> dict:
         conn = self._conn()
@@ -430,6 +446,7 @@ class ReindexRunner:
                     break
                 self._wait_for_quiet()
                 self._catch_up_logged(job, embedder, target.dimension)
+                self._stage_baselines(job, embedder)
                 job = activate_job(self, job, embedder, target)
                 if job["state"] == "activated":
                     return job, True
@@ -513,6 +530,7 @@ class ReindexRunner:
                 stats = json.loads(job["stats"]) if job.get("stats") else {}
                 stats["resumed_at_done"] = int(job.get("done") or 0)
                 with steps.write_txn(conn, self.db_path):
+                    sp.ensure_side_tables(conn)  # a job begun before 4.2.2 had no baseline table
                     change_log.start(conn)  # a job begun before 4.1.22 GA had none
                     update_job(conn, job["job_id"], started_at=time.time(),
                                attempts=int(job.get("attempts") or 0) + 1,
@@ -577,6 +595,30 @@ class ReindexRunner:
                             dimension, rollback=job["kind"] == "rollback", stats=stats,
                             cursor=None, catching_up=True)
             self.clean_marks[job_id] = position
+        finally:
+            conn.close()
+
+    def _probes_for(self, job: dict, embedder: Any) -> Any:
+        """The probe vectors of the TARGET model, embedded once per job (None
+        when it cannot embed them: the switch lands and the backfill measures)."""
+        job_id = int(job["job_id"])
+        if job_id not in self._probes:
+            self._probes[job_id] = hub_baseline.embed_probes(embedder)
+        return self._probes[job_id]
+
+    def _stage_baselines(self, job: dict, embedder: Any) -> None:
+        """Measure every staged vector's hub baseline so the swap publishes them
+        with the vectors (embedding_reindex_baselines). Never fails the job."""
+        conn = self._conn()
+        try:
+            written = baselines.stage_baselines(
+                conn, self.db_path, self._probes_for(job, embedder), self._check)
+            logger.info("re-index job %s: %d hub baselines staged", job["job_id"], written)
+        except (_Cancelled, RuntimeError):
+            raise
+        except Exception as exc:
+            logger.warning("re-index job %s: hub baselines not staged (%s); the backfill "
+                           "will measure the new space", job["job_id"], exc)
         finally:
             conn.close()
 

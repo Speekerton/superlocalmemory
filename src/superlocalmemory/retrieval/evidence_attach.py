@@ -50,6 +50,7 @@ def attach(
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug("query evidence: %s", exc)
         return {}
+    q_evidence["hub_probes_ready"] = probes is not None
     if not results:
         return q_evidence
     try:
@@ -57,11 +58,18 @@ def attach(
         for r in results:
             raw, norm = ce_scores.get(r.fact.fact_id, (None, None))
             topk, mean = _baseline(r.fact, stored, probes)
+            source = ("stored" if r.fact.fact_id in stored
+                      else "measured" if topk is not None else "missing")
             r.evidence = ef.build(
                 query=query, terms=terms, query_vector=query_vector, fact=r.fact,
                 channel_scores=r.channel_scores, ce_raw=raw, ce_batch_norm=norm,
-                hub_baseline=topk, hub_baseline_mean=mean, rare=rare,
+                hub_baseline=topk, hub_baseline_mean=mean, hub_baseline_source=source,
+                rare=rare,
             )
+        # How many of these memories the gate had to impute a baseline for, so a
+        # caller can tell "no match" from "nothing measured in this space yet".
+        q_evidence["hub_baselines_missing"] = sum(
+            1 for r in results if r.evidence.get("hub_baseline_source") == "missing")
     except Exception as exc:
         logger.debug("result evidence: %s", exc)
     return q_evidence

@@ -47,6 +47,9 @@ NEXT_VEC = "reembed_next_vec"
 NEXT_MAP = "reembed_next_map"
 PREV_VEC = "reembed_prev_vec"
 PREV_MAP = "reembed_prev_map"
+#: Hub baselines (retrieval/hub_baseline.py) of the staged space, one row per
+#: staged memory; published into ``fact_hub_baseline`` inside the swap.
+NEXT_HUB = "reembed_next_hub"
 #: The space from two switches ago, renamed aside inside the swap (14 ms) and
 #: dropped after it (630 ms on a 22k-fact store), outside the request window.
 TRASH_VEC = "reembed_trash_vec"
@@ -99,6 +102,12 @@ CREATE TABLE IF NOT EXISTS {JOBS} (
 )""")
 
 _SIDE_DDL = (f"""
+CREATE TABLE IF NOT EXISTS {NEXT_HUB} (
+    fact_id       TEXT PRIMARY KEY,
+    probe_version TEXT NOT NULL,
+    baseline_mean REAL NOT NULL,
+    baseline_topk REAL NOT NULL
+)""", f"""
 CREATE TABLE IF NOT EXISTS {NEXT_MAP} (
     fact_id         TEXT PRIMARY KEY,
     profile_id      TEXT NOT NULL,
@@ -275,7 +284,7 @@ def drop_side_tables_if_unused(conn: Any) -> None:
     if table_exists(conn, NEXT_VEC) or table_exists(conn, PREV_VEC):
         return
     conn.execute(f"DROP TRIGGER IF EXISTS {TRIGGER}")
-    for table in (NEXT_MAP, PREV_MAP, PURGE):
+    for table in (NEXT_MAP, NEXT_HUB, PREV_MAP, PURGE):
         conn.execute(f"DROP TABLE IF EXISTS {table}")
 
 
@@ -312,8 +321,9 @@ def drop_staging(conn: Any) -> None:
 
     embedding_change_log.stop(conn)
     drop_vec(conn, NEXT_VEC)
-    if table_exists(conn, NEXT_MAP):
-        conn.execute(f"DELETE FROM {NEXT_MAP}")
+    for table in (NEXT_MAP, NEXT_HUB):
+        if table_exists(conn, table):
+            conn.execute(f"DELETE FROM {table}")
     if table_exists(conn, PURGE):
         conn.execute(f"DELETE FROM {PURGE} WHERE space = 'next'")
     drop_side_tables_if_unused(conn)
@@ -333,7 +343,7 @@ def has_previous(conn: Any) -> bool:
 
 
 __all__ = [
-    "ACTIVE_STATES", "JOBS", "LIVE_VEC", "TRASH_VEC", "NEXT_MAP", "NEXT_VEC", "PREV_MAP",
+    "ACTIVE_STATES", "JOBS", "LIVE_VEC", "TRASH_VEC", "NEXT_HUB", "NEXT_MAP", "NEXT_VEC", "PREV_MAP",
     "PREV_VEC", "PURGE", "SPACE", "TERMINAL_STATES", "TRIGGER", "VEC_SHADOWS",
     "config_from_public", "connect", "create_vec", "drop_previous", "drop_staging",
     "drop_side_tables_if_unused", "drop_vec", "ensure_control_tables",

@@ -318,9 +318,9 @@ background, recall keeps working, the previous engine's data stays until the
 owner frees it (`slm embedder forget-previous`), and `slm embedder rollback`
 goes back. If it cannot run, the command prints the reason.
 
-It is not available for text yet: the answer check fitted for EmbeddingGemma 2
-refuses made-up questions less often than the current engine's, so the command
-refuses with that reason. Do not offer it, and never pass `--force` for the user.
+It is not available for text yet: recall's answer check is not calibrated for
+EmbeddingGemma 2 (the best fit so far answered questions that have no answer),
+so the command refuses with that reason. Do not offer it, and never pass `--force` for the user.
 If `slm doctor` reports "Answer check fit" as a warning, the user's text already
 moved in an earlier version: tell them `slm embedder rollback` goes back in
 minutes (previous vectors are kept) and let them decide.

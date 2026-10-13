@@ -165,6 +165,6 @@ def test_no_upgrade_to_a_model_the_answer_check_was_not_fitted_on(ctx, monkeypat
     monkeypatch.setattr(sr, "APPROVED_FOR_TEXT", frozenset({NOMIC.model_name}))
     monkeypatch.setattr("superlocalmemory.server.rbac_enforce.require_manage", lambda request: {})
     plan = client.get(URL).json()
-    assert plan["available"] is False and "not yet measured" in plan["reason"]
+    assert plan["available"] is False and "not calibrated" in plan["reason"]
     r = client.post(URL)
     assert r.status_code == 409 and state["runner"].switched == []

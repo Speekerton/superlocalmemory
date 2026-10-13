@@ -19,7 +19,7 @@ A fix release. Upgrading never moves or deletes memory. Text stays on the model 
   had answered before. The check is now chosen by the text model in use, and
   SuperLocalMemory no longer moves text to a model the check was not fitted for:
   the Upgrade card says why, an install's upgrade request waits, and
-  `slm embedder switch` needs `--force`. Measured on the release harness (synthetic store, held-out questions): with the old check, EmbeddingGemma 2 refused all 203 real questions. Its own fitted check keeps every real question but refuses made-up ones less often than nomic does (144 of 156 against 151 of 156), so text stays on nomic and Gemma keeps serving pictures and documents. A store already on Gemma now gets its answers back with that check.
+  `slm embedder switch` needs `--force`. Measured on the release harness (a synthetic store): with the old check, EmbeddingGemma 2 refused all 203 real questions. A check fitted for it found every real answer on questions it had not seen, but also answered questions with no answer (it refused 69% of made-up questions; nomic refuses 98.5%), so it is not used: text stays on nomic, and Gemma keeps serving pictures and documents.
 - **If your text already moved,** the Upgrade card and `slm doctor` (new check
   "Answer check fit") say so and how to go back: Roll back on the card, or
   `slm embedder rollback`. Your previous vectors are kept, so it takes minutes, and

@@ -175,9 +175,12 @@ ANSWER_SUPPORT_V2 = SupportRecipe(
 #: (nonsense similarity 0.65 vs 0.39): v2's nonsense term alone cost every
 #: Gemma answer about 10 logits. Threshold: lowest held-out real less 0.1.
 #:
-#: It keeps every real question but refuses less nonsense than nomic does, so
-#: it is NOT approved for moving text (see APPROVED_FOR_TEXT); it serves stores
-#: already on this model, where v2 answered nothing.
+#: NOT USED. On the frozen half (never fitted, never tuned on) it kept 94/94
+#: real questions but refused 69% of nonsense (nomic v2: 98.5%), 0/55 of the
+#: "real term plus made-up words" set and 0/94 questions with no answer: it
+#: would answer what is not in memory. Recall says so out loud instead (v2 on
+#: this model refuses; the card, slm doctor and MCP health point to rollback).
+#: Kept so the measurement stays traceable.
 ANSWER_SUPPORT_EG2_V1 = SupportRecipe(
     version="answer-support-eg2-v1",
     weights={"hub_corrected": 25.3271, "keyword_coverage": 3.0,
@@ -200,6 +203,8 @@ ANSWER_SUPPORT_EG2_V1 = SupportRecipe(
         "legacy": "real kept 30/30, nonsense abstain 150/156",
         "described": "real kept 44/44, nonsense abstain 144/156",
         "nomic v2 on the same split": "real kept 78/78, nonsense abstain 151/156",
+        "frozen half": "real 94/94, nonsense abstain 0.69 (nomic v2 0.985), "
+                       "term_plus_words 0/55, no-answer abstain 0/94",
     },
 )
 
@@ -213,13 +218,12 @@ ACTIVE: SupportRecipe = ANSWER_SUPPORT_V2
 #: scripts/quality/answerability_fit.py passed on the harness built with it.
 _BY_MODEL: dict[str, SupportRecipe] = {
     "nomic-ai/nomic-embed-text-v1.5": ANSWER_SUPPORT_V2,
-    "google/embeddinggemma-2": ANSWER_SUPPORT_EG2_V1,
 }
 
 #: Models whose recipe met the bar for carrying a store's text: on the held-out
 #: split, every real question kept AND nonsense refused at least as often as
 #: nomic does (151/156). Fitted is not approved: EmbeddingGemma 2 keeps every
-#: real question but refuses 144/156.
+#: real question on held-out but failed the frozen half (see ANSWER_SUPPORT_EG2_V1).
 APPROVED_FOR_TEXT: frozenset[str] = frozenset({"nomic-ai/nomic-embed-text-v1.5"})
 
 

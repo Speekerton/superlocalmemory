@@ -30,15 +30,9 @@ def refusal_for(target: Any) -> str | None:
     model = str(getattr(target, "model_name", "") or "")
     if support_recipe.approved_for_text(model):
         return None
-    if support_recipe.for_model(model) is not None:
-        return (f"{model} finds your memories, but recall's answer check on it is measured "
-                "weaker at saying \"not in memory\" than on the model you use now. Pictures and "
-                "documents use it already. To move your text anyway, use force "
-                "(slm embedder switch --force).")
-    return (f"{model} is not yet measured for telling a real answer from \"not in memory\", "
-            "so moving your text to it could make recall refuse answers it has. Pictures and "
-            "documents can use it already. To switch text anyway, use force "
-            "(slm embedder switch --force).")
+    return (f"Recall's answer check is not calibrated for {model} yet: on it, recall can say a "
+            "memory is not there when it is. Pictures and documents use it already. To move "
+            "your text anyway, use force (slm embedder switch --force).")
 
 
 def live_advice(live: Any) -> str | None:
@@ -49,19 +43,13 @@ def live_advice(live: Any) -> str | None:
     install. Rolling back is the person's call, never automatic: their previous
     vectors are kept, so it takes minutes.
     """
-    from superlocalmemory.retrieval import support_recipe
-
     if refusal_for(live) is None:
         return None
     model = str(getattr(live, "model_name", "") or "")
-    if support_recipe.for_model(model) is not None:
-        return (f"Text search runs on {model}. Recall answers from it, but its answer check is "
-                "measured weaker at saying \"not in memory\" than the previous engine's, so a "
-                "made-up question is more likely to get an answer. To go back: Roll back below, "
-                "or slm embedder rollback. Your memories are kept either way.")
-    return (f"Text search runs on {model}, which recall's answer check is not yet measured for, "
-            "so recall may say a memory is not there when it is. Go back to the previous engine "
-            "(Roll back below, or: slm embedder rollback). Your memories are kept either way.")
+    return (f"Text search runs on {model}, and recall's answer check is not calibrated for it "
+            "yet, so recall may say a memory is not there when it is. Go back to the previous "
+            "engine: Roll back below, or slm embedder rollback. Your memories are kept either "
+            "way, and it takes minutes.")
 
 
 def answer_check_status(live: Any) -> dict:

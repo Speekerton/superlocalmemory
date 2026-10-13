@@ -36,7 +36,7 @@ def _jobs(db_path) -> int:
 def test_the_runner_refuses_an_unapproved_managed_model(store):
     root, db_path = store
     runner = er.ReindexRunner(db_path=db_path, data_root=root)
-    with pytest.raises(er.Refused, match="weaker"):
+    with pytest.raises(er.Refused, match="not calibrated"):
         runner.request_switch(GEMMA)
     assert _jobs(db_path) == 0
 
@@ -62,7 +62,7 @@ def test_a_config_file_naming_gemma_is_not_adopted(store):
     config = SimpleNamespace(**{PENDING_ATTR: GEMMA})
     assert runner.adopt_pending(config) is None
     assert _jobs(db_path) == 0
-    assert runner.notice and "weaker" in runner.notice
+    assert runner.notice and "not calibrated" in runner.notice
 
 
 def test_the_dashboard_settings_save_gets_the_reason(store):
@@ -84,7 +84,7 @@ def test_agents_see_the_same_advice_the_dashboard_and_doctor_show():
 
     on_gemma = answer_check_status(GEMMA)
     assert on_gemma["status"] == "warn" and on_gemma["advice"] == live_advice(GEMMA)
-    assert on_gemma["recipe"] == "answer-support-eg2-v1" and on_gemma["approved_for_text"] is False
+    assert on_gemma["recipe"] == "answer-support-v2" and on_gemma["approved_for_text"] is False
     nomic = EmbeddingConfig(provider="sentence-transformers",
                             model_name="nomic-ai/nomic-embed-text-v1.5", dimension=768)
     assert answer_check_status(nomic) == {

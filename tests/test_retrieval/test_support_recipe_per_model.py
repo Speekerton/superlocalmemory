@@ -160,25 +160,28 @@ def test_doctor_passes_a_fitted_or_unrecorded_store(no_gemma_fit, tmp_path):
 
 # -- what 4.2.2 actually ships, unpatched ------------------------------------------
 
-def test_shipped_gemma_has_its_own_recipe_but_is_not_approved_for_text():
-    assert sr.for_model(GEMMA) is sr.ANSWER_SUPPORT_EG2_V1
+def test_shipped_gemma_recipe_is_recorded_but_never_used():
+    """eg2-v1 failed the frozen half (it answers questions with no answer), so
+    recall on Gemma keeps v2 and says "not in memory" out loud instead."""
+    assert sr.recipe("answer-support-eg2-v1") is sr.ANSWER_SUPPORT_EG2_V1
+    assert sr.for_model(GEMMA) is None
     assert sr.approved_for_text(NOMIC) and not sr.approved_for_text(GEMMA)
     engine = SimpleNamespace(_embedder=SimpleNamespace(model_name=GEMMA))
-    assert recipe_for(engine) is sr.ANSWER_SUPPORT_EG2_V1
+    assert recipe_for(engine) is sr.ACTIVE
 
 
-def test_shipped_switch_to_gemma_is_refused_as_weaker_not_unmeasured():
+def test_shipped_switch_to_gemma_is_refused_with_the_reason():
     target = EmbeddingConfig(model_name=GEMMA, dimension=768, provider="slm-media")
     reason = support_fit_guard.refusal_for(target)
-    assert reason and "weaker" in reason and "force" in reason
+    assert reason and "not calibrated" in reason and "force" in reason
     live = EmbeddingConfig(model_name=NOMIC, dimension=768, provider="sentence-transformers")
     assert engine_upgrade.plan(live, 1000, "ready", media_enabled=True)["available"] is False
 
 
-def test_shipped_store_already_on_gemma_answers_and_is_told_it_is_weaker():
+def test_shipped_store_already_on_gemma_is_told_how_to_go_back():
     live = EmbeddingConfig(model_name=GEMMA, dimension=768, provider="slm-media")
     advice = support_fit_guard.live_advice(live)
-    assert advice and "weaker" in advice and "slm embedder rollback" in advice
+    assert advice and "not calibrated" in advice and "slm embedder rollback" in advice
 
 
 def test_the_gemma_recipe_keeps_a_real_answer_that_v2_refused():

@@ -41,7 +41,7 @@ Never `sudo pip install` and never install into the system Python.
 ```bash
 slm --version
 ```
-Expected: `superlocalmemory 4.2.3` (or later)
+Expected: `superlocalmemory 4.2.4` (or later)
 
 ---
 

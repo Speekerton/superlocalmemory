@@ -120,14 +120,17 @@ class HopfieldChannel:
         if include_shared is None:
             include_shared = bool(getattr(self, "include_shared", False))
         try:
-            with self._cache_lock:
-                return self._search_inner(
-                    query,
-                    profile_id,
-                    top_k,
-                    include_global=include_global,
-                    include_shared=include_shared,
-                )
+            # 4.2.4: the cache lock guards the full-matrix cache only (small
+            # stores). Held around every search, concurrent recalls on a large
+            # store queued behind each other here: ~120 ms of work took 1.7-4.2 s
+            # with a few agents recalling at once.
+            return self._search_inner(
+                query,
+                profile_id,
+                top_k,
+                include_global=include_global,
+                include_shared=include_shared,
+            )
         except Exception as exc:
             # HR-06: Return [] on any error
             logger.warning("Hopfield channel error: %s", exc)
@@ -203,12 +206,13 @@ class HopfieldChannel:
                 include_shared=include_shared,
             )
 
-        # Tiny store (or no VS): build (cached) full matrix.
-        memory_matrix, fact_ids = self._get_memory_matrix(
-            profile_id,
-            include_global=include_global,
-            include_shared=include_shared,
-        )
+        # Tiny store (or no VS): build (cached) full matrix, under the lock.
+        with self._cache_lock:
+            memory_matrix, fact_ids = self._get_memory_matrix(
+                profile_id,
+                include_global=include_global,
+                include_shared=include_shared,
+            )
         if memory_matrix is None or len(fact_ids) == 0:
             return []
         if vs_ok and len(fact_ids) > self._config.prefilter_candidates:
@@ -220,6 +224,8 @@ class HopfieldChannel:
                 include_global=include_global,
                 include_shared=include_shared,
             )
+        # The matrix is a snapshot: a rebuild replaces the attribute, never
+        # mutates this array, so scoring needs no lock.
         results = self._search_full_matrix(
             q_vec, memory_matrix, fact_ids, top_k,
         )

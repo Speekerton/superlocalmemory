@@ -85,13 +85,25 @@ def _picture_identity(metadata: dict):
 
 
 def matching_fact(db, fact):
-    """Derived assertions only collapse within the same source observation."""
+    """Derived assertions only collapse within the same source observation.
+
+    Runs inside every save's write transaction, so it must cost the same on any
+    store size. ``ORDER BY created_at`` let SQLite pick ``idx_facts_recent``
+    (profile_id, created_at, ...) to avoid a sort, and walk every fact of the
+    profile comparing content; ``+created_at`` keeps the order but leaves the
+    choice to ``idx_facts_source_identity``. The retired check is a primary-key
+    probe per candidate instead of a list of every retired fact. Measured on a
+    copy of a 27,689-fact store (14 Oct 2026): 1.3-1.7 s idle -> under 1 ms,
+    and 5-30 s under load, which held the write lock long enough to fail mesh
+    heartbeats with "database is locked".
+    """
     rows = db.execute(
-        "SELECT fact_id,shared_with FROM atomic_facts WHERE profile_id=? AND content=? "
-        "AND scope=? AND memory_id=? "
-        "AND lifecycle IN ('active','warm','cold') AND COALESCE(quarantined,0)=0 "
-        "AND fact_id NOT IN (SELECT fact_id FROM fact_temporal_validity "
-        "WHERE system_expired_at IS NOT NULL) ORDER BY created_at",
+        "SELECT f.fact_id,f.shared_with FROM atomic_facts f WHERE f.profile_id=? "
+        "AND f.content=? AND f.scope=? AND f.memory_id=? "
+        "AND f.lifecycle IN ('active','warm','cold') AND COALESCE(f.quarantined,0)=0 "
+        "AND NOT EXISTS (SELECT 1 FROM fact_temporal_validity v "
+        "WHERE v.fact_id=f.fact_id AND v.system_expired_at IS NOT NULL) "
+        "ORDER BY +f.created_at",
         (fact.profile_id, fact.content, fact.scope or "personal", fact.memory_id),
     )
     audience = set(fact.shared_with or [])

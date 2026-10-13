@@ -25,6 +25,8 @@ import logging
 import sqlite3
 from typing import Final
 
+from superlocalmemory.storage import scene_member_triggers as _scene_member_triggers
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -510,39 +512,7 @@ CREATE INDEX IF NOT EXISTS idx_scene_fact_members_lookup
     ON scene_fact_members (profile_id, fact_id, scene_id);
 CREATE INDEX IF NOT EXISTS idx_scene_fact_members_order
     ON scene_fact_members (scene_id, position);
-
-CREATE TRIGGER IF NOT EXISTS trg_scene_fact_members_insert
-AFTER INSERT ON memory_scenes
-BEGIN
-    DELETE FROM scene_fact_members WHERE scene_id = NEW.scene_id;
-    INSERT OR IGNORE INTO scene_fact_members
-        (profile_id, scene_id, fact_id, position)
-    SELECT NEW.profile_id, NEW.scene_id, af.fact_id, CAST(member.key AS INTEGER)
-    FROM json_each(
-        CASE WHEN json_valid(NEW.fact_ids_json)
-             THEN NEW.fact_ids_json ELSE '[]' END
-    ) AS member
-    JOIN atomic_facts AS af
-      ON af.fact_id = member.value
-     AND af.profile_id = NEW.profile_id;
-END;
-
-CREATE TRIGGER IF NOT EXISTS trg_scene_fact_members_update
-AFTER UPDATE OF profile_id, fact_ids_json ON memory_scenes
-BEGIN
-    DELETE FROM scene_fact_members WHERE scene_id = NEW.scene_id;
-    INSERT OR IGNORE INTO scene_fact_members
-        (profile_id, scene_id, fact_id, position)
-    SELECT NEW.profile_id, NEW.scene_id, af.fact_id, CAST(member.key AS INTEGER)
-    FROM json_each(
-        CASE WHEN json_valid(NEW.fact_ids_json)
-             THEN NEW.fact_ids_json ELSE '[]' END
-    ) AS member
-    JOIN atomic_facts AS af
-      ON af.fact_id = member.value
-     AND af.profile_id = NEW.profile_id;
-END;
-"""
+""" + _scene_member_triggers.DDL
 
 
 # ---------------------------------------------------------------------------
@@ -1090,6 +1060,7 @@ def create_all_tables(conn: sqlite3.Connection) -> None:
     from superlocalmemory.storage.fts_residue import enable_quietly
     visibility_index.ensure(conn)
     recency_index.ensure(conn)
+    _scene_member_triggers.ensure(conn)  # 4.2.4 stores: a scene save scanned every fact
     enable_quietly(conn)  # a deleted memory's words leave the keyword index at once
 
     # Seed schema version on first run.

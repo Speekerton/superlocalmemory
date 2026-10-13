@@ -510,6 +510,13 @@ def current_fact_clause_for_connection(
     ) + _compose_current_clause(prefix, has_temporal=has_temporal)
 
 
+def _date_or_none(value):
+    """A blank date is no date (M063): stored as NULL, never as ''."""
+    if isinstance(value, str) and not value.strip():
+        return None
+    return value
+
+
 class DatabaseManager:
     """Concurrent-safe SQLite manager with WAL, profile isolation, and FTS5.
 
@@ -2057,9 +2064,9 @@ class DatabaseManager:
                 description, scope, shared_with)
                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (event.event_id, event.profile_id, event.entity_id, event.fact_id,
-             event.observation_date, event.referenced_date,
-             event.interval_start, event.interval_end, event.description,
-             _scope, _shared),
+             _date_or_none(event.observation_date), _date_or_none(event.referenced_date),
+             _date_or_none(event.interval_start), _date_or_none(event.interval_end),
+             event.description, _scope, _shared),
         )
         return event.event_id
 

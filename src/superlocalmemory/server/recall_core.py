@@ -294,6 +294,8 @@ EXPLICIT_QUEUE_S = 12.0
 #: request's own ceiling) rather than abandoned: abandoning it freed its slot
 #: while its thread kept the CPU, so every later question ran slower still.
 EXPLICIT_RUN_GRACE_S = 4.0
+#: What an explicit question keeps after its answer check, to assemble the reply.
+ANSWER_ASSEMBLY_MARGIN_S = 0.3
 #: Never longer than this from arrival to answer (the HTTP ingress clock).
 EXPLICIT_CEILING_S = EXPLICIT_QUEUE_S + 3.0 + EXPLICIT_RUN_GRACE_S
 _explicit_waiting = 0
@@ -427,11 +429,8 @@ async def _run_admitted(engine, call, app_state, runtime, snapshot,
                 budget = effective_budget_s(call)
                 public_deadline = remaining_deadline(budget)
                 worker_deadline = public_deadline - min(0.20, budget * 0.25)
-        # The engine thread reads monotonic time; the loop's clock may differ.
-        call = dataclasses.replace(call, answer_deadline=time.monotonic() + max(
-            0.0, worker_deadline - loop.time()))
-        future = submit(loop, hold, runtime, app_state, engine, _engine_call, engine, call)
         run_deadline = worker_deadline
+        answer_until = worker_deadline
         if explicit:
             from superlocalmemory.server.recall_ingress import remaining_deadline
             # The grace, or whatever the request's own clock still allows
@@ -440,6 +439,16 @@ async def _run_admitted(engine, call, app_state, runtime, snapshot,
                 remaining_deadline(max(0.0, worker_deadline - loop.time()) + EXPLICIT_RUN_GRACE_S),
                 remaining_deadline(EXPLICIT_CEILING_S) - 1.0)
             public_deadline = max(public_deadline, run_deadline + 0.15)
+            # 4.2.4: the answer check shares the question's run clock. Held to
+            # the three-second budget it was skipped whenever search took more
+            # than ~3 s on a large store, though it costs 30-140 ms and the
+            # question still had seconds left: "budget_exhausted" on nearly
+            # every recall of a 27k-fact store.
+            answer_until = run_deadline - ANSWER_ASSEMBLY_MARGIN_S
+        # The engine thread reads monotonic time; the loop's clock may differ.
+        call = dataclasses.replace(call, answer_deadline=time.monotonic() + max(
+            0.0, answer_until - loop.time()))
+        future = submit(loop, hold, runtime, app_state, engine, _engine_call, engine, call)
         hedge = None
         if explicit:
             response = await wait_until(future, run_deadline)

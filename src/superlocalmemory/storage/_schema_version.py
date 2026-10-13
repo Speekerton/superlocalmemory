@@ -67,7 +67,8 @@ from pathlib import Path
 #: of hub baselines and its triggers) are additive, with ``DOWNGRADE_FLOOR`` 51.
 #: M062 sets an existing flag column on rows the stub rule recognises (no schema
 #: change); the ceiling follows it by the same convention, floor 51.
-SUPPORTED_SCHEMA_VERSION: int = 62
+#: M063 stores blank temporal dates as NULL (data only), floor 51.
+SUPPORTED_SCHEMA_VERSION: int = 63
 
 
 class SchemaVersionError(RuntimeError):

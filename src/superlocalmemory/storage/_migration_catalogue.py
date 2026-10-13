@@ -193,6 +193,9 @@ from superlocalmemory.storage.migrations import (
 from superlocalmemory.storage.migrations import (
     M062_hook_bookkeeping_is_flagged as _M062,
 )
+from superlocalmemory.storage.migrations import (
+    M063_blank_temporal_dates_are_null as _M063,
+)
 
 # Order matters: M003 creates the log table. The runner handles M003's own
 # bootstrap (it can't record itself before it exists).
@@ -410,4 +413,8 @@ DEFERRED_MIGRATIONS: list[Migration] = [
     # creates.
     Migration(name=_M062.NAME, db_target="memory", ddl=_M062.DDL,
               dependencies=(_M060.NAME,)),
+    # M063 stores blank temporal dates as NULL so the temporal slice cache
+    # (M057) can serve. Deferred: it reads temporal_events.
+    Migration(name=_M063.NAME, db_target="memory", ddl=_M063.DDL,
+              dependencies=(_M057.NAME,)),
 ]

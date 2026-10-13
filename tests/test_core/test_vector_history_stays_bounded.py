@@ -106,7 +106,7 @@ class TestTheTickBoundsTheHistory:
 
     def test_the_window_is_tunable(self, monkeypatch) -> None:
         """An operator with a 17 GB store may want it shorter, once."""
-        assert ms._VECTOR_HISTORY_DAYS == 7.0
+        assert ms._VECTOR_HISTORY_DAYS == 1 / 24  # an hour (4.2.4)
 
     def test_a_silent_skip_is_logged(self, monkeypatch, caplog) -> None:
         monkeypatch.setattr(

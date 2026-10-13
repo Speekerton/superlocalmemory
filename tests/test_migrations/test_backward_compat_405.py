@@ -168,7 +168,9 @@ import pytest
 #: triggers); both additive, downgrade floor 51.
 #: 62 as of 4.2.2: +M062_hook_bookkeeping_is_flagged (deferred, memory.db; no
 #: schema change, sets an existing flag column), downgrade floor 51.
-_EXPECTED_SCHEMA_VERSION: int = 62
+#: 63 as of 4.2.4: +M063_blank_temporal_dates_are_null (deferred, memory.db;
+#: data only), downgrade floor 51.
+_EXPECTED_SCHEMA_VERSION: int = 63
 
 #: Total migrations in the MIGRATIONS + DEFERRED_MIGRATIONS catalogue.
 #: M001–M043 with M008 absent = 42 total.
@@ -193,7 +195,8 @@ _EXPECTED_SCHEMA_VERSION: int = 62
 # 60 as of 4.1.25: +M060_memory_description and +M061_fact_hub_baseline
 # (both deferred, memory.db, additive).
 # 61 as of 4.2.2: +M062_hook_bookkeeping_is_flagged (deferred, memory.db).
-_EXPECTED_MIGRATION_COUNT: int = 61
+# 62 as of 4.2.4: +M063_blank_temporal_dates_are_null (deferred, memory.db).
+_EXPECTED_MIGRATION_COUNT: int = 62
 
 #: Path to an installed reference package's migrations directory, if one exists.
 #:

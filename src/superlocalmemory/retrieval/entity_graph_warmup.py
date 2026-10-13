@@ -87,7 +87,32 @@ def warm(engine: Any, profile_id: str) -> bool:
         return False
     logger.info("entity graph warmed for profile %s in %.0f ms",
                 profile_id, (time.monotonic() - t0) * 1000.0)
+    warm_names(channel, profile_id)
     return True
 
 
-__all__ = ["channel_of", "lag_of", "score_candidates_unless_warming", "warm"]
+def warm_names(channel: Any, profile_id: str) -> None:
+    """Build recall's entity name indexes before anyone recalls (4.2.4).
+
+    The spelling index costs 1.6-5 s of CPU on a 16,800-entity store; built
+    inside the first recall that needed it, that recall paid it all.
+    """
+    resolver = getattr(channel, "_resolver", None)
+    if resolver is None:
+        return
+    t0 = time.monotonic()
+    try:
+        lookup_rows = getattr(resolver, "_lookup_rows", None)
+        if callable(lookup_rows):
+            lookup_rows(profile_id)
+        names = getattr(resolver, "_names", None)
+        if names is not None:
+            names.index(profile_id)
+    except Exception as exc:  # noqa: BLE001 -- the first recall builds them instead
+        logger.warning("entity name warm-up failed (%s)", type(exc).__name__)
+        return
+    logger.info("entity names warmed for profile %s in %.0f ms",
+                profile_id, (time.monotonic() - t0) * 1000.0)
+
+
+__all__ = ["channel_of", "lag_of", "score_candidates_unless_warming", "warm", "warm_names"]

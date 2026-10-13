@@ -28,6 +28,7 @@ they may be links of a chain ("Plorth" -> "Plot" -> "Lost").
 from __future__ import annotations
 
 import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -75,34 +76,123 @@ class _Index:
     name_of: dict[str, str] | None = None
 
 
-class EntityLookupIndex:
-    """Per-profile name rows, valid while the store signature is unchanged."""
+#: The entity rows this index reads: a profile's names, and every alias (an
+#: alias row's own profile can differ from its entity's). A save that adds or
+#: removes one moves its count or highest rowid; touching last_seen or
+#: fact_count, which every save does, moves neither (4.2.4).
+_NAMES_STAMP_SQL = ("SELECT COUNT(*) AS n, COALESCE(MAX(rowid), 0) AS r "
+                    "FROM canonical_entities WHERE profile_id = ?")
+_ALIASES_STAMP_SQL = "SELECT COUNT(*) AS n, COALESCE(MAX(rowid), 0) AS r FROM entity_aliases"
+_NEW_NAMES_SQL = ("SELECT rowid AS rid, entity_id, canonical_name, entity_type "
+                  "FROM canonical_entities WHERE profile_id = ? AND rowid > ? ORDER BY rowid")
+_NEW_ALIASES_SQL = ("SELECT ea.rowid AS rid, ea.entity_id, ea.alias, ea.source, ce.canonical_name "
+                    "FROM entity_aliases ea "
+                    "JOIN canonical_entities ce ON ce.entity_id = ea.entity_id "
+                    "WHERE ce.profile_id = ? AND ea.rowid > ? ORDER BY ea.rowid")
+#: An in-place rename or alias repair moves no count. Maintenance that does one
+#: calls ``invalidate()``; this bounds anything else (another process) too.
+MAX_AGE_S = 600.0
 
-    def __init__(self, db: Any) -> None:
+_generation = 0
+_generation_lock = threading.Lock()
+
+
+def invalidate() -> None:
+    """Entity names or aliases were changed in place: rebuild on next use."""
+    global _generation
+    with _generation_lock:
+        _generation += 1
+
+
+def _stamp(db: Any, profile_id: str) -> tuple[int, int, int, int]:
+    names = dict(db.execute(_NAMES_STAMP_SQL, (profile_id,))[0])
+    aliases = dict(db.execute(_ALIASES_STAMP_SQL)[0])
+    return (int(names["n"] or 0), int(names["r"] or 0),
+            int(aliases["n"] or 0), int(aliases["r"] or 0))
+
+
+def _add_keyed(keyed: dict[str, object], rows: list[tuple[str, str]]) -> None:
+    for entity_id, text in rows:
+        key = sql_lower(text)
+        prev = keyed.get(key)
+        if prev is None:
+            keyed[key] = entity_id
+        elif prev is not AMBIGUOUS and prev != entity_id:
+            keyed[key] = AMBIGUOUS
+
+
+class EntityLookupIndex:
+    """Per-profile name rows, kept while the entity rows they come from are.
+
+    Keyed on the entity tables (``_stamp``), not on the whole store: before
+    4.2.4 any commit -- a hook's note, an access count -- dropped it, so on a
+    busy store it was rebuilt on nearly every recall (16,800 names re-keyed,
+    ~0.35 s). Rows only added since are folded in; anything else rebuilds.
+    """
+
+    def __init__(self, db: Any, *, clock=time.monotonic) -> None:
         self._db = db
+        self._clock = clock
         self._lock = threading.Lock()
-        self._parts: dict[str, tuple[Any, _Index]] = {}
+        # profile -> (stamp, generation, built_at, index)
+        self._parts: dict[str, tuple[tuple, int, float, _Index]] = {}
 
     def get(self, profile_id: str) -> _Index | None:
-        sig = store_signature.of_db(self._db)
-        if sig is None:
+        if store_signature.of_db(self._db) is None:  # inside a write: never reuse
             return None
+        stamp = _stamp(self._db, profile_id)
+        now = self._clock()
         with self._lock:
             hit = self._parts.get(profile_id)
-            if hit is not None and hit[0] == sig:
-                return hit[1]
+        if hit is not None and hit[1] == _generation and now - hit[2] < MAX_AGE_S:
+            if hit[0] == stamp:
+                return hit[3]
+            grown = self._extend(profile_id, hit[0], stamp, hit[3])
+            if grown is not None:
+                self._keep(profile_id, (stamp, hit[1], hit[2], grown))
+                return grown
+        generation = _generation
+        index = self._build(profile_id)
+        self._keep(profile_id, (stamp, generation, now, index))
+        return index
+
+    def _keep(self, profile_id: str, entry: tuple) -> None:
+        with self._lock:
+            self._parts[profile_id] = entry
+            while len(self._parts) > 8:  # a few profiles at most
+                self._parts.pop(next(iter(self._parts)))
+
+    def _build(self, profile_id: str) -> _Index:
         rows = [dict(r) for r in self._db.execute(_NAMES_SQL, (profile_id,))]
         names = [(str(r["entity_id"]), str(r["canonical_name"] or "")) for r in rows]
         types = {str(r["entity_id"]): str(r["entity_type"] or "") for r in rows}
         aliases = [(str(r["entity_id"]), str(r["alias"] or ""))
                    for r in map(dict, self._db.execute(_ALIASES_SQL, (profile_id,)))
                    if em.alias_in_use(r["source"], r["alias"], r["canonical_name"])]
-        index = _Index(names, aliases, _keyed(names), _keyed(aliases), types)
-        with self._lock:
-            self._parts[profile_id] = (sig, index)
-            while len(self._parts) > 8:  # a few profiles at most
-                self._parts.pop(next(iter(self._parts)))
-        return index
+        return _Index(names, aliases, _keyed(names), _keyed(aliases), types)
+
+    def _extend(self, profile_id: str, old: tuple, new: tuple, index: _Index) -> _Index | None:
+        """The index plus rows added since ``old``; None when any were removed."""
+        n0, r0, a0, ar0 = old
+        n1, r1, a1, ar1 = new
+        if n1 < n0 or r1 < r0 or a1 < a0 or ar1 < ar0:
+            return None
+        name_rows = [dict(r) for r in self._db.execute(_NEW_NAMES_SQL, (profile_id, r0))]
+        alias_rows = [dict(r) for r in self._db.execute(_NEW_ALIASES_SQL, (profile_id, ar0))]
+        if len(name_rows) != n1 - n0:
+            return None  # a removal hidden by an addition: rebuild
+        if a1 - a0 < len(alias_rows):
+            return None
+        names = [(str(r["entity_id"]), str(r["canonical_name"] or "")) for r in name_rows]
+        aliases = [(str(r["entity_id"]), str(r["alias"] or "")) for r in alias_rows
+                   if em.alias_in_use(r["source"], r["alias"], r["canonical_name"])]
+        by_name, by_alias = dict(index.by_name), dict(index.by_alias)
+        _add_keyed(by_name, names)
+        _add_keyed(by_alias, aliases)
+        types = dict(index.types)
+        types.update({str(r["entity_id"]): str(r["entity_type"] or "") for r in name_rows})
+        # A new name can be what an earlier unmatched spelling meant: forget those.
+        return _Index(index.names + names, index.aliases + aliases, by_name, by_alias, types)
 
 
 def plain_word_hit(index: _Index, word: str) -> str | None:
@@ -124,4 +214,4 @@ def plain_word_hit(index: _Index, word: str) -> str | None:
     return entity_id if ok else None
 
 
-__all__ = ["AMBIGUOUS", "EntityLookupIndex", "plain_word_hit", "sql_lower"]
+__all__ = ["AMBIGUOUS", "EntityLookupIndex", "invalidate", "plain_word_hit", "sql_lower"]

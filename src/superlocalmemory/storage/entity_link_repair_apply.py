@@ -165,6 +165,13 @@ def _create_entities(conn: sqlite3.Connection, p: elr.ProfilePlan) -> dict[str, 
     return ids
 
 
+
+def _names_changed() -> None:
+    """Alias sources changed in place: recall's kept name index must rebuild."""
+    from superlocalmemory.encoding import entity_lookup_index
+
+    entity_lookup_index.invalidate()
+
 def _fix_aliases(conn: sqlite3.Connection, p: elr.ProfilePlan, undo: _Undo) -> None:
     undo.put(p.profile_id, "aliases", [asdict(a) for a in p.aliases])
     for a in p.aliases:
@@ -173,6 +180,7 @@ def _fix_aliases(conn: sqlite3.Connection, p: elr.ProfilePlan, undo: _Undo) -> N
         else:
             conn.execute("UPDATE entity_aliases SET source = ? WHERE alias_id = ?",
                          (a.new_source, a.alias_id))
+    _names_changed()
 
 
 def _relink(conn: sqlite3.Connection, p: elr.ProfilePlan, ids: dict[str, str],
@@ -435,6 +443,7 @@ def _undo_rows(conn: sqlite3.Connection, parts: dict[str, list], out: dict) -> N
                      [(a["source"], a["alias_id"], a["new_source"]) for a in aliases
                       if a["new_source"] is not None])
     out["aliases_restored"] += _changes(conn) - start
+    _names_changed()
     conn.executemany("UPDATE canonical_entities SET fact_count = ? WHERE entity_id = ?",
                      [(n, e) for _p, (e, n) in parts.get("fact_counts", [])])
 

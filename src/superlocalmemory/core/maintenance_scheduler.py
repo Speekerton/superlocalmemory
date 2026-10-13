@@ -35,9 +35,12 @@ logger = logging.getLogger(__name__)
 # store creates a version and nothing used to remove them: a 5,561-memory
 # store reached 50,580 versions in 17 GB, and each vector operation then had
 # to walk that history -- the daemon in GitHub #137 held a core at 90%+ with
-# an empty queue. A week is enough to debug a bad projection and short enough
-# that the history cannot run away.
-_VECTOR_HISTORY_DAYS = float(os.environ.get("SLM_VECTOR_HISTORY_DAYS", "7"))
+# an empty queue. 4.2.4: an hour, not a week. A week still held one version
+# per memory saved that week: 7,194 versions in 5,401 files (4.1 GB for 27k
+# vectors) on a busy store after a model switch, and semantic search took
+# 2.2 s instead of 50 ms. An hour is past any in-flight read; the GDPR erase
+# path already cleans with no retention at all.
+_VECTOR_HISTORY_DAYS = float(os.environ.get("SLM_VECTOR_HISTORY_DAYS", str(1 / 24)))
 
 
 _NOT_APPLICABLE_REPORTED: set[str] = set()

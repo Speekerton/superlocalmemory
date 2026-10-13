@@ -213,6 +213,9 @@ from superlocalmemory.storage.migrations import (
 from superlocalmemory.storage.migrations import (
     M062_hook_bookkeeping_is_flagged as _M062,
 )
+from superlocalmemory.storage.migrations import (
+    M063_blank_temporal_dates_are_null as _M063,
+)
 
 # Emit under the runner's logger name so operational log filters that key on
 # "superlocalmemory.storage.migration_runner" keep matching after this split.
@@ -283,6 +286,7 @@ _MODULES = {
     _M060.NAME: _M060,
     _M061.NAME: _M061,
     _M062.NAME: _M062,
+    _M063.NAME: _M063,
 }
 
 # Exact historical DDL fingerprints whose resulting schema is intentionally

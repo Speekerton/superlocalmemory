@@ -24,6 +24,8 @@ _STAMP_SQL = ("SELECT COUNT(*) AS n, COALESCE(MAX(rowid), 0) AS r "
               "FROM canonical_entities WHERE profile_id = ?")
 _NAMES_SQL = ("SELECT entity_id, canonical_name FROM canonical_entities "
               "WHERE profile_id = ? ORDER BY rowid")
+_ADDED_SQL = ("SELECT entity_id, canonical_name FROM canonical_entities "
+              "WHERE profile_id = ? AND rowid > ? ORDER BY rowid")
 
 
 class CanonicalNames:
@@ -43,8 +45,10 @@ class CanonicalNames:
         stamp = self._stamp(profile_id)
         with self._lock:
             kept = self._kept.get(profile_id)
-            if kept is not None and kept[0] == stamp:
-                return kept[1]
+        if kept is not None and kept[0] == stamp:
+            return kept[1]
+        if kept is not None and self._grow(profile_id, kept, stamp):
+            return kept[1]
         names = em.NameIndex([(str(dict(r)["entity_id"]), str(dict(r)["canonical_name"] or ""))
                               for r in self._db.execute(_NAMES_SQL, (profile_id,))])
         with self._lock:
@@ -52,6 +56,26 @@ class CanonicalNames:
             while len(self._kept) > self._max:
                 self._kept.pop(next(iter(self._kept)))
         return names
+
+    def _grow(self, profile_id: str, kept, stamp: tuple[int, int]) -> bool:
+        """Fold in names only added since ``kept`` (4.2.4).
+
+        A save that created one entity made the next recall rebuild all of a
+        profile's names: 2.7-5.4 s on a 16,800-entity store. Added rows are
+        read by rowid; a removal (count lower than the rows added) rebuilds.
+        """
+        (n0, r0), names = kept
+        n1, r1 = stamp
+        if n1 < n0 or r1 < r0:
+            return False
+        added = [dict(r) for r in self._db.execute(_ADDED_SQL, (profile_id, r0))]
+        if len(added) != n1 - n0:
+            return False
+        for row in added:
+            names.add(str(row["entity_id"]), str(row["canonical_name"] or ""))
+        with self._lock:
+            self._kept[profile_id] = (stamp, names)
+        return True
 
     def added(self, profile_id: str, entity_id: str, name: str) -> None:
         """This process created an entity: keep the copy current."""

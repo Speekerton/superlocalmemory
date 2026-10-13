@@ -84,4 +84,9 @@ def test_the_tables_are_not_scanned_again_while_nothing_changed(resolver, monkey
 
     monkeypatch.setattr(resolver._db, "execute", spy)
     resolver.lookup(["Hollow", "Hollowmer", "Unknown Person"], P)
-    assert calls == []
+    # 4.2.4: the index is keyed on the entity tables (count and highest rowid,
+    # two indexed reads) instead of the store file, which every commit moved.
+    # No name or alias row is read again.
+    from superlocalmemory.encoding import entity_lookup_index as eli
+
+    assert calls == [eli._NAMES_STAMP_SQL, eli._ALIASES_STAMP_SQL]

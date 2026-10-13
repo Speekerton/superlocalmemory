@@ -144,7 +144,7 @@ async def test_citation_preview_is_sanitized_before_sse_serialization(
         "trust_score": 0.25,
     }
     monkeypatch.setattr(
-        chat, "_recall_memories", lambda app_state, query, limit: [memory],
+        chat, "_recall_memories", lambda app_state, query, limit, profile="": [memory],
     )
 
     events = await _collect(chat._stream_chat(object(), "show it", "a", 1))

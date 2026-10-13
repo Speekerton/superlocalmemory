@@ -714,6 +714,19 @@ button { font-family: inherit; }
 .od-whatsnew-tile h4 { font-size: 14.5px; font-weight: 640; margin: 0; }
 .od-whatsnew-tile p { font-size: 13.5px; line-height: 1.5; margin: 0; flex: 1 1 auto; }
 .od-whatsnew-dev { font-size: 12px; margin: 12px 0 0; }
+/* First-run Welcome card (od-welcome.js) */
+#od-welcome:empty { display: none; }
+#od-welcome { margin-bottom: var(--space-3, 16px); }
+.od-welcome > h3 { font-size: 16px; font-weight: 640; margin: 0 0 14px; }
+.od-welcome-row { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 14px 16px; margin-bottom: 12px; background: var(--card-2); border: 1px solid var(--border); border-radius: var(--r-md); }
+.od-welcome-row-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.od-welcome-row h4 { font-size: 14.5px; font-weight: 640; margin: 0; }
+.od-welcome-row p { font-size: 13.5px; line-height: 1.5; margin: 0; }
+.od-welcome-list { margin: 0; padding-left: 20px; font-size: 13.5px; line-height: 1.6; }
+.od-welcome-prompt { width: 100%; margin: 0; padding: 10px 12px; font-family: var(--font-mono, ui-monospace, monospace); font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg); background: var(--card); border: 1px solid var(--border); border-radius: var(--r-md); user-select: all; }
+.od-welcome-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.od-welcome-note:empty { display: none; }
+.od-welcome-foot { display: flex; justify-content: flex-end; }
 .od-dropzone { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 28px 16px; text-align: center; border: 2px dashed var(--border); border-radius: var(--r-md); background: var(--card-2); }
 .od-dropzone.is-over { border-color: var(--violet); background: var(--violet-soft); }
 .od-dropzone p { margin: 0; font-size: 14px; }

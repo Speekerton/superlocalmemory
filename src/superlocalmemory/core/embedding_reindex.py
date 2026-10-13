@@ -96,7 +96,7 @@ class ReindexRunner:
         self._api_lock = threading.Lock()
         self._prebuilt: dict[int, Any] = {}
         self._thread: threading.Thread | None = None
-        self._last_purge = 0.0
+        self._last_purge: float | None = None  # None: never purged (monotonic starts at boot)
         self.notice: str | None = None
         self.quiet: dict | None = None
         #: job id -> change-log position of the last full diff that found nothing
@@ -335,7 +335,7 @@ class ReindexRunner:
                 stats["clear"] = "done" if cursor is None else {"cursor": cursor}
                 update_job(conn, latest["job_id"], stats=json.dumps(stats))
             return True
-        if time.monotonic() - self._last_purge > _PURGE_EVERY_S:
+        if self._last_purge is None or time.monotonic() - self._last_purge > _PURGE_EVERY_S:
             self._last_purge = time.monotonic()
             if sp.table_exists(conn, sp.PURGE):
                 with steps.write_txn(conn, self.db_path):

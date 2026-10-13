@@ -28,7 +28,7 @@ def engine(tmp_path):
 
 def _tick(engine):
     from superlocalmemory.core.health_repairs import run_safe_repairs
-    engine._memory_health_checked = 0.0
+    engine._memory_health_checked = None
     run_safe_repairs(engine, idle=lambda: True)
 
 

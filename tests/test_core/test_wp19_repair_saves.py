@@ -39,7 +39,7 @@ def _ops(engine):
 
 
 def _tick(engine):
-    engine._memory_health_checked = 0.0
+    engine._memory_health_checked = None
     health_repairs.run_safe_repairs(engine, idle=lambda: True)
 
 

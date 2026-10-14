@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { slmAlreadyConfigured } from './configured';
 
 const PROVIDER_ID = 'qualixar.superlocalmemory';
 const INSTALL_URL = 'https://superlocalmemory.com';
@@ -64,6 +65,15 @@ function buildDefinition(slmPath: string, version: string): vscode.McpStdioServe
   );
 }
 
+/** The mcp.json files VS Code reads: each workspace folder's and the user's. */
+function mcpJsonFiles(context: vscode.ExtensionContext): string[] {
+  const folders = (vscode.workspace.workspaceFolders ?? [])
+    .map((f) => path.join(f.uri.fsPath, '.vscode', 'mcp.json'));
+  // globalStorageUri is <User>/globalStorage/<extension id>; mcp.json sits in <User>.
+  const user = path.join(path.dirname(path.dirname(context.globalStorageUri.fsPath)), 'mcp.json');
+  return [...folders, user];
+}
+
 let warned = false;
 
 async function showMissingMessage(): Promise<void> {
@@ -90,6 +100,11 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.lm.registerMcpServerDefinitionProvider(PROVIDER_ID, {
       onDidChangeMcpServerDefinitions: changed.event,
       provideMcpServerDefinitions: async () => {
+        // Already wired by `slm connect vscode-copilot` (workspace or user
+        // mcp.json): add no second SLM server beside it.
+        if (slmAlreadyConfigured(mcpJsonFiles(context))) {
+          return [];
+        }
         const slm = resolveSlm();
         if (!slm) {
           void showMissingMessage();

@@ -228,4 +228,4 @@ the memory-engine upgrade is pending.
 
 ---
 
-SuperLocalMemory v4.2.5 · Qualixar · AGPL-3.0-or-later
+SuperLocalMemory v4.2.6 · Qualixar · AGPL-3.0-or-later

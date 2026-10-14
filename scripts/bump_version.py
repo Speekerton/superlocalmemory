@@ -213,6 +213,9 @@ def _plan(version: str):
         ("plugin-src/manifest.json",
          lambda: _read_json("plugin-src/manifest.json"),
          lambda: _sub_json("plugin-src/manifest.json", version)),
+        ("vscode-extension/package.json",
+         lambda: _read_json("vscode-extension/package.json"),
+         lambda: _sub_json("vscode-extension/package.json", version)),
         # The official MCP Registry entry (4.2.6): both versions move with the release.
         ("server.json version",
          lambda: _read_json_at("server.json", ("version",)),

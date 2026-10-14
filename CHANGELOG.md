@@ -5,6 +5,60 @@ All notable changes to SuperLocalMemory will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.6] — The Hermes plugin works on a default install, and every host package meets its directory's rules
+
+No migration. Nothing is moved or deleted.
+
+### Hermes
+
+- **The plugin did nothing on most installs.** Hermes refuses a plugin's MCP
+  calls until `config.yaml` grants the server under
+  `plugins.entries.superlocalmemory.mcp_allowlist`, and it does not ask for
+  that grant; the install guide said it would. The plugin treated the refusal
+  like any failure, so recall, session tracking, tool logging and turn capture
+  were silently off, and `slm upgrade-hosts` reported Hermes as verified. Now:
+  - `slm upgrade-hosts --host hermes --apply` writes the grant (a backup is
+    kept; a config with hand-written comments is never rewritten, you are shown
+    the line instead);
+  - `slm doctor` has a "Hermes plugin access" check;
+  - the plugin warns once in Hermes's log with the fix, and `/slm status` leads
+    with it;
+  - the guide shows the step.
+- **`capture_turns: true` kept almost nothing (#263).** Turns went to the
+  auto-capture path, which keeps only English sentences about a decision, a bug
+  or a preference. Every completed turn is now saved as a memory, in any
+  language, with secrets and email addresses redacted first; a retried turn is
+  saved once.
+
+Checked on a real Hermes: its hooks (tool logging, turn capture, recall from an
+earlier session), 16 skills, 79 `/slm` commands and 4 agent tools.
+
+### Plugin directories
+
+- **Claude Code:** the plugin passes `claude plugin validate --strict`. It now
+  has a README stating what each hook does and where data goes, its licence
+  file, and licence and homepage in the manifest. The agent rules no longer sit
+  in a root `CLAUDE.md` that Claude Code never loaded; the skills teach them.
+- **Cursor and Grok Bot:** the Cursor-format plugin is its own folder,
+  `cursor-plugin/`, under the MIT licence (Cursor's marketplace does not accept
+  copyleft). It is a launcher for the separately installed engine, which stays
+  AGPL-3.0-or-later.
+- **VS Code, Antigravity IDE and Cursor extensions:** a new MIT extension,
+  `vscode-extension/`, adds SuperLocalMemory's MCP server to VS Code (1.101 or
+  later) when `slm` is installed, and steps aside when `slm connect
+  vscode-copilot` already wired it. The same package installs from Open VSX.
+- **Codex:** the plugin carries its icon, logo, privacy and terms links.
+- **Official MCP Registry:** `server.json` ships in the repository and moves
+  with every release.
+
+### Fixes
+
+- **Rolling back the text model could start the picture model's worker**
+  (#262). A previous model saved under the picture worker's provider was loaded
+  through that worker, which already held its own model; on a small machine the
+  rollback stopped for lack of memory. Rollback now loads it under the automatic
+  provider. The CLI and the dashboard share this path.
+
 ## [4.2.5] — Every sentence you save can be found, and saves no longer hold up the store
 
 No migration. Nothing is moved or deleted.

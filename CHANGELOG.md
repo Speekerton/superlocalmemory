@@ -31,7 +31,7 @@ No migration. Nothing is moved or deleted.
   saved once.
 
 Checked on a real Hermes: its hooks (tool logging, turn capture, recall from an
-earlier session), 16 skills, 79 `/slm` commands and 4 agent tools.
+earlier session), 16 skills, the `/slm` commands and 4 agent tools.
 
 ### Plugin directories
 
@@ -56,6 +56,20 @@ earlier session), 16 skills, 79 `/slm` commands and 4 agent tools.
 - **Official MCP Registry:** `server.json` ships in the repository and moves
   with every release.
 
+### One tool set for every app
+
+- **`slm tools`** shows which MCP tool set your apps get and how many tools
+  each set has; **`slm tools set <name>`** changes it for every app at once
+  (`slm tools set default` goes back). Restart the apps to see it. An app whose
+  own config sets `SLM_MCP_PROFILE` keeps that value.
+- The default stays **`full`, 58 tools**: all of memory, SLM-Mesh, optimize and
+  loops, under the roughly 100-tool limit some hosts put on all MCP servers
+  together. No plugin or extension forces a set any more: the Cursor and Grok
+  Bot plugin used to give 19 tools and 6 skills (now the default and all 16
+  skills), the Antigravity plugin 70.
+- The code-graph and governance skills now tell the agent what to say when
+  their tools are not in the current set (`slm tools set code` or `power`).
+
 ### New hosts
 
 - **Grok CLI:** `slm connect grok-cli` writes the MCP server into
@@ -63,7 +77,9 @@ earlier session), 16 skills, 79 `/slm` commands and 4 agent tools.
   (`grok plugin install <path>/plugin --trust`): 16 skills, 4 agents and the
   hooks. One hook did not start there, because Grok runs a command that is only
   a quoted path as a file name with the quotes kept; every hook command now
-  starts in Grok CLI and Claude Code alike.
+  starts in Grok CLI and Claude Code alike. Grok sends hook data in camelCase
+  (`sessionId`, `toolName`); every `slm hook` now reads both spellings, so tool
+  outcomes are recorded there too. `slm connect grok-cli` honours `$GROK_HOME`.
 - **Muse CLI:** `slm connect muse` writes the MCP server into Muse's
   `settings.json` and keeps every other setting. A file that still has the old
   `mcp_servers` key gets it renamed to `mcpServers` in the same write, since
@@ -71,7 +87,9 @@ earlier session), 16 skills, 79 `/slm` commands and 4 agent tools.
   the 16 skills, 4 agents, `/slm-loop` and the hooks: the Claude Code plugin
   without the `allowed-tools` lines Muse rejects and without an MCP launcher,
   and with a session-start hook that answers in JSON (Muse drops output that
-  starts with `[`, which the plain-text one does).
+  starts with `[`, which the plain-text one does). Its MCP entry is marked
+  optional, so Muse never aborts a run because SuperLocalMemory did not start,
+  and its agents name the tools the way Muse does (`mcp__superlocalmemory__…`).
 
 ### Packaging
 

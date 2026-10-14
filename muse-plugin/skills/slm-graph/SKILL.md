@@ -19,7 +19,7 @@ when_to_use: |
 
 # slm-graph — Code Intelligence Skill
 
-Index any repo as a code knowledge graph and answer structural questions about it: callers, callees, impact radius, semantic search, and review context. These tools are only registered in the `code` MCP tool set (or with `SLM_MCP_ALL_TOOLS=1`); see "Tool set requirement" below.
+Index any repo as a code knowledge graph and answer structural questions about it: callers, callees, impact radius, semantic search, and review context. These tools are not in the default tool set: they need `slm tools set code` (or `whole`); see "Tool set requirement" below.
 
 **Prerequisite rule:** every tool except `build_code_graph` self-guards — if the graph is not built it returns `{"success": false, "error": "Code graph not built. Run build_code_graph first."}`. Always index first.
 
@@ -288,17 +288,11 @@ If `build_code_graph` returns `files_parsed: 0`, no supported source files were 
 The six tools above are registered only when the MCP server runs the `code` tool
 set, or with `SLM_MCP_ALL_TOOLS=1` / `SLM_MCP_PROFILE=whole`, or when
 `SLM_MCP_TOOLS` names them. They are **not** in `core`, `full`, `power` or the
-no-profile default that the Claude Code and Codex plugins use, so with those
-settings the tools simply do not exist and a call fails as an unknown tool. The
-tool set is read when the server starts: set it in the host's MCP config and
-restart the host.
-
-```json
-"env": {
-  "SLM_MCP_PROFILE": "code",
-  "SLM_AGENT_ID": "muse"
-}
-```
+default every app gets, so there the tools do not exist and a call fails as an
+unknown tool. If the user asks for graph work and the tools are missing, tell
+them: "Code-graph tools are off by default. Run `slm tools set code` (graph
+without mesh) or `slm tools set whole` (every tool), then restart this app."
+Let them choose; it changes the tools every connected app sees.
 
 `switch_profile` does not change the tool set; it changes the active memory
 profile. See `slm-profile`. The `code` set leaves out the mesh and several

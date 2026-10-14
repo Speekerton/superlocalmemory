@@ -274,14 +274,21 @@ Engineering controls that support a compliance program, not a certification.
 
 ## MCP memory server: tool profiles
 
-Pick how many tools your agent sees with `SLM_MCP_PROFILE`.
+Every app, plugin and extension gets `full` (58 tools: all of memory, SLM-Mesh, optimize, loops) unless you choose otherwise. That fits hosts that cap the total number of MCP tools at about 100, with room for your other servers. To change it for every app at once, run one command and restart your apps:
+
+```bash
+slm tools                # current set, and how many tools each set has
+slm tools set power      # any name below; `slm tools set default` goes back to full
+```
+
+To change one app only, set `SLM_MCP_PROFILE` in that app's MCP config (`slm connect <app> --profile <name>` writes it); it wins over the saved choice for that app. [Per-app details](https://github.com/qualixar/superlocalmemory/blob/main/docs/plugins.md#choosing-how-many-tools)
 
 | Profile | Tools | For |
 |---|---:|---|
 | `core` | 19 | Remember, recall, expand, sessions, optimize, correction review |
 | `code` | 39 | Core plus code graph, memory kinds, Brain evidence, profile switching, bounded loops |
 | `mesh` | 9 | SLM-Mesh coordination only |
-| `full` (and unset) | 58 | Memory, kinds, Brain, optimize, skill evolution, mesh, loops, views and summaries (63 with pictures and documents on) |
+| `full` (default, when unset) | 58 | Memory, kinds, Brain, optimize, skill evolution, mesh, loops, views and summaries (63 with pictures and documents on) |
 | `power` | 70 | Full plus administration, lifecycle and diagnostics (75 with pictures and documents on) |
 | `whole` | 110 | Every registered tool |
 

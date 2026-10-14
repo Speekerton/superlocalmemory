@@ -22,7 +22,9 @@ SuperLocalMemory can run with named users and roles per workspace (company
 mode), keeps a compliance audit trail, applies a retention lifecycle, and ships
 GDPR export and erasure commands. This skill documents how an agent must behave
 in a governed workspace and what the governance tools really do. The MCP audit
-and retention tools are in the `power` tool set (see `slm-profile`).
+and retention tools are in the `power` tool set, not the default: if they are
+missing, tell the user to run `slm tools set power` and restart this app (see
+`slm-profile`). The `slm gdpr` and `slm team` commands work either way.
 
 ---
 

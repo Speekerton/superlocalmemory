@@ -1,6 +1,6 @@
 ---
 name: slm-profile
-description: Memory profiles (separate namespaces inside one SuperLocalMemory store) and MCP tool sets (which tools your host sees). Use switch_profile or slm profile switch to change the active memory profile, the profile_id argument to read or write another profile for one call, and SLM_MCP_PROFILE to choose a tool set. Required when working across multiple projects, clients, or tenants.
+description: Memory profiles (separate namespaces inside one SuperLocalMemory store) and MCP tool sets (which tools your host sees). Use switch_profile or slm profile switch to change the active memory profile, the profile_id argument to read or write another profile for one call, and `slm tools set <name>` to choose the tool set every connected app sees. Required when working across multiple projects, clients, or tenants.
 when_to_use: |
   - "Switch to my work profile"
   - "What profile am I currently in?"
@@ -97,14 +97,15 @@ named differently (for example `superlocalmemory-personal` and
 
 | Profile | Tools | What it is |
 |---------|-------|------------|
-| `core` | 19 tools — remember, recall, search, fetch, expand, list_recent, update_memory, forget, session, optimize, corrections, summaries, switch_profile | Smallest set; the Grok Bot / Cursor plugin uses it |
+| `core` | 19 tools — remember, recall, search, fetch, expand, list_recent, update_memory, forget, session, optimize, corrections, summaries, switch_profile | Smallest set |
 | `code` | 39 tools — core + portable Brain evidence, report_outcome/report_feedback, 6 code-graph tools, memory kinds, bounded loops | For coding agents that need the graph; no mesh, no `get_status` |
-| `full` | 58 tools — everyday memory, delete_memory, get_status, observe, saved views, learning tools, skills, optimize, kinds, loops, mesh | Same set as the no-profile default |
+| `full` | 58 tools — everyday memory, delete_memory, get_status, observe, saved views, learning tools, skills, optimize, kinds, loops, mesh | The default for every app |
 | `power` | 70 tools — full + audit_trail, retention, compaction, consistency_check, behavioral and diagnostic tools | Governance and admin work |
 | `mesh` | 9 tools — mesh coordination only | Lightweight cross-session signalling |
 
-A host that sets no profile gets the 58-tool `full` set (this is what the Claude
-Code and Codex plugins do; the Antigravity plugin sets `power`). While pictures
+Every app gets the 58-tool `full` set unless the user chose another: no plugin
+or extension SuperLocalMemory ships sets one. It fits hosts that cap the total
+number of MCP tools at about 100. While pictures
 and documents are on (`slm media status`), `full` lists 62 tools and `power` 74:
 the five picture tools `remember_media`, `get_media`, `remember_document`,
 `media_status` and `media_upload_link` are added to both, and never to `core`,
@@ -117,19 +118,19 @@ such as `core_memory` and `settle_session_outcomes` exist only with
 `SLM_MCP_ALL_TOOLS=1`, `whole` or an explicit `SLM_MCP_TOOLS` list. Tools whose
 function is to manage the SLM computer are never available to a remote caller.
 
-The tool set is read when the MCP server starts. To change it, set it in the
-host's MCP config and restart the host; asking the server at runtime does not
-work:
+The tool set is read when the MCP server starts. To change it for every app at
+once, the user runs one command and then restarts their apps (or reconnects
+them in Dashboard → Connected apps); asking the server at runtime does not work:
 
-```json
-"env": {
-  "SLM_MCP_PROFILE": "code",
-  "SLM_AGENT_ID": "claude_code"
-}
+```bash
+slm tools                 # the current set and how many tools each set has
+slm tools set power       # core, code, full, power, mesh or whole
+slm tools set default     # back to full
 ```
 
-`slm connect <ide> --profile <name>` writes that variable into a supported
-host's config. Setting `SLM_MCP_PROFILE` to a name that does not exist stops
+An app whose own MCP config sets `SLM_MCP_PROFILE` keeps that value: it wins
+over the saved choice, for that app only (`slm connect <ide> --profile <name>`
+writes it). Setting `SLM_MCP_PROFILE` to a name that does not exist stops
 `slm mcp` with a message listing the valid names. Older count-suffixed names
 such as `code20`, `full38` and `power50` still resolve, with a startup warning.
 On an install that already has memories, do not set `SLM_DATA_DIR` in the MCP
@@ -142,8 +143,10 @@ set. It is not in `mesh`.
 
 ## If a tool is missing
 
-Check the tool set first (`slm status` does not show it; look at the host's MCP
-config for `SLM_MCP_PROFILE`). Mesh tools need `full`, `power`, `mesh` or the
+Check the tool set first: `slm tools` shows it (an app's own `SLM_MCP_PROFILE`,
+if set, overrides it for that app). Tell the user which set has the tool and
+the command, for example "run `slm tools set power` and restart this app", and
+let them decide; widening the set adds tools to every connected app. Mesh tools need `full`, `power`, `mesh` or the
 default. Picture and PDF tools need `full`, `power` or `whole` and the feature
 turned on (`slm media enable`). Code-graph tools need `code` or `SLM_MCP_ALL_TOOLS=1`. Audit and
 retention tools need `power`. `report_outcome` and `report_feedback` need

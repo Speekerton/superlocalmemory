@@ -215,6 +215,43 @@ With a PyPI install, run `scripts/install-antigravity-plugin.sh` from this
 repository: it fetches only `antigravity-plugin/` into a local cache and installs
 it from there. Safe to re-run.
 
+## Choosing how many tools
+
+Every plugin and extension here starts SuperLocalMemory with the default tool
+set, `full`: 58 tools covering memory, SLM-Mesh, optimize and bounded loops
+(63 while pictures and documents are on). None of them sets a tool set of its
+own, so one saved choice applies to all of them:
+
+```bash
+slm tools                # the current set and how many tools each set has
+slm tools set power      # core, code, full, power, mesh or whole
+slm tools set default    # back to full
+```
+
+Then restart the apps, or reconnect them in Dashboard → Connected apps. The
+choice is saved in SuperLocalMemory's data folder, so it reaches Claude Code,
+Codex, Antigravity, Hermes, Grok CLI, Muse CLI, the VS Code extension and every
+`slm connect` app alike.
+
+| Set | Tools | When to pick it |
+|---|---:|---|
+| `core` | 19 | A host with a small tool limit, or a bot that only needs remember and recall |
+| `full` | 58 | The default: everything most people use, including SLM-Mesh |
+| `power` | 70 | Adds governance: audit trail, retention, lifecycle, diagnostics |
+| `code` | 39 | Adds the code graph but leaves out the mesh |
+| `whole` | 110 | Every tool; only for hosts with no tool limit |
+
+Some hosts limit the total number of MCP tools across all your servers, often
+to about 100, so a bigger set can push another server's tools out. To give one
+app a different set, put `SLM_MCP_PROFILE` in that app's own MCP config; it wins
+over the saved choice for that app only:
+
+| App | Where its own setting goes |
+|---|---|
+| Apps set up with `slm connect` (Cursor, Windsurf, Zed, JetBrains, Gemini CLI, Claude Desktop, OpenCode, Continue, Codex, Grok CLI, Muse CLI, VS Code with Copilot) | `slm connect <app> --profile <name>` |
+| Hermes | `env: {SLM_MCP_PROFILE: <name>}` under `mcp_servers.superlocalmemory` in `~/.hermes/config.yaml` |
+| Claude Code, Antigravity, the Cursor plugin, the VS Code extension | Use `slm tools set`; their launch settings live inside the plugin |
+
 ## Keeping plugins current
 
 ```bash

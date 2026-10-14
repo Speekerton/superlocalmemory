@@ -23,11 +23,11 @@ What each one contains, counted from the folders:
 | Host | Skills | Agents | Slash commands | Hooks | MCP tool set it asks for |
 |---|---|---|---|---|---|
 | Claude Code | 16 | 4 | `/slm-loop` | 10 hook commands on 5 events | none set, so the default |
-| Cursor-format | 6 | none | none | none | `core`, 19 tools |
+| Cursor-format | 16 | none | none | none | none set, so the default |
 | Codex | 16 (14 through `slm codex install`) | 4 | `/slm-loop` | 5 commands on 4 events in the plugin; 4 through `slm codex install` | none set, so the default |
 | GitHub Copilot | 16 prompt files | 4 | none separate | 6 commands on 4 events | none set, so the default |
-| Hermes | 16 (7 over a remote connection) | 4 child roles | `/slm`, 73 aliases and 4 agent commands | 10 plugin events, no shell hooks | whatever `superlocalmemory` server Hermes is configured with |
-| Antigravity | 16 | 4 | `/slm-loop` | 4 events through a small adapter script | `power` |
+| Hermes | 16 (7 over a remote connection) | 4 child roles | `/slm`, 74 aliases and 4 agent commands | 10 plugin events, no shell hooks | whatever `superlocalmemory` server Hermes is configured with |
+| Antigravity | 16 | 4 | `/slm-loop` | 4 events through a small adapter script | none set, so the default |
 
 How many tools each named profile exposes is on [MCP Tools](MCP-Tools). The Claude Code, Codex and Copilot plugins deliberately set no profile and no data folder, because a plugin that narrows your tool set or points at a private store would override choices you made; only the agent id is set, so memories written from each host can be told apart. The Cursor-format plugin is the one documented exception: it sets `core` because Grok Bot lists every tool to the model on a shared computer with little memory.
 
@@ -35,7 +35,7 @@ How many tools each named profile exposes is on [MCP Tools](MCP-Tools). The Clau
 
 **Claude Code.** `slm connect claude-code` prints the two install commands, and `slm setup` can run them. Updates come through the plugin lifecycle ([Host Upgrades](Host-Upgrades)). The plugin's launcher and its hooks use an `slm` that is already installed; only when none is found does `ensure-venv.sh` build a private Python environment for the plugin, and that needs Python 3.12 or newer. A hook that cannot run never stops your session: the wrapper script `slm-run` always exits 0 and writes the reason to `plugin-hooks.log` in the SLM `logs` folder. The folder also contains `README.md`, which lists every hook, what it captures and that the data stays on your computer, and the `LICENSE`.
 
-**Cursor-format hosts.** Grok Bot reads plugins in Cursor's format (`.cursor-plugin/plugin.json`) rather than Claude Code's. Its own folder, `cursor-plugin/`, is MIT licensed (the engine it starts stays AGPL), and `.cursor-plugin/marketplace.json` at the repository root lists it. The Cursor manifest has an empty hook table and names no agents or commands. Its MCP definition starts the server with `uvx`, pinned to the SLM release, and sets the agent id `cursor_plugin`, the `core` profile, `SLM_NON_INTERACTIVE=1`, one embedding worker, the cross-encoder reranker off (`SLM_RERANKER_ENABLED=false`) and CPU-only PyTorch. No `${...}` variable appears in it, because Grok Bot does not expand the Claude Code plugin-root variable. The six skills are the two written for bot hosts (`slm-getting-started-bot`, `slm-bot-memory`), the two everyday ones (`slm-remember`, `slm-recall`), `slm-session` and `slm-scope`. Skills for tools outside `core` (graph, mesh, governance, loop) are left out on purpose, and the rest were cut to keep the set small. This plugin keeps its own memory on the bot computer; to reach the memory on your own computer, connect Web access instead ([Web Access and Connected Apps](Web-Access-and-Connected-Apps)). `slm connect cursor` is a different thing: it writes an MCP entry into the Cursor editor ([IDE Setup](IDE-Setup)).
+**Cursor-format hosts.** Grok Bot reads plugins in Cursor's format (`.cursor-plugin/plugin.json`) rather than Claude Code's. Its own folder, `cursor-plugin/`, is MIT licensed (the engine it starts stays AGPL), and `.cursor-plugin/marketplace.json` at the repository root lists it. The Cursor manifest has an empty hook table and names no agents or commands. Its MCP definition starts the server with `uvx`, pinned to the SLM release, and sets the agent id `cursor_plugin`, `SLM_NON_INTERACTIVE=1`, one embedding worker, the cross-encoder reranker off (`SLM_RERANKER_ENABLED=false`) and CPU-only PyTorch. No `${...}` variable appears in it, because Grok Bot does not expand the Claude Code plugin-root variable. It sets no tool set, so it serves the default `full` set like every other host (`slm tools set` changes it), and it carries all 16 skills, the two written for bot hosts among them. The memory savings a shared bot computer needs come from the one embedding worker and the reranker being off, not from fewer tools. This plugin keeps its own memory on the bot computer; to reach the memory on your own computer, connect Web access instead ([Web Access and Connected Apps](Web-Access-and-Connected-Apps)). `slm connect cursor` is a different thing: it writes an MCP entry into the Cursor editor ([IDE Setup](IDE-Setup)).
 
 **Codex.** There are two ways to get the same ideas, and they are not identical. `slm codex install` copies 14 skills into the shared agent skills folder (`~/.agents/skills`), writes the four agents as `.toml` files into Codex's agents folder and adds 4 lifecycle hooks to Codex's `hooks.json`; it leaves MCP wiring to `slm connect codex`, only ever touches files it owns, and `slm codex remove` undoes it. The two bot-host skills are not part of that install. The marketplace plugin in `codex-plugin/` carries all 16 skills, the agents as Markdown, `/slm-loop`, its own `hooks/hooks.json` and an `AGENTS.md` of rules that is not written into your project for you. Review and trust new hooks in Codex with `/hooks`.
 
@@ -43,7 +43,7 @@ How many tools each named profile exposes is on [MCP Tools](MCP-Tools). The Clau
 
 **Hermes.** Hermes asks before it enables the plugin. It does not ask for MCP access: grant the plugin the `superlocalmemory` MCP server with `slm upgrade-hosts --host hermes --apply` (or `mcp_allowlist: ["superlocalmemory"]` under `plugins.entries.superlocalmemory` in `config.yaml`); without it the plugin's recall, session tracking and turn capture do nothing, and `slm doctor` warns. It calls SLM through that MCP server for its hooks and, for `/slm` commands, through the installed `slm` command, which must be exactly the SLM release the plugin was built with. Set the plugin's `connection` setting to `remote` and `/slm` instead runs a fixed set of commands through an SLM on another computer, with no local install; only the 7 skills that work over a remote connection are registered then, and the governance and loop agents are refused because they manage the SLM computer. Details and settings are in `docs/hermes.md` in the repository.
 
-**Antigravity.** `agy plugin install` accepts only a local folder. With a PyPI install, `scripts/install-antigravity-plugin.sh` fetches just `antigravity-plugin/` into a local cache and installs from there; re-running it is safe. The plugin starts the server with the `power` profile, the widest named one, and does not set `SLM_MCP_ALL_TOOLS`, because that would register every tool and the build script records a vendor-reported ceiling of 100 tools for the host.
+**Antigravity.** `agy plugin install` accepts only a local folder. With a PyPI install, `scripts/install-antigravity-plugin.sh` fetches just `antigravity-plugin/` into a local cache and installs from there; re-running it is safe. The plugin sets no tool set, so the server gives it the default `full` set, under the vendor-reported ceiling of 100 tools the build script records for the host; `slm tools set` changes it. It never sets `SLM_MCP_ALL_TOOLS`, which would register every tool and pass that ceiling.
 
 **VS Code extension.** The extension adds SuperLocalMemory to the MCP servers VS Code's agent can use and runs `slm mcp`, which must be on your PATH (it also looks in `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`, because an editor opened from the Dock often lacks your shell PATH). If the workspace's `.vscode/mcp.json` or your user `mcp.json` already has SuperLocalMemory, for example from `slm connect vscode-copilot --here`, it adds nothing, so there is never a second copy. It needs VS Code 1.101 or later and is MIT licensed.
 
@@ -65,16 +65,16 @@ A skill is a short document the agent loads when a request matches its descripti
 | `slm-scope` | Keep memory personal by default; share across profiles only when asked | yes |
 | `slm-bot-memory` | Several bots on one computer: attribution is not access control, and what must never be saved | yes |
 | `slm-getting-started-bot` | First session on a bot host with no hooks or dashboard: which tools of the `core` profile exist (the skill's text still counts 18, from before `expand`) and the first calls | yes |
-| `slm-status` | Health and optimization counters with `slm status`, `slm doctor` and `slm_optimize_stats` | no |
-| `slm-profile` | Memory profiles versus MCP tool sets, and `SLM_MCP_PROFILE` ([Profiles](Profiles)) | no |
-| `slm-governance` | Roles, company mode, retention, audit trail, GDPR export and erasure; never bypass governance ([Governance](Governance)) | no |
-| `slm-graph` | Code graph: what a change breaks, callers, semantic code search, review context | no |
-| `slm-mesh` | Messages, locks and shared state between agent sessions and web apps ([Multi-Agent Memory](Multi-Agent-Memory)) | no |
-| `slm-loop` | Gate-verified bounded loops with SLM as the ledger ([Bounded Loops](Bounded-Loops)) | no |
-| `slm-cache` | Exact cache for repeated reads and searches ([Optimize](Optimize)) | no |
-| `slm-compress` | Reversible compression of large output ([Optimize](Optimize)) | no |
-| `slm-media` | Save and find pictures and PDFs; off by default ([Pictures and Documents](Pictures-and-Documents)) | no |
-| `slm-web-access` | Set up and diagnose Web access for web apps ([Web Access and Connected Apps](Web-Access-and-Connected-Apps)) | no |
+| `slm-status` | Health and optimization counters with `slm status`, `slm doctor` and `slm_optimize_stats` | yes |
+| `slm-profile` | Memory profiles versus MCP tool sets, and `SLM_MCP_PROFILE` ([Profiles](Profiles)) | yes |
+| `slm-governance` | Roles, company mode, retention, audit trail, GDPR export and erasure; never bypass governance ([Governance](Governance)) | yes |
+| `slm-graph` | Code graph: what a change breaks, callers, semantic code search, review context | yes |
+| `slm-mesh` | Messages, locks and shared state between agent sessions and web apps ([Multi-Agent Memory](Multi-Agent-Memory)) | yes |
+| `slm-loop` | Gate-verified bounded loops with SLM as the ledger ([Bounded Loops](Bounded-Loops)) | yes |
+| `slm-cache` | Exact cache for repeated reads and searches ([Optimize](Optimize)) | yes |
+| `slm-compress` | Reversible compression of large output ([Optimize](Optimize)) | yes |
+| `slm-media` | Save and find pictures and PDFs; off by default ([Pictures and Documents](Pictures-and-Documents)) | yes |
+| `slm-web-access` | Set up and diagnose Web access for web apps ([Web Access and Connected Apps](Web-Access-and-Connected-Apps)) | yes |
 
 Every host in the table above that is not Cursor-format gets all 16. The exceptions are `slm codex install` (14, without the two bot-host skills) and Hermes over a remote connection (7: `slm-cache`, `slm-compress`, `slm-recall`, `slm-remember`, `slm-scope`, `slm-session`, `slm-status`).
 

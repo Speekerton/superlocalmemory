@@ -4,4 +4,4 @@
 !LICENSE
 !CHANGELOG.md
 !media/icon.png
-!out/extension.js
+!out/*.js

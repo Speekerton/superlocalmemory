@@ -43,4 +43,20 @@ def resolve_embedding_provider(explicit: str | None, model: str, inherited: str 
     return provider
 
 
-__all__ = ["EMBEDDING_PROVIDERS", "resolve_embedding_provider", "validate_embedding_provider"]
+def restorable_provider(provider: str, model: str) -> str:
+    """The provider a stored (previous) config can safely run under again.
+
+    A config saved while ``slm-media`` was live can name that provider beside a model it
+    does not serve (issue #262, 14 Oct 2026: nomic stored under ``slm-media``). Loading it
+    asks the managed worker, which still holds EmbeddingGemma 2, to load nomic as well: two
+    models in one small WSL2 box, stopped for memory. Back to the automatic provider.
+    """
+    from superlocalmemory.core.model_catalog import MANAGED_EMBEDDERS
+
+    if provider == "slm-media" and model not in [entry.id for entry in MANAGED_EMBEDDERS]:
+        return ""
+    return provider
+
+
+__all__ = ["EMBEDDING_PROVIDERS", "resolve_embedding_provider", "restorable_provider",
+           "validate_embedding_provider"]

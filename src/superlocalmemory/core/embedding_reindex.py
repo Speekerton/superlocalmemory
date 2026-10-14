@@ -20,12 +20,14 @@ import json
 import logging
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from superlocalmemory.core import embedding_reindex_baselines as baselines
 from superlocalmemory.core import embedding_reindex_secrets as secrets
 from superlocalmemory.core import embedding_reindex_steps as steps
+from superlocalmemory.core.embedding_providers import restorable_provider
 from superlocalmemory.retrieval import hub_baseline
 from superlocalmemory.storage import embedding_canonical_slots as slots
 from superlocalmemory.storage import embedding_change_log as change_log
@@ -177,6 +179,8 @@ class ReindexRunner:
                 raise Refused("there is no previous embedding model to go back to")
             prev = sp.config_from_public(row["prev_config"],
                                          secrets.get(self.data_root, secrets.PREVIOUS))
+            # The dashboard and the CLI both land here; neither may start the managed worker for it.
+            prev = replace(prev, provider=restorable_provider(prev.provider, prev.model_name))
         finally:
             conn.close()
         try:

@@ -1,7 +1,7 @@
 /**
  * build-all-plugins.mjs — build every plugin, in the one order that works.
  *
- * build-plugin.mjs writes plugin/CLAUDE.md, the skills and the Cursor-format
+ * build-plugin.mjs writes the skills and the Cursor-format
  * files (build-cursor-plugin.mjs is a module it imports, not a separate
  * program). The copilot, codex, antigravity and hermes builders read that
  * output, so build-plugin must finish first. Stops at the first failure.

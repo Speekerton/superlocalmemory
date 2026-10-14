@@ -391,10 +391,6 @@ class SlmHermesPlugin:
         argv[0] = command
         if self._mode() == "remote":
             return _REMOTE.run_remote(self.ctx, argv, "", self._remote_health, _RELEASE_SLM_VERSION)
-        # /slm runs the CLI and works without the grant; the hooks do not.
-        notice = ""
-        if command == "status" and self._mcp("get_version", {}).get("grant_missing"):
-            notice = "WARNING: " + GRANT_FIX + "\n\n"
         binary = shutil.which("slm")
         if not binary:
             return ("SLM CLI is unavailable on this machine. If SLM runs on another computer, set "
@@ -406,6 +402,11 @@ class SlmHermesPlugin:
                     "from the owning runtime; this one is older, a different major version, or "
                     f"unverifiable. Upgrade SLM, or move the plugin to its release: {_REMOTE.REINSTALL_HINT}")
         argv[0] = command
+        # /slm runs the CLI and works without the grant; the hooks do not. Probed
+        # only once the local CLI is confirmed, so a bad setting sends nothing.
+        notice = ""
+        if command == "status" and self._mcp("get_version", {}).get("grant_missing"):
+            notice = "WARNING: " + GRANT_FIX + "\n\n"
         if "--json" not in argv and command not in {"mcp", "dashboard", "serve", "proxy", "warmup", "setup"}:
             argv.append("--json")
         try:

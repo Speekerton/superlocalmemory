@@ -1,12 +1,12 @@
 # copilot-plugin/ — GENERATED, do not edit by hand
 
-Built by `scripts/build-copilot-plugin.mjs` from the single source in `plugin-src/` (+ `ide/configs/vscode-copilot-mcp.json`, `plugin/CLAUDE.md`). Version stamped from `plugin-src/manifest.json`.
+Built by `scripts/build-copilot-plugin.mjs` from the single source in `plugin-src/` (+ `ide/configs/vscode-copilot-mcp.json`, `plugin-src/rules/CLAUDE.md.fragment`). Version stamped from `plugin-src/manifest.json`.
 
 Version: **4.2.5**
 
 | Output | Source |
 |---|---|
-| `.github/copilot-instructions.md` | `plugin/CLAUDE.md` (SLM-marker-wrapped) |
+| `.github/copilot-instructions.md` | `plugin-src/rules/CLAUDE.md.fragment` (SLM-marker-wrapped) |
 | `.github/prompts/slm-*.prompt.md` | `plugin-src/skills/*/SKILL.md` |
 | `.github/agents/*.agent.md` | `plugin-src/agents/*.md` (+ `target: vscode`) |
 | `.github/hooks/slm-hooks.json` | Copilot schema (this script) |

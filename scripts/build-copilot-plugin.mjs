@@ -3,7 +3,7 @@
 //
 // build-copilot-plugin.mjs — generate copilot-plugin/ from the SINGLE source
 // in plugin-src/ (skills, agents, scripts) + ide/configs/vscode-copilot-mcp.json
-// + plugin/CLAUDE.md (agent rules), at parity with plugin/ (Claude) and
+// + plugin-src/rules/CLAUDE.md.fragment (agent rules), at parity with plugin/ (Claude) and
 // codex-plugin/ (Codex). Self-contained (no import side effects).
 //
 //   node scripts/build-copilot-plugin.mjs           # write copilot-plugin/
@@ -27,7 +27,8 @@ const SRC_AGENTS = join(ROOT, 'plugin-src', 'agents');
 const SRC_SCRIPTS = join(ROOT, 'plugin-src', 'scripts');
 const SRC_COMMANDS = join(ROOT, 'plugin-src', 'commands');
 const MCP_SRC = join(ROOT, 'ide', 'configs', 'vscode-copilot-mcp.json');
-const RULES_SRC = join(ROOT, 'plugin', 'CLAUDE.md');
+// The agent-rules source (plugin/CLAUDE.md is no longer built, 4.2.6).
+const RULES_SRC = join(ROOT, 'plugin-src', 'rules', 'CLAUDE.md.fragment');
 const MANIFEST = join(ROOT, 'plugin-src', 'manifest.json');
 const OUT = join(ROOT, 'copilot-plugin');
 
@@ -52,7 +53,8 @@ const files = new Map();
 
 // 1. .github/copilot-instructions.md — agent rules, marker-bounded for merge.
 {
-  const rules = nl(readFileSync(RULES_SRC, 'utf8')).trim();
+  const rules = nl(readFileSync(RULES_SRC, 'utf8'))
+    .replace(/SuperLocalMemory v\d+\.\d+\.\d+/g, `SuperLocalMemory v${VERSION}`).trim();
   const content =
     '<!-- SLM-START -->\n' +
     '<!-- SuperLocalMemory v' + VERSION + ' — managed block. Edit outside these markers; this section is regenerated. -->\n\n' +
@@ -183,10 +185,10 @@ for (const fname of readdirSync(SRC_SCRIPTS).sort()) {
   files.set('_GENERATED.md',
     '# copilot-plugin/ — GENERATED, do not edit by hand\n\n' +
     'Built by `scripts/build-copilot-plugin.mjs` from the single source in `plugin-src/` ' +
-    '(+ `ide/configs/vscode-copilot-mcp.json`, `plugin/CLAUDE.md`). Version stamped from `plugin-src/manifest.json`.\n\n' +
+    '(+ `ide/configs/vscode-copilot-mcp.json`, `plugin-src/rules/CLAUDE.md.fragment`). Version stamped from `plugin-src/manifest.json`.\n\n' +
     'Version: **' + VERSION + '**\n\n' +
     '| Output | Source |\n|---|---|\n' +
-    '| `.github/copilot-instructions.md` | `plugin/CLAUDE.md` (SLM-marker-wrapped) |\n' +
+    '| `.github/copilot-instructions.md` | `plugin-src/rules/CLAUDE.md.fragment` (SLM-marker-wrapped) |\n' +
     '| `.github/prompts/slm-*.prompt.md` | `plugin-src/skills/*/SKILL.md` |\n' +
     '| `.github/agents/*.agent.md` | `plugin-src/agents/*.md` (+ `target: vscode`) |\n' +
     '| `.github/hooks/slm-hooks.json` | Copilot schema (this script) |\n' +

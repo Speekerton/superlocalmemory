@@ -474,21 +474,10 @@ export function buildPlan(root, manifest) {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // CLAUDE.md from rules/CLAUDE.md.fragment → plugin/CLAUDE.md
-  // ---------------------------------------------------------------------------
-  const claudeFragmentPath = path.join(root, 'plugin-src', 'rules', 'CLAUDE.md.fragment');
-  if (fs.existsSync(claudeFragmentPath)) {
-    let fragmentContent = fs.readFileSync(claudeFragmentPath, 'utf8');
-    // Stamp the current version into the fragment's `SuperLocalMemory vX.Y.Z`
-    // markers so plugin/CLAUDE.md never drifts from the manifest version
-    // (previously copied verbatim → shipped a stale version to every session).
-    fragmentContent = fragmentContent.replace(
-      /SuperLocalMemory v\d+\.\d+\.\d+/g,
-      `SuperLocalMemory v${manifest.version}`,
-    );
-    plan.set(path.join(pluginRoot, 'CLAUDE.md'), fragmentContent);
-  }
+  // No plugin/CLAUDE.md: Claude Code does not load a CLAUDE.md at a plugin's
+  // root, and `claude plugin validate --strict` (the plugin directory's gate)
+  // refuses it (4.2.6). Every rule in rules/CLAUDE.md.fragment is taught by the
+  // skills; Codex, Antigravity and Hermes still ship it as their own rules file.
 
   return plan;
 }

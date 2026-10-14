@@ -503,12 +503,9 @@ class TestSkills:
 class TestBackwardCompat:
     """Additive-only constraint: existing shipped files must not be modified."""
 
-    def test_plugin_claude_md_unmodified(self) -> None:
-        """plugin/CLAUDE.md must still exist (we did not modify it)."""
-        p = REPO / "plugin" / "CLAUDE.md"
-        assert p.exists(), (
-            "plugin/CLAUDE.md must still exist — codex-plugin is additive, not a replacement"
-        )
+    def test_codex_keeps_its_own_rules_file(self) -> None:
+        """codex-plugin/AGENTS.md carries the rules (plugin/CLAUDE.md was dropped in 4.2.6)."""
+        assert (REPO / "codex-plugin" / "AGENTS.md").exists()
 
     def test_plugin_mcp_json_unmodified(self) -> None:
         """plugin/.mcp.json must still exist."""

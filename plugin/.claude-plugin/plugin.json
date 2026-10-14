@@ -18,7 +18,7 @@
   "license": "AGPL-3.0-or-later",
   "mcpServers": "./.mcp.json",
   "name": "superlocalmemory",
-  "privacyPolicyUrl": "https://qualixar.com/privacy",
+  "privacyPolicyUrl": "https://github.com/qualixar/superlocalmemory/blob/main/PRIVACY.md",
   "repository": "https://github.com/qualixar/superlocalmemory",
   "supportUrl": "https://github.com/qualixar/superlocalmemory/issues",
   "termsOfServiceUrl": "https://qualixar.com/terms",

@@ -191,7 +191,7 @@ export function renderPluginJson(manifest) {
     icon: './.claude-plugin/icon.png',
     documentationUrl: 'https://github.com/qualixar/superlocalmemory/blob/main/docs/plugins.md',
     supportUrl: 'https://github.com/qualixar/superlocalmemory/issues',
-    privacyPolicyUrl: 'https://qualixar.com/privacy',
+    privacyPolicyUrl: 'https://github.com/qualixar/superlocalmemory/blob/main/PRIVACY.md',
     termsOfServiceUrl: 'https://qualixar.com/terms',
     mcpServers: './.mcp.json',
     name: manifest.pluginName,

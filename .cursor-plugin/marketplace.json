@@ -11,7 +11,7 @@
     {
       "category": "productivity",
       "description": "Local-first long-term memory for your agents and bots: remember, recall and session context stored on your own computer, with reversible compression and a cache for large tool outputs.",
-      "homepage": "https://github.com/qualixar/superlocalmemory",
+      "homepage": "https://superlocalmemory.com",
       "keywords": [
         "memory",
         "long-term-memory",
@@ -19,10 +19,10 @@
         "mcp",
         "agents"
       ],
-      "license": "AGPL-3.0-or-later",
+      "license": "MIT",
       "name": "superlocalmemory",
       "repository": "https://github.com/qualixar/superlocalmemory",
-      "source": "./plugin",
+      "source": "./cursor-plugin",
       "version": "4.2.5"
     }
   ]

@@ -78,9 +78,9 @@ def _codex_env():
 
 
 def _cursor_env():
-    """The Cursor-format manifest (plugin/mcp.cursor.json), read by Grok Bot and
+    """The Cursor-format manifest (cursor-plugin/mcp.cursor.json), read by Grok Bot and
     the Cursor editor."""
-    d = json.loads((REPO / "plugin/mcp.cursor.json").read_text(encoding="utf-8"))
+    d = json.loads((REPO / "cursor-plugin/mcp.cursor.json").read_text(encoding="utf-8"))
     return d["mcpServers"]["superlocalmemory"].get("env", {})
 
 

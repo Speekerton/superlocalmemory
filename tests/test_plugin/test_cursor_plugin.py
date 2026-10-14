@@ -21,8 +21,10 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 PLUGIN = REPO / "plugin"
-CURSOR_MANIFEST = PLUGIN / ".cursor-plugin" / "plugin.json"
-CURSOR_MCP = PLUGIN / "mcp.cursor.json"
+#: Its own MIT folder since 4.2.6, so plugin/ (Claude) keeps its AGPL licence.
+CURSOR = REPO / "cursor-plugin"
+CURSOR_MANIFEST = CURSOR / ".cursor-plugin" / "plugin.json"
+CURSOR_MCP = CURSOR / "mcp.cursor.json"
 CURSOR_MARKETPLACE = REPO / ".cursor-plugin" / "marketplace.json"
 
 
@@ -70,9 +72,9 @@ def test_manifest_paths_resolve_inside_the_plugin() -> None:
     for key in ("logo", "skills", "mcpServers"):
         rel = manifest[key]
         assert not rel.startswith("/") and ".." not in rel.split("/"), (key, rel)
-        target = (PLUGIN / rel).resolve()
+        target = (CURSOR / rel).resolve()
         assert target.exists(), (key, target)
-        assert PLUGIN.resolve() in target.parents or target == PLUGIN.resolve()
+        assert CURSOR.resolve() in target.parents or target == CURSOR.resolve()
 
 
 def test_every_skill_has_the_frontmatter_cursor_requires() -> None:
@@ -88,7 +90,7 @@ def test_every_skill_has_the_frontmatter_cursor_requires() -> None:
 
 def test_the_cursor_marketplace_offers_only_the_cursor_ready_tree() -> None:
     plugins = _load(CURSOR_MARKETPLACE)["plugins"]
-    assert [(p["name"], p["source"]) for p in plugins] == [("superlocalmemory", "./plugin")]
+    assert [(p["name"], p["source"]) for p in plugins] == [("superlocalmemory", "./cursor-plugin")]
 
 
 def test_claude_code_still_gets_its_own_definition() -> None:
@@ -98,3 +100,12 @@ def test_claude_code_still_gets_its_own_definition() -> None:
     server = _load(PLUGIN / ".mcp.json")["mcpServers"]["superlocalmemory"]
     assert server["command"] == "${ComSpec:-${CLAUDE_PLUGIN_ROOT}/scripts/slm-launch}"
     assert server["env"] == {"SLM_AGENT_ID": "claude_code"}
+
+
+def test_the_cursor_bundle_is_mit_and_the_claude_plugin_is_not() -> None:
+    """Cursor's Marketplace excludes copyleft; the engine and plugin/ stay AGPL."""
+    assert _load(CURSOR_MANIFEST)["license"] == "MIT"
+    assert (CURSOR / "LICENSE").read_text(encoding="utf-8").startswith("MIT License")
+    assert "AGPL-3.0-or-later" in (CURSOR / "LICENSE").read_text(encoding="utf-8")
+    assert _load(CURSOR_MARKETPLACE)["plugins"][0]["license"] == "MIT"
+    assert not (PLUGIN / ".cursor-plugin").exists()

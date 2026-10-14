@@ -123,12 +123,12 @@ export function renderCursorPluginJson(manifest) {
   return sortedJson({
     author: { name: 'Qualixar' },
     description: DESCRIPTION,
-    homepage: manifest.repository,
+    homepage: 'https://superlocalmemory.com',
     // The Claude Code hooks file is not Cursor's format. Declaring hooks
     // replaces folder discovery, so Cursor never tries to run it.
     hooks: { hooks: {} },
     keywords: KEYWORDS,
-    license: 'AGPL-3.0-or-later',
+    license: 'MIT',
     logo: LOGO_REL,
     mcpServers: './mcp.cursor.json',
     name: manifest.pluginName,
@@ -155,12 +155,12 @@ export function renderCursorMarketplaceJson(manifest) {
       {
         category: 'productivity',
         description: DESCRIPTION,
-        homepage: manifest.repository,
+        homepage: 'https://superlocalmemory.com',
         keywords: KEYWORDS,
-        license: 'AGPL-3.0-or-later',
+        license: 'MIT',
         name: manifest.pluginName,
         repository: manifest.repository,
-        source: './plugin',
+        source: './cursor-plugin',
         version: manifest.version,
       },
     ],
@@ -183,7 +183,37 @@ export function renderCursorMarketplaceJson(manifest) {
  *   real build always passes the real plan.
  * @returns {Map<string, string>}
  */
+// The Cursor-format bundle is a thin MIT launcher for the separately installed
+// AGPL engine (owner's decision, 14 Oct 2026): Cursor's Marketplace excludes
+// copyleft licences. It lives in its own folder so plugin/ (Claude) stays AGPL.
+const MIT_LICENSE = `MIT License
+
+Copyright (c) 2026 Varun Pratap Bhardwaj / Qualixar
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+This license covers this plugin bundle only. The SuperLocalMemory engine it
+starts (installed separately) is licensed under AGPL-3.0-or-later.
+`;
+
 export function cursorPlan(root, manifest, pluginRoot, fullSkillsPlan = new Map()) {
+  const cursorRoot = path.join(root, 'cursor-plugin');
   const logoPath = path.join(root, LOGO_SRC);
   let logo;
   try {
@@ -192,9 +222,10 @@ export function cursorPlan(root, manifest, pluginRoot, fullSkillsPlan = new Map(
     throw new Error(`cursorPlan: cannot read logo ${logoPath}: ${err.message}`);
   }
   const plan = new Map([
-    [path.join(pluginRoot, '.cursor-plugin', 'plugin.json'), renderCursorPluginJson(manifest)],
-    [path.join(pluginRoot, 'mcp.cursor.json'), renderCursorMcpJson(manifest)],
-    [path.join(pluginRoot, ...LOGO_REL.split('/')), logo],
+    [path.join(cursorRoot, '.cursor-plugin', 'plugin.json'), renderCursorPluginJson(manifest)],
+    [path.join(cursorRoot, 'mcp.cursor.json'), renderCursorMcpJson(manifest)],
+    [path.join(cursorRoot, ...LOGO_REL.split('/')), logo],
+    [path.join(cursorRoot, 'LICENSE'), MIT_LICENSE],
     [path.join(root, '.cursor-plugin', 'marketplace.json'), renderCursorMarketplaceJson(manifest)],
   ]);
   for (const name of CURSOR_SKILLS) {
@@ -207,7 +238,7 @@ export function cursorPlan(root, manifest, pluginRoot, fullSkillsPlan = new Map(
         + `${name}/SKILL.md exists).`,
       );
     }
-    plan.set(path.join(pluginRoot, 'cursor-skills', name, 'SKILL.md'), content);
+    plan.set(path.join(cursorRoot, 'cursor-skills', name, 'SKILL.md'), content);
   }
   return plan;
 }

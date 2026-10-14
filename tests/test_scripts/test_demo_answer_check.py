@@ -62,6 +62,12 @@ def _account_home(tmp_path, monkeypatch) -> Path:
     monkeypatch.setattr(
         demo.pwd, "getpwuid", lambda _uid: SimpleNamespace(pw_dir=str(home)),
     )
+    # owner_roots() also resolves the current root from HOME and reads its
+    # config.json; left alone, that read reached the guarded live root under
+    # the parallel CI gate (v4.2.5, 14 Oct).
+    monkeypatch.setenv("HOME", str(home))
+    for name in ("SLM_DATA_DIR", "SL_MEMORY_PATH", "SLM_HOME"):
+        monkeypatch.delenv(name, raising=False)
     return home
 
 

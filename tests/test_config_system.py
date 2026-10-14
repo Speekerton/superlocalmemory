@@ -10,14 +10,18 @@ def test_default_is_mode_a():
     assert config.llm.provider == ""
 
 
-def test_default_base_dir(monkeypatch):
+def test_default_base_dir(monkeypatch, tmp_path):
     # SLMConfig.default() now resolves via slm_home() which honours
     # SLM_DATA_DIR. When SLM_DATA_DIR is absent the fallback is ~/.superlocalmemory.
+    # HOME points at a temporary folder: default() also reads config.json and
+    # answer_check.json there, and under the parallel CI gate (-n 4) the real
+    # home it fell back to was the guarded live data root (v4.2.5 gate, 14 Oct).
     monkeypatch.delenv("SLM_DATA_DIR", raising=False)
     monkeypatch.delenv("SL_MEMORY_PATH", raising=False)
     monkeypatch.delenv("SLM_HOME", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
     config = SLMConfig.default()
-    assert ".superlocalmemory" in str(config.base_dir)
+    assert config.base_dir.resolve() == (tmp_path / ".superlocalmemory").resolve()
 
 
 def test_save_includes_active_profile(tmp_path):

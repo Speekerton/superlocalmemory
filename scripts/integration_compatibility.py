@@ -58,7 +58,9 @@ def _parse_config(path: Path, fmt: str) -> dict[str, Any]:
 
 
 def _extract_slm_block(data: dict[str, Any], descriptor: Any) -> dict[str, Any]:
-    container = data[descriptor.server_key]
+    container = data
+    for key in descriptor.server_key.split("."):  # OpenClaw: mcp.servers
+        container = container[key]
     if descriptor.fmt == "yaml":
         matches = [
             item for item in container

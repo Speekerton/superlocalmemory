@@ -277,6 +277,28 @@ def install_assets(*, home: Path | None = None, dry_run: bool = False, force: bo
     return result
 
 
+def install_shared_skills(*, home: Path | None = None, dry_run: bool = False) -> list[str]:
+    """Copy the SLM skills into ~/.agents/skills, the shared Agent Skills folder.
+
+    OpenClaw loads skills from it (docs.openclaw.ai/tools/skills), as Codex
+    does; unlike install_assets this writes no Codex agent files.
+    """
+    home = home or Path.home()
+    source = _source_root()
+    skills_root = home / ".agents" / "skills"
+    written = []
+    for skill in SKILLS:
+        src = source / skill / "SKILL.md"
+        if not src.exists():
+            continue
+        target = skills_root / skill / "SKILL.md"
+        written.append(str(target))
+        if not dry_run:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, target)
+    return written
+
+
 def remove_assets(*, home: Path | None = None, dry_run: bool = False) -> dict:
     """Remove only the known SLM directories and files."""
     home = home or Path.home()

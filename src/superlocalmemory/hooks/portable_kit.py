@@ -89,6 +89,8 @@ def global_config_path(desc: "IDEDescriptor", home: Path, *, platform: str | Non
         return Path(env["XDG_CONFIG_HOME"]) / "muse" / "settings.json"
     if desc.ide_id == "grok-cli" and env.get("GROK_HOME"):
         return Path(env["GROK_HOME"]) / "config.toml"
+    if desc.ide_id == "openclaw" and env.get("OPENCLAW_CONFIG_PATH"):
+        return Path(env["OPENCLAW_CONFIG_PATH"]).expanduser()
     if desc.ide_id == "copilot-cli" and env.get("COPILOT_HOME"):
         return Path(env["COPILOT_HOME"]) / "mcp-config.json"
     if desc.ide_id != "claude-desktop":
@@ -249,6 +251,21 @@ IDE_MATRIX: dict[str, IDEDescriptor] = {
         agents_md_path=None,
         server_block={"type": "local", "command": "slm", "args": ["mcp"], "tools": ["*"]},
         caveats="COPILOT_HOME moves the folder",
+    ),
+    # OpenClaw: optional JSON5 config ~/.openclaw/openclaw.json
+    # (OPENCLAW_CONFIG_PATH), servers under mcp.servers (docs.openclaw.ai:
+    # gateway/configuration, tools/mcp). A file that is not plain JSON is never
+    # rewritten (comments would be lost); the error names `openclaw mcp add`.
+    "openclaw": IDEDescriptor(
+        ide_id="openclaw",
+        display="OpenClaw",
+        mcp_path_global=".openclaw/openclaw.json",
+        mcp_path_project=None,
+        server_key="mcp.servers",
+        fmt="json",
+        agents_md_path=None,
+        server_block={"command": "slm", "args": ["mcp"]},
+        caveats="JSON5 with comments is left alone; skills go to ~/.agents/skills",
     ),
     # --- TOML IDEs ---
     # Grok CLI 1.0.50 (docs.x.ai/build/features/mcp-servers): [mcp_servers.<name>]

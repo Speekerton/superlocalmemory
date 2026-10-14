@@ -104,11 +104,9 @@ def _assert_slm_block_present(path: Path, desc: Any) -> None:
     """Parse config and assert SLM block exists under server_key."""
     if desc.fmt == "json":
         data = json.loads(path.read_text(encoding="utf-8"))
-        if desc.ide_id == "opencode":
-            # opencode uses top-level "mcp" → nested dict
-            servers = data[desc.server_key]
-        else:
-            servers = data[desc.server_key]
+        servers = data
+        for key in desc.server_key.split("."):  # OpenClaw nests them: mcp.servers
+            servers = servers[key]
         assert "superlocalmemory" in servers
         block = servers["superlocalmemory"]
         expected = ([sys.executable, "-m", "superlocalmemory.cli", "mcp"]

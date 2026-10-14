@@ -50,7 +50,11 @@ def merge_config(kit, data, desc, transport, daemon_port, profile, result):
         return
     if desc.ide_id == "muse":
         _prepare_muse_settings(data)
-    servers = data.setdefault(desc.server_key, {})
+    servers = data
+    for key in desc.server_key.split("."):  # OpenClaw nests them: mcp.servers
+        if not isinstance(servers, dict):
+            raise ValueError(f"{desc.server_key} must be an object")
+        servers = servers.setdefault(key, {})
     if not isinstance(servers, dict):
         raise ValueError(f"{desc.server_key} must be an object")
     before = copy.deepcopy(servers.get("superlocalmemory"))
@@ -97,6 +101,22 @@ def persist_config(kit, data, desc, scope, path, source, here, dry_run, result):
     result["agents_md"] = kit._handle_agents_md(desc, scope, source, here)
 
 
+def _load_or_explain(kit, path, desc, transport, port, profile):
+    """Load the host config; for OpenClaw's JSON5, say how to add SLM by hand."""
+    try:
+        return kit._load_config(path, desc.fmt)
+    except kit._ParseError:
+        if desc.ide_id != "openclaw":
+            raise
+        import shutil
+
+        slm = shutil.which("slm") or "slm"
+        raise ValueError(
+            f"{path} is JSON5 (comments or unquoted keys), which SLM does not rewrite. "
+            f"Add SuperLocalMemory with: openclaw mcp add superlocalmemory "
+            f"--command {slm} --arg mcp") from None
+
+
 def install(kit, ide_id, *, home, project, here, profile, source, dry_run, transport, port):
     result: dict[str, Any] = {
         "ide": ide_id,
@@ -118,7 +138,7 @@ def install(kit, ide_id, *, home, project, here, profile, source, dry_run, trans
         desc, scope, path = resolve_target(kit, ide_id, home, project, here, result)
         if path is None:
             return result
-        data = kit._load_config(path, desc.fmt)
+        data = _load_or_explain(kit, path, desc, transport, port, profile)
         merge_config(kit, data, desc, transport, port, profile, result)
         if transport != "stdio" and not dry_run and not kit._check_daemon_health(port):
             print(
@@ -127,6 +147,10 @@ def install(kit, ide_id, *, home, project, here, profile, source, dry_run, trans
                 file=sys.stderr,
             )
         persist_config(kit, data, desc, scope, path, source, here, dry_run, result)
+        if desc.ide_id == "openclaw":
+            from superlocalmemory.hooks.codex_assets import install_shared_skills
+
+            result["skills"] = len(install_shared_skills(home=scope, dry_run=dry_run))
     except Exception as exc:
         result["error"] = str(exc)
         result["mcp_config"] = "error"

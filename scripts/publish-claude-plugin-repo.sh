@@ -29,6 +29,21 @@ git clone --quiet "$REPO_URL" "$WORK/repo"
 # Replace everything but .git with the plugin folder, byte for byte.
 find "$WORK/repo" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
 cp -R "$SRC/." "$WORK/repo/"
+# The directory blocks a computed launch command ("${ComSpec:-...}", which picks
+# cmd.exe on Windows). Its copy runs the POSIX launcher by literal path; the
+# GitHub marketplace plugin keeps the Windows-capable form.
+python3 - "$WORK/repo/.mcp.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+data = json.load(open(path))
+server = data["mcpServers"]["superlocalmemory"]
+if not server["command"].startswith("${ComSpec:-"):
+    sys.exit("unexpected .mcp.json launch command; refusing to publish")
+server["command"] = "${CLAUDE_PLUGIN_ROOT}/scripts/slm-launch"
+server["args"] = []
+json.dump(data, open(path, "w"), indent=2)
+open(path, "a").write("\n")
+PY
 
 cd "$WORK/repo"
 git checkout --quiet -B main  # an empty repository has no branch yet
@@ -39,8 +54,9 @@ if git diff --cached --quiet; then
 fi
 git commit --quiet -m "SuperLocalMemory plugin $VERSION
 
-Built from github.com/qualixar/superlocalmemory (plugin/) at $(git -C "$ROOT" rev-parse --short HEAD)."
-git tag -a "v$VERSION" -m "SuperLocalMemory plugin $VERSION"
+Built from github.com/qualixar/superlocalmemory (plugin/) at $(git -C "$ROOT" rev-parse --short HEAD).
+The MCP server starts through scripts/slm-launch by literal path."
+git tag -f -a "v$VERSION" -m "SuperLocalMemory plugin $VERSION"
 git push --quiet origin main
-git push --quiet origin "v$VERSION"
+git push --quiet --force origin "v$VERSION"
 echo "Published superlocalmemory-plugin $VERSION ($(git rev-parse --short HEAD))."

@@ -478,7 +478,9 @@ export function buildPlan(root, manifest) {
       if (fname === '.gitkeep') continue;
       const srcFile = path.join(scriptsSrcPath, fname);
       if (!fs.statSync(srcFile).isFile()) continue;
-      const content = fs.readFileSync(srcFile, 'utf8');
+      // __SLM_RELEASE__ becomes this release, so a uvx launch names an exact,
+      // readable pin (see plugin-src/scripts/slm-launch).
+      const content = fs.readFileSync(srcFile, 'utf8').replaceAll('__SLM_RELEASE__', manifest.version);
       plan.set(path.join(pluginRoot, 'scripts', fname), content);
     }
   }

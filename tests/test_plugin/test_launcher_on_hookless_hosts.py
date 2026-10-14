@@ -18,6 +18,8 @@ what each test sets. Every program it may call is a stub that logs its argv.
 
 from __future__ import annotations
 
+import json
+
 import os
 import platform
 import subprocess
@@ -187,6 +189,11 @@ def test_an_installed_slm_still_wins_over_uvx(tmp_path) -> None:
 
 
 def test_launcher_is_executable_and_identical_in_every_tree() -> None:
-    src = (Path(__file__).resolve().parents[2] / "plugin-src" / "scripts" / "slm-launch").read_bytes()
-    assert LAUNCHER.read_bytes() == src
+    repo = Path(__file__).resolve().parents[2]
+    version = json.loads((repo / "plugin-src" / "manifest.json").read_text(encoding="utf-8"))["version"]
+    src = (repo / "plugin-src" / "scripts" / "slm-launch").read_text(encoding="utf-8")
+    # Identical except the release, which the build writes in literally.
+    assert "__SLM_RELEASE__" in src
+    assert LAUNCHER.read_text(encoding="utf-8") == src.replace("__SLM_RELEASE__", version)
+    assert f'uvx --from "superlocalmemory=={version}" slm mcp' in LAUNCHER.read_text(encoding="utf-8")
     assert os.access(LAUNCHER, os.X_OK)

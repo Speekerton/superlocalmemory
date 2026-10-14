@@ -96,31 +96,24 @@ _ensure_daemon() {
     "$@" serve start >&2
 }
 
-# The release this plugin tree ships (requirements.txt is stamped every release).
-_slm_pin() {
-    sed -n 's/^\(superlocalmemory==[0-9][0-9A-Za-z.+!-]*\)[[:space:]]*$/\1/p' \
-        "${_SLM_PLUGIN_ROOT}/requirements.txt" 2>/dev/null | head -n 1
-}
-
 # No installed slm and no plugin venv: run this release through uvx. Returns
-# only when it cannot (no uvx, or no pin); otherwise it becomes the server.
+# only when it cannot (no uvx); otherwise it becomes the server. The version is
+# written in literally at build time (scripts/build-plugin.mjs replaces
+# 4.2.6): Anthropic's plugin directory refuses a uvx launch whose pin
+# it cannot read, and a pin computed at run time is one it cannot read.
 _slm_run_uvx() {
-    local _pin
     command -v uvx >/dev/null 2>&1 || return 1
-    _pin="$(_slm_pin)"
-    if [ -z "${_pin}" ]; then
-        echo "SLM plugin: not using uvx: no superlocalmemory pin in ${_SLM_PLUGIN_ROOT}/requirements.txt." >&2
-        return 1
-    fi
     # PyPI's Linux torch is the CUDA build; macOS and Windows get CPU wheels anyway.
     if [ "$(uname -s 2>/dev/null)" = "Linux" ]; then
         export UV_TORCH_BACKEND="${UV_TORCH_BACKEND:-cpu}"
     fi
     export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
-    echo "SLM plugin: no installed slm; running ${_pin} through uvx (downloaded once, then cached)." >&2
-    _ensure_daemon uvx --from "${_pin}" slm || \
-        echo "SLM plugin: daemon did not start; the MCP server will retry on first use." >&2
-    exec uvx --from "${_pin}" slm mcp
+    echo "SLM plugin: no installed slm; running superlocalmemory==4.2.6 through uvx (downloaded once, then cached)." >&2
+    if [ "${_daemon_running}" -ne 1 ]; then
+        uvx --from "superlocalmemory==4.2.6" slm serve start >&2 || \
+            echo "SLM plugin: daemon did not start; the MCP server will retry on first use." >&2
+    fi
+    exec uvx --from "superlocalmemory==4.2.6" slm mcp
 }
 
 # Opt-in: build the plugin venv now, with the same bootstrap SessionStart runs.

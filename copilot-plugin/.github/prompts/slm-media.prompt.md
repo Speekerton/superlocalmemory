@@ -10,7 +10,7 @@ tools:
   - media_status
   - media_upload_link
   - recall
-  - Bash
+  - Bash(slm:*)
 ---
 
 # slm-media — Pictures, PDFs and Folders

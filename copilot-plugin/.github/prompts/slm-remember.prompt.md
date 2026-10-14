@@ -13,7 +13,7 @@ tools:
   - list_corrections
   - review_correction
   - delete_memory
-  - Bash
+  - Bash(slm:*)
 ---
 
 # slm-remember — Capture Durable Facts

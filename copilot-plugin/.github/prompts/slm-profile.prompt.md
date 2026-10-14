@@ -6,7 +6,7 @@ agent: agent
 tools:
   - switch_profile
   - get_status
-  - Bash
+  - Bash(slm:*)
 ---
 
 # slm-profile — Memory Profiles and Tool Sets

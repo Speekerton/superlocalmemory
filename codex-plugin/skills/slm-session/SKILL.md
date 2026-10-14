@@ -6,7 +6,7 @@ when_to_use: |
   - When the user says "start a new session" or "initialize memory"
   - When meaningful work completes and context should be committed
   - When the user says "close session" or "end session"
-allowed-tools: session_init, close_session, Bash
+allowed-tools: session_init, close_session, Bash(slm:*)
 ---
 
 # slm-session — Session Lifecycle Hygiene

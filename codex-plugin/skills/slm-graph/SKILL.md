@@ -15,7 +15,7 @@ when_to_use: |
   - code navigation in unfamiliar repos
   - blast radius before a PR
   - pre-commit change detection
-allowed-tools: build_code_graph, query_graph, get_blast_radius, semantic_search_code, get_review_context, detect_changes, Bash
+allowed-tools: build_code_graph, query_graph, get_blast_radius, semantic_search_code, get_review_context, detect_changes, Bash(slm:*)
 ---
 
 # slm-graph — Code Intelligence Skill

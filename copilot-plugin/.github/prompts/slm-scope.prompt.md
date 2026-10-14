@@ -8,7 +8,7 @@ tools:
   - recall
   - search
   - list_recent
-  - Bash
+  - Bash(slm:*)
 ---
 
 # slm-scope — Memory Scope and Sharing Model

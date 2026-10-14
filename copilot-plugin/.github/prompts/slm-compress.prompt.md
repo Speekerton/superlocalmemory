@@ -6,7 +6,7 @@ agent: agent
 tools:
   - slm_compress
   - slm_retrieve
-  - Bash
+  - Bash(slm:*)
 ---
 
 # slm-compress — Reversible Context Compression (Surface B)

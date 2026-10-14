@@ -10,7 +10,7 @@ when_to_use: |
   - "Why can't I see tool X?"
   - Multi-project workflows needing memory isolation
   - Switching between personal and team workspaces
-allowed-tools: switch_profile, get_status, Bash
+allowed-tools: switch_profile, get_status, Bash(slm:*)
 ---
 
 # slm-profile — Memory Profiles and Tool Sets

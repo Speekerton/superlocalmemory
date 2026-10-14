@@ -2,7 +2,7 @@
 name: slm-status
 description: Health and optimization stats for SuperLocalMemory — call slm_optimize_stats() for live compression and cache counters (compress_runs, tokens_saved_compress, cache_proxy_hits, cache_proxy_misses, cache_kv_hits, cache_kv_misses); run slm status [--json] for system state (mode, profile, DB size, fact/entity/edge counts) and slm doctor [--json] for preflight including the "Optimize (Surface B)" health line; use together to confirm optimization is actually saving tokens.
 when_to_use: "check slm status, health check, is slm working, optimize stats, tokens saved, cache hits, compress runs, slm doctor, preflight, db size, slm info, diagnose slm, slm media status, are pictures on, slm features, picture search not working, slm media repair, embedder status, memory health, slm enrich, repair memories, undo a repair"
-allowed-tools: slm_optimize_stats, get_status, get_brain_evidence_status, Bash
+allowed-tools: slm_optimize_stats, get_status, get_brain_evidence_status, Bash(slm:*)
 ---
 
 # slm-status — Health and Optimize Stats

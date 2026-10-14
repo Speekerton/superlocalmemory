@@ -6,7 +6,7 @@ agent: agent
 tools:
   - slm_cache_set
   - slm_cache_get
-  - Bash
+  - Bash(slm:*)
 ---
 
 # slm-cache — KV Cache for Repeated Reads (Surface B)

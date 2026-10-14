@@ -8,7 +8,7 @@ when_to_use: |
   - "Can other agents on this machine see my memories?"
   - User explicitly asks to cross-profile share a fact or see shared facts
   - Enterprise setup where multiple profiles collaborate
-allowed-tools: remember, recall, search, list_recent, Bash
+allowed-tools: remember, recall, search, list_recent, Bash(slm:*)
 ---
 
 # slm-scope — Memory Scope and Sharing Model

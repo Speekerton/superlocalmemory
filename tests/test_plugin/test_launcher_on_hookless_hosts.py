@@ -156,7 +156,9 @@ def test_nothing_to_run_says_how_to_fix_it_and_builds_nothing(tmp_path) -> None:
     result = _run(tmp_path, stubs, LITERAL_HOST_ENV)
     assert result.returncode == 1
     assert "pipx install superlocalmemory" in result.stderr
-    assert "docs.astral.sh/uv" in result.stderr
+    # uv named, not linked: a remote URL beside TOKENIZERS_PARALLELISM in this
+    # script is held by the Claude plugin directory as a credential leaving.
+    assert "install uv" in result.stderr.lower()
     assert result.stdout == "", "stdout is the MCP channel"
     assert _log_lines(log) == [], "no venv is built unless asked"
 

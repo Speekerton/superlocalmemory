@@ -7,7 +7,7 @@ tools:
   - slm_optimize_stats
   - get_status
   - get_brain_evidence_status
-  - Bash
+  - Bash(slm:*)
 ---
 
 # slm-status — Health and Optimize Stats

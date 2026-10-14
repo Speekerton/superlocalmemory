@@ -186,6 +186,13 @@ export function renderPluginJson(manifest) {
     keywords: manifest.keywords || [],
     homepage: 'https://superlocalmemory.com',
     license: 'AGPL-3.0-or-later',
+    // Listing fields Anthropic's plugin directory reads (Claude Code ignores
+    // them): icon is a square 512 px PNG inside the plugin.
+    icon: './.claude-plugin/icon.png',
+    documentationUrl: 'https://github.com/qualixar/superlocalmemory/blob/main/docs/plugins.md',
+    supportUrl: 'https://github.com/qualixar/superlocalmemory/issues',
+    privacyPolicyUrl: 'https://qualixar.com/privacy',
+    termsOfServiceUrl: 'https://qualixar.com/terms',
     mcpServers: './.mcp.json',
     name: manifest.pluginName,
     repository: manifest.repository || '',
@@ -481,6 +488,9 @@ export function buildPlan(root, manifest) {
   plan.set(path.join(pluginRoot, 'README.md'),
     fs.readFileSync(path.join(root, 'plugin-src', 'docs', 'README.md'), 'utf8'));
   plan.set(path.join(pluginRoot, 'LICENSE'), fs.readFileSync(path.join(root, 'LICENSE'), 'utf8'));
+  // Directory listing icon (binary): copied byte for byte by applyPlan.
+  plan.set(path.join(pluginRoot, '.claude-plugin', 'icon.png'),
+    fs.readFileSync(path.join(root, 'assets', 'branding', 'slm-mark.png')));
 
   // No plugin/CLAUDE.md: Claude Code does not load a CLAUDE.md at a plugin's
   // root, and `claude plugin validate --strict` (the plugin directory's gate)
@@ -540,13 +550,13 @@ export function applyPlan(plan) {
         fs.unlinkSync(absPath);
         // existingHash stays null → will write
       } else {
-        existingHash = sha256(fs.readFileSync(absPath, 'utf8'));
+        existingHash = sha256(fs.readFileSync(absPath, Buffer.isBuffer(content) ? undefined : 'utf8'));
       }
     }
 
     if (existingHash !== newHash) {
       fs.mkdirSync(path.dirname(absPath), { recursive: true });
-      fs.writeFileSync(absPath, content, 'utf8');
+      fs.writeFileSync(absPath, content, Buffer.isBuffer(content) ? undefined : 'utf8');
       // Preserve executable bit for shell scripts and extensionless launchers
       if (_isExecutable(absPath)) {
         const mode = fs.statSync(absPath).mode;
@@ -588,7 +598,7 @@ export function checkPlan(plan, root, manifest) {
     if (!fs.existsSync(absPath)) {
       missing.push(absPath);
     } else {
-      const disk = sha256(fs.readFileSync(absPath, 'utf8'));
+      const disk = sha256(fs.readFileSync(absPath, Buffer.isBuffer(content) ? undefined : 'utf8'));
       const expected = sha256(content);
       if (disk !== expected) stale.push(absPath);
     }

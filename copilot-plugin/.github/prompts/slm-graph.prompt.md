@@ -10,7 +10,7 @@ tools:
   - semantic_search_code
   - get_review_context
   - detect_changes
-  - Bash
+  - Bash(slm:*)
 ---
 
 # slm-graph — Code Intelligence Skill

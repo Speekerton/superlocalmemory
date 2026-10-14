@@ -2,7 +2,7 @@
 name: slm-cache
 description: KV cache for repeated reads — call slm_cache_get(key) first; on a miss do the expensive operation then slm_cache_set(key, value, ttl_seconds) to store it; on a hit use the returned value directly; always fail-open (hit:false on any error, never raises); saves tokens when the same file, query result, or tool output is read more than once in a session.
 when_to_use: "cache file, avoid re-reading, repeated read, cache result, cache tool output, save re-read, reuse across session, cache check, cache hit, cache miss"
-allowed-tools: slm_cache_set, slm_cache_get, Bash
+allowed-tools: slm_cache_set, slm_cache_get, Bash(slm:*)
 ---
 
 # slm-cache — KV Cache for Repeated Reads (Surface B)

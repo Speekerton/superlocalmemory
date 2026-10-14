@@ -156,6 +156,9 @@ function setupFixture(tmp, overrides = {}) {
   writeFile(tmp, 'plugin-src/requirements.txt', 'superlocalmemory>=3.6.14\n');
   writeFile(tmp, 'plugin-src/rules/CLAUDE.md.fragment', '<!-- SLM -->\n');
   writeFile(tmp, 'assets/branding/slm-mark.svg', '<svg xmlns="http://www.w3.org/2000/svg"/>\n');
+  // Directory listing icon (binary PNG; copied byte for byte).
+  fs.mkdirSync(path.join(tmp, 'assets', 'branding'), { recursive: true });
+  fs.writeFileSync(path.join(tmp, 'assets', 'branding', 'slm-mark.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff]));
   // The plugin README and licence the Claude plugin directory requires (4.2.6).
   writeFile(tmp, 'plugin-src/docs/README.md', '# SuperLocalMemory plugin\n');
   writeFile(tmp, 'LICENSE', 'GNU AFFERO GENERAL PUBLIC LICENSE\n');

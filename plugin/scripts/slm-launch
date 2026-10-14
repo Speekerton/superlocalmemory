@@ -175,7 +175,7 @@ case "${SLM_LAUNCHER:-auto}:${SLM_CHOICE}" in
             if ! _slm_bootstrap; then
                 slm_not_found_message >&2
                 echo >&2
-                echo "  Or install uv (https://docs.astral.sh/uv/): the plugin then runs SuperLocalMemory through uvx." >&2
+                echo "  Or install uv (Astral's Python package manager): the plugin then runs SuperLocalMemory through uvx." >&2
                 exit 1
             fi
         fi

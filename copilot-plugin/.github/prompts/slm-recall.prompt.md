@@ -13,7 +13,7 @@ tools:
   - run_view
   - report_outcome
   - report_feedback
-  - Bash
+  - Bash(slm:*)
 ---
 
 # slm-recall — Search & Retrieve Memory

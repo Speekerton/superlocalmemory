@@ -13,7 +13,7 @@ tools:
   - mesh_lock
   - mesh_events
   - mesh_status
-  - Bash
+  - Bash(slm:*)
 ---
 
 # slm-mesh — Cross-Session Peer Coordination

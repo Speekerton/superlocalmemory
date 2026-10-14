@@ -6,7 +6,7 @@ agent: agent
 tools:
   - session_init
   - close_session
-  - Bash
+  - Bash(slm:*)
 ---
 
 # slm-session — Session Lifecycle Hygiene

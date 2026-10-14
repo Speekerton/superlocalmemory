@@ -6,7 +6,7 @@ agent: agent
 tools:
   - get_status
   - Read
-  - Bash
+  - Bash(slm:*)
 ---
 
 # slm-web-access — Web apps and bots

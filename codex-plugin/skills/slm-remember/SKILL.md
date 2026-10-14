@@ -8,7 +8,7 @@ when_to_use: |
   - "Note this as a gotcha / blocker / convention"
   - After making a non-obvious decision during a coding session
   - After resolving a bug whose root cause should be persisted
-allowed-tools: remember, recall, update_memory, set_memory_kind, review_memory_kinds, confirm_memory_kinds, list_corrections, review_correction, delete_memory, Bash
+allowed-tools: remember, recall, update_memory, set_memory_kind, review_memory_kinds, confirm_memory_kinds, list_corrections, review_correction, delete_memory, Bash(slm:*)
 ---
 
 # slm-remember — Capture Durable Facts

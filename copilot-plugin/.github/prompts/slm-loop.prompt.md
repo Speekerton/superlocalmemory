@@ -14,7 +14,7 @@ tools:
   - skill_lineage
   - evolve_skill
   - observe_bounded_loop_evidence
-  - Bash
+  - Bash(slm:*)
 ---
 
 # slm-loop — Bounded, gate-verified agent loops

@@ -13,7 +13,7 @@ tools:
   - recall
   - search
   - remember
-  - Bash
+  - Bash(slm:*)
 ---
 
 # slm-governance — Governed Workspace Behavior
@@ -116,7 +116,7 @@ a picture or page only when its text held no secret or personal data.
 
 When login is required, every operation on memories needs a signed-in user,
 including the connection your assistant uses. SLM handles this at the daemon
-level; agents do not pass credentials in tool calls. If a tool call returns an
+level; agents never put credentials in tool calls. If a tool call returns an
 authentication or permission error, you must:
 
 1. Stop the current operation immediately.

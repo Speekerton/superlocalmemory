@@ -123,8 +123,11 @@ pick the file. It needs VS Code 1.101 or later and SuperLocalMemory installed
 (`slm` on your PATH). The extension adds SuperLocalMemory to the MCP servers the
 agent can use and runs `slm mcp`. If your workspace or user `mcp.json` already
 has SuperLocalMemory (for example from `slm connect vscode-copilot --here`), the
-extension adds nothing, so you never get two copies. The extension is MIT
-licensed; the engine it starts is AGPL.
+extension adds nothing, so you never get two copies. Antigravity IDE installs
+the same `.vsix` and skips SuperLocalMemory when `slm connect antigravity`
+already added it. Cursor does not support the VS Code API the extension uses,
+so in Cursor use the Cursor plugin below or `slm connect cursor`. The extension
+is MIT licensed; the engine it starts is AGPL.
 
 ## Grok CLI
 
@@ -167,6 +170,19 @@ server starts with `uvx` pinned to the release, with no API key or sign-in. See
 for what bots on one computer share. This plugin keeps its own memory on the Grok Bot
 computer. To reach the memory on your own computer, add Web access as a custom MCP
 server in Grok Bot's Plugins screen ([steps](remote-access/hosts.md#grok-bot)).
+
+In Cursor you can also copy `cursor-plugin/` (from this repository or
+`$(npm root -g)/superlocalmemory/cursor-plugin`) to
+`~/.cursor/plugins/local/superlocalmemory` and reload the window. Copy it rather
+than symlinking a folder elsewhere: Cursor loads a symlink there only when it
+points inside that folder.
+
+If you added the `qualixar` marketplace to Cursor before, Cursor may still
+serve the version from the day you added it; reinstalling does not move it
+forward. Remove the marketplace in Cursor's plugin settings (or with
+`cursor-agent plugin marketplace remove qualixar`), add it again, and reinstall
+`superlocalmemory`. An older copy that fails with `/venv/bin/slm: No such file
+or directory` is the Claude Code plugin from that old snapshot, not this one.
 
 ## Hermes
 

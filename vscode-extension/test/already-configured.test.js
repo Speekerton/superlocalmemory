@@ -35,7 +35,7 @@ test('comments and trailing commas (VS Code JSONC) are tolerated', () => {
   assert.strictEqual(slmAlreadyConfigured([p]), true);
 });
 
-test('Cursor and Antigravity configs (mcpServers) count, so those editors get no second SLM', () => {
+test('Antigravity configs (mcpServers) count, so that editor gets no second SLM', () => {
   const cursor = file({ mcpServers: { superlocalmemory: { command: 'slm', args: ['mcp'] } } });
   assert.strictEqual(slmAlreadyConfigured([cursor]), true);
 });

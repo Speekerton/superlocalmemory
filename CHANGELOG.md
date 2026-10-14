@@ -43,12 +43,13 @@ earlier session), 16 skills, 79 `/slm` commands and 4 agent tools.
   `cursor-plugin/`, under the MIT licence (Cursor's marketplace does not accept
   copyleft). It is a launcher for the separately installed engine, which stays
   AGPL-3.0-or-later.
-- **VS Code, Antigravity IDE and Cursor extension:** a new MIT extension,
+- **VS Code and Antigravity IDE extension:** a new MIT extension,
   `vscode-extension/`, adds SuperLocalMemory's MCP server to the editor
   (VS Code 1.101 or later) when `slm` is installed. It adds nothing when that
   editor's own MCP config already has SuperLocalMemory (VS Code's `mcp.json`,
-  Cursor's `mcp.json`, Antigravity's `mcp_config.json`), so there is never a
-  second copy. The `.vsix` is attached to the GitHub release. (A first build
+  Antigravity's `mcp_config.json`), so there is never a second copy. Cursor
+  does not support the VS Code MCP provider API the extension uses; in Cursor
+  use the Cursor plugin or `slm connect cursor`. The `.vsix` is attached to the GitHub release. (A first build
   left one of its two modules out of the package, so it failed to start in
   VS Code; a test now checks every module it loads is packaged.)
 - **Codex:** the plugin carries its icon, logo, privacy and terms links.

@@ -17,7 +17,7 @@ config_schema:
   capture_turns:
     type: bool
     default: false
-    description: "Explicit opt-in: observe redacted completed turns through the configured SLM MCP server."
+    description: "Explicit opt-in: save every completed turn (any language, secrets redacted) as a memory through the configured SLM MCP server."
   connection:
     type: string
     default: local

@@ -120,6 +120,16 @@ def _supported_slm(binary: str) -> bool:
     return _REMOTE.compatible(raw, _RELEASE_SLM_VERSION)
 
 
+#: Hermes refuses every plugin MCP call unless config.yaml grants the server,
+#: and has no prompt for it; the refusal used to be swallowed like any failure.
+GRANT_FIX = ("Hermes has not granted the superlocalmemory MCP server to this plugin, so SLM "
+             "recall, session tracking and turn capture are off. Fix: run "
+             "`slm upgrade-hosts --host hermes --apply`, or set "
+             "plugins.entries.superlocalmemory.mcp_allowlist: [superlocalmemory] in "
+             "~/.hermes/config.yaml, then restart Hermes.")
+_grant_warned = threading.Event()
+
+
 def _safe_mcp(ctx: Any, tool: str, arguments: dict[str, Any], timeout: float = 3,
               health: Any = None) -> dict[str, Any]:
     """Use Hermes's capability-gated MCP path; observers must always fail open.
@@ -132,6 +142,11 @@ def _safe_mcp(ctx: Any, tool: str, arguments: dict[str, Any], timeout: float = 3
         return {"ok": False, "skipped": True}
     try:
         result = ctx.call_mcp("superlocalmemory", tool, arguments, timeout=timeout)
+    except PermissionError:
+        if not _grant_warned.is_set():
+            _grant_warned.set()
+            logger.warning("SLM plugin: %s", GRANT_FIX)
+        return {"ok": False, "error": GRANT_FIX, "grant_missing": True}
     except Exception as exc:
         result = {"ok": False, "error": str(exc)[:300]}
     if health is not None:
@@ -218,12 +233,24 @@ class SlmHermesPlugin:
         self._mcp("log_tool_event", args)
 
     def post_llm_call(self, **kwargs: Any) -> None:
+        # Issue #263: turns went to ``observe``, which keeps only English
+        # decision/bug/preference sentences, so ordinary and non-English turns
+        # were dropped. ``remember`` is the ordinary save path, any language.
         if self.ctx.get_config("capture_turns", False) is not True:
             return
-        self._mcp("observe", {
-            "session_id": str(kwargs.get("session_id") or ""), "agent_id": "hermes",
-            "content": "User: " + _redact(kwargs.get("user_message"), 4_000) + "\nAssistant: " + _redact(kwargs.get("assistant_response"), 6_000),
-        })
+        user = _redact(kwargs.get("user_message"), 4_000).strip()
+        assistant = _redact(kwargs.get("assistant_response"), 6_000).strip()
+        if not user and not assistant:
+            return
+        session_id = str(kwargs.get("session_id") or "")
+        content = f"User: {user}\nAssistant: {assistant}"
+        # A retried hook saves the same turn once.
+        key = hashlib.sha256(f"{session_id}\n{content}".encode("utf-8")).hexdigest()[:32]
+        timeout = 8 if self._mode() == "remote" else 5
+        self._mcp("remember", {
+            "content": content, "session_id": session_id, "agent_id": "hermes",
+            "tags": "hermes,conversation-turn", "idempotency_key": "hermes-turn:" + key,
+        }, timeout=timeout)
 
     def on_session_end(self, **kwargs: Any) -> None:
         # Hermes emits this after every turn. Per-turn settlement selects only
@@ -364,6 +391,10 @@ class SlmHermesPlugin:
         argv[0] = command
         if self._mode() == "remote":
             return _REMOTE.run_remote(self.ctx, argv, "", self._remote_health, _RELEASE_SLM_VERSION)
+        # /slm runs the CLI and works without the grant; the hooks do not.
+        notice = ""
+        if command == "status" and self._mcp("get_version", {}).get("grant_missing"):
+            notice = "WARNING: " + GRANT_FIX + "\n\n"
         binary = shutil.which("slm")
         if not binary:
             return ("SLM CLI is unavailable on this machine. If SLM runs on another computer, set "
@@ -381,7 +412,7 @@ class SlmHermesPlugin:
             completed = subprocess.run([binary, *argv], text=True, capture_output=True, timeout=30, check=False)
         except (OSError, subprocess.TimeoutExpired) as exc:
             return f"SLM command unavailable: {_bounded(exc, 500)}"
-        return _bounded(completed.stdout or completed.stderr or f"slm exited {completed.returncode}")
+        return notice + _bounded(completed.stdout or completed.stderr or f"slm exited {completed.returncode}")
 
 
 def register(ctx: Any) -> None:

@@ -20,6 +20,27 @@ To pin an exact release, add `--ref` with that release's 40-character commit.
 Hermes asks before it enables the plugin (`--no-enable` installs it disabled);
 the plugin cannot grant itself capabilities or MCP access.
 
+Then grant the plugin its one MCP server. Hermes refuses every plugin MCP call
+until `config.yaml` names the server under the plugin's `mcp_allowlist`, and it
+does not ask for this; without it the plugin's recall, session tracking and
+turn capture do nothing. SLM writes that one line for you (with a backup):
+
+```bash
+slm upgrade-hosts --host hermes --apply
+```
+
+or add it yourself and restart Hermes:
+
+```yaml
+plugins:
+  entries:
+    superlocalmemory:
+      mcp_allowlist: ["superlocalmemory"]
+```
+
+`slm doctor` reports "Hermes plugin access", and `/slm status` inside Hermes
+says so when the grant is missing.
+
 ## Upgrade
 
 The plugin works with the SLM release it came with and every newer release of
@@ -37,14 +58,16 @@ update superlocalmemory` refuses a pinned plugin by design; `--force` with a new
 
 The plugin ships 16 namespaced skills, four on-demand Hermes child-agent
 roles, `/slm <command>`, and `/slm-<command>` aliases for the public SLM CLI.
-It calls only the configured `superlocalmemory` MCP server. Grant that server
-to this plugin when Hermes asks; no wildcard MCP grant is needed.
+It calls only the configured `superlocalmemory` MCP server, granted as above;
+no wildcard MCP grant is needed.
 
 By default the plugin recalls bounded, untrusted evidence and records scrubbed
 tool telemetry. Full user/assistant turn capture is off by default; enable it
 only by setting `plugins.entries.superlocalmemory.settings.capture_turns: true`
 in your Hermes configuration (Hermes reads plugin settings from the `settings`
-block of the plugin's entry).
+block of the plugin's entry). With it on, every completed turn is saved as a
+memory, in any language, with secrets and email addresses redacted first; a
+retried turn is saved once. Restart the Hermes gateway after changing it.
 
 If you also install the Bounded Loops Hermes plugin, the two stay independent. The
 bridge between them remains inactive unless both products are installed and their

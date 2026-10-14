@@ -4070,6 +4070,14 @@ def _cmd_doctor_checks(args: Namespace, state: dict) -> None:
     from superlocalmemory.cli.doctor_mcp import connected_apps_finding
     _check("Connected MCP apps", *connected_apps_finding())
 
+    try:  # 4.2.6: a Hermes without the grant runs the SLM plugin inert
+        from superlocalmemory.cli.host_upgrades import hermes_plugin_finding
+        _hermes = hermes_plugin_finding()
+        if _hermes is not None:
+            _check("Hermes plugin access", _hermes[0], _hermes[1], fix=_hermes[2])
+    except Exception as _hp_exc:  # noqa: BLE001 — a report must not break doctor
+        _check("Hermes plugin access", "WARN", f"could not be checked: {_hp_exc}")
+
     refile_data = None
     if getattr(args, "refile_hidden", False):
         from superlocalmemory.cli.doctor_refile import run_refile

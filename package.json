@@ -92,6 +92,8 @@
     "scripts/preuninstall.js",
     ".claude-plugin/",
     "plugin/",
+    "cursor-plugin/",
+    ".cursor-plugin/",
     "plugin-src/skills/",
     "plugin-src/agents/",
     "plugin-src/commands/",

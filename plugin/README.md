@@ -26,7 +26,7 @@ Every hook runs on your computer and fails open: a hook problem never blocks Cla
 | Session start | Session guidance; loads recent context from your local memory | Reads your local store |
 | Session start | `ensure-venv.sh` prepares the plugin's own Python environment when the SuperLocalMemory command is not already installed | On first run only, downloads the SuperLocalMemory package and its libraries from PyPI into the plugin's data folder; skipped when `slm` is installed |
 | After a tool runs | Records which files changed and whether recalled memories were used | Writes to your local store |
-| When you send a prompt | Notices a repeated question or a change of topic, and reminds Claude to recall | Reads your prompt locally; nothing is sent anywhere |
+| When you send a prompt | Notices a repeated question or a change of topic, and reminds Claude to recall | Reads your prompt on your computer and passes it only to your local SuperLocalMemory |
 | Before a web search | Reminds Claude to check your memory first | Reads your local store |
 | Session end | Saves a session summary and closes open recall outcomes | Writes to your local store |
 

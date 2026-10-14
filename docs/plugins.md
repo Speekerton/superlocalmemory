@@ -2,9 +2,10 @@
 
 SuperLocalMemory works with any harness that speaks MCP or can run a command
 (`slm remember`, `slm recall`). `slm connect <ide>` writes the MCP server into a
-tool's config, and the six packaged plugins below (Claude Code, Codex, GitHub Copilot,
-Antigravity, Hermes and the Cursor-format plugin for Grok Bot) are examples of what a
-host-specific package adds, not a list of what is supported. A plugin adds more on top: skills
+tool's config, and the packaged plugins below (Claude Code, Codex, GitHub Copilot,
+Antigravity, Hermes, the Cursor-format plugin for Grok Bot and Cursor, and the VS Code
+extension) are examples of what a host-specific package adds, not a list of what is
+supported. A plugin adds more on top: skills
 that teach the agent when to recall and what to save, sub-agents, session hooks
 and slash commands. Every plugin is built from one source (`plugin-src/`), so
 they all carry the same 16 skills and 4 sub-agents, adapted to each host.
@@ -19,9 +20,12 @@ this repository.
 | Claude Code | `claude plugin marketplace add qualixar/superlocalmemory` then `claude plugin install superlocalmemory@qualixar` | MCP server, 16 skills, 4 sub-agents, hooks, `/slm-loop` |
 | Codex | `slm connect codex` then `slm codex install` | MCP server, skills, sub-agents, lifecycle hooks |
 | VS Code / GitHub Copilot | `slm connect vscode-copilot --here` (from the project root), then copy `copilot-plugin/.github/` add-ons | MCP server, agent rules, 16 prompt files, 4 agents, hooks |
-| Cursor-format hosts (Grok Bot, Cursor) | Add the `qualixar` marketplace in the host's Plugins screen, then `superlocalmemory` | MCP server, a bot-sized skill set, no hooks or dashboard needed |
-| Hermes | `hermes plugins install 'https://github.com/qualixar/superlocalmemory.git#hermes-plugin'` | Skills, child-agent roles, `/slm` commands |
+| VS Code (extension) | Install `superlocalmemory-vscode-<version>.vsix` from the [GitHub release](https://github.com/qualixar/superlocalmemory/releases/latest): Extensions view → `...` → Install from VSIX | The MCP server in the agent's tool list, with nothing to edit |
+| Cursor-format hosts (Grok Bot, Cursor) | Add the `qualixar` marketplace in the host's Plugins screen, then `superlocalmemory`. In Cursor you can also copy `cursor-plugin/` to `~/.cursor/plugins/local/superlocalmemory` | MCP server, a bot-sized skill set, no hooks or dashboard needed |
+| Hermes | `hermes plugins install 'https://github.com/qualixar/superlocalmemory.git#hermes-plugin'`, then `slm upgrade-hosts --host hermes --apply` | Skills, child-agent roles, `/slm` commands, recall and session hooks |
 | Antigravity (`agy`) | `agy plugin install "$(npm root -g)/superlocalmemory/antigravity-plugin"` | MCP server, skills, agents, hooks |
+| Grok CLI | `slm connect grok-cli`, then `grok plugin install "$(npm root -g)/superlocalmemory/plugin" --trust` | MCP server, 16 skills, 4 sub-agents, hooks |
+| Muse CLI | `slm connect muse` | MCP server |
 | Any other agent | Paste the [universal agent rules](../plugin-src/rules/AGENTS.md) into `AGENTS.md`, `CLAUDE.md`, `.cursorrules` or the system prompt | Memory discipline for any MCP client |
 | Web apps (ChatGPT, Claude on the web, Muse, Composio) | Web access in the dashboard, then the [host guides](remote-access/hosts.md) and [web agent instructions](web-agents/README.md) | Recall and, if allowed, save through Web access |
 
@@ -110,6 +114,44 @@ files, agents and hooks are in `copilot-plugin/.github/`: copy them into your
 project's `.github/` and keep any files of your own
 ([details](../copilot-plugin/README.md)).
 
+## VS Code extension
+
+Download `superlocalmemory-vscode-<version>.vsix` from the
+[latest GitHub release](https://github.com/qualixar/superlocalmemory/releases/latest),
+then in VS Code open the Extensions view, choose `...` → Install from VSIX, and
+pick the file. It needs VS Code 1.101 or later and SuperLocalMemory installed
+(`slm` on your PATH). The extension adds SuperLocalMemory to the MCP servers the
+agent can use and runs `slm mcp`. If your workspace or user `mcp.json` already
+has SuperLocalMemory (for example from `slm connect vscode-copilot --here`), the
+extension adds nothing, so you never get two copies. The extension is MIT
+licensed; the engine it starts is AGPL.
+
+## Grok CLI
+
+```bash
+slm connect grok-cli
+grok plugin install "$(npm root -g)/superlocalmemory/plugin" --trust
+```
+
+The first command adds the MCP server to `~/.grok/config.toml`. The second
+installs the Claude Code plugin, which Grok CLI runs as is: the 16 skills, the
+4 sub-agents and the session hooks. Grok asks for `--trust` because a plugin can
+run hooks on your machine. With a PyPI install, use the `plugin/` folder of this
+repository.
+
+## Muse CLI
+
+```bash
+slm connect muse
+```
+
+This adds the MCP server to Muse's `settings.json`
+(`$XDG_CONFIG_HOME/muse/settings.json`, otherwise `~/.config/muse/settings.json`)
+and keeps your other settings. If the file still uses the old `mcp_servers` key,
+`slm connect` renames it to `mcpServers`, because Muse ignores every server when
+both keys are present. To use the hosted Muse bot instead, add it through Web
+access ([host guide](remote-access/hosts.md)).
+
 ## Grok Bot and other Cursor-format hosts
 
 Add the `qualixar` marketplace (`.cursor-plugin/marketplace.json` in this
@@ -126,9 +168,18 @@ server in Grok Bot's Plugins screen ([steps](remote-access/hosts.md#grok-bot)).
 hermes plugins install 'https://github.com/qualixar/superlocalmemory.git#hermes-plugin'
 ```
 
-To pin an exact release, pass its 40-character commit with `--ref`. Grant the
-`superlocalmemory` MCP server to the plugin when Hermes asks. See
-[Hermes](hermes.md) for settings and what the plugin records.
+To pin an exact release, pass its 40-character commit with `--ref`. Hermes does
+not ask for MCP access, so grant the plugin the `superlocalmemory` MCP server:
+
+```bash
+slm upgrade-hosts --host hermes --apply
+```
+
+This adds `mcp_allowlist: [superlocalmemory]` under
+`plugins.entries.superlocalmemory` in `~/.hermes/config.yaml` and keeps a backup.
+Without it the plugin's recall, session tracking and turn capture do nothing;
+`/slm status` and `slm doctor` both say so. See [Hermes](hermes.md) for settings
+and what the plugin records.
 
 ## Antigravity
 

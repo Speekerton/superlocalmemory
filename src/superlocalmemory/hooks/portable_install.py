@@ -48,6 +48,8 @@ def merge_config(kit, data, desc, transport, daemon_port, profile, result):
             block=block,
         )
         return
+    if desc.ide_id == "muse":
+        _prepare_muse_settings(data)
     servers = data.setdefault(desc.server_key, {})
     if not isinstance(servers, dict):
         raise ValueError(f"{desc.server_key} must be an object")
@@ -61,6 +63,17 @@ def merge_config(kit, data, desc, transport, daemon_port, profile, result):
         if before is None
         else "merged"
     )
+
+
+def _prepare_muse_settings(data):
+    """Muse drops every MCP server when mcp_servers and mcpServers coexist."""
+    data.setdefault("schema_version", 1)
+    legacy = data.pop("mcp_servers", None)
+    if isinstance(legacy, dict):
+        current = data.setdefault("mcpServers", {})
+        if isinstance(current, dict):
+            for name, server in legacy.items():
+                current.setdefault(name, server)
 
 
 def persist_config(kit, data, desc, scope, path, source, here, dry_run, result):

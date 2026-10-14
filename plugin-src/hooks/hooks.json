@@ -14,7 +14,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/ensure-venv.sh\""
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/ensure-venv.sh\" || true"
           }
         ]
       },

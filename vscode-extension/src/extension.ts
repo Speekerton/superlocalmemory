@@ -65,13 +65,32 @@ function buildDefinition(slmPath: string, version: string): vscode.McpStdioServe
   );
 }
 
-/** The mcp.json files VS Code reads: each workspace folder's and the user's. */
+/**
+ * The MCP config files this editor reads: its workspace and user mcp.json, and
+ * in Cursor or Antigravity (both install this extension from Open VSX) that
+ * editor's own MCP file, where `slm connect` may already have wired SLM.
+ * Another editor's files are never read: Cursor having SLM says nothing about
+ * VS Code.
+ */
 function mcpJsonFiles(context: vscode.ExtensionContext): string[] {
-  const folders = (vscode.workspace.workspaceFolders ?? [])
-    .map((f) => path.join(f.uri.fsPath, '.vscode', 'mcp.json'));
+  const home = os.homedir();
+  const app = vscode.env.appName.toLowerCase();
+  const roots = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
   // globalStorageUri is <User>/globalStorage/<extension id>; mcp.json sits in <User>.
-  const user = path.join(path.dirname(path.dirname(context.globalStorageUri.fsPath)), 'mcp.json');
-  return [...folders, user];
+  const files = [
+    ...roots.map((r) => path.join(r, '.vscode', 'mcp.json')),
+    path.join(path.dirname(path.dirname(context.globalStorageUri.fsPath)), 'mcp.json'),
+  ];
+  if (app.includes('cursor')) {
+    files.push(...roots.map((r) => path.join(r, '.cursor', 'mcp.json')), path.join(home, '.cursor', 'mcp.json'));
+  }
+  if (app.includes('antigravity')) {
+    files.push(
+      ...roots.map((r) => path.join(r, '.agents', 'mcp_config.json')),
+      path.join(home, '.gemini', 'config', 'mcp_config.json'),
+    );
+  }
+  return files;
 }
 
 let warned = false;

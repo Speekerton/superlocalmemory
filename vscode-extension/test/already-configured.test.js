@@ -34,3 +34,16 @@ test('comments and trailing commas (VS Code JSONC) are tolerated', () => {
   const p = file('{\n // mine\n "servers": { "superlocalmemory": { "command": "slm", "args": ["mcp"], }, },\n}');
   assert.strictEqual(slmAlreadyConfigured([p]), true);
 });
+
+test('Cursor and Antigravity configs (mcpServers) count, so those editors get no second SLM', () => {
+  const cursor = file({ mcpServers: { superlocalmemory: { command: 'slm', args: ['mcp'] } } });
+  assert.strictEqual(slmAlreadyConfigured([cursor]), true);
+});
+
+test('the pinned interpreter form written by `slm connect` counts under any name', () => {
+  const pinned = file({ mcpServers: { memory: {
+    command: '/Users/me/.superlocalmemory/venv/bin/python',
+    args: ['-m', 'superlocalmemory.cli', 'mcp'],
+  } } });
+  assert.strictEqual(slmAlreadyConfigured([pinned]), true);
+});

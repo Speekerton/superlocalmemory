@@ -15,8 +15,12 @@ function isSlmServer(name: string, server: unknown): boolean {
     return false;
   }
   const { command, args } = server as { command?: unknown; args?: unknown };
+  if (!Array.isArray(args) || !args.includes('mcp')) {
+    return false;
+  }
   const base = typeof command === 'string' ? path.basename(command).replace(/\.(cmd|exe|bat)$/i, '') : '';
-  return base === 'slm' && Array.isArray(args) && args.includes('mcp');
+  // `slm connect` pins the interpreter: python -m superlocalmemory.cli mcp.
+  return base === 'slm' || args.includes('superlocalmemory.cli');
 }
 
 /**
@@ -31,7 +35,9 @@ export function slmAlreadyConfigured(files: string[]): boolean {
     } catch {
       continue;
     }
-    const servers = (data as { servers?: Record<string, unknown> } | null)?.servers;
+    // VS Code uses `servers`; Cursor and Antigravity use `mcpServers`.
+    const holder = data as { servers?: Record<string, unknown>; mcpServers?: Record<string, unknown> } | null;
+    const servers = holder?.servers ?? holder?.mcpServers;
     if (servers && typeof servers === 'object'
         && Object.entries(servers).some(([name, server]) => isSlmServer(name, server))) {
       return true;

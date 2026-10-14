@@ -43,13 +43,35 @@ earlier session), 16 skills, 79 `/slm` commands and 4 agent tools.
   `cursor-plugin/`, under the MIT licence (Cursor's marketplace does not accept
   copyleft). It is a launcher for the separately installed engine, which stays
   AGPL-3.0-or-later.
-- **VS Code, Antigravity IDE and Cursor extensions:** a new MIT extension,
-  `vscode-extension/`, adds SuperLocalMemory's MCP server to VS Code (1.101 or
-  later) when `slm` is installed, and steps aside when `slm connect
-  vscode-copilot` already wired it. The same package installs from Open VSX.
+- **VS Code, Antigravity IDE and Cursor extension:** a new MIT extension,
+  `vscode-extension/`, adds SuperLocalMemory's MCP server to the editor
+  (VS Code 1.101 or later) when `slm` is installed. It adds nothing when that
+  editor's own MCP config already has SuperLocalMemory (VS Code's `mcp.json`,
+  Cursor's `mcp.json`, Antigravity's `mcp_config.json`), so there is never a
+  second copy. The `.vsix` is attached to the GitHub release.
 - **Codex:** the plugin carries its icon, logo, privacy and terms links.
 - **Official MCP Registry:** `server.json` ships in the repository and moves
   with every release.
+
+### New hosts
+
+- **Grok CLI:** `slm connect grok-cli` writes the MCP server into
+  `~/.grok/config.toml`, and Grok CLI runs the Claude Code plugin as is
+  (`grok plugin install <path>/plugin --trust`): 16 skills, 4 agents and the
+  hooks. One hook did not start there, because Grok runs a command that is only
+  a quoted path as a file name with the quotes kept; every hook command now
+  starts in Grok CLI and Claude Code alike.
+- **Muse CLI:** `slm connect muse` writes the MCP server into Muse's
+  `settings.json` and keeps every other setting. A file that still has the old
+  `mcp_servers` key gets it renamed to `mcpServers` in the same write, since
+  Muse ignores every server when both are present.
+
+### Packaging
+
+- **The npm package would have shipped no Cursor plugin.** It moved to its own
+  `cursor-plugin/` folder in this release, and `package.json` still listed only
+  the old folders. Both `cursor-plugin/` and `.cursor-plugin/` ship now, and a
+  test checks every plugin folder the guide points at.
 
 ### Fixes
 

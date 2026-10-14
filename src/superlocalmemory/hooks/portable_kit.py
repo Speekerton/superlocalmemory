@@ -84,10 +84,12 @@ def global_config_path(desc: "IDEDescriptor", home: Path, *, platform: str | Non
     ``~/.config/Claude`` on Linux. ``environ`` is where APPDATA is read from (default: the real
     environment); pass ``{}`` to keep a given home self-contained.
     """
+    env = os.environ if environ is None else environ
+    if desc.ide_id == "muse" and env.get("XDG_CONFIG_HOME"):
+        return Path(env["XDG_CONFIG_HOME"]) / "muse" / "settings.json"
     if desc.ide_id != "claude-desktop":
         return home / desc.mcp_path_global
     platform = sys.platform if platform is None else platform
-    env = os.environ if environ is None else environ
     if platform == "darwin":
         return home / "Library" / "Application Support" / "Claude" / _CLAUDE_DESKTOP_FILE
     if platform.startswith("win"):
@@ -215,7 +217,32 @@ IDE_MATRIX: dict[str, IDEDescriptor] = {
         server_block={"command": "slm", "args": ["mcp"], "type": "stdio"},
         caveats="desktop app (not Claude Code)",
     ),
+    # Muse Code 1.4.7, built-in MCP setup guide: mcpServers in settings.json,
+    # new file starts at schema_version 1; XDG_CONFIG_HOME is honoured.
+    "muse": IDEDescriptor(
+        ide_id="muse",
+        display="Muse CLI",
+        mcp_path_global=".config/muse/settings.json",
+        mcp_path_project=None,
+        server_key="mcpServers",
+        fmt="json",
+        agents_md_path=None,
+        server_block={"type": "stdio", "command": "slm", "args": ["mcp"]},
+        caveats="legacy mcp_servers key is renamed; both keys drop every server",
+    ),
     # --- TOML IDEs ---
+    # Grok CLI 1.0.50: [mcp_servers.<name>] with command, args, env.
+    "grok-cli": IDEDescriptor(
+        ide_id="grok-cli",
+        display="Grok CLI",
+        mcp_path_global=".grok/config.toml",
+        mcp_path_project=None,
+        server_key="mcp_servers",
+        fmt="toml",
+        agents_md_path=None,
+        server_block={"command": "slm", "args": ["mcp"]},
+        caveats="the plugin (grok plugin install) adds skills and hooks",
+    ),
     "codex": IDEDescriptor(
         ide_id="codex",
         display="Codex CLI",

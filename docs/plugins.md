@@ -25,6 +25,8 @@ this repository.
 | Hermes | `hermes plugins install 'https://github.com/qualixar/superlocalmemory.git#hermes-plugin'`, then `slm upgrade-hosts --host hermes --apply` | Skills, child-agent roles, `/slm` commands, recall and session hooks |
 | Antigravity (`agy`) | `agy plugin install "$(npm root -g)/superlocalmemory/antigravity-plugin"` | MCP server, skills, agents, hooks |
 | Grok CLI | `slm connect grok-cli`, then `grok plugin install "$(npm root -g)/superlocalmemory/plugin" --trust` | MCP server, 16 skills, 4 sub-agents, hooks |
+| VS Code Agents window, GitHub Copilot CLI | `slm connect copilot-cli` (adds SLM to `~/.copilot/mcp-config.json`, which both read); for skills and agents, add the plugin from this repository in VS Code's Plugins screen | MCP server, 16 skills, 4 agents |
+| OpenClaw | `slm connect openclaw` | MCP server in `openclaw.json`, 14 skills in `~/.agents/skills` |
 | Muse CLI | `slm connect muse`, then `muse plugins install "$(npm root -g)/superlocalmemory/muse-plugin"` and `muse plugins approve superlocalmemory` | MCP server, 16 skills, 4 sub-agents, hooks, `/slm-loop` |
 | Any other agent | Paste the [universal agent rules](../plugin-src/rules/AGENTS.md) into `AGENTS.md`, `CLAUDE.md`, `.cursorrules` or the system prompt | Memory discipline for any MCP client |
 | Web apps (ChatGPT, Claude on the web, Muse, Composio) | Web access in the dashboard, then the [host guides](remote-access/hosts.md) and [web agent instructions](web-agents/README.md) | Recall and, if allowed, save through Web access |
@@ -128,6 +130,50 @@ the same `.vsix` and skips SuperLocalMemory when `slm connect antigravity`
 already added it. Cursor does not support the VS Code API the extension uses,
 so in Cursor use the Cursor plugin below or `slm connect cursor`. The extension
 is MIT licensed; the engine it starts is AGPL.
+
+## VS Code and Cursor: editor and Agents window
+
+Both editors now have two places to work, and they do not read the same
+settings.
+
+**VS Code editor window** (Copilot Chat): the extension above, or
+`slm connect vscode-copilot --here`. **VS Code Agents window**: it runs agents
+in a separate process that does not see extension-provided servers and reads
+`~/.copilot/mcp-config.json` instead, so run
+
+```bash
+slm connect copilot-cli
+```
+
+This also gives SLM to GitHub Copilot CLI, and the editor's chat discovers the
+same file, so the extension then adds nothing to avoid a second copy. For the
+16 skills and 4 agents in the Agents window, open its Plugins screen and add
+`qualixar/superlocalmemory`: VS Code reads `.github/plugin/marketplace.json`,
+which lists `vscode-agent-plugin/` (the Claude Code plugin with a plain
+`slm mcp` server; its hooks are Claude Code's and are left out). To try it from
+a local copy, add the folder to the `chat.pluginLocations` setting.
+
+**Cursor** shares `~/.cursor/mcp.json` and installed plugins between the editor
+and its Agents window, so `slm connect cursor` (or the Cursor plugin) covers
+both. Cursor's "Include Third-Party Plugins" setting also imports the Claude
+Code plugin; its server shows as Disabled there, and it should stay that way so
+SuperLocalMemory runs once. Each of these shows as its own entry in Cursor's
+MCP list (Cursor merges only URL-based servers), so keep one: the `slm connect`
+entry or the Cursor plugin.
+
+## OpenClaw
+
+```bash
+slm connect openclaw
+```
+
+This adds SuperLocalMemory under `mcp.servers` in `~/.openclaw/openclaw.json`
+(or the file `OPENCLAW_CONFIG_PATH` names) and copies 14 skills into
+`~/.agents/skills`, one of the folders OpenClaw loads skills from. OpenClaw's
+config is JSON5; when the file has comments or unquoted keys, SLM leaves it
+untouched and prints the `openclaw mcp add superlocalmemory --command slm --arg
+mcp` command to run instead. Check it with `openclaw mcp doctor superlocalmemory
+--probe`.
 
 ## Grok CLI
 

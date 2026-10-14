@@ -24,6 +24,7 @@ export const STEPS = Object.freeze([
   'build-antigravity-plugin.mjs',
   'build-hermes-plugin.mjs',
   'build-muse-plugin.mjs',
+  'build-vscode-agent-plugin.mjs',
 ]);
 
 function main(argv) {

@@ -30,6 +30,7 @@ PLUGIN_FOLDERS = (
     "hermes-plugin/",
     "antigravity-plugin/",
     "muse-plugin/",
+    "vscode-agent-plugin/",
 )
 
 

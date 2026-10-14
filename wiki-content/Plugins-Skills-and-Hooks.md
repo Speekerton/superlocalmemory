@@ -16,6 +16,8 @@ Install SLM first ([Installation](Installation)). The npm package carries every 
 | Antigravity (`agy`) | `antigravity-plugin/` | `agy plugin install "$(npm root -g)/superlocalmemory/antigravity-plugin"` |
 | VS Code (extension) | `vscode-extension/` | Install the `.vsix` from the GitHub release: Extensions view, `...`, Install from VSIX |
 | Grok CLI | `plugin/` (the Claude Code plugin) | `slm connect grok-cli`, then `grok plugin install "$(npm root -g)/superlocalmemory/plugin" --trust` |
+| VS Code Agents window, Copilot CLI | `vscode-agent-plugin/`, listed by `.github/plugin/marketplace.json` | `slm connect copilot-cli`, then add `qualixar/superlocalmemory` in the Agents window's Plugins screen |
+| OpenClaw | none (MCP and shared skills) | `slm connect openclaw` |
 | Muse CLI | `muse-plugin/` | `slm connect muse`, then `muse plugins install "$(npm root -g)/superlocalmemory/muse-plugin"` and `muse plugins approve superlocalmemory` |
 
 What each one contains, counted from the folders:

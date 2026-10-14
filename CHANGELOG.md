@@ -91,6 +91,17 @@ earlier session), 16 skills, the `/slm` commands and 4 agent tools.
   optional, so Muse never aborts a run because SuperLocalMemory did not start,
   and its agents name the tools the way Muse does (`mcp__superlocalmemory__…`).
 
+- **VS Code's Agents window and GitHub Copilot CLI:** `slm connect copilot-cli`
+  writes `~/.copilot/mcp-config.json`, which both read (the Agents window does
+  not see servers from editor extensions). `vscode-agent-plugin/`, listed by
+  `.github/plugin/marketplace.json` where VS Code looks first, brings the skills
+  and agents with a plain `slm mcp` server: the Claude Code plugin's launcher
+  uses a shell default VS Code cannot run.
+- **OpenClaw:** `slm connect openclaw` adds the server under `mcp.servers` in
+  `openclaw.json` and copies 14 skills into `~/.agents/skills`, where OpenClaw
+  loads them. A JSON5 file with comments is never rewritten; the command to run
+  is printed instead.
+
 ### Packaging
 
 - **The npm package would have shipped no Cursor plugin.** It moved to its own

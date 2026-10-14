@@ -67,7 +67,8 @@
     "postinstall": "node scripts/postinstall.js",
     "preuninstall": "node scripts/preuninstall.js",
     "test": "node scripts/run-ui-tests.mjs",
-    "build:antigravity-plugin": "node scripts/build-antigravity-plugin.mjs"
+    "build:antigravity-plugin": "node scripts/build-antigravity-plugin.mjs",
+    "build:muse-plugin": "node scripts/build-muse-plugin.mjs"
   },
   "engines": {
     "node": ">=18.0.0",
@@ -102,6 +103,7 @@
     "copilot-plugin/",
     "hermes-plugin/",
     "antigravity-plugin/",
+    "muse-plugin/",
     "docs/pi-dev-integration.md",
     "README.md",
     "LICENSE",

@@ -3,7 +3,7 @@
  *
  * build-plugin.mjs writes the skills and the Cursor-format
  * files (build-cursor-plugin.mjs is a module it imports, not a separate
- * program). The copilot, codex, antigravity and hermes builders read that
+ * program). The copilot, codex, antigravity, hermes and muse builders read that
  * output, so build-plugin must finish first. Stops at the first failure.
  *
  *   node scripts/build-all-plugins.mjs            # build all
@@ -23,6 +23,7 @@ export const STEPS = Object.freeze([
   'build-codex-plugin.mjs',
   'build-antigravity-plugin.mjs',
   'build-hermes-plugin.mjs',
+  'build-muse-plugin.mjs',
 ]);
 
 function main(argv) {

@@ -48,7 +48,9 @@ earlier session), 16 skills, 79 `/slm` commands and 4 agent tools.
   (VS Code 1.101 or later) when `slm` is installed. It adds nothing when that
   editor's own MCP config already has SuperLocalMemory (VS Code's `mcp.json`,
   Cursor's `mcp.json`, Antigravity's `mcp_config.json`), so there is never a
-  second copy. The `.vsix` is attached to the GitHub release.
+  second copy. The `.vsix` is attached to the GitHub release. (A first build
+  left one of its two modules out of the package, so it failed to start in
+  VS Code; a test now checks every module it loads is packaged.)
 - **Codex:** the plugin carries its icon, logo, privacy and terms links.
 - **Official MCP Registry:** `server.json` ships in the repository and moves
   with every release.
@@ -64,7 +66,11 @@ earlier session), 16 skills, 79 `/slm` commands and 4 agent tools.
 - **Muse CLI:** `slm connect muse` writes the MCP server into Muse's
   `settings.json` and keeps every other setting. A file that still has the old
   `mcp_servers` key gets it renamed to `mcpServers` in the same write, since
-  Muse ignores every server when both are present.
+  Muse ignores every server when both are present. A new `muse-plugin/` brings
+  the 16 skills, 4 agents, `/slm-loop` and the hooks: the Claude Code plugin
+  without the `allowed-tools` lines Muse rejects and without an MCP launcher,
+  and with a session-start hook that answers in JSON (Muse drops output that
+  starts with `[`, which the plain-text one does).
 
 ### Packaging
 

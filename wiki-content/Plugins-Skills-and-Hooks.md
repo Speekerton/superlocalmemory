@@ -16,7 +16,7 @@ Install SLM first ([Installation](Installation)). The npm package carries every 
 | Antigravity (`agy`) | `antigravity-plugin/` | `agy plugin install "$(npm root -g)/superlocalmemory/antigravity-plugin"` |
 | VS Code (extension) | `vscode-extension/` | Install the `.vsix` from the GitHub release: Extensions view, `...`, Install from VSIX |
 | Grok CLI | `plugin/` (the Claude Code plugin) | `slm connect grok-cli`, then `grok plugin install "$(npm root -g)/superlocalmemory/plugin" --trust` |
-| Muse CLI | none (MCP only) | `slm connect muse` |
+| Muse CLI | `muse-plugin/` | `slm connect muse`, then `muse plugins install "$(npm root -g)/superlocalmemory/muse-plugin"` and `muse plugins approve superlocalmemory` |
 
 What each one contains, counted from the folders:
 
@@ -49,7 +49,7 @@ How many tools each named profile exposes is on [MCP Tools](MCP-Tools). The Clau
 
 **Grok CLI.** Grok CLI runs the Claude Code plugin unchanged: the 16 skills, 4 agents and the hooks. `slm connect grok-cli` writes the MCP server into `~/.grok/config.toml`. Grok asks for `--trust` on install because a plugin can run commands on your computer.
 
-**Muse CLI.** `slm connect muse` writes the MCP server into Muse's `settings.json` (`$XDG_CONFIG_HOME/muse/settings.json`, else `~/.config/muse/settings.json`) and keeps every other setting. A file that still uses the old `mcp_servers` key has it renamed to `mcpServers` in the same write, because Muse ignores every server when both keys are present. The hosted Muse bot connects through Web access instead.
+**Muse CLI.** `slm connect muse` writes the MCP server into Muse's `settings.json` (`$XDG_CONFIG_HOME/muse/settings.json`, else `~/.config/muse/settings.json`) and keeps every other setting. A file that still uses the old `mcp_servers` key has it renamed to `mcpServers` in the same write, because Muse ignores every server when both keys are present. `muse-plugin/` is the Claude Code plugin rebuilt for Muse: no `allowed-tools` lines (Muse rejects short tool names there; in Claude Code the line only pre-approves tools), no MCP launcher (Muse gets the server from `slm connect muse`), and a session-start hook that answers in JSON, because Muse drops hook output that starts with `[` as malformed JSON. Muse runs its hooks and agents after `muse plugins approve superlocalmemory`. The hosted Muse bot connects through Web access instead.
 
 Any other agent can use the same discipline without a plugin: paste `plugin-src/rules/AGENTS.md` into `AGENTS.md`, `CLAUDE.md`, `.cursorrules` or the system prompt.
 

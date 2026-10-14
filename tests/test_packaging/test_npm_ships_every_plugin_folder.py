@@ -29,6 +29,7 @@ PLUGIN_FOLDERS = (
     "copilot-plugin/",
     "hermes-plugin/",
     "antigravity-plugin/",
+    "muse-plugin/",
 )
 
 

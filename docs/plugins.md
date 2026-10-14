@@ -25,7 +25,7 @@ this repository.
 | Hermes | `hermes plugins install 'https://github.com/qualixar/superlocalmemory.git#hermes-plugin'`, then `slm upgrade-hosts --host hermes --apply` | Skills, child-agent roles, `/slm` commands, recall and session hooks |
 | Antigravity (`agy`) | `agy plugin install "$(npm root -g)/superlocalmemory/antigravity-plugin"` | MCP server, skills, agents, hooks |
 | Grok CLI | `slm connect grok-cli`, then `grok plugin install "$(npm root -g)/superlocalmemory/plugin" --trust` | MCP server, 16 skills, 4 sub-agents, hooks |
-| Muse CLI | `slm connect muse` | MCP server |
+| Muse CLI | `slm connect muse`, then `muse plugins install "$(npm root -g)/superlocalmemory/muse-plugin"` and `muse plugins approve superlocalmemory` | MCP server, 16 skills, 4 sub-agents, hooks, `/slm-loop` |
 | Any other agent | Paste the [universal agent rules](../plugin-src/rules/AGENTS.md) into `AGENTS.md`, `CLAUDE.md`, `.cursorrules` or the system prompt | Memory discipline for any MCP client |
 | Web apps (ChatGPT, Claude on the web, Muse, Composio) | Web access in the dashboard, then the [host guides](remote-access/hosts.md) and [web agent instructions](web-agents/README.md) | Recall and, if allowed, save through Web access |
 
@@ -143,13 +143,19 @@ repository.
 
 ```bash
 slm connect muse
+muse plugins install "$(npm root -g)/superlocalmemory/muse-plugin"
+muse plugins approve superlocalmemory
 ```
 
-This adds the MCP server to Muse's `settings.json`
+The first command adds the MCP server to Muse's `settings.json`
 (`$XDG_CONFIG_HOME/muse/settings.json`, otherwise `~/.config/muse/settings.json`)
 and keeps your other settings. If the file still uses the old `mcp_servers` key,
 `slm connect` renames it to `mcpServers`, because Muse ignores every server when
-both keys are present. To use the hosted Muse bot instead, add it through Web
+both keys are present. The plugin adds the 16 skills, the 4 sub-agents,
+`/slm-loop` and the session hooks; Muse runs a third-party plugin's hooks and
+agents only after `muse plugins approve`. It is the Claude Code plugin with the
+parts Muse does not accept left out, and it starts no MCP server of its own,
+so run `slm connect muse` first. To use the hosted Muse bot instead, add it through Web
 access ([host guide](remote-access/hosts.md)).
 
 ## Grok Bot and other Cursor-format hosts

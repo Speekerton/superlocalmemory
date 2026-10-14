@@ -151,7 +151,7 @@ SuperLocalMemory is part of Qualixar's AI Reliability Engineering work: agent me
 | **Hermes** | Native plugin, then `slm upgrade-hosts --host hermes --apply` to grant it the memory server | 16 skills, advisor agents, `/slm <command>`, recall and session hooks |
 | **VS Code** | The SuperLocalMemory extension (`.vsix` on the [release page](https://github.com/qualixar/superlocalmemory/releases/latest)) | The memory server in the agent's tool list, nothing to edit |
 | **Grok CLI** | `slm connect grok-cli`, then `grok plugin install` the bundled plugin | MCP, 16 skills, 4 agents, session and recall hooks |
-| **Muse CLI** | `slm connect muse` | MCP in Muse's own settings |
+| **Muse CLI** | `slm connect muse`, then `muse plugins install` the bundled plugin | MCP, 16 skills, 4 agents, `/slm-loop`, session and recall hooks |
 | **Grok Bot and Cursor-format hosts** | Add the `qualixar` plugin marketplace | A lean plugin built for shared bot computers ([guide](https://github.com/qualixar/superlocalmemory/blob/main/docs/plugins.md#grok-bot-and-other-cursor-format-hosts)) |
 | **Cursor, Windsurf, Zed, JetBrains, Gemini CLI, Claude Desktop, OpenCode, Continue** | `slm connect <name>` | MCP in that tool's own config |
 | **ChatGPT, Claude on the web, Muse, Composio** | Optional **Web access** from the dashboard: sign in per app, read-only or read-and-save, remove any app at once | Your local memory, from the web; the database never leaves your computer ([guide](https://github.com/qualixar/superlocalmemory/blob/main/docs/remote-access/README.md)) |

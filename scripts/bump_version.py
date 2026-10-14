@@ -213,6 +213,13 @@ def _plan(version: str):
         ("plugin-src/manifest.json",
          lambda: _read_json("plugin-src/manifest.json"),
          lambda: _sub_json("plugin-src/manifest.json", version)),
+        # The official MCP Registry entry (4.2.6): both versions move with the release.
+        ("server.json version",
+         lambda: _read_json_at("server.json", ("version",)),
+         lambda: _sub_json_at("server.json", ("version",), version)),
+        ("server.json npm package",
+         lambda: _read_json_at("server.json", ("packages", 0, "version")),
+         lambda: _sub_json_at("server.json", ("packages", 0, "version"), version)),
         ("plugin-src/requirements.txt",
          lambda: _read("plugin-src/requirements.txt", r"superlocalmemory==([^\s]+)"),
          lambda: _sub_regex("plugin-src/requirements.txt",

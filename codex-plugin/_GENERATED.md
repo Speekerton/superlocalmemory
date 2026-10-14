@@ -20,6 +20,7 @@ Version: **4.2.5**
 - `agents/slm-loop-runner.md`
 - `agents/slm-memory-advisor.md`
 - `agents/slm-optimize-advisor.md`
+- `assets/icon.svg`
 - `commands/slm-loop.md`
 - `skills/slm-bot-memory/SKILL.md`
 - `skills/slm-cache/SKILL.md`

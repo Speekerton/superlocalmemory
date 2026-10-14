@@ -130,7 +130,7 @@ for (const [srcDir, outDir] of [[SRC_AGENTS, 'agents'], [SRC_COMMANDS, 'commands
       email: 'varun.pratap.bhardwaj@gmail.com',
       url: 'https://github.com/qualixar',
     },
-    homepage: 'https://qualixar.com',
+    homepage: 'https://superlocalmemory.com',
     repository: 'https://github.com/qualixar/superlocalmemory',
     license: 'AGPL-3.0-or-later',
     keywords: ['memory', 'mcp', 'agents', 'local-first', 'context-compression'],
@@ -149,7 +149,12 @@ for (const [srcDir, outDir] of [[SRC_AGENTS, 'agents'], [SRC_COMMANDS, 'commands
       developerName: 'Varun Pratap Bhardwaj',
       category: 'Developer Tools',
       capabilities: ['Interactive', 'Write'],
-      websiteURL: 'https://qualixar.com',
+      websiteURL: 'https://superlocalmemory.com',
+      // The ChatGPT + Codex plugin directory requires these (4.2.6).
+      privacyPolicyURL: 'https://qualixar.com/privacy',
+      termsOfServiceURL: 'https://qualixar.com/terms',
+      composerIcon: './assets/icon.svg',
+      logo: './assets/icon.svg',
       defaultPrompt: [
         'What did we decide about this?',
         'Remember this decision for later.',
@@ -159,6 +164,9 @@ for (const [srcDir, outDir] of [[SRC_AGENTS, 'agents'], [SRC_COMMANDS, 'commands
     },
   }, null, 2) + '\n');
 }
+
+// 3b2. The icon the directory and the composer show (interface.logo/composerIcon).
+files.set('assets/icon.svg', readFileSync(join(ROOT, 'assets', 'branding', 'slm-mark.svg'), 'utf8'));
 
 // 3c. .claude-plugin/plugin.json and .mcp.json — so a marketplace can install
 //     THIS tree, with Codex's own attribution.

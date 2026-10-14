@@ -184,6 +184,8 @@ export function renderPluginJson(manifest) {
     description: manifest.marketplace.description,
     displayName: manifest.displayName || manifest.pluginName,
     keywords: manifest.keywords || [],
+    homepage: 'https://superlocalmemory.com',
+    license: 'AGPL-3.0-or-later',
     mcpServers: './.mcp.json',
     name: manifest.pluginName,
     repository: manifest.repository || '',
@@ -473,6 +475,12 @@ export function buildPlan(root, manifest) {
       plan.set(path.join(pluginRoot, 'scripts', fname), content);
     }
   }
+
+  // The Claude plugin directory needs a README (with a plain account of what the
+  // hooks do and where data goes) and the licence beside the manifest (4.2.6).
+  plan.set(path.join(pluginRoot, 'README.md'),
+    fs.readFileSync(path.join(root, 'plugin-src', 'docs', 'README.md'), 'utf8'));
+  plan.set(path.join(pluginRoot, 'LICENSE'), fs.readFileSync(path.join(root, 'LICENSE'), 'utf8'));
 
   // No plugin/CLAUDE.md: Claude Code does not load a CLAUDE.md at a plugin's
   // root, and `claude plugin validate --strict` (the plugin directory's gate)

@@ -1,3 +1,4 @@
+<!-- mcp-name: io.github.qualixar/superlocalmemory -->
 <div align="center">
 
 <picture>

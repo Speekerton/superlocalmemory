@@ -150,6 +150,9 @@ def _per_prompt_recall_off() -> bool:
 
 def handle_hook(action: str) -> None:
     """Dispatch to the appropriate hook handler. Called from main() fast path."""
+    # Grok CLI sends camelCase keys; every handler below reads snake_case.
+    from superlocalmemory.hooks.payload_keys import normalize_stdin
+    normalize_stdin()
     if action in PER_PROMPT_ACTIONS and _per_prompt_recall_off():
         sys.stdout.write("{}")
         sys.exit(0)

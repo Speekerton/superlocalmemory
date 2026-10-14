@@ -66,7 +66,11 @@ def test_a_test_inside_the_limit_is_untouched(tmp_path) -> None:
 
 def test_a_run_over_its_total_limit_names_the_test_it_was_on(tmp_path) -> None:
     report = tmp_path / "hung-test.txt"
-    result = _run(tmp_path, _STUCK, "--hard-timeout-session", "3",
+    # The limit covers the child's whole run, startup included. A bare pytest
+    # start took 3.7-6.2 s on a loaded machine (14 Oct 2026), so a 3 s limit
+    # fired "(between tests)" before the stuck test began. The stuck test
+    # sleeps 300 s, so 20 s still ends the run inside it.
+    result = _run(tmp_path, _STUCK, "--hard-timeout-session", "20",
                   "--hard-timeout-report", str(report))
 
     assert result.returncode == 3, result.stdout + result.stderr

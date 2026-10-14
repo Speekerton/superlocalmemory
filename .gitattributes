@@ -11,10 +11,15 @@
 
 # Git LFS Configuration for SuperLocalMemory V2
 # Large visual assets are stored in LFS to keep repo lightweight
+# Scoped to assets/ and docs/: a repo-wide rule would also cover the plugin
+# folders, and the Claude plugin directory refuses a plugin that a checkout
+# filter could rewrite (14 Oct 2026).
 # Videos (largest files)
-*.mp4 filter=lfs diff=lfs merge=lfs -text
+assets/**/*.mp4 filter=lfs diff=lfs merge=lfs -text
+docs/**/*.mp4 filter=lfs diff=lfs merge=lfs -text
 # Animated GIFs
-*.gif filter=lfs diff=lfs merge=lfs -text
+assets/**/*.gif filter=lfs diff=lfs merge=lfs -text
+docs/**/*.gif filter=lfs diff=lfs merge=lfs -text
 # Large PNGs (> 1MB)
 assets/contact-sheet.png filter=lfs diff=lfs merge=lfs -text
 assets/screenshots/**/*-annotated.png filter=lfs diff=lfs merge=lfs -text

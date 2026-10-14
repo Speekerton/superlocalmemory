@@ -19,7 +19,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](https://github.com/qualixar/superlocalmemory/blob/main/LICENSE)
 [![Research: 4 arXiv papers](https://img.shields.io/badge/arXiv-4_papers-b31b1b)](#research)
 
-**[Install](#install)** · **[See it work](#30-second-example)** · **[Product film](https://www.youtube.com/watch?v=pyAu_vaIYZQ)** · **[Every capability](#everything-slm-does)** · **[Docs](#documentation)** · **[Website](https://www.superlocalmemory.com)**
+**[Install](#install)** · **[See it work](#30-second-example)** · **[Full demo](https://www.youtube.com/watch?v=9Y0wAT07KTc)** · **[Every capability](#everything-slm-does)** · **[Docs](#documentation)** · **[Website](https://www.superlocalmemory.com)**
 
 <img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/docs/assets/gifs/recall-tiers.gif" alt="Recall in the dashboard: a real question gets its answer; a gibberish question gets 'That isn't in SuperLocalMemory.'; a real question memory cannot answer exactly gets the closest memories, labelled" width="820">
 
@@ -131,9 +131,9 @@ SuperLocalMemory is part of Qualixar's AI Reliability Engineering work: agent me
 
 <div align="center">
 
-[![Watch the SuperLocalMemory product film: Claude Code and Codex sharing one memory](https://img.youtube.com/vi/pyAu_vaIYZQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=pyAu_vaIYZQ)
+[![Watch the full SuperLocalMemory demo: AI agent memory shared by Claude Code, Codex, ChatGPT and Grok Bot](https://img.youtube.com/vi/9Y0wAT07KTc/maxresdefault.jpg)](https://www.youtube.com/watch?v=9Y0wAT07KTc)
 
-*The four-minute product film: Claude Code and Codex sharing one memory.*
+*The full eight-minute demo: one memory shared by your coding agents and bots, every tab.*
 
 </div>
 
@@ -291,7 +291,7 @@ stdio: `{"command": "slm", "args": ["mcp"]}` · HTTP: `http://127.0.0.1:8765/mcp
 | **Entity Explorer** | **The answer check at work** |
 | <img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/docs/assets/gifs/entities.gif" alt="Entity Explorer: projects and tools with their facts and timeline"> | <img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/docs/screenshots/dashboard/answer-check-answered.png" alt="Answer Check: the on-device model judges that the memories answer the question, with its confidence and timing"> |
 
-Recorded on a test install with fictional memories. [The four-minute product film](https://www.youtube.com/watch?v=pyAu_vaIYZQ) walks through every pane.
+Recorded on a test install with fictional memories. [The eight-minute full demo](https://www.youtube.com/watch?v=9Y0wAT07KTc) walks through every pane.
 
 ## Architecture
 

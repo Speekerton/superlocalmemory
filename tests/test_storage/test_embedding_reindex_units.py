@@ -534,3 +534,28 @@ def test_the_store_repair_removes_an_erased_memorys_staged_vector(store):
     assert conn.execute(f"SELECT COUNT(*) FROM {sp.PURGE}").fetchone()[0] == 0
     assert stats.done.get("vectors.other_spaces") == 1
     conn.close()
+
+
+def test_rollback_never_asks_the_managed_worker_to_load_a_model_it_does_not_serve(store, monkeypatch):
+    """Issue #262 (14 Oct 2026): the previous config named provider slm-media beside
+    nomic, so the rollback asked the worker that holds EmbeddingGemma 2 to load nomic
+    too and ran out of memory. The rollback loads under the automatic provider."""
+    from superlocalmemory.storage.embedding_reindex_jobs import get_job
+
+    root, db_path = store
+    conn = sp.connect(db_path)
+    with steps.write_txn(conn, db_path):
+        sp.write_space(
+            conn, "gemma::8", {"provider": "slm-media", "model_name": "google/embeddinggemma-2",
+                               "dimension": 8},
+            "nomic::8", {"provider": "slm-media", "model_name": "nomic-ai/nomic-embed-text-v1.5",
+                         "dimension": 8})
+    conn.close()
+    seen = []
+    monkeypatch.setattr(steps, "build_embedder", lambda cfg: seen.append(cfg) or FakeEmbedder(8, "old"))
+    runner = er.ReindexRunner(db_path=db_path, data_root=root)
+    job = runner.request_rollback()
+    assert [c.provider for c in seen] == [""], seen
+    conn = sp.connect(db_path)
+    assert json.loads(get_job(conn, job["job_id"])["to_config"])["provider"] == ""
+    conn.close()

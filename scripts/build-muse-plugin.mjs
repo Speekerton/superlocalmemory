@@ -24,6 +24,7 @@
 //     "[" as JSON, fails to parse it and drops the context. `slm hook
 //     codex-start` emits the same context as hookSpecificOutput JSON, which
 //     Muse (like Codex and Claude Code) accepts.
+//   - agents: bare SLM tool names in `tools:` become mcp__superlocalmemory__<tool>.
 //   Built from plugin/ (run build-plugin.mjs first) so the hooks, scripts,
 //   agents and skill text cannot drift from the Claude Code plugin.
 
@@ -59,6 +60,21 @@ export function dropAllowedTools(md) {
   return fm[0].replace(/^allowed-tools:.*\n/m, '') + md.slice(fm[0].length);
 }
 
+/**
+ * Muse names MCP tools mcp__<server>__<tool> (dev.meta.ai/docs/muse-code); an
+ * agent's bare `recall` would match nothing. Capitalised names are host
+ * built-ins (Read, Bash) and stay as they are.
+ */
+export function qualifyAgentTools(md) {
+  const fm = md.match(/^---\n[\s\S]*?\n---\n/);
+  if (!fm) return md;
+  const head = fm[0].replace(/^tools:(.*)$/m, (_, list) => 'tools: ' + list.split(',')
+    .map((t) => t.trim()).filter(Boolean)
+    .map((t) => (/^[a-z][a-z0-9_]*$/.test(t) ? `mcp__superlocalmemory__${t}` : t))
+    .join(', '));
+  return head + md.slice(fm[0].length);
+}
+
 /** Use the SessionStart action that answers in hookSpecificOutput JSON. */
 export function jsonSessionStart(hooksJson) {
   const out = hooksJson.replace(/(\/scripts\/slm-run\\" hook) start /g, '$1 codex-start ');
@@ -77,6 +93,7 @@ function build() {
     let content = retarget(f.content);
     if (/^skills\/[^/]+\/SKILL\.md$/.test(rel)) content = dropAllowedTools(content);
     if (rel === 'hooks/hooks.json') content = jsonSessionStart(content);
+    if (/^agents\/[^/]+\.md$/.test(rel)) content = qualifyAgentTools(content);
     files.set(rel, { ...f, content });
   }
   const src = JSON.parse(readFileSync(join(SRC, '.claude-plugin', 'plugin.json'), 'utf8'));

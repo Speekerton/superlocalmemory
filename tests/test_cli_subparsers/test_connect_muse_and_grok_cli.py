@@ -74,3 +74,19 @@ def test_grok_cli_writes_a_mcp_servers_table_and_keeps_the_rest(tmp_path: Path) 
     assert data["model"] == "grok-4.7"
     assert set(data["mcp_servers"]) == {"hub", "superlocalmemory"}
     assert data["mcp_servers"]["superlocalmemory"]["args"][-1] == "mcp"
+
+
+def test_muse_server_is_optional_so_a_failed_start_never_aborts_the_run(tmp_path: Path) -> None:
+    """Muse's default mode is `required`: "If a required server fails to start,
+    the whole run aborts" (dev.meta.ai/docs/muse-code/configuration)."""
+    connect_ide("muse", home=tmp_path)
+    block = json.loads(_muse(tmp_path).read_text())["mcpServers"]["superlocalmemory"]
+    assert block["mode"] == "optional"
+
+
+def test_grok_cli_honours_grok_home() -> None:
+    """docs.x.ai/build/settings: set `$GROK_HOME` to move the home directory."""
+    home = Path("/home/someone")
+    desc = IDE_MATRIX["grok-cli"]
+    assert global_config_path(desc, home, environ={"GROK_HOME": "/g"}) == Path("/g/config.toml")
+    assert global_config_path(desc, home, environ={}) == home / ".grok" / "config.toml"

@@ -61,7 +61,8 @@ def test_no_cursor_file_contains_a_placeholder() -> None:
 def test_the_server_names_the_plugin_format_and_never_repoints_the_store() -> None:
     env = _server()["env"]
     assert env["SLM_AGENT_ID"] == "cursor_plugin"
-    assert env["SLM_MCP_PROFILE"] == "core"
+    # No forced tool set: the default (full), changed for every host by `slm tools set`.
+    assert "SLM_MCP_PROFILE" not in env
     assert env["SLM_NON_INTERACTIVE"] == "1"
     assert env["UV_TORCH_BACKEND"] == "cpu"
     assert "SLM_DATA_DIR" not in env

@@ -26,10 +26,9 @@ export const CURSOR_SERVER_ENV = Object.freeze({
   // Attribution. Grok Bot and the Cursor editor both read this manifest and
   // the definition cannot tell them apart, so it names the plugin format.
   SLM_AGENT_ID: 'cursor_plugin',
-  // The 18-tool core set: Grok Bot lists every tool to the model on a shared,
-  // memory-tight computer. The one documented exception to "a plugin never
-  // narrows the tool set" (tests/test_packaging/test_no_plugin_hijacks_your_install.py).
-  SLM_MCP_PROFILE: 'core',
+  // No SLM_MCP_PROFILE: the default tool set (full: memory, mesh, optimize),
+  // like every host; `slm tools set <name>` changes it. The memory savings a
+  // shared bot computer needs are the worker and reranker settings below.
   // Never wait on a prompt (setup_wizard.is_interactive honours it).
   SLM_NON_INTERACTIVE: '1',
   // CPU-only torch from uv: no CUDA wheel stack on a computer with no GPU.
@@ -63,19 +62,9 @@ const DESCRIPTION =
   + 'and a cache for large tool outputs.';
 
 /**
- * The 4-6 skills visible to Grok Bot / Cursor, independent of the full
- * ~12-skill set every other host gets (plugin/skills/). Chosen to match what
- * this manifest's `SLM_MCP_PROFILE=core` (18 tools) can actually do, plus the
- * two skills written specifically for a headless, hook-less bot host:
- *   - slm-getting-started-bot / slm-bot-memory: new, bot-host-specific.
- *   - slm-remember / slm-recall: the two tools every session uses.
- *   - slm-session: what session_init/close_session do (no hooks run them here).
- *   - slm-scope: the personal/shared/global model slm-bot-memory namespaces on.
- * Deliberately excluded: slm-graph/slm-mesh/slm-governance/slm-loop (their
- * tools are not in the core profile this manifest sets — listing a skill for
- * a tool that is not installed would just teach the model to call something
- * that does not exist) and slm-cache/slm-compress/slm-profile (useful, but
- * over the 4-6 budget; still shipped to every other host).
+ * Every skill every other host gets: the plugin now serves the default tool
+ * set, not the 18-tool core one, so no skill teaches a tool it lacks except
+ * slm-graph and slm-governance, which say how to turn their tools on.
  */
 export const CURSOR_SKILLS = Object.freeze([
   'slm-getting-started-bot',
@@ -84,6 +73,16 @@ export const CURSOR_SKILLS = Object.freeze([
   'slm-recall',
   'slm-session',
   'slm-scope',
+  'slm-mesh',
+  'slm-cache',
+  'slm-compress',
+  'slm-status',
+  'slm-profile',
+  'slm-loop',
+  'slm-media',
+  'slm-web-access',
+  'slm-graph',
+  'slm-governance',
 ]);
 
 const KEYWORDS = ['memory', 'long-term-memory', 'local-first', 'mcp', 'agents'];

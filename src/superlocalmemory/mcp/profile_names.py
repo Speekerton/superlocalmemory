@@ -59,3 +59,62 @@ def exit_on_unknown_profile() -> None:
     except UnknownProfileError as exc:
         print(f"slm mcp: {exc}", file=sys.stderr)
         sys.exit(2)
+
+
+# -- The saved tool set (``slm tools set``) ---------------------------------
+#
+# Plugins and extensions start ``slm mcp`` from host configs a user should not
+# have to edit. One choice saved in SLM's data folder applies to every host;
+# an explicit SLM_MCP_PROFILE in a host's config still wins.
+
+TOOL_SET_FILE = "mcp_tools.json"
+DEFAULT = "default"
+
+
+def _data_root(root=None):
+    from pathlib import Path
+
+    if root is not None:
+        return Path(root)
+    from superlocalmemory.infra.data_root import canonical_data_root
+
+    return canonical_data_root()
+
+
+def saved_tool_set(root=None) -> str:
+    """The saved canonical tool set, or "" when none (or an unreadable one) is saved.
+
+    A damaged or unknown entry reads as "" (the default), never as a wider set.
+    """
+    import json
+
+    try:
+        data = json.loads((_data_root(root) / TOOL_SET_FILE).read_text(encoding="utf-8"))
+        return canonical_profile(str(data.get("tool_set", "")))
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
+def save_tool_set(name: str, root=None) -> str:
+    """Save *name* (``default`` clears it) and return the canonical value saved."""
+    import json
+    import os
+
+    wanted = (name or "").strip().lower()
+    canonical = "" if wanted == DEFAULT else canonical_profile(wanted)
+    path = _data_root(root) / TOOL_SET_FILE
+    if not canonical:
+        path.unlink(missing_ok=True)
+        return ""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps({"tool_set": canonical}) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
+    return canonical
+
+
+def effective_profile(environ=None, root=None) -> str:
+    """SLM_MCP_PROFILE when the host sets one, else the saved choice, else ""."""
+    env = os.environ if environ is None else environ
+    explicit = (env.get("SLM_MCP_PROFILE") or "").strip().lower()
+    return explicit if explicit else saved_tool_set(root)

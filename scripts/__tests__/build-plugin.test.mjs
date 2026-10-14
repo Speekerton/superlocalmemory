@@ -14,6 +14,7 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { CURSOR_SKILLS } from '../build-cursor-plugin.mjs';
 
 // ---------------------------------------------------------------------------
 // Module path (relative to this file location: scripts/__tests__/)
@@ -52,8 +53,10 @@ function readFile(p) {
   return fs.readFileSync(p, 'utf8');
 }
 
-// The 7 new skills
-const NEW_SKILLS = [
+// The fixture skills: a few named ones plus every CURSOR_SKILLS name, since
+// cursorPlan() requires each of those to exist in the rendered skills plan
+// (fails loudly otherwise, like the missing-logo check).
+const NEW_SKILLS = [...new Set([
   'slm-cache',
   'slm-compress',
   'slm-graph',
@@ -61,13 +64,11 @@ const NEW_SKILLS = [
   'slm-remember',
   'slm-session',
   'slm-status',
-  // cursorPlan() requires every CURSOR_SKILLS name to exist in the
-  // rendered skills plan (fails loudly otherwise, like the missing-logo
-  // check) — these three are the curated-set members not already above.
-  'slm-bot-memory',
-  'slm-getting-started-bot',
-  'slm-scope',
-];
+  // A skill outside CURSOR_SKILLS, so pruneOrphans can remove one without
+  // cursorPlan() refusing the build for a missing Cursor skill.
+  'slm-prune-fixture',
+  ...CURSOR_SKILLS,
+])];
 
 // Minimal fixture manifest — DOC-CORRECT layout
 function makeManifest(overrides = {}) {
@@ -155,6 +156,9 @@ function setupFixture(tmp, overrides = {}) {
   writeFile(tmp, 'plugin-src/requirements.txt', 'superlocalmemory>=3.6.14\n');
   writeFile(tmp, 'plugin-src/rules/CLAUDE.md.fragment', '<!-- SLM -->\n');
   writeFile(tmp, 'assets/branding/slm-mark.svg', '<svg xmlns="http://www.w3.org/2000/svg"/>\n');
+  // The plugin README and licence the Claude plugin directory requires (4.2.6).
+  writeFile(tmp, 'plugin-src/docs/README.md', '# SuperLocalMemory plugin\n');
+  writeFile(tmp, 'LICENSE', 'GNU AFFERO GENERAL PUBLIC LICENSE\n');
   return manifest;
 }
 
@@ -429,21 +433,21 @@ describe('pruneOrphans', () => {
     const manifest = setupFixture(tmp);
     applyPlan(buildPlan(tmp, manifest));
 
-    // Simulate skill removed: build without slm-status
+    // Simulate skill removed: build without slm-prune-fixture
     const reducedManifest = makeManifest({
-      skills: manifest.skills.filter(s => s.name !== 'slm-status'),
+      skills: manifest.skills.filter(s => s.name !== 'slm-prune-fixture'),
     });
-    // Copy remaining skill sources (slm-status source stays — plugin-src untouched)
+    // Copy remaining skill sources (slm-prune-fixture source stays — plugin-src untouched)
     const reducedPlan = buildPlan(tmp, reducedManifest);
     const roots = deriveManagedRoots(tmp, reducedManifest);
     assert.ok(reducedPlan.size > 0, 'plan must not be empty');
 
     pruneOrphans(tmp, reducedPlan, roots);
 
-    // slm-status removed from plugin/
-    assert.ok(!fs.existsSync(path.join(tmp, 'plugin', 'skills', 'slm-status')));
+    // slm-prune-fixture removed from plugin/
+    assert.ok(!fs.existsSync(path.join(tmp, 'plugin', 'skills', 'slm-prune-fixture')));
     // plugin-src untouched
-    assert.ok(fs.existsSync(path.join(tmp, 'plugin-src', 'skills', 'slm-status', 'SKILL.md')));
+    assert.ok(fs.existsSync(path.join(tmp, 'plugin-src', 'skills', 'slm-prune-fixture', 'SKILL.md')));
   });
 
   test('pruneOrphans: escape guard never exits plugin/ root', async () => {

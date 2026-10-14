@@ -76,7 +76,7 @@ documentation:
 
 
 _NO_DAEMON_COMMANDS = {
-    "setup", "mode", "provider", "connect", "upgrade-hosts", "migrate", "mcp", "warmup", "hooks", "codex",
+    "setup", "mode", "provider", "connect", "upgrade-hosts", "migrate", "mcp", "tools", "warmup", "hooks", "codex",
     "config", "evolve", "db",
     # v3.4.22 escape hatches — never auto-start the daemon on these.
     "disable", "enable", "clear-cache", "reconfigure", "benchmark",
@@ -760,6 +760,12 @@ def main() -> None:
 
     # -- Services ------------------------------------------------------
     sub.add_parser("mcp", help="Start MCP server (stdio transport for IDE integration)")
+    tools_p = sub.add_parser(
+        "tools", help="Show or choose how many MCP tools every connected app sees")
+    tools_p.add_argument("action", nargs="?", choices=["set"], default=None)
+    tools_p.add_argument("name", nargs="?", default=None,
+                         help="core, code, full (default), power, mesh, whole, or default")
+    tools_p.add_argument("--json", action="store_true", help="Output structured JSON")
     warmup_p = sub.add_parser(
         "warmup",
         help="Load the embedding model (~500MB download the first time) and "

@@ -71,3 +71,11 @@ def test_muse_validates_the_plugin_without_errors():
     result = subprocess.run(["muse", "plugins", "validate", str(MUSE)],
                             capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL)
     assert "severity=error" not in result.stdout + result.stderr
+
+
+def test_agents_name_slm_tools_the_way_muse_does():
+    for agent in sorted(MUSE.glob("agents/*.md")):
+        head = agent.read_text(encoding="utf-8").split("\n---\n", 1)[0]
+        tools = [t.strip() for t in head.split("\ntools:", 1)[1].split("\n", 1)[0].split(",")]
+        bare = [t for t in tools if t and t[0].islower() and not t.startswith("mcp__")]
+        assert bare == [], (agent.name, bare)

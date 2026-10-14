@@ -262,7 +262,10 @@ from superlocalmemory.mcp.profiles import (  # noqa: E402 (after env setups abov
     _MEDIA_TOOLS,
 )
 
-_profile = _os_reg.environ.get("SLM_MCP_PROFILE", "").strip().lower()
+# SLM_MCP_PROFILE from the host's config, else the set saved by `slm tools set`.
+from superlocalmemory.mcp.profile_names import effective_profile as _effective_profile  # noqa: E402
+
+_profile = _effective_profile()
 
 
 def _resolve_profile_allowed(

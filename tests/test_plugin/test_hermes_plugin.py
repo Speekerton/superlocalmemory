@@ -66,7 +66,7 @@ def test_plugin_registers_all_skills_agents_and_lifecycle_hooks() -> None:
 def test_all_cli_commands_have_router_and_generated_slash_aliases() -> None:
     inventory = json.loads((PLUGIN / "command-inventory.json").read_text(encoding="utf-8"))
     commands = inventory["primary_commands"]
-    assert len(commands) == 74  # includes outcome reporting and Memory health (enrich)
+    assert len(commands) == 75  # includes outcome reporting, Memory health (enrich) and `slm tools`
     assert len(set(commands)) == len(commands)
     runtime = _runtime()
     assert 'ctx.register_command("slm", plugin.slash_router' in runtime

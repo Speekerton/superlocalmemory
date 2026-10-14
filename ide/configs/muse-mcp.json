@@ -9,7 +9,8 @@
       ],
       "env": {
         "SLM_AGENT_ID": "muse"
-      }
+      },
+      "mode": "optional"
     }
   }
 }

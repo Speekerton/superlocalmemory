@@ -87,6 +87,8 @@ def global_config_path(desc: "IDEDescriptor", home: Path, *, platform: str | Non
     env = os.environ if environ is None else environ
     if desc.ide_id == "muse" and env.get("XDG_CONFIG_HOME"):
         return Path(env["XDG_CONFIG_HOME"]) / "muse" / "settings.json"
+    if desc.ide_id == "grok-cli" and env.get("GROK_HOME"):
+        return Path(env["GROK_HOME"]) / "config.toml"
     if desc.ide_id != "claude-desktop":
         return home / desc.mcp_path_global
     platform = sys.platform if platform is None else platform
@@ -227,11 +229,14 @@ IDE_MATRIX: dict[str, IDEDescriptor] = {
         server_key="mcpServers",
         fmt="json",
         agents_md_path=None,
-        server_block={"type": "stdio", "command": "slm", "args": ["mcp"]},
+        # mode optional: Muse's default `required` aborts the whole run when
+        # the server cannot start (dev.meta.ai/docs/muse-code/configuration).
+        server_block={"type": "stdio", "command": "slm", "args": ["mcp"], "mode": "optional"},
         caveats="legacy mcp_servers key is renamed; both keys drop every server",
     ),
     # --- TOML IDEs ---
-    # Grok CLI 1.0.50: [mcp_servers.<name>] with command, args, env.
+    # Grok CLI 1.0.50 (docs.x.ai/build/features/mcp-servers): [mcp_servers.<name>]
+    # with command, args, env; $GROK_HOME moves the folder (docs.x.ai/build/settings).
     "grok-cli": IDEDescriptor(
         ide_id="grok-cli",
         display="Grok CLI",

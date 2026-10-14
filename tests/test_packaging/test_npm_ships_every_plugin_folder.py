@@ -30,7 +30,6 @@ PLUGIN_FOLDERS = (
     "hermes-plugin/",
     "antigravity-plugin/",
     "muse-plugin/",
-    "vscode-agent-plugin/",
 )
 
 
@@ -38,3 +37,10 @@ PLUGIN_FOLDERS = (
 def test_npm_files_lists_the_plugin_folder(folder):
     assert (REPO / folder).is_dir(), f"{folder} is missing from the repository"
     assert folder in FILES, f"package.json files does not ship {folder}"
+
+
+def test_the_vscode_agent_plugin_is_installed_from_github_not_npm():
+    """VS Code adds it from the repository (.github/plugin/marketplace.json);
+    leaving it out keeps the npm package under its 300-file budget."""
+    assert "vscode-agent-plugin/" not in FILES
+    assert (REPO / ".github" / "plugin" / "marketplace.json").is_file()

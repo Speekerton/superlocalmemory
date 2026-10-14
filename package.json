@@ -104,7 +104,6 @@
     "hermes-plugin/",
     "antigravity-plugin/",
     "muse-plugin/",
-    "vscode-agent-plugin/",
     "docs/pi-dev-integration.md",
     "README.md",
     "LICENSE",

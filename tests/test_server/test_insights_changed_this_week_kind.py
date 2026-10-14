@@ -18,8 +18,13 @@ kind_fields()``, "THE serializer every surface uses") already shows.
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime, timedelta, timezone
 
 from superlocalmemory.server.routes.insights import _action_changed_this_week
+
+# A day ago, not a fixed date: a fixed date fell outside the 7-day window a
+# week after it was written (14 Oct 2026).
+RECENT = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _conn_with_schema(tmp_path, *, with_kind_columns: bool) -> sqlite3.Connection:
@@ -62,7 +67,7 @@ class TestChangedThisWeekShowsMemoryKind:
         _insert(
             conn,
             fact_id="f1", profile_id="default", content="We ship Tuesdays.",
-            fact_type="episodic", created_at="2026-10-06T00:00:00Z",
+            fact_type="episodic", created_at=RECENT,
             session_id="s1", confidence=0.9,
             memory_kind="decision", memory_kind_source="user",
             memory_kind_confidence=None,
@@ -90,7 +95,7 @@ class TestChangedThisWeekShowsMemoryKind:
         _insert(
             conn,
             fact_id="f2", profile_id="default", content="Met Bob for coffee.",
-            fact_type="episodic", created_at="2026-10-06T00:00:00Z",
+            fact_type="episodic", created_at=RECENT,
             session_id="s1", confidence=0.5,
             memory_kind=None, memory_kind_source=None, memory_kind_confidence=None,
         )
@@ -112,7 +117,7 @@ class TestChangedThisWeekShowsMemoryKind:
         _insert(
             conn,
             fact_id="f3", profile_id="default", content="Old store fact.",
-            fact_type="semantic", created_at="2026-10-06T00:00:00Z",
+            fact_type="semantic", created_at=RECENT,
             session_id="s1", confidence=0.7,
         )
         try:

@@ -47,3 +47,8 @@ test('the pinned interpreter form written by `slm connect` counts under any name
   } } });
   assert.strictEqual(slmAlreadyConfigured([pinned]), true);
 });
+
+test('a Copilot CLI mcp-config.json written by `slm connect copilot-cli` counts', () => {
+  const p = file({ mcpServers: { superlocalmemory: { type: 'local', command: 'slm', args: ['mcp'], tools: ['*'] } } });
+  assert.strictEqual(slmAlreadyConfigured([p]), true);
+});

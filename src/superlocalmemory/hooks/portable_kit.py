@@ -89,6 +89,8 @@ def global_config_path(desc: "IDEDescriptor", home: Path, *, platform: str | Non
         return Path(env["XDG_CONFIG_HOME"]) / "muse" / "settings.json"
     if desc.ide_id == "grok-cli" and env.get("GROK_HOME"):
         return Path(env["GROK_HOME"]) / "config.toml"
+    if desc.ide_id == "copilot-cli" and env.get("COPILOT_HOME"):
+        return Path(env["COPILOT_HOME"]) / "mcp-config.json"
     if desc.ide_id != "claude-desktop":
         return home / desc.mcp_path_global
     platform = sys.platform if platform is None else platform
@@ -233,6 +235,20 @@ IDE_MATRIX: dict[str, IDEDescriptor] = {
         # the server cannot start (dev.meta.ai/docs/muse-code/configuration).
         server_block={"type": "stdio", "command": "slm", "args": ["mcp"], "mode": "optional"},
         caveats="legacy mcp_servers key is renamed; both keys drop every server",
+    ),
+    # GitHub Copilot CLI, and VS Code's Agents window (its Agent Host reads this
+    # file natively; extension-provided servers do not reach it). GitHub docs,
+    # "Adding MCP servers for GitHub Copilot CLI": type local, tools ["*"].
+    "copilot-cli": IDEDescriptor(
+        ide_id="copilot-cli",
+        display="GitHub Copilot CLI / VS Code Agents window",
+        mcp_path_global=".copilot/mcp-config.json",
+        mcp_path_project=None,
+        server_key="mcpServers",
+        fmt="json",
+        agents_md_path=None,
+        server_block={"type": "local", "command": "slm", "args": ["mcp"], "tools": ["*"]},
+        caveats="COPILOT_HOME moves the folder",
     ),
     # --- TOML IDEs ---
     # Grok CLI 1.0.50 (docs.x.ai/build/features/mcp-servers): [mcp_servers.<name>]

@@ -81,6 +81,12 @@ function mcpJsonFiles(context: vscode.ExtensionContext): string[] {
     ...roots.map((r) => path.join(r, '.vscode', 'mcp.json')),
     path.join(path.dirname(path.dirname(context.globalStorageUri.fsPath)), 'mcp.json'),
   ];
+  if (!app.includes('antigravity')) {
+    // VS Code's chat also discovers GitHub Copilot CLI's servers, and
+    // `slm connect copilot-cli` writes SLM there for the Agents window.
+    const copilotHome = process.env.COPILOT_HOME ?? path.join(home, '.copilot');
+    files.push(path.join(copilotHome, 'mcp-config.json'));
+  }
   if (app.includes('antigravity')) {
     files.push(
       ...roots.map((r) => path.join(r, '.agents', 'mcp_config.json')),

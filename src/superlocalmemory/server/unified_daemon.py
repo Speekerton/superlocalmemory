@@ -7175,6 +7175,9 @@ def start_server(port: int = _DEFAULT_PORT) -> None:
     """Start the unified daemon. Blocks until stopped."""
     global _start_time
     install_thread_dump_signal()
+    from superlocalmemory.server.open_files import raise_open_file_limit
+
+    raise_open_file_limit()
     assert_no_durable_root_conflict()
     # The lock decides who the daemon is: nothing below (socket, logs, record)
     # runs in a process that does not own this data folder. A restart overlaps

@@ -41,6 +41,9 @@ No migration. Nothing is moved or deleted.
   the database and return an error. Mesh writes now retry longer, and a busy
   moment answers "retry shortly" (503) instead of an error trace. No message
   was ever affected.
+- The daemon raises its open-file limit at start (macOS gives a launchd
+  service only 256). Under load the vector store ran out and a new memory's
+  vector copy waited for a restart; it was always findable by keyword.
 - Tool counts in the docs: `full` is 58 tools, 5 more while images are on.
 - `docs/RELEASE-CHECKLIST.md` lists every registry a release goes to.
 

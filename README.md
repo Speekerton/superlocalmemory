@@ -75,7 +75,7 @@ slm connect claude-code
 slm media enable                  # optional: pictures and documents (about 1.5 GB; needs 16 GB of memory)
 ```
 
-**uv**: `uv tool install --python 3.12 superlocalmemory` installs `slm` as an isolated tool, with nothing to activate; see [Linux install](docs/install-linux.md#isolated-slm-command-with-uv).
+**uv**: `uv tool install --python 3.12 superlocalmemory` installs `slm` as an isolated tool, with nothing to activate; see [Linux install](https://github.com/qualixar/superlocalmemory/blob/main/docs/install-linux.md#isolated-slm-command-with-uv).
 
 **Claude Code plugin:** `claude plugin marketplace add qualixar/superlocalmemory`, then `claude plugin install superlocalmemory@qualixar`. **Codex:** `slm connect codex`, then `slm codex install`.
 

@@ -52,8 +52,13 @@ _T = TypeVar("_T")
 # Retry budget for a transient writer collision. 250ms was too thin under
 # multi-agent load; 2000ms matches the RBAC store. 4 attempts keeps the total
 # worst-case budget bounded (~2s x backoff) rather than unbounded stalls.
-_WRITE_RETRY_ATTEMPTS = 4
-_WRITE_RETRY_BASE_SECONDS = 0.025
+# 4.2.7: 6 attempts with a longer back-off (~1.5 s of pauses) instead of 4
+# (~0.2 s). Under heavy load (a full test suite, a backfill) heartbeats and
+# registrations lost the race for memory.db 382 times on 13-14 Oct while
+# memory saves queued through the single writer; 4.2.8 moves mesh writes
+# off that race entirely (.backup/4.2.8/BACKLOG-4.2.8.md).
+_WRITE_RETRY_ATTEMPTS = 6
+_WRITE_RETRY_BASE_SECONDS = 0.05
 _WRITE_BUSY_TIMEOUT_MS = 2000
 
 

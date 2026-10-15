@@ -37,6 +37,10 @@ No migration. Nothing is moved or deleted.
 - A one-time GitHub star request after `slm setup` and your first successful
   recall in a terminal, a link in `slm help` and the dashboard, and a one-time
   note in the VS Code extension. Never in tool output, hooks or `--json`.
+- Mesh: under heavy load a heartbeat or registration could lose the race for
+  the database and return an error. Mesh writes now retry longer, and a busy
+  moment answers "retry shortly" (503) instead of an error trace. No message
+  was ever affected.
 - Tool counts in the docs: `full` is 58 tools, 5 more while images are on.
 - `docs/RELEASE-CHECKLIST.md` lists every registry a release goes to.
 

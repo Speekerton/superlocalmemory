@@ -48,7 +48,7 @@ the same major version, so upgrading SLM does not stop `/slm` commands. To move
 a pinned plugin to a new release, reinstall it at that release's commit:
 
 ```bash
-SHA=$(git ls-remote https://github.com/qualixar/superlocalmemory.git refs/tags/v4.2.1^{} | cut -f1)
+SHA=$(git ls-remote https://github.com/qualixar/superlocalmemory.git refs/tags/v4.2.7^{} | cut -f1)
 hermes plugins install 'https://github.com/qualixar/superlocalmemory.git#hermes-plugin' --force --ref "$SHA"
 ```
 

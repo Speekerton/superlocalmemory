@@ -5,6 +5,41 @@ All notable changes to SuperLocalMemory will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.7] — An agent's "I" stays the agent's, and a damaged keyword index no longer stops an upgrade
+
+No migration. Nothing is moved or deleted.
+
+### Memory
+
+- **An agent's own first person was saved as the user's (#265).** Every save
+  through the tool interface was extracted as if the user had said it, so an
+  agent writing "I prefer short answers" produced the fact "the user prefers
+  short answers". A save from an agent now speaks as that agent. The stored
+  text never changed; only the derived facts were wrong.
+  - `remember`, `slm remember --speaker` and `POST /remember` take an optional
+    `speaker`: a name, or `user` when an agent saves the user's own words.
+  - `slm repair-speaker` lists memories whose facts were affected (dry run) and,
+    with `--yes`, re-derives them. Each repair can be undone with
+    `slm review-correction`.
+  - Saves from the command line, hooks and the dashboard are unchanged.
+
+### Upgrades
+
+- **A damaged keyword index stopped the daemon from starting (#204).** The
+  safety copy taken before a migration reproduced the damage, failed its
+  integrity check, and the upgrade stopped there. When the keyword index is the
+  only damage, the copy is now taken with that index rebuilt from the stored
+  facts, and the log says to run `slm db repair --apply` for the store itself.
+  Any other damage still stops the migration.
+
+### Everything else
+
+- A one-time GitHub star request after `slm setup` and your first successful
+  recall in a terminal, a link in `slm help` and the dashboard, and a one-time
+  note in the VS Code extension. Never in tool output, hooks or `--json`.
+- Tool counts in the docs: `full` is 58 tools, 5 more while images are on.
+- `docs/RELEASE-CHECKLIST.md` lists every registry a release goes to.
+
 ## [4.2.6] — The Hermes plugin works on a default install, and every host package meets its directory's rules
 
 No migration. Nothing is moved or deleted.

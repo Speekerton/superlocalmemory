@@ -99,7 +99,7 @@ _ensure_daemon() {
 # No installed slm and no plugin venv: run this release through uvx. Returns
 # only when it cannot (no uvx); otherwise it becomes the server. The version is
 # written in literally at build time (scripts/build-plugin.mjs replaces
-# 4.2.6): Anthropic's plugin directory refuses a uvx launch whose pin
+# 4.2.7): Anthropic's plugin directory refuses a uvx launch whose pin
 # it cannot read, and a pin computed at run time is one it cannot read.
 _slm_run_uvx() {
     command -v uvx >/dev/null 2>&1 || return 1
@@ -108,12 +108,12 @@ _slm_run_uvx() {
         export UV_TORCH_BACKEND="${UV_TORCH_BACKEND:-cpu}"
     fi
     export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
-    echo "SLM plugin: no installed slm; running superlocalmemory==4.2.6 through uvx (downloaded once, then cached)." >&2
+    echo "SLM plugin: no installed slm; running superlocalmemory==4.2.7 through uvx (downloaded once, then cached)." >&2
     if [ "${_daemon_running}" -ne 1 ]; then
-        uvx --from "superlocalmemory==4.2.6" slm serve start >&2 || \
+        uvx --from "superlocalmemory==4.2.7" slm serve start >&2 || \
             echo "SLM plugin: daemon did not start; the MCP server will retry on first use." >&2
     fi
-    exec uvx --from "superlocalmemory==4.2.6" slm mcp
+    exec uvx --from "superlocalmemory==4.2.7" slm mcp
 }
 
 # Opt-in: build the plugin venv now, with the same bootstrap SessionStart runs.

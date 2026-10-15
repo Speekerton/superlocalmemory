@@ -306,7 +306,7 @@ Engineering controls that support a compliance program, not a certification.
 
 ## MCP memory server: tool profiles
 
-Every app, plugin and extension gets `full` (58 tools: all of memory, SLM-Mesh, optimize, loops) unless you choose otherwise. That fits hosts that cap the total number of MCP tools at about 100, with room for your other servers. To change it for every app at once, run one command and restart your apps:
+Every app, plugin and extension gets `full` (58 tools: all of memory, SLM-Mesh, optimize, loops; 5 more while images are on) unless you choose otherwise. That fits hosts that cap the total number of MCP tools at about 100, with room for your other servers. To change it for every app at once, run one command and restart your apps:
 
 ```bash
 slm tools                # current set, and how many tools each set has

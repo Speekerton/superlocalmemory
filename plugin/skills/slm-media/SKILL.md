@@ -337,4 +337,4 @@ minutes (previous vectors are kept) and let them decide.
 
 ---
 
-*SuperLocalMemory v4.2.6 · Qualixar · AGPL-3.0-or-later*
+*SuperLocalMemory v4.2.7 · Qualixar · AGPL-3.0-or-later*

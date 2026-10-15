@@ -648,6 +648,11 @@ def _cmd_upgrade_hosts(args: Namespace) -> None:
     cmd_upgrade_hosts(args)
 
 
+def _cmd_repair_speaker(args: Namespace) -> None:
+    from superlocalmemory.cli.repair_speaker_cmd import cmd_repair_speaker
+    cmd_repair_speaker(args)
+
+
 def dispatch(args: Namespace) -> None:
     """Route CLI command to the appropriate handler."""
     handlers = {
@@ -670,6 +675,7 @@ def dispatch(args: Namespace) -> None:
         "brain": cmd_brain,
         "health": cmd_health,
         "doctor": cmd_doctor,
+        "repair-speaker": _cmd_repair_speaker,
         "trace": cmd_trace,
         "mcp": cmd_mcp,
         "tools": _cmd_tools,
@@ -2968,6 +2974,7 @@ _COMMAND_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
         ("list", "Show recent memories (-n N)"),
         ("update", "Propose an immutable correction by id"),
         ("review-correction", "Apply, reject, or roll back a correction case"),
+        ("repair-speaker", "Re-derive facts where an agent's \"I\" was saved as the user"),
         ("delete", "Delete a memory by id"),
         ("forget", "Run the decay cycle (preview first)"),
         ("trace", "Recall with a per-channel score breakdown"),

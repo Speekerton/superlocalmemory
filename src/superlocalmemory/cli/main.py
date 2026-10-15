@@ -730,6 +730,13 @@ def main() -> None:
         help="Apply --refile-hidden instead of only showing what it would do",
     )
 
+    repair_speaker_p = sub.add_parser(
+        "repair-speaker",
+        help="Re-derive facts where an agent's own \"I\" was saved as the user (dry run; --yes applies)",
+    )
+    repair_speaker_p.add_argument("--yes", action="store_true", help="Apply the repair")
+    repair_speaker_p.add_argument("--json", action="store_true", help="JSON output")
+
     # v3.8.2 super-help — grouped overview of every command + focused topics.
     help_p = sub.add_parser(
         "help",

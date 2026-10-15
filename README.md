@@ -75,6 +75,8 @@ slm connect claude-code
 slm media enable                  # optional: pictures and documents (about 1.5 GB; needs 16 GB of memory)
 ```
 
+**uv**: `uv tool install --python 3.12 superlocalmemory` installs `slm` as an isolated tool, with nothing to activate; see [Linux install](docs/install-linux.md#isolated-slm-command-with-uv).
+
 **Claude Code plugin:** `claude plugin marketplace add qualixar/superlocalmemory`, then `claude plugin install superlocalmemory@qualixar`. **Codex:** `slm connect codex`, then `slm codex install`.
 
 **Two models, one memory.** Text is searched with a small local text model (nomic). If you turn on pictures and documents, a second local model (Google's EmbeddingGemma 2) reads them, and one recall returns both. The picture model unloads after 30 minutes without use, so it holds no memory while you only work with text. Details: [pictures and documents](https://github.com/qualixar/superlocalmemory/blob/main/docs/pictures-and-documents.md), [getting started](https://github.com/qualixar/superlocalmemory/blob/main/docs/getting-started.md), [agent setup steps](https://github.com/qualixar/superlocalmemory/blob/main/SETUP_FOR_AGENTS.md).
@@ -390,7 +392,7 @@ Cite with [CITATION.cff](https://github.com/qualixar/superlocalmemory/blob/main/
 ## Upgrade
 
 ```bash
-npm update -g superlocalmemory    # or: pipx upgrade superlocalmemory
+npm update -g superlocalmemory    # or: pipx upgrade superlocalmemory, uv tool upgrade superlocalmemory
 slm restart && slm doctor
 slm upgrade-hosts                 # preview plugin and IDE updates; nothing changes until you --apply
 ```

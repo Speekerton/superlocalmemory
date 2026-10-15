@@ -20,9 +20,9 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](https://github.com/qualixar/superlocalmemory/blob/main/LICENSE)
 [![Research: 4 arXiv papers](https://img.shields.io/badge/arXiv-4_papers-b31b1b)](#research)
 
-If SuperLocalMemory saves your agents from guessing, a [⭐ on GitHub](https://github.com/qualixar/superlocalmemory) helps other developers find it.
-
 **[Install](#install)** · **[See it work](#30-second-example)** · **[Full demo](https://www.youtube.com/watch?v=9Y0wAT07KTc)** · **[Every capability](#everything-slm-does)** · **[Docs](#documentation)** · **[Website](https://www.superlocalmemory.com)**
+
+**⭐ If SuperLocalMemory keeps your agents from guessing, [star the repo](https://github.com/qualixar/superlocalmemory/stargazers). It helps other developers find it.**
 
 <img src="https://raw.githubusercontent.com/qualixar/superlocalmemory/main/docs/assets/gifs/recall-tiers.gif" alt="Recall in the dashboard: a real question gets its answer; a gibberish question gets 'That isn't in SuperLocalMemory.'; a real question memory cannot answer exactly gets the closest memories, labelled" width="820">
 
@@ -412,7 +412,7 @@ Python 3.12+, Node 18+ for npm. Pictures and documents need 16 GB of memory.
 
 ## Star history
 
-[![Star History Chart](https://api.star-history.com/svg?repos=qualixar/superlocalmemory&type=Date)](https://star-history.com/#qualixar/superlocalmemory&Date)
+<a href="https://star-history.com/#qualixar/superlocalmemory&Date"><img src="https://api.star-history.com/svg?repos=qualixar/superlocalmemory&type=Date" alt="SuperLocalMemory GitHub star history" width="600"></a>
 
 ## Contributing and license
 

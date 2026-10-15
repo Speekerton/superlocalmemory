@@ -505,6 +505,10 @@ def main() -> None:
     remember_p.add_argument("content", help="Content to remember")
     remember_p.add_argument("--tags", default="", help="Comma-separated tags")
     remember_p.add_argument(
+        "--speaker", default="",
+        help='Who "I" means in the text (default: you). E.g. --speaker Ava for an agent\'s words',
+    )
+    remember_p.add_argument(
         "--kind", default="",
         help="What sort of memory this is: rule, decision, status, procedure, "
              "prospective (plan/to-do), opinion, correction, episodic or semantic. "

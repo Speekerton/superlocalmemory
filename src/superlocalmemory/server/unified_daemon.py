@@ -716,6 +716,9 @@ def _cleanup_process_descriptor(descriptor: DaemonDescriptor | None) -> None:
 class RememberRequest(BaseModel):
     content: str
     tags: str = ""
+    #: Who "I" is in this memory (#265). Empty: the calling agent for a tool
+    #: call, the user otherwise. "user" names the human explicitly.
+    speaker: str = ""
     metadata: dict | None = None  # v3.4.26: pass-through from MCP pool_store
     idempotency_key: str | None = None
     session_id: str = ""
@@ -5515,6 +5518,9 @@ def _register_daemon_routes(application: FastAPI) -> None:
             from superlocalmemory.core.agent_attribution import bind as _bind_agent
 
             meta = _bind_agent(meta, _trusted_connection_agent(request, trusted_actor_id))
+            from superlocalmemory.core.agent_attribution import write_speaker
+
+            _write_speaker = write_speaker(req.speaker, meta)
             if "project" in meta:
                 # #150: one rule for what a project is (core.project_identity);
                 # a value that names none ("/", "  ") is not saved as one.
@@ -5649,6 +5655,8 @@ def _register_daemon_routes(application: FastAPI) -> None:
                 trusted_actor_id=trusted_actor_id,
                 session_id=req.session_id,
                 session_date=req.session_date,
+                speaker=_write_speaker[0],
+                role=_write_speaker[1],
                 # Journaled with the save: if the writer is busy and the save
                 # is accepted (202), the replacement is applied when the
                 # background commit lands rather than silently dropped.

@@ -187,6 +187,7 @@ def register_core_tools(server, get_engine: Callable) -> None:
         profile_id: str = "",
         kind: str = "",
         replaces: str | None = None,
+        speaker: str = "",
     ) -> dict:
         """Store content to memory with intelligent indexing.
 
@@ -228,6 +229,11 @@ def register_core_tools(server, get_engine: Callable) -> None:
         nothing was; the memory itself is saved either way. An unknown id, or
         another profile's memory, is refused before anything is saved. Undo
         with ``review_correction(case_id, "rollback", version)``.
+
+        ``speaker`` says who "I" and "my" mean in ``content``. Leave it empty
+        and they mean you, the calling agent. Pass ``"user"`` when you are
+        saving the user's own words verbatim ("I prefer dark mode"), or a name
+        when you are recording what someone else said.
         """
         # v3.6.10: resolve "mcp_client" sentinel → URL path (HTTP) or env var (stdio)
         if agent_id == "mcp_client":
@@ -338,6 +344,8 @@ def register_core_tools(server, get_engine: Callable) -> None:
                         "session_date": session_date,
                         "idempotency_key": effective_idempotency_key or None,
                     }
+                    if (speaker or "").strip():
+                        body["speaker"] = speaker.strip()
                     if (profile_id or "").strip():
                         # Per-request profile routing (spec section 3/5): the
                         # anchor is only put on the wire when the caller set
@@ -485,6 +493,8 @@ def register_core_tools(server, get_engine: Callable) -> None:
                 # DaemonPoolProxy.store lifts this out of the metadata into
                 # the request's own ``replaces`` field.
                 worker_meta["replaces"] = replaces_id
+            if (speaker or "").strip():
+                worker_meta["speaker"] = speaker.strip()
 
             def _store_via_daemon_pool():
                 pool = choose_pool()

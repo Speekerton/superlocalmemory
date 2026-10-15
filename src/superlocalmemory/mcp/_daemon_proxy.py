@@ -289,6 +289,7 @@ class DaemonPoolProxy:
         scope = meta.pop("scope", None)
         shared_with = meta.pop("shared_with", None)
         session_date = meta.pop("session_date", "")
+        speaker = str(meta.pop("speaker", "") or "")
         tags = meta.get("tags", "")
         if isinstance(tags, (list, tuple, set)):
             tags = ",".join(str(tag) for tag in tags)
@@ -309,6 +310,8 @@ class DaemonPoolProxy:
                  "preserve_unprocessable": True}
         if replaces is not None:
             body["replaces"] = replaces
+        if speaker.strip():
+            body["speaker"] = speaker.strip()
         from superlocalmemory.mcp._remember_kind import with_declared_kind
 
         body, flags = with_declared_kind(body, flags, (kind or "").strip())

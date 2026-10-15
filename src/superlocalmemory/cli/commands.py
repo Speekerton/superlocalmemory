@@ -1946,6 +1946,8 @@ def cmd_remember(args: Namespace) -> None:
         extra = {"preserve_unprocessable": True, "preserve_server_error": sync_mode}
         if replaces is not None:
             body["replaces"] = replaces
+        if (getattr(args, "speaker", "") or "").strip():
+            body["speaker"] = args.speaker.strip()
         body["idempotency_key"] = _cli_remember_idempotency_key(body)
         try:
             result = daemon_request("POST", path, body,
@@ -2235,6 +2237,8 @@ def cmd_recall(args: Namespace) -> None:
                 for note in filter(None, (incomplete, project_line(result), fidelity_line(result),
                                           _answer_check_line(result))):
                     print(f"\n{note}")
+                from superlocalmemory.cli.star_prompt import maybe_print_first_recall_ask
+                maybe_print_first_recall_ask(args, len(result["results"]))
                 return
     except Exception as _exc:  # noqa: BLE001
         logger.warning(
@@ -3140,6 +3144,8 @@ def cmd_help(args: Namespace) -> None:
     print("Topics:              slm help modes | slm help config | "
           "slm help self-heal")
     print("Docs:                https://superlocalmemory.com")
+    from superlocalmemory.cli.star_prompt import print_help_footer
+    print_help_footer()
 
 
 def _migration_error_logs() -> list:

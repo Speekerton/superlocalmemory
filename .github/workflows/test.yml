@@ -260,7 +260,7 @@ jobs:
             echo "Windows proof attempt ${attempt}/5"
             python -m pytest -q -o "addopts=" -o faulthandler_timeout=20 \
               tests/test_adapters/test_antigravity_adapter.py::test_content_hash_skip \
-              tests/storage/test_admission_journal_concurrency.py::test_prepare_deadline_bounds_process_lock_wait \
+              tests/storage/test_admission_journal_concurrency.py::test_deadline_refusal_is_never_written_later \
               tests/stress/test_386_canonical_legacy_multiprocess_contention.py::test_386_canonical_remember_survives_legacy_multiprocess_contention \
               "tests/test_core/test_embedding_fallback.py::TestEmbeddingServiceTimeout"
           done
@@ -273,7 +273,11 @@ jobs:
         run: |
           python -m pytest -q -o "addopts=" -o faulthandler_timeout=60 -rs \
             tests/test_plugin/test_windows_mcp_starts_installed_slm.py \
-            tests/server/test_remote_secrets_owner_only.py
+            tests/server/test_remote_secrets_owner_only.py \
+            tests/test_mesh/test_mesh_store.py \
+            tests/test_mesh/test_mesh_store_hardening.py \
+            tests/test_mesh/test_mesh_store_fsync.py \
+            tests/test_cli/test_doctor_reports_mesh_db.py
 
   native-lancedb:
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.focused_windows }}

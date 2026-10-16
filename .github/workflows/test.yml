@@ -37,6 +37,44 @@ jobs:
       - run: pip install "import-linter==2.15"
       - name: Import contracts
         run: PYTHONPATH=src lint-imports
+  # The plugin folders (plugin/, cursor-plugin/, codex-plugin/, copilot-plugin/,
+  # antigravity-plugin/, hermes-plugin/, muse-plugin/, vscode-agent-plugin/ ...)
+  # are generated from plugin-src/ but tracked, because hosts install them
+  # straight from git. A source change without a rebuild once shipped stale
+  # launcher copies; rebuilding here and requiring a clean tree stops that.
+  plugin-drift:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.focused_windows }}
+    name: Generated plugins match their sources
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.2.0
+        with:
+          node-version: "22"
+      - name: Rebuild every plugin
+        run: node scripts/build-all-plugins.mjs
+      - name: Fail on any difference from the committed copies
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Only the generated plugin trees: the build does not own docs/ assets,
+          # and binary files there (demo GIFs) differ on every checkout.
+          paths=(plugin codex-plugin copilot-plugin cursor-plugin antigravity-plugin
+                 muse-plugin hermes-plugin vscode-agent-plugin
+                 .claude-plugin .cursor-plugin .github/plugin)
+          if ! git diff --exit-code --stat -- "${paths[@]}"; then
+            echo "::error::Generated plugin files are out of date. Run 'node scripts/build-all-plugins.mjs' and commit the result."
+            git diff -- "${paths[@]}" | head -n 200
+            exit 1
+          fi
+          untracked="$(git status --porcelain --untracked-files=all -- "${paths[@]}")"
+          if [ -n "$untracked" ]; then
+            echo "::error::The plugin build created files that are not committed:"
+            echo "$untracked"
+            exit 1
+          fi
+
   security:
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.focused_windows }}
     name: Dependency and static security gates
@@ -112,7 +150,7 @@ jobs:
         run: pip install portalocker
 
       - name: Install test dependencies
-        run: pip install pytest pytest-asyncio sqlite-vec pytest-reportlog==1.0.0
+        run: pip install pytest pytest-asyncio sqlite-vec pytest-reportlog==1.0.0 "pytest-xdist>=3.6"
 
       # The report log is written one test at a time, so a run that is
       # cancelled or times out still names every test that ran and failed.
@@ -126,7 +164,10 @@ jobs:
         env:
           SHARD: ${{ matrix.os == 'windows-latest' && format('{0}/6', matrix.shard) || '1/1' }}
         run: |
-          python -m pytest tests/ -q --tb=short -o faulthandler_timeout=300 \
+          # -n 4: the suite ran on one core and Linux/macOS hit the 75-minute
+          # step limit on every run (76-78 min, "failure"); the release gate
+          # already runs -n 4.
+          python -m pytest tests/ -q --tb=short -o faulthandler_timeout=300 -n 4 \
             -p tests._shard_plugin --shard "$SHARD" \
             -p tests._hard_timeout_plugin --hard-timeout 900 \
             --hard-timeout-session 4200 --hard-timeout-report hung-test.txt \

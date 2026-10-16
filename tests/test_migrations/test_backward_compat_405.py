@@ -170,7 +170,12 @@ import pytest
 #: schema change, sets an existing flag column), downgrade floor 51.
 #: 63 as of 4.2.4: +M063_blank_temporal_dates_are_null (deferred, memory.db;
 #: data only), downgrade floor 51.
-_EXPECTED_SCHEMA_VERSION: int = 63
+#: 64 as of 4.2.8: +M064_orphan_index_rows_are_removed (deferred, memory.db;
+#: data only), downgrade floor 51.
+#: 66 as of 4.2.8: +M065_fabricated_dates_are_removed and
+#: +M066_wrongly_archived_memories_are_restored (deferred, memory.db; data plus
+#: the data_repair_undo table), downgrade floor 51.
+_EXPECTED_SCHEMA_VERSION: int = 66
 
 #: Total migrations in the MIGRATIONS + DEFERRED_MIGRATIONS catalogue.
 #: M001–M043 with M008 absent = 42 total.
@@ -196,7 +201,10 @@ _EXPECTED_SCHEMA_VERSION: int = 63
 # (both deferred, memory.db, additive).
 # 61 as of 4.2.2: +M062_hook_bookkeeping_is_flagged (deferred, memory.db).
 # 62 as of 4.2.4: +M063_blank_temporal_dates_are_null (deferred, memory.db).
-_EXPECTED_MIGRATION_COUNT: int = 62
+# 63 as of 4.2.8: +M064_orphan_index_rows_are_removed (deferred, memory.db).
+# 65 as of 4.2.8: +M065_fabricated_dates_are_removed,
+#                 +M066_wrongly_archived_memories_are_restored (deferred, memory.db).
+_EXPECTED_MIGRATION_COUNT: int = 65
 
 #: Path to an installed reference package's migrations directory, if one exists.
 #:

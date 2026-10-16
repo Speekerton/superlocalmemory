@@ -82,6 +82,8 @@ def _memory_not_found(command: str, fact_id: str, use_json: bool) -> None:
     """
     message = f"No memory with id {fact_id}"
     hint = "Run `slm list` to see memory ids."
+    if command == "delete":
+        hint += " A memory in another profile needs `--profile <name>`."
     if use_json:
         from superlocalmemory.cli.json_output import json_print
 
@@ -2425,15 +2427,19 @@ def cmd_delete(args: Namespace) -> None:
 
     use_json = getattr(args, 'json', False)
     fact_id = args.fact_id.strip()
+    # A memory in another profile is named, not reached by switching: the
+    # daemon routes both requests to ``profile_id`` and authorizes on it.
+    profile = (getattr(args, "profile", "") or "").strip()
+    query = "?profile_id=" + urllib.parse.quote(profile, safe="") if profile else ""
     if is_daemon_running() or ensure_daemon():
-        path = "/api/memories/" + urllib.parse.quote(fact_id, safe="")
+        path = "/api/memories/" + urllib.parse.quote(fact_id, safe="") + query
         confirmed = getattr(args, "yes", False)
         content = ""
         if not confirmed:
             try:
                 detail = daemon_request(
                     "GET",
-                    "/api/facts/" + urllib.parse.quote(fact_id, safe=""),
+                    "/api/facts/" + urllib.parse.quote(fact_id, safe="") + query,
                     preserve_not_found=True,
                 )
             except DaemonNotFound:
@@ -2443,14 +2449,16 @@ def cmd_delete(args: Namespace) -> None:
             content = str(detail.get("content") or "")
             if use_json:
                 from superlocalmemory.cli.json_output import json_print
+                again = f" --profile {profile}" if profile else ""
                 json_print("delete", data={
                     "fact_id": fact_id,
                     "content": content[:120],
                     "deleted": False,
                     "hint": "Add --yes to confirm deletion",
+                    **({"profile": profile} if profile else {}),
                 }, next_actions=[
                     {
-                        "command": f"slm delete {fact_id} --json --yes",
+                        "command": f"slm delete {fact_id}{again} --json --yes",
                         "description": "Confirm deletion",
                     },
                 ])
@@ -2476,7 +2484,8 @@ def cmd_delete(args: Namespace) -> None:
             from superlocalmemory.cli.json_output import json_print
             json_print(
                 "delete",
-                data={"deleted": fact_id, "content": content[:120]},
+                data={"deleted": fact_id, "content": content[:120],
+                      **({"profile": profile} if profile else {})},
                 next_actions=[
                     {
                         "command": "slm list --json",
@@ -2485,7 +2494,7 @@ def cmd_delete(args: Namespace) -> None:
                 ],
             )
         else:
-            print(f"Deleted: {fact_id}")
+            print(f"Deleted: {fact_id}" + (f" (profile {profile})" if profile else ""))
         return
     _daemon_unavailable("delete", use_json)
 
@@ -3383,6 +3392,22 @@ def _cmd_doctor_checks(args: Namespace, state: dict) -> None:
             if not use_json:
                 print(f"  auto-repair error: {_fix_exc}\n")
 
+        # 4.2.8: index rows of memories that no longer exist (a delete that failed
+        # partway). The daemon removes them by itself on its first start of this
+        # version and in its routine pass; this is the same removal, on demand.
+        try:
+            from superlocalmemory.infra.data_root import canonical_data_root
+            from superlocalmemory.storage.vector_residue import repair_orphan_index_rows
+
+            _orphans = repair_orphan_index_rows(canonical_data_root() / "memory.db")
+            if not use_json:
+                print(f"  Removed {_orphans.total} search-index row(s) of memories "
+                      "that no longer exist." if _orphans.total
+                      else "  No leftover search-index rows found.")
+        except Exception as _orphan_exc:
+            if not use_json:
+                print(f"  search-index cleanup skipped: {_orphan_exc}")
+
         # H5 — stale-artifact reap (additive; runs after component healer).
         # Removes provably-dead lock/PID files so the doctor report below
         # reflects the healed state.  Fail-open — never blocks doctor.
@@ -3734,6 +3759,27 @@ def _cmd_doctor_checks(args: Namespace, state: dict) -> None:
             # pending on it by definition, so this is not a finding.
             _check("Projection queue", "PASS", "not applicable to this store")
 
+    _stage("Mesh store")
+    # 10b'. mesh.db, the agent mesh's own file (4.2.8). Read-only; the daemon
+    # builds, migrates and repairs it at start.
+    try:
+        from superlocalmemory.cli.doctor_mesh import mesh_finding
+
+        _check("Mesh store", *mesh_finding(db_path.parent))
+    except Exception as _mesh_exc:  # noqa: BLE001 - never break doctor
+        _check("Mesh store", "WARN", f"could not read mesh.db: {_mesh_exc}")
+
+    _stage("Data repairs")
+    # 10b''. What the automatic 4.2.8 data repairs (M065 made-up dates, M066
+    # wrongly archived memories) did on their one run. Read-only.
+    if db_path.exists():
+        try:
+            from superlocalmemory.cli.doctor_repairs import data_repairs_finding
+
+            _check("Data repairs", *data_repairs_finding(db_path))
+        except Exception as _dr_exc:  # noqa: BLE001 - never break doctor
+            _check("Data repairs", "WARN", f"could not read the repair record: {_dr_exc}")
+
     _stage("Failed saves")
     # 10c. Failed saves. `slm ops status` reports dead-lettered saves, degraded
     # operations and exhausted retries; doctor said nothing about them and read
@@ -3747,6 +3793,18 @@ def _cmd_doctor_checks(args: Namespace, state: dict) -> None:
         except Exception as _fs_exc:  # noqa: BLE001 - never break doctor
             _check("Failed saves", "WARN", f"could not read the failed-save counts: {_fs_exc}",
                    "Run `slm ops status`")
+
+    _stage("Hook events")
+    # 10d. Hook events (4.2.8). Hooks hand tool events and reward signals to the
+    # daemon's single writer or spool them; a full spool is the one place one
+    # can be lost, and this row is where that count is shown. Read-only.
+    try:
+        from superlocalmemory.cli.doctor_hook_spool import hook_spool_finding
+        from superlocalmemory.infra.data_root import canonical_data_root
+
+        _check("Hook events", *hook_spool_finding(canonical_data_root()))
+    except Exception as _hs_exc:  # noqa: BLE001 - never break doctor
+        _check("Hook events", "WARN", f"could not read the hook event spool: {_hs_exc}")
 
     if db_path.exists():
         try:

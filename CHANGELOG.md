@@ -5,6 +5,58 @@ All notable changes to SuperLocalMemory will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.11] — Removed notes stay removed, the graph copy stays in step, edits are recalled
+
+Three fixes for things that looked done but were not. Upgrading runs one
+migration (M067, one trigger) and needs no command; a graph copy that already
+drifted is rebuilt by the daemon on its own within about ten minutes.
+
+### Fixed
+
+- **Revising, deleting or purging an Obsidian or folder source removes every
+  fact it made** (#297). A save is enriched after it returns, and the source
+  only knew the first fact, so the later ones stayed in recall. Removal now
+  reads the memory's facts again, and an unfinished save counts as pending:
+  `remove` and `--purge` refuse instead of reporting success.
+- **`--purge` finishes on a store with backups** (#297). A snapshot in
+  `backups/` or `pre-migration-snapshots/` cannot be rewritten, so purge kept
+  asking you to try again. It now completes, writes the erasure receipt, and
+  names the snapshot folders still holding a copy.
+- **`injection.enabled false` turns off automatic memory** (#297). The switch
+  was saved but read by nothing. It now stops per-prompt hooks, `before_web`,
+  the SessionStart context, `session_init` and prestaging. Explicit recall and
+  search still work. `slm config set` accepts `injection.enabled` and
+  `auto_invoke.enabled`.
+- **Graph removal no longer scans every edge** (#296). Removing a fact from
+  the Cozo copy took 428 ms at 800k edges; it now takes about 0.1 ms.
+- **The Cozo graph copy stays in step with the store** (#296). Edges to
+  archived or quarantined facts were put back on every edit, and archive,
+  merge and quarantine never reached the copy. Both are fixed, the daemon
+  checks the copy each maintenance cycle and rebuilds a drifted profile, and
+  `slm db regraph` works while the daemon runs.
+- **`slm db scale promote` and `rollback` refuse while the daemon runs.**
+- **The daemon keeps answering while a session closes.** Every agent session
+  end asked the daemon to summarise the session, and it did so on the thread
+  that answers requests, reading every memory in the store and every past
+  summary. On a store of 30,000 memories the daemon stopped answering for
+  seconds to minutes, many times an hour. Closing now reads only that
+  session's memories, off the request thread, and an older session is no
+  longer skipped on a store larger than 50,000 memories.
+- **A remote MCP call no longer stalls the daemon after a restart.** The MCP
+  endpoint inside the daemon built a second memory engine on its first call,
+  re-checking every migration on the thread that answers requests. It now uses
+  the daemon's own engine.
+- **The graph check no longer holds up saves.** It counted the store's
+  connections on the connection used for writing; it now reads on its own.
+- **Recall returns an applied correction.** 4.2.10 indexed edited memories,
+  but recall's source check compared the new text with the text it replaced
+  and withheld every edit. An applied correction now counts as your own
+  decision; the retired original stays hidden.
+
+### Security
+
+- certifi 2026.10.19 (GHSA-6q48-6c7w-9gw2).
+
 ## [4.2.10] — An edited memory can be found again
 
 If you edited a memory (the dashboard's Edit button, the `update_memory` tool
